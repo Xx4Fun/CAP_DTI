@@ -194,7 +194,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _message.contains('success') ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                color: _message.contains('success') ? Colors.green.withAlpha(51) : Colors.red.withAlpha(51),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: _message.contains('success') ? Colors.green : Colors.red,
@@ -240,7 +240,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<Map<String, dynamic>>(
-                    value: _selectedStore,
+                    initialValue: _selectedStore,
                     hint: const Text('Choose a store'),
                     dropdownColor: Colors.grey[900],
                     items: _stores.map((store) {
@@ -277,7 +277,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<Map<String, dynamic>>(
-                    value: _selectedBulletin,
+                    initialValue: _selectedBulletin,
                     hint: const Text('Choose regulated commodity'),
                     dropdownColor: Colors.grey[900],
                     items: _bulletins.map((bulletin) {

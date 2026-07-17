@@ -1,121 +1,397 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'helpers/db_helper.dart';
+import 'services/sync_service.dart';
+import 'screens/inspection_screen.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const PriceWatchMobileApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class PriceWatchMobileApp extends StatelessWidget {
+  const PriceWatchMobileApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+      title: 'PRICE-Watch Mobile',
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.amber,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.amber,
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF09090B),
+        cardColor: const Color(0xFF141419),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const AuthWrapper(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _AuthWrapperState extends State<AuthWrapper> {
+  String? _token;
+  bool _checking = true;
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _token = prefs.getString('auth_token');
+      _checking = false;
+    });
+  }
+
+  void _onLoginSuccess(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', token);
+    setState(() {
+      _token = token;
+    });
+  }
+
+  void _onLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    setState(() {
+      _token = null;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    if (_checking) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Colors.amber)),
+      );
+    }
+
+    if (_token == null) {
+      return MobileLoginScreen(onLoginSuccess: _onLoginSuccess);
+    }
+
+    return MobileHomeScreen(token: _token!, onLogout: _onLogout);
+  }
+}
+
+class MobileLoginScreen extends StatefulWidget {
+  final Function(String) onLoginSuccess;
+  const MobileLoginScreen({super.key, required this.onLoginSuccess});
+
+  @override
+  State<MobileLoginScreen> createState() => _MobileLoginScreenState();
+}
+
+class _MobileLoginScreenState extends State<MobileLoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _loading = false;
+  String _error = '';
+
+  Future<void> _handleLogin() async {
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+
+    // Simulated login endpoint or direct mock auth validation
+    // Field Officer authentication details matching standard role definitions
+    if (_emailController.text == 'officer@dti.gov.ph' && _passwordController.text == 'password123') {
+      widget.onLoginSuccess('mock_field_officer_token_123456');
+    } else {
+      setState(() {
+        _error = 'Incorrect credentials. Use officer@dti.gov.ph / password123';
+      });
+    }
+    setState(() {
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: const BoxDecoration(
+                  color: Colors.amber,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.security, size: 40, color: Colors.black),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'PRICE-Watch Mobile',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.amber),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'DTI Officer Offline Field Node',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              if (_error.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(51),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red),
+                  ),
+                  child: Text(
+                    _error,
+                    style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+              TextField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email Address',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _loading ? null : _handleLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber,
+                    foregroundColor: Colors.black,
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  child: _loading ? const CircularProgressIndicator() : const Text('Officer Sign In'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MobileHomeScreen extends StatefulWidget {
+  final String token;
+  final VoidCallback onLogout;
+
+  const MobileHomeScreen({super.key, required this.token, required this.onLogout});
+
+  @override
+  State<MobileHomeScreen> createState() => _MobileHomeScreenState();
+}
+
+class _MobileHomeScreenState extends State<MobileHomeScreen> {
+  final SyncService _syncService = SyncService();
+  final DbHelper _dbHelper = DbHelper();
+  int _unsyncedCount = 0;
+  bool _syncing = false;
+  String _syncResult = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _updateUnsyncedCount();
+  }
+
+  Future<void> _updateUnsyncedCount() async {
+    final list = await _dbHelper.getUnsyncedInspections();
+    setState(() {
+      _unsyncedCount = list.length;
+    });
+  }
+
+  Future<void> _triggerDownsync() async {
+    setState(() {
+      _syncing = true;
+      _syncResult = '';
+    });
+    final result = await _syncService.syncDown(widget.token);
+    setState(() {
+      _syncResult = result['message'];
+      _syncing = false;
+    });
+  }
+
+  Future<void> _triggerUpsync() async {
+    setState(() {
+      _syncing = true;
+      _syncResult = '';
+    });
+    final result = await _syncService.syncUp(widget.token);
+    setState(() {
+      _syncResult = result['message'];
+      _syncing = false;
+    });
+    _updateUnsyncedCount();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('DTI Officer Node'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.exit_to_app),
+              onPressed: widget.onLogout,
             ),
+          ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.assignment), text: 'Log Inspection'),
+              Tab(icon: Icon(Icons.sync), text: 'Data Sync'),
+            ],
+            indicatorColor: Colors.amber,
+            labelColor: Colors.amber,
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            const InspectionScreen(),
+            _buildSyncTab(),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  Widget _buildSyncTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Synchronize Field Logs',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber,
+                ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Pre-deployment sync downloads the target store database. Post-deployment sync uploads offline-logged anomaly files.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          Card(
+            color: Colors.grey[900],
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Offline Cache Status',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Pending Upsync Inspections:'),
+                      Chip(
+                        label: Text('$_unsyncedCount'),
+                        backgroundColor: _unsyncedCount > 0 ? Colors.redAccent : Colors.green,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (_syncing) ...[
+            const Center(child: CircularProgressIndicator(color: Colors.amber)),
+            const SizedBox(height: 20),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _triggerDownsync,
+                icon: const Icon(Icons.download),
+                label: const Text('Sync Down: Catalog & Active SRPs'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _triggerUpsync,
+                icon: const Icon(Icons.upload),
+                label: const Text('Sync Up: Upload Inspection Logs'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+          if (_syncResult.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            const Text(
+              'Sync Logs Output:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[850],
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _syncResult,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
