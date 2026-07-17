@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'helpers/db_helper.dart';
 import 'services/sync_service.dart';
 import 'screens/inspection_screen.dart';
+import 'screens/consumer_scan_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   String? _token;
+  String? _role;
   bool _checking = true;
 
   @override
@@ -51,23 +53,28 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _token = prefs.getString('auth_token');
+      _role = prefs.getString('user_role');
       _checking = false;
     });
   }
 
-  void _onLoginSuccess(String token) async {
+  void _onLoginSuccess(String token, String role) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
+    await prefs.setString('user_role', role);
     setState(() {
       _token = token;
+      _role = role;
     });
   }
 
   void _onLogout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
+    await prefs.remove('user_role');
     setState(() {
       _token = null;
+      _role = null;
     });
   }
 
@@ -83,12 +90,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return MobileLoginScreen(onLoginSuccess: _onLoginSuccess);
     }
 
+    if (_role == 'consumer') {
+      return Scaffold(
+        body: ConsumerScanScreen(token: _token!),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _onLogout,
+          icon: const Icon(Icons.exit_to_app),
+          label: const Text('Log Out'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+
     return MobileHomeScreen(token: _token!, onLogout: _onLogout);
   }
 }
 
 class MobileLoginScreen extends StatefulWidget {
-  final Function(String) onLoginSuccess;
+  final Function(String, String) onLoginSuccess;
   const MobileLoginScreen({super.key, required this.onLoginSuccess});
 
   @override
@@ -108,12 +127,18 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
     });
 
     // Simulated login endpoint or direct mock auth validation
-    // Field Officer authentication details matching standard role definitions
-    if (_emailController.text == 'officer@dti.gov.ph' && _passwordController.text == 'password123') {
-      widget.onLoginSuccess('mock_field_officer_token_123456');
+    final String email = _emailController.text;
+    final String pass = _passwordController.text;
+
+    if (email == 'officer@dti.gov.ph' && pass == 'password123') {
+      widget.onLoginSuccess('mock_field_officer_token_123456', 'field_officer');
+    } else if (email == 'consumer@price.gov.ph' && pass == 'password123') {
+      widget.onLoginSuccess('mock_consumer_token_123456', 'consumer');
     } else {
       setState(() {
-        _error = 'Incorrect credentials. Use officer@dti.gov.ph / password123';
+        _error = 'Incorrect credentials.\n'
+            'Officer: officer@dti.gov.ph / password123\n'
+            'Consumer: consumer@price.gov.ph / password123';
       });
     }
     setState(() {
@@ -146,7 +171,7 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'DTI Officer Offline Field Node',
+                'Antique Offline Regulatory Node',
                 style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 32),
@@ -195,7 +220,7 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                     foregroundColor: Colors.black,
                     textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  child: _loading ? const CircularProgressIndicator() : const Text('Officer Sign In'),
+                  child: _loading ? const CircularProgressIndicator() : const Text('Sign In'),
                 ),
               ),
             ],

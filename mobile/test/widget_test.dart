@@ -15,6 +15,6 @@ void main() {
 
     // Verify that our login title is displayed.
     expect(find.text('PRICE-Watch Mobile'), findsOneWidget);
-    expect(find.text('Officer Sign In'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
   });
 }
