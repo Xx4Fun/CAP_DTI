@@ -39,6 +39,9 @@ dependencies:
   http: ^1.1.0
   shared_preferences: ^2.2.0
   signature: ^5.4.0
+  camera: ^0.10.5+9
+  crypto: ^3.0.3
+
 
 
 dev_dependencies:
