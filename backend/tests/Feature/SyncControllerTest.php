@@ -76,6 +76,25 @@ class SyncControllerTest extends TestCase {
         $responseUp->assertStatus(401);
     }
 
+    public function test_client_with_invalid_role_receives_forbidden_status(): void {
+        $vendor = User::create([
+            'name' => 'Vendor User',
+            'email' => 'vendor@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'vendor'
+        ]);
+
+        Sanctum::actingAs($vendor);
+
+        $responseDown = $this->getJson('/api/sync/down');
+        $responseDown->assertStatus(403);
+
+        $responseUp = $this->postJson('/api/sync/up', [
+            'inspections' => []
+        ]);
+        $responseUp->assertStatus(403);
+    }
+
     public function test_authenticated_user_can_upsync_inspections(): void {
         $user = User::create([
             'name' => 'Field Officer',
@@ -161,5 +180,59 @@ class SyncControllerTest extends TestCase {
                 'inspections.0.is_flagged',
                 'inspections.0.inspection_timestamp'
             ]);
+    }
+
+    public function test_inactive_bulletin_referenced_by_recent_inspection_is_included_in_downsync(): void {
+        $user = User::create([
+            'name' => 'Field Officer',
+            'email' => 'officer@example.com',
+            'password' => bcrypt('password'),
+            'role' => 'field_officer'
+        ]);
+
+        $store = Store::create([
+            'dti_sec_number' => 'SEC-12345',
+            'store_name' => 'Buenavista Groceries',
+            'owner_name' => 'Juan Dela Cruz',
+            'latitude' => 10.7410,
+            'longitude' => 121.9386,
+            'address' => 'San Jose de Buenavista, Antique'
+        ]);
+
+        // 1. Inactive bulletin referenced by recent inspection (Should be included)
+        $inactiveReferenced = SrpBulletin::create([
+            'commodity_name' => 'Referenced Inactive Sardines',
+            'baseline_price' => 20.00,
+            'effective_date' => '2026-07-01',
+            'is_active' => false
+        ]);
+
+        // Recent inspection using the referenced inactive bulletin
+        TemporalInspection::create([
+            'store_id' => $store->id,
+            'srp_id' => $inactiveReferenced->id,
+            'recorded_price' => 22.00,
+            'is_flagged' => false,
+            'inspection_timestamp' => now()->subDays(5)
+        ]);
+
+        // 2. Inactive bulletin NOT referenced by any recent inspection (Should be excluded)
+        $inactiveUnreferenced = SrpBulletin::create([
+            'commodity_name' => 'Unreferenced Inactive Sardines',
+            'baseline_price' => 18.00,
+            'effective_date' => '2026-07-01',
+            'is_active' => false
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/sync/down');
+
+        $response->assertStatus(200);
+
+        // Assert that the active bulletins and referenced inactive bulletins are returned, but unreferenced inactive are not.
+        $bulletinIds = collect($response->json('srp_bulletins'))->pluck('id');
+        $this->assertTrue($bulletinIds->contains($inactiveReferenced->id), 'Referenced inactive bulletin should be included.');
+        $this->assertFalse($bulletinIds->contains($inactiveUnreferenced->id), 'Unreferenced inactive bulletin should not be included.');
     }
 }
