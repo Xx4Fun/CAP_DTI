@@ -11,7 +11,8 @@ class SyncController extends Controller {
     public function down() {
         return response()->json([
             'stores' => Store::all(),
-            'srp_bulletins' => SrpBulletin::where('is_active', true)->get()
+            'srp_bulletins' => SrpBulletin::where('is_active', true)->get(),
+            'temporal_inspections' => TemporalInspection::where('inspection_timestamp', '>=', now()->subWeeks(3))->get()
         ]);
     }
 

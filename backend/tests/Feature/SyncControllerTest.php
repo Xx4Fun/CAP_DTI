@@ -21,7 +21,7 @@ class SyncControllerTest extends TestCase {
             'role' => 'field_officer'
         ]);
 
-        Store::create([
+        $store = Store::create([
             'dti_sec_number' => 'SEC-12345',
             'store_name' => 'Buenavista Groceries',
             'owner_name' => 'Juan Dela Cruz',
@@ -30,11 +30,29 @@ class SyncControllerTest extends TestCase {
             'address' => 'San Jose de Buenavista, Antique'
         ]);
 
-        SrpBulletin::create([
+        $bulletin = SrpBulletin::create([
             'commodity_name' => 'Sardines',
             'baseline_price' => 25.00,
             'effective_date' => '2026-07-01',
             'is_active' => true
+        ]);
+
+        // Recent inspection (5 days ago) - should be included
+        $recentInspection = TemporalInspection::create([
+            'store_id' => $store->id,
+            'srp_id' => $bulletin->id,
+            'recorded_price' => 26.00,
+            'is_flagged' => false,
+            'inspection_timestamp' => now()->subDays(5)
+        ]);
+
+        // Old inspection (25 days ago) - should be excluded
+        $oldInspection = TemporalInspection::create([
+            'store_id' => $store->id,
+            'srp_id' => $bulletin->id,
+            'recorded_price' => 24.00,
+            'is_flagged' => false,
+            'inspection_timestamp' => now()->subDays(25)
         ]);
 
         Sanctum::actingAs($user);
@@ -42,7 +60,10 @@ class SyncControllerTest extends TestCase {
         $response = $this->getJson('/api/sync/down');
 
         $response->assertStatus(200)
-            ->assertJsonStructure(['stores', 'srp_bulletins']);
+            ->assertJsonStructure(['stores', 'srp_bulletins', 'temporal_inspections'])
+            ->assertJsonCount(1, 'temporal_inspections')
+            ->assertJsonFragment(['recorded_price' => 26.00])
+            ->assertJsonMissing(['recorded_price' => 24.00]);
     }
 
     public function test_unauthenticated_user_cannot_downsync_or_upsync(): void {
