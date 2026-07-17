@@ -1,0 +1,5 @@
+package gov.dti.antique.price_watch
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
