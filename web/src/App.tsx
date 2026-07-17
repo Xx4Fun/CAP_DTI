@@ -95,19 +95,29 @@ function App() {
     }
   }, [isCalamity]);
 
-  // Leaflet Map Initialization & Sync
+  // Leaflet Map Initialization
   useEffect(() => {
     if (mapRef.current && !mapInstance.current) {
       // Initialize Map
       mapInstance.current = L.map(mapRef.current).setView([10.7424, 121.9406], 15);
       
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 20
       }).addTo(mapInstance.current);
     }
 
+    return () => {
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
+    };
+  }, []);
+
+  // Leaflet Marker Sync
+  useEffect(() => {
     // Clear old markers
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
@@ -177,7 +187,8 @@ function App() {
   const week1 = parseFloat((basePrice * 1.01 * volatilityMultiplier).toFixed(2));
   const week2 = parseFloat((basePrice * 1.05 * volatilityMultiplier).toFixed(2));
   const week3 = parseFloat((basePrice * 1.12 * volatilityMultiplier).toFixed(2));
-  const week4 = parseFloat(recordedPrice) || basePrice;
+  const parsedWeek4Price = parseFloat(recordedPrice);
+  const week4 = isNaN(parsedWeek4Price) ? basePrice : parsedWeek4Price;
 
   const chartData = {
     labels: ['Week 1', 'Week 2', 'Week 3 (Sync)', 'Week 4 (Current)'],
@@ -240,7 +251,8 @@ function App() {
   // Bifurcated Legal Engine Calculation
   const getBifurcatedLegalDecision = () => {
     const baseline = selectedCommodity.baselinePrice;
-    const currentPrice = parseFloat(recordedPrice) || baseline;
+    const parsedCurrentPrice = parseFloat(recordedPrice);
+    const currentPrice = isNaN(parsedCurrentPrice) ? baseline : parsedCurrentPrice;
     const allowance = isCalamity ? 0 : 0.10;
     const upperLimit = baseline * (1 + allowance);
     const isOverLimit = currentPrice > upperLimit;
