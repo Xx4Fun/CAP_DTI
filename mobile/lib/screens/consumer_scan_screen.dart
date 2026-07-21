@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../helpers/db_helper.dart';
 
 class ConsumerScanScreen extends StatefulWidget {
@@ -145,10 +146,9 @@ class _ConsumerScanScreenState extends State<ConsumerScanScreen> {
     });
 
     try {
-      // 10.0.2.2 is local emulator API bridge
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:8000/api/tips'),
+        Uri.parse('${ApiConfig.baseUrl}/tips'),
       );
 
       request.headers['Authorization'] = 'Bearer ${widget.token}';

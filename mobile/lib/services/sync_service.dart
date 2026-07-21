@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../helpers/db_helper.dart';
 
 class SyncService {
-  // 10.0.2.2 is the bridge IP for Android Emulator pointing to the development host's localhost (127.0.0.1)
-  static const String baseUrl = 'http://10.0.2.2:8000/api';
+  static const String baseUrl = ApiConfig.baseUrl;
   final DbHelper _dbHelper = DbHelper();
+
 
   // Downsync from Laravel API to SQLite
   Future<Map<String, dynamic>> syncDown(String token) async {
