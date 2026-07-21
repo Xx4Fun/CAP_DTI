@@ -1,0 +1,77 @@
+import React, { useState, useEffect } from 'react';
+import { Navbar } from './components/Navbar';
+import { OfflineBanner } from './components/OfflineBanner';
+import { Home } from './components/Home';
+import { SrpSearch } from './components/SrpSearch';
+import { StoreDirectory } from './components/StoreDirectory';
+import { ShelfScanner } from './components/ShelfScanner';
+import { FormalReport } from './components/FormalReport';
+import { TrackReport } from './components/TrackReport';
+import { apiClient, type SystemConfig } from './api/client';
+
+export const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<string>('home');
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [config, setConfig] = useState<SystemConfig | null>(null);
+
+  useEffect(() => {
+    fetchConfig();
+
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await apiClient.get('/public/config');
+      if (res.data.success) {
+        setConfig(res.data.data);
+        setLastSyncTime(new Date().toLocaleTimeString());
+      }
+    } catch (err) {
+      console.error('Offline or unable to fetch system config:', err);
+    }
+  };
+
+  return (
+    <div>
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        stateOfCalamity={config?.state_of_calamity || false}
+      />
+
+      <main className="app-container">
+        <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />
+
+        {activeTab === 'home' && (
+          <Home
+            setActiveTab={setActiveTab}
+            stateOfCalamity={config?.state_of_calamity || false}
+          />
+        )}
+
+        {activeTab === 'search' && <SrpSearch />}
+
+        {activeTab === 'stores' && <StoreDirectory />}
+
+        {activeTab === 'shelf-scanner' && <ShelfScanner />}
+
+        {activeTab === 'report' && <FormalReport />}
+
+        {activeTab === 'track' && <TrackReport />}
+      </main>
+    </div>
+  );
+};
+
+export default App;

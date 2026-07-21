@@ -7,7 +7,20 @@ use App\Http\Controllers\CitizenTipController;
 use App\Http\Controllers\CalamityController;
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\PublicPwaController;
+
 Route::post('/login', [AuthController::class, 'login']);
+
+// Public Unauthenticated Consumer PWA Routes
+Route::prefix('public')->group(function () {
+    Route::get('/config', [PublicPwaController::class, 'config']);
+    Route::get('/commodities', [PublicPwaController::class, 'commodities']);
+    Route::get('/establishments', [PublicPwaController::class, 'establishments']);
+    Route::post('/capture-session', [PublicPwaController::class, 'createCaptureSession']);
+    Route::post('/reports', [PublicPwaController::class, 'submitReport']);
+    Route::post('/reports/{reference}/confirm-ocr', [PublicPwaController::class, 'confirmOcr']);
+    Route::get('/reports/track', [PublicPwaController::class, 'trackReport']);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -29,4 +42,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/calamity', [CalamityController::class, 'show']);
     Route::post('/calamity/toggle', [CalamityController::class, 'toggle']);
 });
+
 
