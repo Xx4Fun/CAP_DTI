@@ -1,29 +1,71 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Calendar, Tag, Info } from 'lucide-react';
 import { apiClient, type Commodity } from '../api/client';
 
 export const SrpSearch: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [commodities, setCommodities] = useState<Commodity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCachedMode, setIsCachedMode] = useState(false);
   const [error, setError] = useState('');
 
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    fetchCommodities();
+    fetchCommodities('');
   }, []);
 
   const fetchCommodities = async (query = '') => {
     setLoading(true);
     setError('');
+
     try {
       const res = await apiClient.get('/public/commodities', {
         params: { query }
       });
-      if (res.data.success) {
-        setCommodities(res.data.data);
+
+      if (res.data && res.data.success) {
+        const liveData: Commodity[] = res.data.data;
+        setCommodities(liveData);
+        setIsCachedMode(false);
+
+        // Cache the master dataset locally when empty query returns all items
+        if (!query && liveData.length > 0) {
+          try {
+            localStorage.setItem('price_watch_srp_cache', JSON.stringify(liveData));
+          } catch (e) {
+            console.warn('Unable to save SRP cache to localStorage:', e);
+          }
+        }
       }
     } catch (err) {
-      setError('Unable to load current SRP bulletin records. Displaying cached reference.');
+      console.warn('API fetch failed, falling back to local cache:', err);
+      
+      // Fallback to local cache if offline or network connection fails
+      try {
+        const cachedRaw = localStorage.getItem('price_watch_srp_cache');
+        if (cachedRaw) {
+          const cachedItems: Commodity[] = JSON.parse(cachedRaw);
+          const q = query.toLowerCase().trim();
+
+          const filtered = q
+            ? cachedItems.filter(
+                (item) =>
+                  item.commodity_name.toLowerCase().includes(q) ||
+                  (item.category && item.category.toLowerCase().includes(q)) ||
+                  (item.unit && item.unit.toLowerCase().includes(q)) ||
+                  (item.regulatory_classification && item.regulatory_classification.toLowerCase().includes(q))
+              )
+            : cachedItems;
+
+          setCommodities(filtered);
+          setIsCachedMode(true);
+        } else {
+          setError('Unable to load SRP bulletin records and no offline cache available.');
+        }
+      } catch (cacheErr) {
+        setError('Unable to load SRP bulletin records.');
+      }
     } finally {
       setLoading(false);
     }
@@ -32,7 +74,14 @@ export const SrpSearch: React.FC = () => {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchTerm(val);
-    fetchCommodities(val);
+
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchCommodities(val);
+    }, 250);
   };
 
   return (
@@ -42,7 +91,7 @@ export const SrpSearch: React.FC = () => {
           Commodity & SRP Bulletin Directory
         </h2>
         <p style={{ color: '#a1a1aa', fontSize: '0.85rem', marginBottom: '16px' }}>
-          Search officially regulated prices by commodity name, brand, variant, and package size.
+          Search officially regulated prices by commodity name, category, brand, and package size.
         </p>
 
         <div style={{ position: 'relative' }}>
@@ -51,12 +100,18 @@ export const SrpSearch: React.FC = () => {
             type="text"
             className="input-field"
             style={{ paddingLeft: '40px' }}
-            placeholder="Search e.g. 'Regular Milled Rice', 'Refined White Sugar'..."
+            placeholder="Search e.g. 'Sardines', 'Milk', 'Coffee', 'Rice'..."
             value={searchTerm}
             onChange={handleSearchChange}
           />
         </div>
       </div>
+
+      {isCachedMode && (
+        <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', color: '#fbbf24', fontSize: '0.82rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Info size={16} /> Displaying cached SRP bulletin reference (Offline or disconnected from server)
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem', marginBottom: '16px' }}>
@@ -76,18 +131,34 @@ export const SrpSearch: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {commodities.map((item) => (
             <div key={item.id} className="glass-panel" style={{ marginBottom: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#fff' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                    {item.category && (
+                      <span className="badge badge-amber" style={{ fontSize: '0.7rem' }}>
+                        <Tag size={10} style={{ marginRight: '4px' }} />
+                        {item.category}
+                      </span>
+                    )}
+                    {item.regulatory_classification && (
+                      <span
+                        className={`badge ${item.regulatory_classification === 'BASIC_NECESSITY' ? 'badge-amber' : ''}`}
+                        style={{ fontSize: '0.7rem', background: item.regulatory_classification === 'BASIC_NECESSITY' ? 'rgba(16,185,129,0.2)' : 'rgba(59,130,246,0.2)', color: item.regulatory_classification === 'BASIC_NECESSITY' ? '#10b981' : '#60a5fa', border: 'none' }}
+                      >
+                        {item.regulatory_classification === 'BASIC_NECESSITY' ? 'BASIC NECESSITY' : 'PRIME COMMODITY'}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#fff', lineHeight: '1.3' }}>
                     {item.commodity_name}
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: '#a1a1aa', display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
-                    {item.brand && <span>Brand: <strong>{item.brand}</strong></span>}
-                    {item.variant && <span>Variant: <strong>{item.variant}</strong></span>}
-                    {item.package_size && <span>Size: <strong>{item.package_size}</strong></span>}
-                  </div>
+                  {item.unit && (
+                    <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginTop: '4px' }}>
+                      Package / Size: <strong>{item.unit}</strong>
+                    </div>
+                  )}
                 </div>
-                <span className="badge badge-amber">
+                <span className="badge badge-amber" style={{ whiteSpace: 'nowrap' }}>
                   SRP ACTIVE
                 </span>
               </div>

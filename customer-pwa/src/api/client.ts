@@ -23,14 +23,18 @@ export interface SystemConfig {
 export interface Commodity {
   id: number;
   commodity_name: string;
+  category?: string;
   brand?: string;
   variant?: string;
   package_size?: string;
   unit?: string;
+  regulatory_classification?: string;
   baseline_price: number;
   effective_date: string;
   regulatory_state?: string;
   is_active: boolean;
+  price_freeze_applicable?: boolean;
+  price_freeze_treatment?: string;
 }
 
 export interface Establishment {

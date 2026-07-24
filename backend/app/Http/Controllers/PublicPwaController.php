@@ -39,11 +39,21 @@ class PublicPwaController extends Controller
         $query = SrpBulletin::where('is_active', true);
 
         if ($request->filled('query')) {
-            $search = $request->input('query');
-            $query->where('commodity_name', 'like', "%{$search}%");
+            $search = trim($request->input('query'));
+            $searchTerm = '%' . strtolower($search) . '%';
+
+            $query->where(function ($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(commodity_name) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(category) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(unit) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(regulatory_classification) LIKE ?', [$searchTerm]);
+            });
         }
 
-        $commodities = $query->orderBy('commodity_name', 'asc')->get();
+        $commodities = $query->orderBy('regulatory_classification', 'asc')
+            ->orderBy('category', 'asc')
+            ->orderBy('commodity_name', 'asc')
+            ->get();
 
         return response()->json([
             'success' => true,
