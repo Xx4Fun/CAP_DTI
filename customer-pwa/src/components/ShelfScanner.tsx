@@ -13,8 +13,7 @@ import {
   AlertTriangle,
   Tag,
   Check,
-  RefreshCw,
-  ArrowLeft
+  RefreshCw
 } from 'lucide-react';
 import {
   apiClient,
@@ -299,28 +298,6 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
-  const handleCloseScanFlow = () => {
-    stopCamera();
-    resetAllScanData();
-    if (setActiveTab) {
-      setActiveTab('home');
-    }
-  };
-
-  const handleBack = () => {
-    if (scannerState === 'CAMERA_LIVE') {
-      stopCamera();
-      setScannerState('SELECT_STORE');
-    } else if (scannerState === 'CAPTURE_REVIEW') {
-      handleRetake();
-    } else if (scannerState === 'RESULT' || scannerState === 'ERROR') {
-      resetAllScanData();
-      setScannerState('SELECT_STORE');
-    } else {
-      handleCloseScanFlow();
-    }
-  };
-
   const handleStartScanForStore = (store: Establishment) => {
     resetAllScanData();
     setSelectedStore(store);
@@ -493,70 +470,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   return (
     <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
       
-      {/* Dedicated Task Header Top Bar (Screens 1 & 3) */}
-      {scannerState !== 'CAMERA_LIVE' && (
-        <header
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 16px',
-            height: '56px',
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
-            position: 'sticky',
-            top: 0,
-            zIndex: 100,
-            flexShrink: 0
-          }}
-        >
-          <button
-            onClick={handleBack}
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0f172a',
-              borderRadius: '8px'
-            }}
-            aria-label="Back"
-          >
-            <ArrowLeft size={22} />
-          </button>
 
-          <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
-            {scannerState === 'SELECT_STORE' && 'Select a store'}
-            {scannerState === 'CAPTURE_REVIEW' && 'Review capture'}
-            {(scannerState === 'UPLOADING' || scannerState === 'CANDIDATE_SELECTION' || scannerState === 'ENTER_PRICE' || scannerState === 'COMPARING') && 'Scan shelf tag'}
-            {scannerState === 'RESULT' && 'Comparison result'}
-            {scannerState === 'ERROR' && 'Scan notice'}
-          </div>
-
-          <button
-            onClick={handleCloseScanFlow}
-            style={{
-              minWidth: '44px',
-              minHeight: '44px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#64748b',
-              borderRadius: '8px'
-            }}
-            aria-label="Close"
-          >
-            <X size={22} />
-          </button>
-        </header>
-      )}
 
       {/* SCREEN 1: STORE SELECTION */}
       {scannerState === 'SELECT_STORE' && (
@@ -817,14 +731,6 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 aria-label="Switch camera"
               >
                 <RotateCw size={20} />
-              </button>
-
-              <button
-                onClick={handleCloseScanFlow}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                aria-label="Close camera"
-              >
-                <X size={22} />
               </button>
             </div>
           </div>

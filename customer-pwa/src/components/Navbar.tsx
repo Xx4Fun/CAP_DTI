@@ -22,9 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
     };
   }, []);
 
-  if (activeTab === 'scan' || activeTab === 'shelf-scanner') {
-    return null;
-  }
+
 
   return (
     <>
