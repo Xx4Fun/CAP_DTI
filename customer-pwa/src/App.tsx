@@ -67,7 +67,7 @@ export const App: React.FC = () => {
         )}
 
         {(activeTab === 'scan' || activeTab === 'shelf-scanner') && (
-          <ShelfScanner />
+          <ShelfScanner setActiveTab={setActiveTab} />
         )}
 
         {(activeTab === 'reports' || activeTab === 'report') && (
