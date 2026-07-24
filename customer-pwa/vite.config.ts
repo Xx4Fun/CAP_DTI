@@ -12,8 +12,8 @@ export default defineConfig({
         name: 'PRICE-Watch Consumer PWA',
         short_name: 'PRICE-Watch',
         description: 'DTI Commodity Price Transparency & Tamper-Evident Evidence Reporting',
-        theme_color: '#09090b',
-        background_color: '#09090b',
+        theme_color: '#1d4ed8',
+        background_color: '#f8fafc',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
@@ -38,6 +38,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         navigateFallback: '/index.html',
         runtimeCaching: [
