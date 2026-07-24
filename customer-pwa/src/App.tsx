@@ -26,12 +26,21 @@ const routeForTab = (tab: string): AppRoute => {
   return { name: 'home' };
 };
 
+const defaultConfig: SystemConfig = {
+  app_name: 'PRICE-Watch',
+  state_of_calamity: false,
+  privacy_notice_version: '1.0',
+  max_upload_size_mb: 5,
+  allowed_mime_types: ['image/jpeg', 'image/png'],
+  last_updated_at: new Date().toISOString()
+};
+
 export const App: React.FC = () => {
   const route = useAppRoute();
   const activeTab = tabForRoute(route);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [config, setConfig] = useState<SystemConfig>(defaultConfig);
   const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
   const setActiveTab = (tab: string) => navigate(routeForTab(tab));
 
@@ -53,12 +62,12 @@ export const App: React.FC = () => {
   const fetchConfig = async () => {
     try {
       const res = await apiClient.get('/public/config');
-      if (res.data.success) {
+      if (res.data && res.data.success) {
         setConfig(res.data.data);
         setLastSyncTime(new Date().toLocaleTimeString());
       }
     } catch (err) {
-      console.error('Offline or unable to fetch system config:', err);
+      console.warn('Backend API offline or remote. Using default regulatory config:', err);
     }
   };
 

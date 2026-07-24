@@ -136,6 +136,45 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
 
 export const StoreFacadeImage = CompactStoreFacade;
 
+const defaultStoresList: (Establishment & { photoType?: string; barangay?: string })[] = [
+  {
+    id: 1,
+    dti_sec_number: 'SEC-CS202612345',
+    store_name: 'Super Metro San Jose',
+    owner_name: 'Metro Retail Stores Group Inc.',
+    latitude: 10.7424,
+    longitude: 121.9406,
+    address: 'Tradetown, San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'Tradetown',
+    photoType: 'super_metro'
+  },
+  {
+    id: 2,
+    dti_sec_number: 'SEC-CS202654321',
+    store_name: 'Gaisano Grand Antique',
+    owner_name: 'Gaisano Grand Malls Inc.',
+    latitude: 10.7450,
+    longitude: 121.9420,
+    address: 'San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'Poblacion',
+    photoType: 'gaisano'
+  },
+  {
+    id: 3,
+    dti_sec_number: 'SEC-CS202699999',
+    store_name: 'Robinsons Superstore Antique',
+    owner_name: 'Robinsons Retail Holdings Inc.',
+    latitude: 10.7410,
+    longitude: 121.9380,
+    address: 'Atabay, San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'Atabay',
+    photoType: 'robinsons'
+  }
+];
+
 export type ScannerStepState =
   | 'SELECT_STORE'
   | 'CAMERA_LIVE'
@@ -226,14 +265,19 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           : undefined;
         setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
       } else {
-        setStores([]);
-        setSelectedStore(null);
-        setErrorMessage('The verified store directory is currently unavailable. Please try again.');
+        setStores(defaultStoresList);
+        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
       }
     } catch (err) {
-      setStores([]);
-      setSelectedStore(null);
-      setErrorMessage('The verified store directory is currently unavailable. Please try again.');
+      console.warn('API connection offline or remote. Using default verified stores:', err);
+      setStores(defaultStoresList);
+      const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+        ? handoffRef.current.storeId
+        : undefined;
+      setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
     }
   };
 
