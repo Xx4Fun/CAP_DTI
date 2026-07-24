@@ -4,6 +4,7 @@ import { apiClient, type Commodity, type ComparisonResultResponse, type Establis
 import { consumeHandoff, writeHandoff } from '../app/handoffs';
 import type { AppRoute } from '../app/routing';
 import { fallbackCommodities } from '../data/srpFallback';
+import { fallbackEstablishments } from '../data/establishments';
 import { CameraShell } from './CameraShell';
 import { StorePicker } from './StorePicker';
 import { PriceStrip } from './ui/PriceStrip';
@@ -16,8 +17,7 @@ const stopStream = (stream: MediaStream | null) => stream?.getTracks().forEach((
 
 export function ShelfScanner({ onNavigate, isOnline }: ShelfScannerProps) {
   const [state, setState] = useState<ScannerState>('store');
-  const [stores, setStores] = useState<Establishment[]>([]);
-  const [storeLoadError, setStoreLoadError] = useState('');
+  const [stores, setStores] = useState<Establishment[]>(fallbackEstablishments);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [recentStoreId, setRecentStoreId] = useState<number | null>(() => { const value = sessionStorage.getItem('price-watch-recent-store'); return value ? Number(value) : null; });
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -40,10 +40,8 @@ export function ShelfScanner({ onNavigate, isOnline }: ShelfScannerProps) {
   useEffect(() => {
     let active = true;
     apiClient.get('/public/establishments').then((response) => {
-      if (!active) return;
-      if (response.data?.success && Array.isArray(response.data.data)) setStores(response.data.data);
-      else setStoreLoadError('We could not load the participating store directory. Try again when your connection is stable.');
-    }).catch(() => { if (active) setStoreLoadError('We could not load the participating store directory. Try again when your connection is stable.'); });
+      if (active && response.data?.success && Array.isArray(response.data.data)) setStores(response.data.data);
+    }).catch(() => undefined);
     const handoff = consumeHandoff();
     if (handoff?.kind === 'price-to-scan') setSelectedProduct(fallbackCommodities.find((item) => item.id === handoff.commodityId) ?? null);
     return () => { active = false; stopStream(streamRef.current); };
@@ -117,7 +115,6 @@ export function ShelfScanner({ onNavigate, isOnline }: ShelfScannerProps) {
       {!isOnline && <StatusBanner variant="offline" title="Scanner requires a live connection">You can choose a store and product, but image analysis and comparison are unavailable offline.</StatusBanner>}
       {state === 'store' && <>
         {selectedProduct && <div className="starting-with"><span><small>Starting with product</small><strong>{selectedProduct.commodity_name}</strong></span><button type="button" aria-label="Remove starting product" onClick={() => setSelectedProduct(null)}><X aria-hidden="true" /></button></div>}
-        {storeLoadError && <StatusBanner variant="error" title="Store directory unavailable">{storeLoadError}</StatusBanner>}
         <StorePicker stores={stores} selectedId={selectedStore?.id ?? null} recentStoreId={recentStoreId} onSelect={setSelectedStore} title="Where are you checking the price?" />
         <div className="sticky-actions"><button className="button button--primary" type="button" disabled={!selectedStore || !isOnline} onClick={() => { if (!selectedStore) return; sessionStorage.setItem('price-watch-recent-store', String(selectedStore.id)); setRecentStoreId(selectedStore.id); void openCamera(); }}><Camera aria-hidden="true" /> Open camera</button></div>
       </>}
