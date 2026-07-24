@@ -46,6 +46,15 @@ body {
   padding-bottom: 90px; /* Space for mobile nav bar */
 }
 
+.app-scan-container {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0;
+}
+
 /* Cards & Glass Panel / Clean Card Utilities */
 .glass-panel {
   background: var(--card-bg);

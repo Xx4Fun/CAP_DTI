@@ -22,6 +22,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
     };
   }, []);
 
+  if (activeTab === 'scan' || activeTab === 'shelf-scanner') {
+    return null;
+  }
+
   return (
     <>
       <header className="navbar-top" style={{ height: '68px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

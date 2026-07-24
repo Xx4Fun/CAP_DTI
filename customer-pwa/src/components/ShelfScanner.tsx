@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   Tag,
   Check,
-  RefreshCw
+  RefreshCw,
+  ArrowLeft
 } from 'lucide-react';
 import {
   apiClient,
@@ -66,37 +67,33 @@ const defaultEstablishments: (Establishment & { photoType?: string; barangay?: s
   }
 ];
 
-export const StoreFacadeImage: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
+export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
   const name = storeName.toLowerCase();
 
   if (photoType === 'super_metro' || name.includes('super metro') || name.includes('metro')) {
     return (
       <div
         style={{
-          width: '110px',
-          height: '86px',
+          width: '76px',
+          height: '76px',
           borderRadius: '12px',
-          background: 'linear-gradient(180deg, #15803d 0%, #166534 35%, #e2e8f0 35%, #f1f5f9 100%)',
+          background: 'linear-gradient(180deg, #15803d 0%, #166534 40%, #f1f5f9 40%, #f8fafc 100%)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '6px',
-          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-          position: 'relative',
-          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           flexShrink: 0
         }}
       >
-        <div style={{ background: '#166534', padding: '4px 6px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#ffffff', letterSpacing: '0.02em', lineHeight: 1.1 }}>
-            Super Metro
+        <div style={{ background: '#166534', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+            Metro
           </div>
-          <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#fef08a' }}>SAN JOSE</div>
         </div>
-        <div style={{ display: 'flex', gap: '3px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '22px', height: '32px', background: '#3b82f6', opacity: 0.8, borderRadius: '2px 2px 0 0' }} />
-          <div style={{ width: '26px', height: '32px', background: '#94a3b8', opacity: 0.6, borderRadius: '2px 2px 0 0' }} />
-          <div style={{ width: '22px', height: '32px', background: '#3b82f6', opacity: 0.8, borderRadius: '2px 2px 0 0' }} />
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '16px', height: '24px', background: '#3b82f6', opacity: 0.8, borderRadius: '2px 2px 0 0' }} />
+          <div style={{ width: '18px', height: '24px', background: '#94a3b8', opacity: 0.6, borderRadius: '2px 2px 0 0' }} />
         </div>
       </div>
     );
@@ -106,29 +103,25 @@ export const StoreFacadeImage: React.FC<{ photoType?: string; storeName: string 
     return (
       <div
         style={{
-          width: '110px',
-          height: '86px',
+          width: '76px',
+          height: '76px',
           borderRadius: '12px',
-          background: 'linear-gradient(180deg, #1d4ed8 0%, #1e40af 40%, #cbd5e1 40%, #f1f5f9 100%)',
+          background: 'linear-gradient(180deg, #1d4ed8 0%, #1e40af 40%, #cbd5e1 40%, #f8fafc 100%)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '6px',
-          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-          position: 'relative',
-          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           flexShrink: 0
         }}
       >
-        <div style={{ background: '#1e40af', padding: '4px 6px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>
+        <div style={{ background: '#1e40af', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
             GAISANO
           </div>
-          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#93c5fd' }}>GRAND</div>
         </div>
-        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '30px', height: '30px', background: '#475569', borderRadius: '2px 2px 0 0' }} />
-          <div style={{ width: '24px', height: '30px', background: '#3b82f6', borderRadius: '2px 2px 0 0' }} />
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '22px', height: '24px', background: '#3b82f6', borderRadius: '2px 2px 0 0' }} />
         </div>
       </div>
     );
@@ -138,28 +131,24 @@ export const StoreFacadeImage: React.FC<{ photoType?: string; storeName: string 
     return (
       <div
         style={{
-          width: '110px',
-          height: '86px',
+          width: '76px',
+          height: '76px',
           borderRadius: '12px',
-          background: 'linear-gradient(180deg, #dc2626 0%, #b91c1c 38%, #e2e8f0 38%, #f8fafc 100%)',
+          background: 'linear-gradient(180deg, #dc2626 0%, #b91c1c 40%, #e2e8f0 40%, #f8fafc 100%)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '6px',
-          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-          position: 'relative',
-          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           flexShrink: 0
         }}
       >
-        <div style={{ background: '#b91c1c', padding: '4px 4px', borderRadius: '4px', textAlign: 'center', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-          <div style={{ width: '14px', height: '14px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
-          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
-            ROBINSONS
-          </div>
+        <div style={{ background: '#b91c1c', padding: '2px 4px', borderRadius: '4px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
+          <div style={{ fontSize: '0.48rem', fontWeight: 800, color: '#ffffff' }}>ROBINSONS</div>
         </div>
-        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '40px', height: '30px', background: '#64748b', borderRadius: '2px 2px 0 0' }} />
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '24px', height: '24px', background: '#64748b', borderRadius: '2px 2px 0 0' }} />
         </div>
       </div>
     );
@@ -168,25 +157,23 @@ export const StoreFacadeImage: React.FC<{ photoType?: string; storeName: string 
   return (
     <div
       style={{
-        width: '110px',
-        height: '86px',
+        width: '76px',
+        height: '76px',
         borderRadius: '12px',
-        background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 40%, #e2e8f0 40%, #f8fafc 100%)',
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 6px',
+        justifyContent: 'center',
         flexShrink: 0
       }}
     >
-      <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#ffffff', textAlign: 'center' }}>
-        RETAIL STORE
-      </div>
-      <Tag size={28} color="#64748b" />
+      <Tag size={28} color="#2563eb" />
     </div>
   );
 };
+
+export const StoreFacadeImage = CompactStoreFacade;
 
 export type ScannerStepState =
   | 'SELECT_STORE'
@@ -204,7 +191,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
   // Store Selection State
   const [stores, setStores] = useState<Establishment[]>(defaultEstablishments);
-  const [selectedStore, setSelectedStore] = useState<Establishment>(defaultEstablishments[0]);
+  const [selectedStore, setSelectedStore] = useState<Establishment | null>(defaultEstablishments[0]);
+  const [recentlyUsedStore, setRecentlyUsedStore] = useState<Establishment | null>(defaultEstablishments[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent' | 'barangay'>('all');
 
@@ -231,13 +219,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     fetchStores();
   }, []);
 
+  // Body Scroll Locking for Full-Screen Camera
   useEffect(() => {
     if (scannerState === 'CAMERA_LIVE') {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
       startCamera();
     } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
       stopCamera();
     }
+
     return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
       stopCamera();
     };
   }, [scannerState, facingMode]);
@@ -271,7 +267,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         setSelectedStore(merged[0]);
       }
     } catch (err) {
-      console.warn('Using default verified stores for fallback:', err);
+      console.warn('Using verified store directory for fallback:', err);
     }
   };
 
@@ -303,9 +299,32 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
+  const handleCloseScanFlow = () => {
+    stopCamera();
+    resetAllScanData();
+    if (setActiveTab) {
+      setActiveTab('home');
+    }
+  };
+
+  const handleBack = () => {
+    if (scannerState === 'CAMERA_LIVE') {
+      stopCamera();
+      setScannerState('SELECT_STORE');
+    } else if (scannerState === 'CAPTURE_REVIEW') {
+      handleRetake();
+    } else if (scannerState === 'RESULT' || scannerState === 'ERROR') {
+      resetAllScanData();
+      setScannerState('SELECT_STORE');
+    } else {
+      handleCloseScanFlow();
+    }
+  };
+
   const handleStartScanForStore = (store: Establishment) => {
     resetAllScanData();
     setSelectedStore(store);
+    setRecentlyUsedStore(store);
     setScannerState('CAMERA_LIVE');
   };
 
@@ -343,8 +362,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   };
 
   const handleUploadAndAnalyze = async () => {
-    if (!capturedBlob) {
-      setErrorMessage('No captured frame available. Please retake the shelf tag image.');
+    if (!capturedBlob || !selectedStore) {
+      setErrorMessage('No captured frame or store selected. Please retake the image.');
       setScannerState('ERROR');
       return;
     }
@@ -357,7 +376,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       formData.append('image', capturedBlob, 'shelf_tag.jpg');
       formData.append('store_id', String(selectedStore.id));
 
-      setProcessingStage('Reading text & analyzing tag structure...');
+      setProcessingStage('Reading tag text & matching database records...');
 
       const res = await apiClient.post('/public/scan-tag', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -415,6 +434,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   };
 
   const executeComparison = async (candidate: Commodity, price: number) => {
+    if (!selectedStore) return;
+
     setScannerState('COMPARING');
     setProcessingStage('Fetching active price bulletin & history...');
 
@@ -446,8 +467,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     return (
       s.store_name.toLowerCase().includes(q) ||
       s.address.toLowerCase().includes(q) ||
-      s.owner_name.toLowerCase().includes(q) ||
-      (s.dti_sec_number && s.dti_sec_number.toLowerCase().includes(q))
+      s.owner_name.toLowerCase().includes(q)
     );
   });
 
@@ -471,185 +491,296 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   };
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', minHeight: '100vh', paddingBottom: '90px' }}>
-      {/* Stepper Progress Indicator */}
-      <div style={{ padding: '10px 16px', background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
-        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1d4ed8', marginBottom: '6px' }}>
-          {scannerState === 'SELECT_STORE' && 'Step 1 of 3 · Select Store'}
-          {scannerState === 'CAMERA_LIVE' && 'Step 2 of 3 · Live Camera Capture'}
-          {scannerState === 'CAPTURE_REVIEW' && 'Step 2 of 3 · Review Capture'}
-          {(scannerState === 'UPLOADING' || scannerState === 'CANDIDATE_SELECTION' || scannerState === 'ENTER_PRICE' || scannerState === 'COMPARING') && 'Step 2 of 3 · Processing Tag'}
-          {scannerState === 'RESULT' && 'Step 3 of 3 · Dynamic Comparison Result'}
-          {scannerState === 'ERROR' && 'Scan Notice · Error'}
-        </div>
-        <div style={{ height: '4px', width: '100%', background: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
-          <div
+    <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+      
+      {/* Dedicated Task Header Top Bar (Screens 1 & 3) */}
+      {scannerState !== 'CAMERA_LIVE' && (
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 16px',
+            height: '56px',
+            background: '#ffffff',
+            borderBottom: '1px solid #e2e8f0',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            flexShrink: 0
+          }}
+        >
+          <button
+            onClick={handleBack}
             style={{
-              height: '100%',
-              width:
-                scannerState === 'SELECT_STORE'
-                  ? '33%'
-                  : scannerState === 'RESULT'
-                  ? '100%'
-                  : '66%',
-              background: scannerState === 'ERROR' ? '#ef4444' : '#1d4ed8',
-              transition: 'width 0.3s ease'
+              minWidth: '44px',
+              minHeight: '44px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#0f172a',
+              borderRadius: '8px'
             }}
-          />
-        </div>
-      </div>
+            aria-label="Back"
+          >
+            <ArrowLeft size={22} />
+          </button>
 
-      {/* STATE 1: SELECT STORE */}
-      {scannerState === 'SELECT_STORE' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
-            Select the store
-          </h1>
-
-          <div style={{ position: 'relative' }}>
-            <Search style={{ position: 'absolute', left: '14px', top: '15px', color: '#94a3b8' }} size={18} />
-            <input
-              type="text"
-              className="input-field"
-              style={{
-                paddingLeft: '42px',
-                paddingRight: searchTerm ? '40px' : '16px',
-                height: '48px',
-                borderRadius: '14px',
-                fontSize: '0.92rem',
-                border: '1px solid #e2e8f0',
-                background: '#ffffff'
-              }}
-              placeholder="Search store name, barangay, or address"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                style={{ position: 'absolute', right: '12px', top: '13px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-              >
-                <X size={18} />
-              </button>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
-            <button
-              onClick={() => setActiveFilterChip(activeFilterChip === 'nearby' ? 'all' : 'nearby')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '12px',
-                border: activeFilterChip === 'nearby' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                background: activeFilterChip === 'nearby' ? '#eff6ff' : '#ffffff',
-                color: activeFilterChip === 'nearby' ? '#1d4ed8' : '#0f172a',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <MapPin size={16} color="#2563eb" />
-              Nearby stores
-            </button>
-
-            <button
-              onClick={() => setActiveFilterChip(activeFilterChip === 'recent' ? 'all' : 'recent')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '12px',
-                border: activeFilterChip === 'recent' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                background: activeFilterChip === 'recent' ? '#eff6ff' : '#ffffff',
-                color: activeFilterChip === 'recent' ? '#1d4ed8' : '#0f172a',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Clock size={16} color="#2563eb" />
-              Recently selected
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredStores.map((store) => {
-              const isSelected = selectedStore.id === store.id;
-              return (
-                <div
-                  key={store.id}
-                  onClick={() => setSelectedStore(store)}
-                  style={{
-                    background: '#ffffff',
-                    border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    gap: '14px',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.15)' : 'var(--shadow-sm)',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <StoreFacadeImage photoType={(store as any).photoType} storeName={store.store_name} />
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <CheckCircle2 size={15} color="#2563eb" />
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
-                        Verified store
-                      </span>
-                    </div>
-
-                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {store.store_name}
-                    </h3>
-
-                    <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 6px 0', lineHeight: 1.3 }}>
-                      {store.address}
-                    </p>
-
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500 }}>
-                      DTI SEC: {store.dti_sec_number}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      border: isSelected ? '7px solid #2563eb' : '2px solid #cbd5e1',
-                      background: '#ffffff',
-                      flexShrink: 0
-                    }}
-                  />
-                </div>
-              );
-            })}
+          <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+            {scannerState === 'SELECT_STORE' && 'Select a store'}
+            {scannerState === 'CAPTURE_REVIEW' && 'Review capture'}
+            {(scannerState === 'UPLOADING' || scannerState === 'CANDIDATE_SELECTION' || scannerState === 'ENTER_PRICE' || scannerState === 'COMPARING') && 'Scan shelf tag'}
+            {scannerState === 'RESULT' && 'Comparison result'}
+            {scannerState === 'ERROR' && 'Scan notice'}
           </div>
 
           <button
-            className="btn-primary"
-            onClick={() => handleStartScanForStore(selectedStore)}
-            style={{ width: '100%', height: '52px', fontSize: '1rem', fontWeight: 700, borderRadius: '14px', marginTop: '12px' }}
+            onClick={handleCloseScanFlow}
+            style={{
+              minWidth: '44px',
+              minHeight: '44px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#64748b',
+              borderRadius: '8px'
+            }}
+            aria-label="Close"
           >
-            Continue to Live Camera Scanner
+            <X size={22} />
           </button>
+        </header>
+      )}
+
+      {/* SCREEN 1: STORE SELECTION */}
+      {scannerState === 'SELECT_STORE' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            
+            {/* Search Input Bar */}
+            <div style={{ position: 'relative' }}>
+              <Search style={{ position: 'absolute', left: '14px', top: '17px', color: '#94a3b8' }} size={18} />
+              <input
+                type="text"
+                className="input-field"
+                style={{
+                  paddingLeft: '42px',
+                  paddingRight: searchTerm ? '40px' : '16px',
+                  height: '52px',
+                  borderRadius: '12px',
+                  fontSize: '0.95rem',
+                  border: '1px solid #e2e8f0',
+                  background: '#ffffff'
+                }}
+                placeholder="Search store name, barangay, or address"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  style={{ position: 'absolute', right: '12px', top: '15px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Filter Chips Bar */}
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none' }}>
+              <button
+                onClick={() => setActiveFilterChip(activeFilterChip === 'nearby' ? 'all' : 'nearby')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '9999px',
+                  border: activeFilterChip === 'nearby' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                  background: activeFilterChip === 'nearby' ? '#eff6ff' : '#ffffff',
+                  color: activeFilterChip === 'nearby' ? '#1d4ed8' : '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <MapPin size={14} color="#2563eb" />
+                Nearby stores
+              </button>
+
+              <button
+                onClick={() => setActiveFilterChip(activeFilterChip === 'recent' ? 'all' : 'recent')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '9999px',
+                  border: activeFilterChip === 'recent' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                  background: activeFilterChip === 'recent' ? '#eff6ff' : '#ffffff',
+                  color: activeFilterChip === 'recent' ? '#1d4ed8' : '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Clock size={14} color="#2563eb" />
+                Recently selected
+              </button>
+            </div>
+
+            {/* Recently Used Store Shortcut Card */}
+            {recentlyUsedStore && !searchTerm && (
+              <div
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '14px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase' }}>
+                    Recently Used
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                    {recentlyUsedStore.store_name}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    {recentlyUsedStore.address}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleStartScanForStore(recentlyUsedStore)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  Use this store
+                </button>
+              </div>
+            )}
+
+            {/* Compact Consumer Store Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {filteredStores.map((store) => {
+                const isSelected = selectedStore?.id === store.id;
+                return (
+                  <div
+                    key={store.id}
+                    onClick={() => setSelectedStore(store)}
+                    style={{
+                      background: '#ffffff',
+                      border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <CompactStoreFacade photoType={(store as any).photoType} storeName={store.store_name} />
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                        <CheckCircle2 size={14} color="#2563eb" />
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                          Verified store
+                        </span>
+                      </div>
+
+                      <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: '0 0 2px 0', lineHeight: 1.25 }}>
+                        {store.store_name}
+                      </h3>
+
+                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, lineHeight: 1.3 }}>
+                        {store.address}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartScanForStore(store);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        background: isSelected ? '#1d4ed8' : '#f1f5f9',
+                        color: isSelected ? '#ffffff' : '#0f172a',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        border: isSelected ? 'none' : '1px solid #cbd5e1',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
+                      }}
+                    >
+                      {isSelected ? 'Selected ✓' : 'Select'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sticky Bottom Action Area */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
+              background: '#ffffff',
+              borderTop: '1px solid #e2e8f0',
+              zIndex: 90
+            }}
+          >
+            <button
+              className="btn-primary"
+              disabled={!selectedStore}
+              onClick={() => selectedStore && handleStartScanForStore(selectedStore)}
+              style={{ width: '100%', height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
+            >
+              Continue to Live Camera
+            </button>
+          </div>
         </div>
       )}
 
-      {/* STATE 2: LIVE CAMERA STREAM */}
+      {/* SCREEN 2: TRUE FULL-SCREEN LIVE CAMERA PREVIEW */}
       {scannerState === 'CAMERA_LIVE' && (
-        <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 120px)', background: '#09090b', overflow: 'hidden' }}>
-          {/* Top Control Bar Overlay */}
+        <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden' }}>
+          
+          {/* Top Translucent Control Overlay */}
           <div
             style={{
               position: 'absolute',
@@ -660,21 +791,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '16px 20px',
-              background: 'linear-gradient(180deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%)'
+              padding: 'calc(12px + env(safe-area-inset-top)) 16px 12px 16px',
+              background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ffffff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff' }}>
               <MapPin size={16} color="#3b82f6" />
-              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                {selectedStore.store_name}
+              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>
+                {selectedStore?.store_name || 'Select Store'}
               </span>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={() => setFlashOn(!flashOn)}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 aria-label="Toggle flash"
               >
                 {flashOn ? <Zap size={20} /> : <ZapOff size={20} />}
@@ -682,15 +813,15 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
               <button
                 onClick={toggleCameraFacing}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 aria-label="Switch camera"
               >
                 <RotateCw size={20} />
               </button>
 
               <button
-                onClick={() => setScannerState('SELECT_STORE')}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                onClick={handleCloseScanFlow}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 aria-label="Close camera"
               >
                 <X size={22} />
@@ -715,65 +846,70 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
           )}
 
-          {/* Instruction Box Overlay */}
+          {/* Compact Instruction Overlay */}
           <div
             style={{
               position: 'absolute',
-              top: '65px',
-              left: '20px',
-              right: '20px',
+              top: 'calc(68px + env(safe-area-inset-top))',
+              left: '16px',
+              right: '16px',
               zIndex: 15,
-              background: 'rgba(15, 23, 42, 0.85)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '16px',
-              padding: '12px 16px',
+              background: 'rgba(15, 23, 42, 0.82)',
+              backdropFilter: 'blur(8px)',
+              borderRadius: '12px',
+              padding: '10px 14px',
               textAlign: 'center',
               color: '#ffffff'
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: '0.92rem', marginBottom: '2px' }}>
-              Position the physical shelf tag inside the frame.
+            <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>
+              Align the shelf tag inside the frame.
             </div>
-            <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
-              Include the product name, package size, and displayed price.
+            <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '2px' }}>
+              Include product name, package size, and displayed price.
             </div>
           </div>
 
-          {/* Framing Guides Overlay (NO Fake Shelf Tag Card Superimposed) */}
+          {/* Horizontal Shelf-Tag Framing Guide (Aspect Ratio ~2:1, Corner Bracket Marks Only) */}
           <div
             style={{
               position: 'absolute',
-              top: '50%',
+              top: '48%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               width: '85%',
-              maxWidth: '340px',
-              height: '180px',
+              maxWidth: '320px',
+              height: '130px',
               zIndex: 15,
               pointerEvents: 'none'
             }}
           >
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '32px', height: '32px', borderTop: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '8px 0 0 0' }} />
-            <div style={{ position: 'absolute', top: 0, right: 0, width: '32px', height: '32px', borderTop: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 8px 0 0' }} />
-            <div style={{ position: 'absolute', bottom: 0, left: 0, width: '32px', height: '32px', borderBottom: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '0 0 0 8px' }} />
-            <div style={{ position: 'absolute', bottom: 0, right: 0, width: '32px', height: '32px', borderBottom: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 0 8px 0' }} />
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '28px', height: '28px', borderTop: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '8px 0 0 0' }} />
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '28px', height: '28px', borderTop: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 8px 0 0' }} />
+            <div style={{ position: 'absolute', bottom: 0, left: 0, width: '28px', height: '28px', borderBottom: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '0 0 0 8px' }} />
+            <div style={{ position: 'absolute', bottom: 0, right: 0, width: '28px', height: '28px', borderBottom: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 0 8px 0' }} />
           </div>
 
-          {/* Shutter Button Overlay */}
+          {/* Bottom Capture Overlay */}
           <div
             style={{
               position: 'absolute',
-              bottom: '24px',
+              bottom: 0,
               left: 0,
               right: 0,
               zIndex: 20,
+              padding: '16px 16px calc(20px + env(safe-area-inset-bottom)) 16px',
+              background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '12px'
+              gap: '10px'
             }}
           >
+            <span style={{ fontSize: '0.78rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
+              Hold steady · Lighting looks good
+            </span>
+
             <button
               onClick={handleShutterCapture}
               style={{
@@ -801,31 +937,27 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               />
             </button>
 
-            <span style={{ fontSize: '0.8rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
-              ✔ Hold steady · Tap shutter to capture frame
+            <span style={{ fontSize: '0.78rem', color: '#cbd5e1', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 500 }}>
+              Tap to capture shelf tag
             </span>
           </div>
         </div>
       )}
 
-      {/* STATE 3: CAPTURE REVIEW */}
+      {/* CAPTURE REVIEW */}
       {scannerState === 'CAPTURE_REVIEW' && capturedPreviewUrl && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
             Review Captured Shelf Tag
           </h2>
-          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-            Verify that the product name and displayed price are clear before uploading for DTI analysis.
-          </p>
 
           <div
             style={{
               position: 'relative',
-              borderRadius: '16px',
+              borderRadius: '14px',
               overflow: 'hidden',
               border: '2px solid #e2e8f0',
-              boxShadow: 'var(--shadow-sm)',
-              maxHeight: '360px',
+              maxHeight: '340px',
               background: '#09090b',
               display: 'flex',
               alignItems: 'center',
@@ -834,24 +966,9 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           >
             <img
               src={capturedPreviewUrl}
-              alt="Captured Shelf Tag Frame"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '360px' }}
+              alt="Captured Shelf Tag"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '340px' }}
             />
-            <span
-              style={{
-                position: 'absolute',
-                top: '12px',
-                left: '12px',
-                background: 'rgba(15, 23, 42, 0.85)',
-                color: '#ffffff',
-                padding: '4px 10px',
-                borderRadius: '8px',
-                fontSize: '0.75rem',
-                fontWeight: 700
-              }}
-            >
-              ✔ Captured Frame
-            </span>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -873,7 +990,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               }}
             >
               <RefreshCw size={16} />
-              Retake Frame
+              Retake
             </button>
 
             <button
@@ -891,19 +1008,19 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               }}
             >
               <Check size={18} />
-              Use Capture
+              Use capture
             </button>
           </div>
         </div>
       )}
 
-      {/* STATE 4 & 7: UPLOADING / COMPARING PROGRESS */}
+      {/* UPLOADING / COMPARING PROGRESS */}
       {(scannerState === 'UPLOADING' || scannerState === 'COMPARING') && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center', gap: '16px' }}>
           <div
             style={{
-              width: '64px',
-              height: '64px',
+              width: '56px',
+              height: '56px',
               borderRadius: '50%',
               border: '4px solid #dbeafe',
               borderTopColor: '#1d4ed8',
@@ -922,14 +1039,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
-      {/* STATE 5: CANDIDATE SELECTION */}
+      {/* CANDIDATE SELECTION */}
       {scannerState === 'CANDIDATE_SELECTION' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
             Select Product Match
           </h2>
           <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-            We found possible matching regulated commodities for this shelf tag. Select the applicable product:
+            We found possible matching regulated commodities for this shelf tag:
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -986,10 +1103,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
-      {/* STATE 6: CONFIRM DISPLAYED PRICE */}
+      {/* CONFIRM DISPLAYED PRICE */}
       {scannerState === 'ENTER_PRICE' && selectedCandidate && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
             Confirm Displayed Shelf Price
           </h2>
 
@@ -1042,91 +1159,92 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
-      {/* STATE 8: DYNAMIC COMPARISON RESULT */}
+      {/* SCREEN 3: DYNAMIC COMPARISON RESULT */}
       {scannerState === 'RESULT' && comparisonResult && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <div style={{ textAlign: 'center', paddingTop: '8px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: '90px' }}>
+          
+          <div style={{ textAlign: 'center', paddingTop: '4px' }}>
             <div
               style={{
-                width: '64px',
-                height: '64px',
+                width: '56px',
+                height: '56px',
                 borderRadius: '50%',
                 background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fef3c7' : '#dcfce7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 12px auto',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                margin: '0 auto 10px auto',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
               }}
             >
-              <Scale size={32} color={comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'} />
+              <Scale size={28} color={comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'} />
             </div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
               Comparison Result
             </h1>
           </div>
 
-          {/* Store & Product Card */}
+          {/* Store & Product Section */}
           <div
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
-              borderRadius: '16px',
-              padding: '16px 20px',
+              borderRadius: '14px',
+              padding: '14px 16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '10px',
+              gap: '8px',
               boxShadow: 'var(--shadow-sm)'
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Store</span>
-              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700 }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Store</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
                 {comparisonResult.store.store_name}
               </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Product</span>
-              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700, textTransform: 'capitalize' }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Product</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
                 {comparisonResult.product.commodity_name}
               </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
-              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700 }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
                 {comparisonResult.product.unit || 'Standard'}
               </span>
             </div>
           </div>
 
-          {/* Price Comparison Card */}
+          {/* Prices Comparison Section */}
           <div
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
-              borderRadius: '16px',
-              padding: '18px 20px',
+              borderRadius: '14px',
+              padding: '16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '14px',
+              gap: '12px',
               boxShadow: 'var(--shadow-sm)'
             }}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div
                 style={{
                   background: '#f8fafc',
                   border: '1px solid #e2e8f0',
-                  borderRadius: '12px',
-                  padding: '12px 14px'
+                  borderRadius: '10px',
+                  padding: '10px 12px'
                 }}
               >
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, marginBottom: '2px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginBottom: '2px' }}>
                   Displayed Shelf Price
                 </div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#0f172a' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#0f172a' }}>
                   ₱{Number(comparisonResult.displayed_price).toFixed(2)}
                 </div>
               </div>
@@ -1135,17 +1253,17 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 style={{
                   background: '#eff6ff',
                   border: '1px solid #bfdbfe',
-                  borderRadius: '12px',
-                  padding: '12px 14px'
+                  borderRadius: '10px',
+                  padding: '10px 12px'
                 }}
               >
-                <div style={{ fontSize: '0.72rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
                   {comparisonResult.comparison_label}
                 </div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1d4ed8' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#1d4ed8' }}>
                   ₱{Number(comparisonResult.baseline_price).toFixed(2)}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: '#3b82f6', marginTop: '1px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
                   Effective {comparisonResult.product.effective_date}
                 </div>
               </div>
@@ -1156,9 +1274,9 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               style={{
                 background: '#f8fafc',
                 border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                fontSize: '0.82rem',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                fontSize: '0.8rem',
                 color: '#475569'
               }}
             >
@@ -1171,7 +1289,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                   on {comparisonResult.previous_recorded_date}.
                 </div>
               ) : (
-                <div>No verified historical store price is currently available for this store.</div>
+                <div>No verified historical store price is currently available.</div>
               )}
             </div>
 
@@ -1180,16 +1298,16 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               style={{
                 background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fffbeb' : '#f0fdf4',
                 border: comparisonResult.comparison_status === 'ABOVE_SRP' ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                borderRadius: '14px',
-                padding: '14px 16px',
+                borderRadius: '12px',
+                padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px'
+                gap: '2px'
               }}
             >
               <div
                 style={{
-                  fontSize: '0.95rem',
+                  fontSize: '0.9rem',
                   fontWeight: 800,
                   color: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'
                 }}
@@ -1203,73 +1321,107 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
           </div>
 
-          {/* Mandatory Legal Disclaimer Banner */}
+          {/* Informational Banner */}
           <div
             style={{
               background: '#fffbeb',
               border: '1px solid #fde68a',
-              borderRadius: '14px',
-              padding: '14px 16px',
+              borderRadius: '12px',
+              padding: '12px 14px',
               display: 'flex',
-              gap: '12px',
+              gap: '10px',
               alignItems: 'flex-start'
             }}
           >
-            <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.4 }}>
+            <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.78rem', color: '#92400e', lineHeight: 1.35 }}>
               <strong>INFORMATIONAL NOTICE:</strong> {comparisonResult.informational_notice}
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Sticky Bottom Actions */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
+              background: '#ffffff',
+              borderTop: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              zIndex: 90
+            }}
+          >
             <button
               className="btn-primary"
               onClick={handleReportWithReceipt}
-              style={{ height: '50px', fontSize: '0.95rem', fontWeight: 700, borderRadius: '12px' }}
+              style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
             >
               Report using receipt
             </button>
 
-            <button
-              onClick={handleRetake}
-              style={{
-                height: '48px',
-                borderRadius: '12px',
-                border: '1px solid #cbd5e1',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Scan another item
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                onClick={handleRetake}
+                style={{
+                  height: '42px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Scan another item
+              </button>
+
+              <button
+                onClick={() => setActiveTab && setActiveTab('prices')}
+                style={{
+                  height: '42px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#1d4ed8',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                View price history
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* STATE 9: ERROR STATE */}
+      {/* ERROR STATE */}
       {scannerState === 'ERROR' && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', gap: '16px' }}>
-          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <AlertTriangle size={32} />
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={28} />
           </div>
 
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
             We could not read this shelf tag
           </h2>
 
-          <p style={{ fontSize: '0.88rem', color: '#64748b', maxWidth: '360px', margin: 0, lineHeight: 1.4 }}>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', maxWidth: '340px', margin: 0, lineHeight: 1.4 }}>
             {errorMessage}
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '320px', marginTop: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
             <button
               className="btn-primary"
               onClick={handleRetake}
-              style={{ height: '48px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 700 }}
+              style={{ height: '46px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700 }}
             >
               Retake Image
             </button>
@@ -1277,12 +1429,12 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             <button
               onClick={() => setActiveTab && setActiveTab('prices')}
               style={{
-                height: '48px',
-                borderRadius: '12px',
+                height: '46px',
+                borderRadius: '10px',
                 border: '1px solid #cbd5e1',
                 background: '#ffffff',
                 color: '#0f172a',
-                fontSize: '0.9rem',
+                fontSize: '0.88rem',
                 fontWeight: 700,
                 cursor: 'pointer'
               }}

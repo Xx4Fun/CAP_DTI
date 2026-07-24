@@ -42,6 +42,8 @@ export const App: React.FC = () => {
     }
   };
 
+  const isScanTab = activeTab === 'scan' || activeTab === 'shelf-scanner';
+
   return (
     <div>
       <Navbar
@@ -50,8 +52,8 @@ export const App: React.FC = () => {
         stateOfCalamity={config?.state_of_calamity || false}
       />
 
-      <main className="app-container">
-        <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />
+      <main className={isScanTab ? 'app-scan-container' : 'app-container'}>
+        {!isScanTab && <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />}
 
         {activeTab === 'home' && (
           <Home
