@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  ArrowLeft,
   X,
   Search,
   MapPin,
@@ -315,93 +314,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     }
   };
 
-  const handleBack = () => {
-    if (step === 3) {
-      setStep(2);
-    } else if (step === 2) {
-      setStep(1);
-    } else if (setActiveTab) {
-      setActiveTab('home');
-    }
-  };
-
-  const handleClose = () => {
-    if (setActiveTab) {
-      setActiveTab('home');
-    } else {
-      setStep(1);
-    }
-  };
-
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', background: '#f8fafc', minHeight: '100vh', paddingBottom: '90px' }}>
-      {/* 1. Header Bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 16px',
-          background: '#ffffff',
-          borderBottom: '1px solid #e2e8f0',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={handleBack}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px',
-              color: '#0f172a',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-            aria-label="Back"
-          >
-            <ArrowLeft size={22} />
-          </button>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '9px',
-                background: '#1d4ed8',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 4px rgba(29, 78, 216, 0.2)'
-              }}
-            >
-              <Tag size={18} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-                PRICE-Watch
-              </div>
-              <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 500 }}>
-                Consumer Price Guide
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={handleClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}
-          aria-label="Close"
-        >
-          <X size={22} />
-        </button>
-      </div>
-
       {/* Stepper Progress Indicator */}
       <div style={{ padding: '10px 16px', background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1d4ed8', marginBottom: '6px' }}>
@@ -667,14 +581,6 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               background: 'linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)'
             }}
           >
-            <button
-              onClick={() => setStep(1)}
-              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              aria-label="Close scanner"
-            >
-              <X size={22} />
-            </button>
-
             {/* Flash toggle */}
             <button
               onClick={() => setFlashOn(!flashOn)}

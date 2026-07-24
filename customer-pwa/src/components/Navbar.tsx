@@ -12,28 +12,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
     <>
       <header className="navbar-top">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '10px',
-            background: stateOfCalamity ? '#ef4444' : '#1d4ed8',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            fontWeight: 'bold',
-            boxShadow: '0 2px 4px rgba(29, 78, 216, 0.2)'
-          }}>
-            <Tag size={20} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#0f172a' }}>
-              PRICE-Watch
-            </div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 500 }}>
-              Consumer Price Guide
-            </div>
-          </div>
+          <img
+            src="/logo.png"
+            alt="PRICE-Watch Consumer Price Guide"
+            style={{ height: '38px', width: 'auto', objectFit: 'contain' }}
+          />
         </div>
 
         {stateOfCalamity ? (
