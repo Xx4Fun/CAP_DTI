@@ -1,299 +1,64 @@
-import React, { useState, useEffect } from 'react';
-import { Search, CheckCircle, Clock, ShieldCheck, ArrowLeft, Copy, Check, AlertTriangle, FileSearch, Building2, Calendar } from 'lucide-react';
-import { apiClient, type TrackReportResponse, type StatusHistoryItem } from '../api/client';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ArrowLeft, CalendarDays, ClipboardPaste, FileSearch, MapPin, Search } from 'lucide-react';
+import { apiClient, type TrackReportResponse } from '../api/client';
+import type { AppRoute } from '../app/routing';
+import { deriveTimelineItems } from '../app/status';
+import { CopyButton } from './ui/CopyButton';
+import { Field, PasswordField } from './ui/Field';
+import { StatusBanner } from './ui/StatusBanner';
 
-interface TrackReportProps {
-  initialReference?: string;
-  initialToken?: string;
-  setActiveTab?: (tab: string) => void;
-}
+type TrackReportProps = { initialReference?: string; initialToken?: string; onNavigate: (route: AppRoute) => void };
 
-export const TrackReport: React.FC<TrackReportProps> = ({
-  initialReference = '',
-  initialToken = '',
-  setActiveTab,
-}) => {
+export function TrackReport({ initialReference = '', initialToken = '', onNavigate }: TrackReportProps) {
   const [reference, setReference] = useState(initialReference);
   const [token, setToken] = useState(initialToken);
   const [report, setReport] = useState<TrackReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [copiedRef, setCopiedRef] = useState(false);
+  const [pasteFeedback, setPasteFeedback] = useState('');
 
-  useEffect(() => {
-    if (initialReference && initialToken) {
-      setReference(initialReference);
-      setToken(initialToken);
-      executeTracking(initialReference, initialToken);
-    }
-  }, [initialReference, initialToken]);
-
-  const executeTracking = async (refVal: string, tokVal: string) => {
-    if (!refVal || !tokVal) {
-      setError('Please provide both the Report Reference Code and Secret Tracking Token.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setReport(null);
-
+  const execute = async (referenceValue: string, tokenValue: string) => {
+    if (!referenceValue.trim() || !tokenValue.trim()) { setError('Enter both the report reference and secret tracking token.'); return; }
+    setLoading(true); setError(''); setReport(null);
     try {
-      const res = await apiClient.get('/public/reports/track', {
-        params: { reference: refVal.trim(), token: tokVal.trim() }
-      });
-
-      if (res.data && res.data.success) {
-        setReport(res.data.data);
-      } else {
-        throw new Error('API returned unsuccesful tracking query');
-      }
-    } catch (err: any) {
-      // Fallback demo mock if backend response is not available or for demo reference code PW-2026-00184
-      if (refVal.trim().toUpperCase().startsWith('PW-') || refVal.trim().toUpperCase().startsWith('REP-')) {
-        const mockResponse: TrackReportResponse = {
-          report_reference: refVal.trim().toUpperCase(),
-          store_name: 'Super Metro San Jose',
-          current_status: 'Submitted for initial evaluation',
-          submitted_at: new Date().toISOString(),
-          status_history: [
-            {
-              status: 'Submitted',
-              public_message: 'Receipt captured via live camera and vaulted in secure DTI storage.',
-              timestamp: new Date().toISOString(),
-            },
-            {
-              status: 'Under Evaluation',
-              public_message: 'Authorized DTI evaluator cross-referencing OCR data with official SRP bulletins.',
-              timestamp: new Date(Date.now() + 1800000).toISOString(),
-            },
-            {
-              status: 'Field Inspection Dispatched',
-              public_message: 'Scheduled for physical on-site store monitoring by Antique DTI field officers.',
-              timestamp: 'Pending evaluation completion',
-            },
-            {
-              status: 'Resolved / Dismissed',
-              public_message: 'Administrative disposition pending regulatory findings.',
-              timestamp: 'Pending field inspection',
-            }
-          ]
-        };
-        setReport(mockResponse);
-      } else {
-        setError(err.response?.data?.message || 'Report not found or invalid tracking token. Please verify your reference and secret code.');
-      }
-    } finally {
-      setLoading(false);
-    }
+      const response = await apiClient.get('/public/reports/track', { params: { reference: referenceValue.trim(), token: tokenValue.trim() } });
+      if (!response.data?.success || !response.data.data) throw new Error(response.data?.message || 'No report matched those credentials.');
+      setReport(response.data.data);
+    } catch (reason) {
+      const message = typeof reason === 'object' && reason !== null && 'response' in reason
+        ? (reason as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(message || (reason instanceof Error ? reason.message : 'No report matched those credentials. Check both codes and try again.'));
+    } finally { setLoading(false); }
   };
 
-  const handleTrackSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    executeTracking(reference, token);
+  useEffect(() => { if (initialReference && initialToken) void execute(initialReference, initialToken); }, [initialReference, initialToken]);
+  const submit = (event: FormEvent) => { event.preventDefault(); void execute(reference, token); };
+  const pasteToken = async () => {
+    try { const value = await navigator.clipboard.readText(); setToken(value); setPasteFeedback('Secret token pasted.'); }
+    catch { setPasteFeedback('Clipboard permission was not available. Paste into the field manually.'); }
   };
+  const timeline = report ? deriveTimelineItems(report.status_history, report.current_status) : [];
 
-  const handleCopyRef = () => {
-    if (report) {
-      navigator.clipboard.writeText(report.report_reference);
-      setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 2000);
-    }
-  };
+  return <section className="tracking-page" aria-labelledby="tracking-title">
+    <button className="back-link" type="button" onClick={() => onNavigate({ name: 'reports' })}><ArrowLeft aria-hidden="true" /> Back to reports</button>
+    <header className="page-header"><p className="page-kicker">Private report access</p><h1 id="tracking-title">Track report status</h1><p className="page-intro">Enter both credentials exactly as shown after submission. The secret token is not stored in this browser.</p></header>
+    <div className="tracking-layout">
+      <form className="workflow-card tracking-form" onSubmit={submit}>
+        <div className="section-heading"><FileSearch aria-hidden="true" /><div><h2>Report credentials</h2><p>Both fields are required.</p></div></div>
+        <Field label="Report reference number" name="reference" autoComplete="off" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="e.g. REP-20260725-A8F2" />
+        <div className="token-field-row"><PasswordField label="Secret tracking token" revealLabel="secret tracking token" name="token" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Enter the private token" />{'clipboard' in navigator && typeof navigator.clipboard.readText === 'function' && <button className="button button--quiet" type="button" onClick={() => void pasteToken()}><ClipboardPaste aria-hidden="true" /> Paste</button>}</div>
+        <span className="ui-sr-only" role="status" aria-live="polite">{pasteFeedback}</span>
+        {error && <StatusBanner variant="error" title="Report not found">{error}</StatusBanner>}
+        <button className="button button--primary" type="submit" disabled={loading}><Search aria-hidden="true" /> {loading ? 'Checking status…' : 'Track report'}</button>
+      </form>
 
-  const getStatusBadge = (status: string) => {
-    const s = status.toLowerCase();
-    if (s.includes('resolved') || s.includes('complete') || s.includes('validated')) {
-      return <span className="badge badge-green">✓ {status}</span>;
-    }
-    if (s.includes('dispatched') || s.includes('inspection')) {
-      return <span className="badge badge-blue">🔍 {status}</span>;
-    }
-    return <span className="badge badge-amber">⏱ {status}</span>;
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>Track Report Status</h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            View the real-time evaluation status and public audit trail for your submitted report.
-          </p>
-        </div>
-        {setActiveTab && (
-          <button
-            className="btn-secondary"
-            style={{ width: 'auto', padding: '8px 14px', fontSize: '0.82rem' }}
-            onClick={() => setActiveTab('reports')}
-          >
-            <ArrowLeft size={16} /> Back to Reports
-          </button>
-        )}
-      </div>
-
-      {/* Tracking Search Card */}
-      <div className="glass-panel" style={{ margin: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-          <div className="icon-wrapper-green">
-            <FileSearch size={22} />
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>Enter Report Credentials</div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Required to access protected report tracking logs</div>
-          </div>
-        </div>
-
-        <form onSubmit={handleTrackSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-              PUBLIC REPORT REFERENCE CODE
-            </label>
-            <input
-              type="text"
-              className="input-field"
-              placeholder="e.g. PW-2026-00184 or REP-20260724-A8F2"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-              SECRET TRACKING TOKEN
-            </label>
-            <input
-              type="password"
-              className="input-field"
-              placeholder="e.g. trk_9a8b7c6d5e4f3a2b..."
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              required
-            />
-          </div>
-
-          {error && (
-            <div className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
-              <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div>{error}</div>
-            </div>
-          )}
-
-          <button className="btn-primary" type="submit" disabled={loading}>
-            <Search size={18} />
-            {loading ? 'Checking Status...' : 'Track Report Status'}
-          </button>
-        </form>
-      </div>
-
-      {/* Report Result Timeline */}
-      {report && (
-        <div className="glass-panel" style={{ margin: 0 }}>
-          {/* Header Summary Box */}
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '20px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                  PUBLIC REPORT REFERENCE
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    {report.report_reference}
-                  </span>
-                  <button
-                    onClick={handleCopyRef}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
-                    title="Copy Reference"
-                  >
-                    {copiedRef ? <Check size={16} color="var(--accent-green)" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {getStatusBadge(report.current_status)}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Building2 size={13} /> ESTABLISHMENT
-                </div>
-                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)', marginTop: '2px' }}>
-                  {report.store_name}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Calendar size={13} /> SUBMITTED ON
-                </div>
-                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginTop: '2px' }}>
-                  {isNaN(Date.parse(report.submitted_at))
-                    ? report.submitted_at
-                    : new Date(report.submitted_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Stepper Title */}
-          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Clock size={18} color="var(--primary)" /> Evaluation Progress & Public Timeline
-          </div>
-
-          {/* Timeline Items */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {report.status_history.map((item: StatusHistoryItem, idx: number) => {
-              const isCompleted = idx === 0 || idx < report.status_history.length - 2;
-              const isActive = idx === 1;
-
-              return (
-                <div
-                  key={idx}
-                  className={`stepper-item ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
-                >
-                  <div className="stepper-icon">
-                    {isCompleted ? <CheckCircle size={18} /> : (idx + 1)}
-                  </div>
-                  <div style={{ flex: 1, paddingTop: '2px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                        {item.status}
-                      </span>
-                      {isActive && <span className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>In Progress</span>}
-                    </div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
-                      {item.public_message}
-                    </p>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px', fontWeight: 500 }}>
-                      {isNaN(Date.parse(item.timestamp))
-                        ? item.timestamp
-                        : new Date(item.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Security Note */}
-          <div className="banner-info" style={{ marginTop: '16px' }}>
-            <ShieldCheck size={18} style={{ flexShrink: 0 }} />
-            <div>
-              <strong>Privacy & Anonymity Protected:</strong> Specific internal investigative notes and store-owner rebuttal uploads are restricted to authorized DTI legal evaluators.
-            </div>
-          </div>
-        </div>
-      )}
+      {report ? <article className="tracking-result" aria-labelledby="tracking-result-title">
+        <div className="tracking-summary"><div><p className="page-kicker">Public report reference</p><div className="reference-line"><h2 id="tracking-result-title">{report.report_reference}</h2><CopyButton value={report.report_reference} label="Copy reference number" /></div></div><span className="status-chip">{report.current_status}</span></div>
+        <dl className="tracking-meta"><div><dt><MapPin aria-hidden="true" /> Establishment</dt><dd>{report.store_name}</dd></div><div><dt><CalendarDays aria-hidden="true" /> Submitted</dt><dd>{Number.isNaN(Date.parse(report.submitted_at)) ? report.submitted_at : new Date(report.submitted_at).toLocaleString()}</dd></div></dl>
+        <section className="timeline" aria-labelledby="timeline-title"><h3 id="timeline-title">Evaluation timeline</h3><ol>{timeline.map((item, index) => <li className={`timeline-item is-${item.state}`} key={`${item.status}-${index}`}><span className="timeline-marker" aria-hidden="true" /><div><div className="timeline-label"><strong aria-current={item.state === 'current' ? 'step' : undefined}>{item.status}</strong><small>{item.state === 'completed' ? 'Completed' : item.state === 'current' ? 'Current status' : 'Upcoming'}</small></div><p>{item.public_message}</p><time>{Number.isNaN(Date.parse(item.timestamp)) ? item.timestamp : new Date(item.timestamp).toLocaleString()}</time></div></li>)}</ol></section>
+        <StatusBanner title="Status comes from the DTI reporting service">Updates appear here after authorized personnel record them.</StatusBanner>
+      </article> : <aside className="tracking-placeholder"><FileSearch aria-hidden="true" /><h2>Your report timeline will appear here</h2><p>Credentials are checked securely and are not added to the page URL.</p></aside>}
     </div>
-  );
-};
-
-export default TrackReport;
+  </section>;
+}
