@@ -5,7 +5,23 @@ import { fallbackCommodities } from '../data/srpFallback';
 
 export const SrpSearch: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [commodities, setCommodities] = useState<Commodity[]>(fallbackCommodities);
+  const [commodities, setCommodities] = useState<Commodity[]>(() => {
+    // Priority 1: Synced DTI Admin cache from localStorage
+    try {
+      const cached = localStorage.getItem('price_watch_srp_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading initial localStorage cache:', e);
+    }
+    // Priority 2: Initial bundled 167 items fallback
+    return fallbackCommodities;
+  });
+
   const [loading, setLoading] = useState(false);
   const [isCachedMode, setIsCachedMode] = useState(false);
 
@@ -24,8 +40,18 @@ export const SrpSearch: React.FC = () => {
       });
 
       if (res.data && res.data.success && Array.isArray(res.data.data)) {
-        setCommodities(res.data.data);
+        const liveData: Commodity[] = res.data.data;
+        setCommodities(liveData);
         setIsCachedMode(false);
+
+        // Update local storage cache with newest DTI Admin prices whenever online
+        if (!query && liveData.length > 0) {
+          try {
+            localStorage.setItem('price_watch_srp_cache', JSON.stringify(liveData));
+          } catch (e) {
+            console.warn('Unable to save latest DTI Admin prices to localStorage:', e);
+          }
+        }
       } else {
         throw new Error('Invalid response structure');
       }
@@ -33,17 +59,31 @@ export const SrpSearch: React.FC = () => {
       console.warn('API connection offline or unavailable. Operating in local fallback mode:', err);
       setIsCachedMode(true);
 
-      // Perform fast, local fuzzy search on bundled 167 SRP commodities dataset
+      // Determine offline dataset: Priority 1 = Latest synced DTI Admin data, Priority 2 = Bundled fallback
+      let baseDataSet = fallbackCommodities;
+      try {
+        const cached = localStorage.getItem('price_watch_srp_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            baseDataSet = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading from localStorage cache:', e);
+      }
+
+      // Perform fast, local fuzzy search on the latest available dataset
       const q = query.toLowerCase().trim();
       const filtered = q
-        ? fallbackCommodities.filter(
+        ? baseDataSet.filter(
             (item) =>
               item.commodity_name.toLowerCase().includes(q) ||
               (item.category && item.category.toLowerCase().includes(q)) ||
               (item.unit && item.unit.toLowerCase().includes(q)) ||
               (item.regulatory_classification && item.regulatory_classification.toLowerCase().includes(q))
           )
-        : fallbackCommodities;
+        : baseDataSet;
 
       setCommodities(filtered);
     } finally {
@@ -89,7 +129,7 @@ export const SrpSearch: React.FC = () => {
 
       {isCachedMode && (
         <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', color: '#fbbf24', fontSize: '0.82rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Info size={16} /> Displaying offline SRP bulletin reference ({fallbackCommodities.length} items available)
+          <Info size={16} /> Displaying cached SRP reference ({commodities.length} items available)
         </div>
       )}
 
