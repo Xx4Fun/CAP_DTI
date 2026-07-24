@@ -48,6 +48,49 @@ export interface Establishment {
   recidivism_index: number;
 }
 
+export interface ScanTagResponse {
+  scan_id: string;
+  store: {
+    id: number;
+    store_name: string;
+    address: string;
+    dti_sec_number?: string;
+  };
+  detected_price: number | null;
+  ocr_status: string;
+  candidates: Commodity[];
+  timestamp: string;
+}
+
+export interface ComparisonResultResponse {
+  store: {
+    id: number;
+    store_name: string;
+    address: string;
+    dti_sec_number?: string;
+  };
+  product: {
+    id: number;
+    commodity_name: string;
+    category?: string;
+    unit?: string;
+    regulatory_classification?: string;
+    baseline_price: number;
+    effective_date: string;
+  };
+  displayed_price: number;
+  baseline_price: number;
+  comparison_label: string;
+  comparison_status: 'ABOVE_SRP' | 'MATCHES_SRP' | 'BELOW_SRP';
+  difference_pesos: number;
+  percentage_srp: number;
+  previous_verified_price: number | null;
+  previous_recorded_date: string | null;
+  percentage_previous: number | null;
+  state_of_calamity: boolean;
+  informational_notice: string;
+}
+
 export interface CaptureSessionResponse {
   capture_session_id: number;
   session_uuid: string;

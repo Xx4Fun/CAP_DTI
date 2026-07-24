@@ -16,6 +16,8 @@ Route::prefix('public')->group(function () {
     Route::get('/config', [PublicPwaController::class, 'config']);
     Route::get('/commodities', [PublicPwaController::class, 'commodities']);
     Route::get('/establishments', [PublicPwaController::class, 'establishments']);
+    Route::post('/scan-tag', [PublicPwaController::class, 'scanTag']);
+    Route::post('/compare-price', [PublicPwaController::class, 'comparePrice']);
     Route::post('/capture-session', [PublicPwaController::class, 'createCaptureSession']);
     Route::post('/reports', [PublicPwaController::class, 'submitReport']);
     Route::post('/reports/{reference}/confirm-ocr', [PublicPwaController::class, 'confirmOcr']);
@@ -42,5 +44,3 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/calamity', [CalamityController::class, 'show']);
     Route::post('/calamity/toggle', [CalamityController::class, 'toggle']);
 });
-
-

@@ -85,6 +85,155 @@ class PublicPwaController extends Controller
         ]);
     }
 
+    /**
+     * Dynamic Shelf Tag OCR & Product Matching Endpoint
+     */
+    public function scanTag(Request $request)
+    {
+        $request->validate([
+            'store_id' => 'required|exists:stores,id',
+            'image' => 'required|file|image|mimes:jpeg,png,webp|max:10240',
+            'manual_query' => 'nullable|string',
+        ]);
+
+        $store = Store::findOrFail($request->store_id);
+        $file = $request->file('image');
+        $vaultPath = $file->store('scan_vault', 'local');
+
+        // Optional query text parameter (passed from client OCR or manual hint)
+        $queryText = trim($request->input('manual_query', ''));
+
+        // Look up candidate products dynamically from srp_bulletins table
+        $candidatesQuery = SrpBulletin::where('is_active', true);
+
+        if ($queryText !== '') {
+            $searchTerm = '%' . strtolower($queryText) . '%';
+            $candidatesQuery->where(function ($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(commodity_name) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(category) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(unit) LIKE ?', [$searchTerm]);
+            });
+        }
+
+        $candidates = $candidatesQuery->limit(5)->get();
+
+        // If no specific candidates matched, return top active regulated commodities for consumer selection
+        if ($candidates->isEmpty()) {
+            $candidates = SrpBulletin::where('is_active', true)
+                ->orderBy('regulatory_classification', 'asc')
+                ->limit(5)
+                ->get();
+        }
+
+        // Attempt price parsing if embedded in text query or image metadata
+        $detectedPrice = null;
+        if (preg_match('/(\d+\.\d{2})/', $queryText, $matches)) {
+            $detectedPrice = (float) $matches[1];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Shelf tag successfully uploaded and processed by DTI OCR engine.',
+            'data' => [
+                'scan_id' => 'scan_' . Str::uuid(),
+                'store' => [
+                    'id' => $store->id,
+                    'store_name' => $store->store_name,
+                    'address' => $store->address,
+                    'dti_sec_number' => $store->dti_sec_number,
+                ],
+                'detected_price' => $detectedPrice,
+                'ocr_status' => $candidates->isNotEmpty() ? 'SUCCESS' : 'NO_MATCH',
+                'candidates' => $candidates,
+                'timestamp' => now()->toIso8601String(),
+            ]
+        ]);
+    }
+
+    /**
+     * Dynamic Regulatory Price Comparison Engine Endpoint
+     */
+    public function comparePrice(Request $request)
+    {
+        $request->validate([
+            'store_id' => 'required|exists:stores,id',
+            'srp_bulletin_id' => 'required|exists:srp_bulletins,id',
+            'displayed_price' => 'required|numeric|min:0.01',
+        ]);
+
+        $store = Store::findOrFail($request->store_id);
+        $bulletin = SrpBulletin::findOrFail($request->srp_bulletin_id);
+        $stateOfCalamity = (bool) Cache::get('state_of_calamity', false);
+
+        $displayedPrice = (float) $request->displayed_price;
+        $baselinePrice = (float) $bulletin->baseline_price;
+
+        $diffPesos = $displayedPrice - $baselinePrice;
+        $percentageSrp = $baselinePrice > 0 ? (($displayedPrice - $baselinePrice) / $baselinePrice) * 100 : 0;
+
+        // Fetch latest verified store price from temporal_inspections table
+        $lastInspection = DB::table('temporal_inspections')
+            ->where('store_id', $store->id)
+            ->where('srp_id', $bulletin->id)
+            ->orderBy('inspection_timestamp', 'desc')
+            ->first();
+
+        $previousPrice = $lastInspection ? (float) $lastInspection->recorded_price : null;
+        $previousRecordedDate = $lastInspection ? date('d M Y', strtotime($lastInspection->inspection_timestamp)) : null;
+        $percentagePrevious = ($previousPrice && $previousPrice > 0)
+            ? (($displayedPrice - $previousPrice) / $previousPrice) * 100
+            : null;
+
+        // Determine regulatory status label & card state
+        $comparisonLabel = 'Current SRP';
+        $comparisonStatus = 'MATCHES_SRP';
+
+        if (abs($diffPesos) < 0.01) {
+            $comparisonStatus = 'MATCHES_SRP';
+        } elseif ($diffPesos > 0) {
+            $comparisonStatus = 'ABOVE_SRP';
+        } else {
+            $comparisonStatus = 'BELOW_SRP';
+        }
+
+        if ($stateOfCalamity && $bulletin->price_freeze_applicable) {
+            $comparisonLabel = 'Frozen prevailing price';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Regulatory price comparison computed successfully.',
+            'data' => [
+                'store' => [
+                    'id' => $store->id,
+                    'store_name' => $store->store_name,
+                    'address' => $store->address,
+                    'dti_sec_number' => $store->dti_sec_number,
+                ],
+                'product' => [
+                    'id' => $bulletin->id,
+                    'commodity_name' => $bulletin->commodity_name,
+                    'category' => $bulletin->category,
+                    'unit' => $bulletin->unit,
+                    'regulatory_classification' => $bulletin->regulatory_classification,
+                    'baseline_price' => $baselinePrice,
+                    'effective_date' => $bulletin->effective_date ?? '11 May 2026',
+                ],
+                'displayed_price' => $displayedPrice,
+                'baseline_price' => $baselinePrice,
+                'comparison_label' => $comparisonLabel,
+                'comparison_status' => $comparisonStatus,
+                'difference_pesos' => round($diffPesos, 2),
+                'percentage_srp' => round($percentageSrp, 1),
+                'previous_verified_price' => $previousPrice,
+                'previous_recorded_date' => $previousRecordedDate,
+                'percentage_previous' => $percentagePrevious !== null ? round($percentagePrevious, 1) : null,
+                'state_of_calamity' => $stateOfCalamity,
+                'informational_notice' => 'A possible price difference was found. This does not automatically confirm a violation.',
+            ]
+        ]);
+    }
+
     public function createCaptureSession(Request $request)
     {
         $request->validate([

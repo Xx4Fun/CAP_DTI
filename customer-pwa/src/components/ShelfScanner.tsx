@@ -4,7 +4,6 @@ import {
   Search,
   MapPin,
   Clock,
-  Filter,
   CheckCircle2,
   Zap,
   ZapOff,
@@ -12,13 +11,17 @@ import {
   Camera,
   Scale,
   AlertTriangle,
-  FileText,
-  ScanLine,
-  ChevronRight,
   Tag,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
-import { apiClient, type Establishment } from '../api/client';
+import {
+  apiClient,
+  type Establishment,
+  type Commodity,
+  type ScanTagResponse,
+  type ComparisonResultResponse
+} from '../api/client';
 
 interface ShelfScannerProps {
   setActiveTab?: (tab: string) => void;
@@ -185,21 +188,42 @@ export const StoreFacadeImage: React.FC<{ photoType?: string; storeName: string 
   );
 };
 
-export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+export type ScannerStepState =
+  | 'SELECT_STORE'
+  | 'CAMERA_LIVE'
+  | 'CAPTURE_REVIEW'
+  | 'UPLOADING'
+  | 'CANDIDATE_SELECTION'
+  | 'ENTER_PRICE'
+  | 'COMPARING'
+  | 'RESULT'
+  | 'ERROR';
 
-  // Step 1 State
+export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
+  const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
+
+  // Store Selection State
   const [stores, setStores] = useState<Establishment[]>(defaultEstablishments);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('1');
+  const [selectedStore, setSelectedStore] = useState<Establishment>(defaultEstablishments[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent' | 'barangay'>('all');
 
-  // Step 2 State
+  // Camera & Capture State
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [flashOn, setFlashOn] = useState(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [cameraError, setCameraError] = useState('');
-  const [scanning, setScanning] = useState(false);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+  const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
+
+  // Dynamic Scan & Candidate Matching State
+  const [processingStage, setProcessingStage] = useState<string>('Uploading shelf tag...');
+  const [scanResponse, setScanResponse] = useState<ScanTagResponse | null>(null);
+  const [candidates, setCandidates] = useState<Commodity[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<Commodity | null>(null);
+  const [userPriceInput, setUserPriceInput] = useState<string>('');
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -208,7 +232,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   }, []);
 
   useEffect(() => {
-    if (step === 2) {
+    if (scannerState === 'CAMERA_LIVE') {
       startCamera();
     } else {
       stopCamera();
@@ -216,13 +240,26 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     return () => {
       stopCamera();
     };
-  }, [step, facingMode]);
+  }, [scannerState, facingMode]);
+
+  const resetAllScanData = () => {
+    if (capturedPreviewUrl) {
+      URL.revokeObjectURL(capturedPreviewUrl);
+    }
+    setCapturedBlob(null);
+    setCapturedPreviewUrl(null);
+    setScanResponse(null);
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setUserPriceInput('');
+    setComparisonResult(null);
+    setErrorMessage('');
+  };
 
   const fetchStores = async () => {
     try {
       const res = await apiClient.get('/public/establishments');
       if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-        // Merge API stores with defaults to preserve rich prototype store metadata
         const apiStores: Establishment[] = res.data.data;
         const merged = [...defaultEstablishments];
         apiStores.forEach((s) => {
@@ -231,9 +268,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           }
         });
         setStores(merged);
+        setSelectedStore(merged[0]);
       }
     } catch (err) {
-      console.warn('Using default verified stores for offline/fallback:', err);
+      console.warn('Using default verified stores for fallback:', err);
     }
   };
 
@@ -250,7 +288,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       }
     } catch (err) {
       console.warn('Camera stream error:', err);
-      setCameraError('Camera access unavailable on this device. Position shelf tag framing overlay below.');
+      setCameraError('Camera access is unavailable on this device or permission was denied.');
     }
   };
 
@@ -265,19 +303,142 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
-  const handleSelectStore = (store: Establishment) => {
-    setSelectedStoreId(String(store.id));
+  const handleStartScanForStore = (store: Establishment) => {
+    resetAllScanData();
+    setSelectedStore(store);
+    setScannerState('CAMERA_LIVE');
   };
 
-  const handleCaptureAndScan = () => {
-    setScanning(true);
-    setTimeout(() => {
-      setScanning(false);
-      setStep(3);
-    }, 600);
+  const handleShutterCapture = () => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const previewUrl = URL.createObjectURL(blob);
+          setCapturedBlob(blob);
+          setCapturedPreviewUrl(previewUrl);
+          stopCamera();
+          setScannerState('CAPTURE_REVIEW');
+        }
+      },
+      'image/jpeg',
+      0.9
+    );
   };
 
-  const selectedStore = stores.find((s) => String(s.id) === selectedStoreId) || defaultEstablishments[0];
+  const handleRetake = () => {
+    resetAllScanData();
+    setScannerState('CAMERA_LIVE');
+  };
+
+  const handleUploadAndAnalyze = async () => {
+    if (!capturedBlob) {
+      setErrorMessage('No captured frame available. Please retake the shelf tag image.');
+      setScannerState('ERROR');
+      return;
+    }
+
+    setScannerState('UPLOADING');
+    setProcessingStage('Uploading shelf tag image to DTI server...');
+
+    try {
+      const formData = new FormData();
+      formData.append('image', capturedBlob, 'shelf_tag.jpg');
+      formData.append('store_id', String(selectedStore.id));
+
+      setProcessingStage('Reading text & analyzing tag structure...');
+
+      const res = await apiClient.post('/public/scan-tag', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (res.data && res.data.success && res.data.data) {
+        const scanData: ScanTagResponse = res.data.data;
+        setScanResponse(scanData);
+
+        const fetchedCandidates: Commodity[] = scanData.candidates || [];
+        setCandidates(fetchedCandidates);
+
+        if (scanData.detected_price) {
+          setUserPriceInput(String(scanData.detected_price));
+        }
+
+        if (fetchedCandidates.length === 1) {
+          setSelectedCandidate(fetchedCandidates[0]);
+          executeComparison(fetchedCandidates[0], scanData.detected_price || 0);
+        } else if (fetchedCandidates.length > 1) {
+          setScannerState('CANDIDATE_SELECTION');
+        } else {
+          setScannerState('ENTER_PRICE');
+        }
+      } else {
+        throw new Error('Could not parse shelf tag OCR output.');
+      }
+    } catch (err: any) {
+      console.error('Shelf scan API error:', err);
+      setErrorMessage(
+        err.response?.data?.message || 'We could not read this shelf tag. Please ensure lighting is adequate and text is clear.'
+      );
+      setScannerState('ERROR');
+    }
+  };
+
+  const handleSelectCandidate = (candidate: Commodity) => {
+    setSelectedCandidate(candidate);
+    const initialPrice = scanResponse?.detected_price ? String(scanResponse.detected_price) : String(candidate.baseline_price);
+    setUserPriceInput(initialPrice);
+    setScannerState('ENTER_PRICE');
+  };
+
+  const handleConfirmPriceAndCompare = () => {
+    const parsedPrice = parseFloat(userPriceInput);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      alert('Please enter a valid positive shelf price.');
+      return;
+    }
+    if (!selectedCandidate) {
+      alert('Please select a valid commodity candidate.');
+      return;
+    }
+    executeComparison(selectedCandidate, parsedPrice);
+  };
+
+  const executeComparison = async (candidate: Commodity, price: number) => {
+    setScannerState('COMPARING');
+    setProcessingStage('Fetching active price bulletin & history...');
+
+    try {
+      const res = await apiClient.post('/public/compare-price', {
+        store_id: selectedStore.id,
+        srp_bulletin_id: candidate.id,
+        displayed_price: price,
+      });
+
+      if (res.data && res.data.success && res.data.data) {
+        setComparisonResult(res.data.data);
+        setScannerState('RESULT');
+      } else {
+        throw new Error('Regulatory comparison service returned an invalid response.');
+      }
+    } catch (err: any) {
+      console.error('Comparison API error:', err);
+      setErrorMessage(
+        err.response?.data?.message || 'Unable to connect to regulatory price server to compute comparison.'
+      );
+      setScannerState('ERROR');
+    }
+  };
 
   const filteredStores = stores.filter((s) => {
     const q = searchTerm.toLowerCase().trim();
@@ -291,26 +452,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   });
 
   const handleReportWithReceipt = () => {
-    sessionStorage.setItem(
-      'report_prefill',
-      JSON.stringify({
-        store_id: selectedStore.id,
-        store_name: selectedStore.store_name,
-        address: selectedStore.address,
-        product_name: 'Saba Philippines Sardines 155g',
-        shelf_price: 23.50,
-        srp_baseline: 21.50
-      })
-    );
+    if (comparisonResult) {
+      sessionStorage.setItem(
+        'report_prefill',
+        JSON.stringify({
+          store_id: comparisonResult.store.id,
+          store_name: comparisonResult.store.store_name,
+          address: comparisonResult.store.address,
+          product_name: comparisonResult.product.commodity_name,
+          shelf_price: comparisonResult.displayed_price,
+          srp_baseline: comparisonResult.baseline_price
+        })
+      );
+    }
     if (setActiveTab) {
       setActiveTab('reports');
-    }
-  };
-
-  const handleViewPriceHistory = () => {
-    sessionStorage.setItem('srp_search_term', 'Sardines');
-    if (setActiveTab) {
-      setActiveTab('prices');
     }
   };
 
@@ -319,29 +475,37 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       {/* Stepper Progress Indicator */}
       <div style={{ padding: '10px 16px', background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1d4ed8', marginBottom: '6px' }}>
-          Step {step} of 3 · {step === 1 ? 'Store' : step === 2 ? 'Scan tag' : 'Result'}
+          {scannerState === 'SELECT_STORE' && 'Step 1 of 3 · Select Store'}
+          {scannerState === 'CAMERA_LIVE' && 'Step 2 of 3 · Live Camera Capture'}
+          {scannerState === 'CAPTURE_REVIEW' && 'Step 2 of 3 · Review Capture'}
+          {(scannerState === 'UPLOADING' || scannerState === 'CANDIDATE_SELECTION' || scannerState === 'ENTER_PRICE' || scannerState === 'COMPARING') && 'Step 2 of 3 · Processing Tag'}
+          {scannerState === 'RESULT' && 'Step 3 of 3 · Dynamic Comparison Result'}
+          {scannerState === 'ERROR' && 'Scan Notice · Error'}
         </div>
         <div style={{ height: '4px', width: '100%', background: '#e2e8f0', borderRadius: '2px', overflow: 'hidden' }}>
           <div
             style={{
               height: '100%',
-              width: step === 1 ? '33%' : step === 2 ? '66%' : '100%',
-              background: '#1d4ed8',
+              width:
+                scannerState === 'SELECT_STORE'
+                  ? '33%'
+                  : scannerState === 'RESULT'
+                  ? '100%'
+                  : '66%',
+              background: scannerState === 'ERROR' ? '#ef4444' : '#1d4ed8',
               transition: 'width 0.3s ease'
             }}
           />
         </div>
       </div>
 
-      {/* STEP 1: Store Selection */}
-      {step === 1 && (
+      {/* STATE 1: SELECT STORE */}
+      {scannerState === 'SELECT_STORE' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          {/* Main Title */}
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
             Select the store
           </h1>
 
-          {/* Search Input Bar */}
           <div style={{ position: 'relative' }}>
             <Search style={{ position: 'absolute', left: '14px', top: '15px', color: '#94a3b8' }} size={18} />
             <input
@@ -370,7 +534,6 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             )}
           </div>
 
-          {/* Quick Filter Chips Bar */}
           <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
             <button
               onClick={() => setActiveFilterChip(activeFilterChip === 'nearby' ? 'all' : 'nearby')}
@@ -413,160 +576,80 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               <Clock size={16} color="#2563eb" />
               Recently selected
             </button>
-
-            <button
-              onClick={() => setActiveFilterChip(activeFilterChip === 'barangay' ? 'all' : 'barangay')}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '12px',
-                border: activeFilterChip === 'barangay' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                background: activeFilterChip === 'barangay' ? '#eff6ff' : '#ffffff',
-                color: activeFilterChip === 'barangay' ? '#1d4ed8' : '#0f172a',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <Filter size={16} color="#2563eb" />
-              Filter by barangay
-            </button>
           </div>
 
-          {/* Section Subheader */}
-          <div style={{ marginTop: '2px' }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-              Suggested nearby stores
-            </h2>
-            <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '2px 0 0 0' }}>
-              Verified participating stores near you
-            </p>
-          </div>
-
-          {/* Verified Stores Card List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {filteredStores.map((store) => {
-              const isSelected = selectedStoreId === String(store.id);
+              const isSelected = selectedStore.id === store.id;
               return (
                 <div
                   key={store.id}
-                  onClick={() => handleSelectStore(store)}
+                  onClick={() => setSelectedStore(store)}
                   style={{
                     background: '#ffffff',
                     border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
                     borderRadius: '16px',
                     padding: '14px',
                     display: 'flex',
-                    gap: '12px',
+                    gap: '14px',
+                    alignItems: 'center',
                     cursor: 'pointer',
-                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
-                    position: 'relative',
-                    transition: 'all 0.15s ease'
+                    boxShadow: isSelected ? '0 4px 12px rgba(37, 99, 235, 0.15)' : 'var(--shadow-sm)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
-                  {/* Left Facade Photo Thumbnail */}
                   <StoreFacadeImage photoType={(store as any).photoType} storeName={store.store_name} />
 
-                  {/* Right Info Details */}
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <div>
-                      {/* Verified Badge Header & Selection Radio Indicator */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#059669', fontSize: '0.75rem', fontWeight: 700 }}>
-                          <CheckCircle2 size={14} color="#059669" />
-                          <span>Verified participating store</span>
-                        </div>
-                        {isSelected && (
-                          <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Check size={14} color="#ffffff" strokeWidth={3} />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Store Name */}
-                      <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', lineHeight: 1.2, marginBottom: '6px' }}>
-                        {store.store_name}
-                      </div>
-
-                      {/* Address */}
-                      <div style={{ fontSize: '0.82rem', color: '#64748b', display: 'flex', alignItems: 'flex-start', gap: '4px', lineHeight: 1.3 }}>
-                        <MapPin size={14} color="#94a3b8" style={{ flexShrink: 0, marginTop: '2px' }} />
-                        <span>{store.address}</span>
-                      </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <CheckCircle2 size={15} color="#2563eb" />
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                        Verified store
+                      </span>
                     </div>
 
-                    {/* Bottom Right Select State Button */}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                      {isSelected ? (
-                        <span
-                          style={{
-                            background: '#dbeafe',
-                            color: '#1d4ed8',
-                            padding: '5px 14px',
-                            borderRadius: '8px',
-                            fontSize: '0.82rem',
-                            fontWeight: 700,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <Check size={14} strokeWidth={2.5} /> Selected
-                        </span>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectStore(store);
-                          }}
-                          style={{
-                            background: '#ffffff',
-                            color: '#0f172a',
-                            border: '1px solid #cbd5e1',
-                            padding: '5px 16px',
-                            borderRadius: '8px',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Select
-                        </button>
-                      )}
+                    <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {store.store_name}
+                    </h3>
+
+                    <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 6px 0', lineHeight: 1.3 }}>
+                      {store.address}
+                    </p>
+
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500 }}>
+                      DTI SEC: {store.dti_sec_number}
                     </div>
                   </div>
+
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      border: isSelected ? '7px solid #2563eb' : '2px solid #cbd5e1',
+                      background: '#ffffff',
+                      flexShrink: 0
+                    }}
+                  />
                 </div>
               );
             })}
           </div>
 
-          {/* Continue Blue Action Button */}
-          <div style={{ marginTop: '10px' }}>
-            <button
-              className="btn-primary"
-              style={{
-                height: '50px',
-                borderRadius: '14px',
-                fontSize: '1rem',
-                fontWeight: 700,
-                background: selectedStoreId ? '#1d4ed8' : '#94a3b8'
-              }}
-              onClick={() => setStep(2)}
-              disabled={!selectedStoreId}
-            >
-              Continue
-            </button>
-          </div>
+          <button
+            className="btn-primary"
+            onClick={() => handleStartScanForStore(selectedStore)}
+            style={{ width: '100%', height: '52px', fontSize: '1rem', fontWeight: 700, borderRadius: '14px', marginTop: '12px' }}
+          >
+            Continue to Live Camera Scanner
+          </button>
         </div>
       )}
 
-      {/* STEP 2: Live Camera Viewport */}
-      {step === 2 && (
-        <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 140px)', minHeight: '520px', background: '#000000', borderRadius: '16px', overflow: 'hidden', margin: '0 auto' }}>
-          {/* Controls Overlay Header */}
+      {/* STATE 2: LIVE CAMERA STREAM */}
+      {scannerState === 'CAMERA_LIVE' && (
+        <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 120px)', background: '#09090b', overflow: 'hidden' }}>
+          {/* Top Control Bar Overlay */}
           <div
             style={{
               position: 'absolute',
@@ -578,29 +661,44 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               justifyContent: 'space-between',
               alignItems: 'center',
               padding: '16px 20px',
-              background: 'linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%)'
+              background: 'linear-gradient(180deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%)'
             }}
           >
-            {/* Flash toggle */}
-            <button
-              onClick={() => setFlashOn(!flashOn)}
-              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              aria-label="Toggle flash"
-            >
-              {flashOn ? <Zap size={20} /> : <ZapOff size={20} />}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ffffff' }}>
+              <MapPin size={16} color="#3b82f6" />
+              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+                {selectedStore.store_name}
+              </span>
+            </div>
 
-            {/* Camera Switch */}
-            <button
-              onClick={toggleCameraFacing}
-              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              aria-label="Switch camera"
-            >
-              <RotateCw size={20} />
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setFlashOn(!flashOn)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                aria-label="Toggle flash"
+              >
+                {flashOn ? <Zap size={20} /> : <ZapOff size={20} />}
+              </button>
+
+              <button
+                onClick={toggleCameraFacing}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                aria-label="Switch camera"
+              >
+                <RotateCw size={20} />
+              </button>
+
+              <button
+                onClick={() => setScannerState('SELECT_STORE')}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                aria-label="Close camera"
+              >
+                <X size={22} />
+              </button>
+            </div>
           </div>
 
-          {/* Live Camera Stream */}
+          {/* Live Video Element */}
           {!cameraError ? (
             <video
               ref={videoRef}
@@ -612,14 +710,12 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           ) : (
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', color: '#94a3b8', textAlign: 'center' }}>
               <Camera size={48} color="#64748b" style={{ marginBottom: '12px' }} />
-              <div style={{ color: '#ffffff', fontWeight: 700, marginBottom: '6px' }}>Live Camera Viewport</div>
-              <p style={{ fontSize: '0.85rem', maxWidth: '300px' }}>
-                Position shelf tag inside the bounding frame overlay.
-              </p>
+              <div style={{ color: '#ffffff', fontWeight: 700, marginBottom: '6px' }}>Live Camera Unavailable</div>
+              <p style={{ fontSize: '0.85rem', maxWidth: '300px' }}>{cameraError}</p>
             </div>
           )}
 
-          {/* Translucent Instruction Box Overlay */}
+          {/* Instruction Box Overlay */}
           <div
             style={{
               position: 'absolute',
@@ -631,75 +727,40 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255, 255, 255, 0.15)',
               borderRadius: '16px',
-              padding: '14px 18px',
+              padding: '12px 16px',
               textAlign: 'center',
               color: '#ffffff'
             }}
           >
-            <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: '4px' }}>
-              Position the shelf tag inside the frame.
+            <div style={{ fontWeight: 800, fontSize: '0.92rem', marginBottom: '2px' }}>
+              Position the physical shelf tag inside the frame.
             </div>
-            <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: 1.35 }}>
+            <div style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
               Include the product name, package size, and displayed price.
             </div>
           </div>
 
-          {/* Shelf Tag Bounding Box Frame Overlay */}
+          {/* Framing Guides Overlay (NO Fake Shelf Tag Card Superimposed) */}
           <div
             style={{
               position: 'absolute',
-              top: '52%',
+              top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               width: '85%',
               maxWidth: '340px',
-              height: '170px',
+              height: '180px',
               zIndex: 15,
               pointerEvents: 'none'
             }}
           >
-            {/* 4 Corner Bracket Framing Marks */}
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '28px', height: '28px', borderTop: '3.5px solid #ffffff', borderLeft: '3.5px solid #ffffff', borderRadius: '8px 0 0 0' }} />
-            <div style={{ position: 'absolute', top: 0, right: 0, width: '28px', height: '28px', borderTop: '3.5px solid #ffffff', borderRight: '3.5px solid #ffffff', borderRadius: '0 8px 0 0' }} />
-            <div style={{ position: 'absolute', bottom: 0, left: 0, width: '28px', height: '28px', borderBottom: '3.5px solid #ffffff', borderLeft: '3.5px solid #ffffff', borderRadius: '0 0 0 8px' }} />
-            <div style={{ position: 'absolute', bottom: 0, right: 0, width: '28px', height: '28px', borderBottom: '3.5px solid #ffffff', borderRight: '3.5px solid #ffffff', borderRadius: '0 0 8px 0' }} />
-
-            {/* Target Shelf Tag Sample Display Card inside Frame */}
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                background: 'rgba(255, 255, 255, 0.92)',
-                borderRadius: '10px',
-                padding: '12px 14px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0f172a' }}>
-                    SABA PHILIPPINES SARDINES 155G
-                  </div>
-                </div>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>
-                  155 g
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '8px' }}>
-                {/* Barcode representation */}
-                <div style={{ width: '80px', height: '28px', background: 'repeating-linear-gradient(90deg, #000 0, #000 2px, #fff 2px, #fff 4px)' }} />
-                <div style={{ fontSize: '1.75rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em' }}>
-                  ₱23.50
-                </div>
-              </div>
-            </div>
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '32px', height: '32px', borderTop: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '8px 0 0 0' }} />
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '32px', height: '32px', borderTop: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 8px 0 0' }} />
+            <div style={{ position: 'absolute', bottom: 0, left: 0, width: '32px', height: '32px', borderBottom: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '0 0 0 8px' }} />
+            <div style={{ position: 'absolute', bottom: 0, right: 0, width: '32px', height: '32px', borderBottom: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 0 8px 0' }} />
           </div>
 
-          {/* Shutter Button & Controls at Bottom */}
+          {/* Shutter Button Overlay */}
           <div
             style={{
               position: 'absolute',
@@ -713,13 +774,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               gap: '12px'
             }}
           >
-            {/* Shutter Ring Button */}
             <button
-              onClick={handleCaptureAndScan}
-              disabled={scanning}
+              onClick={handleShutterCapture}
               style={{
-                width: '74px',
-                height: '74px',
+                width: '76px',
+                height: '76px',
                 borderRadius: '50%',
                 border: '4px solid #ffffff',
                 background: 'transparent',
@@ -728,51 +787,282 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-                transition: 'transform 0.15s ease'
+                boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
               }}
-              aria-label="Shutter"
+              aria-label="Capture Shutter"
             >
               <div
                 style={{
-                  width: '58px',
-                  height: '58px',
+                  width: '60px',
+                  height: '60px',
                   borderRadius: '50%',
-                  background: scanning ? '#ef4444' : '#ffffff',
-                  transition: 'background-color 0.2s ease'
+                  background: '#ffffff',
                 }}
               />
             </button>
 
-            <span style={{ fontSize: '0.78rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
-              {scanning ? 'Processing shelf tag...' : 'Tap shutter to scan shelf tag'}
+            <span style={{ fontSize: '0.8rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
+              ✔ Hold steady · Tap shutter to capture frame
             </span>
           </div>
         </div>
       )}
 
-      {/* STEP 3: Comparison Result Card */}
-      {step === 3 && (
+      {/* STATE 3: CAPTURE REVIEW */}
+      {scannerState === 'CAPTURE_REVIEW' && capturedPreviewUrl && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          {/* Balance Scale Circular Icon Header */}
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Review Captured Shelf Tag
+          </h2>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+            Verify that the product name and displayed price are clear before uploading for DTI analysis.
+          </p>
+
+          <div
+            style={{
+              position: 'relative',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: '2px solid #e2e8f0',
+              boxShadow: 'var(--shadow-sm)',
+              maxHeight: '360px',
+              background: '#09090b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <img
+              src={capturedPreviewUrl}
+              alt="Captured Shelf Tag Frame"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '360px' }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                background: 'rgba(15, 23, 42, 0.85)',
+                color: '#ffffff',
+                padding: '4px 10px',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                fontWeight: 700
+              }}
+            >
+              ✔ Captured Frame
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <button
+              onClick={handleRetake}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <RefreshCw size={16} />
+              Retake Frame
+            </button>
+
+            <button
+              onClick={handleUploadAndAnalyze}
+              className="btn-primary"
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              <Check size={18} />
+              Use Capture
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 4 & 7: UPLOADING / COMPARING PROGRESS */}
+      {(scannerState === 'UPLOADING' || scannerState === 'COMPARING') && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center', gap: '16px' }}>
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              border: '4px solid #dbeafe',
+              borderTopColor: '#1d4ed8',
+              animation: 'spin 1s linear infinite'
+            }}
+          />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+              Analyzing Shelf Tag
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: '#64748b', margin: 0 }}>
+              {processingStage}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 5: CANDIDATE SELECTION */}
+      {scannerState === 'CANDIDATE_SELECTION' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Select Product Match
+          </h2>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+            We found possible matching regulated commodities for this shelf tag. Select the applicable product:
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {candidates.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => handleSelectCandidate(c)}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                    {c.commodity_name}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                    {c.category} · {c.unit}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
+                    ₱{Number(c.baseline_price).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={handleRetake}
+            style={{
+              height: '48px',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: '#0f172a',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              marginTop: '12px'
+            }}
+          >
+            Retake Tag Image
+          </button>
+        </div>
+      )}
+
+      {/* STATE 6: CONFIRM DISPLAYED PRICE */}
+      {scannerState === 'ENTER_PRICE' && selectedCandidate && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Confirm Displayed Shelf Price
+          </h2>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>
+              Selected Product
+            </div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
+              {selectedCandidate.commodity_name}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+              {selectedCandidate.unit} · Current SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+              Displayed Shelf Price (₱)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              className="input-field"
+              style={{
+                height: '50px',
+                fontSize: '1.2rem',
+                fontWeight: 800,
+                borderRadius: '12px',
+                padding: '0 16px',
+                border: '1.5px solid #2563eb',
+                background: '#ffffff'
+              }}
+              placeholder="e.g. 23.50"
+              value={userPriceInput}
+              onChange={(e) => setUserPriceInput(e.target.value)}
+            />
+          </div>
+
+          <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px', color: '#92400e', fontSize: '0.8rem', lineHeight: 1.35 }}>
+            ⚠️ Any manual price correction is used only for this informational comparison and is not an official monitoring record.
+          </div>
+
+          <button
+            className="btn-primary"
+            onClick={handleConfirmPriceAndCompare}
+            style={{ height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
+          >
+            Compute Regulatory Comparison
+          </button>
+        </div>
+      )}
+
+      {/* STATE 8: DYNAMIC COMPARISON RESULT */}
+      {scannerState === 'RESULT' && comparisonResult && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
           <div style={{ textAlign: 'center', paddingTop: '8px' }}>
             <div
               style={{
                 width: '64px',
                 height: '64px',
                 borderRadius: '50%',
-                background: '#dbeafe',
+                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fef3c7' : '#dcfce7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 12px auto',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)'
+                boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
               }}
             >
-              <Scale size={32} color="#1d4ed8" />
+              <Scale size={32} color={comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'} />
             </div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
-              Comparison result
+              Comparison Result
             </h1>
           </div>
 
@@ -790,28 +1080,28 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>Store</span>
-              <span style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: 700 }}>
-                {selectedStore ? selectedStore.store_name : 'Super Metro San Jose'}
+              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Store</span>
+              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700 }}>
+                {comparisonResult.store.store_name}
               </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>Product</span>
-              <span style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: 700 }}>
-                Saba Philippines Sardines
+              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Product</span>
+              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700, textTransform: 'capitalize' }}>
+                {comparisonResult.product.commodity_name}
               </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 500 }}>Package size</span>
-              <span style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: 700 }}>
-                155 g
+              <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
+              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 700 }}>
+                {comparisonResult.product.unit || 'Standard'}
               </span>
             </div>
           </div>
 
-          {/* Prices Card */}
+          {/* Price Comparison Card */}
           <div
             style={{
               background: '#ffffff',
@@ -820,60 +1110,100 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               padding: '18px 20px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '12px',
+              gap: '14px',
               boxShadow: 'var(--shadow-sm)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 500 }}>Displayed shelf price</span>
-              <span style={{ fontSize: '1.35rem', color: '#0f172a', fontWeight: 900 }}>₱23.50</span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.92rem', color: '#2563eb', fontWeight: 700 }}>Current SRP</span>
-              <span style={{ fontSize: '1.35rem', color: '#2563eb', fontWeight: 900 }}>₱21.50</span>
-            </div>
-
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>Comparison basis</div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Previous verified store price</span>
-                <span style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: 700 }}>₱20.50</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '12px 14px'
+                }}
+              >
+                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600, marginBottom: '2px' }}>
+                  Displayed Shelf Price
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#0f172a' }}>
+                  ₱{Number(comparisonResult.displayed_price).toFixed(2)}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Recorded</span>
-                <span style={{ fontSize: '0.95rem', color: '#0f172a', fontWeight: 700 }}>17 Jul 2026</span>
+              <div
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '12px',
+                  padding: '12px 14px'
+                }}
+              >
+                <div style={{ fontSize: '0.72rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
+                  {comparisonResult.comparison_label}
+                </div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1d4ed8' }}>
+                  ₱{Number(comparisonResult.baseline_price).toFixed(2)}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#3b82f6', marginTop: '1px' }}>
+                  Effective {comparisonResult.product.effective_date}
+                </div>
               </div>
+            </div>
 
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>
-                Based on the latest verified monitoring record.
+            {/* Historical Store Price Subcard */}
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                fontSize: '0.82rem',
+                color: '#475569'
+              }}
+            >
+              {comparisonResult.previous_verified_price ? (
+                <div>
+                  Previous verified store price was{' '}
+                  <strong style={{ color: '#0f172a' }}>
+                    ₱{Number(comparisonResult.previous_verified_price).toFixed(2)}
+                  </strong>{' '}
+                  on {comparisonResult.previous_recorded_date}.
+                </div>
+              ) : (
+                <div>No verified historical store price is currently available for this store.</div>
+              )}
+            </div>
+
+            {/* Price Difference Indicator Box */}
+            <div
+              style={{
+                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fffbeb' : '#f0fdf4',
+                border: comparisonResult.comparison_status === 'ABOVE_SRP' ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                borderRadius: '14px',
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '0.95rem',
+                  fontWeight: 800,
+                  color: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'
+                }}
+              >
+                {comparisonResult.comparison_status === 'ABOVE_SRP'
+                  ? `₱${Number(comparisonResult.difference_pesos).toFixed(2)} above current SRP (${comparisonResult.percentage_srp}% higher)`
+                  : comparisonResult.comparison_status === 'BELOW_SRP'
+                  ? `₱${Math.abs(comparisonResult.difference_pesos).toFixed(2)} below current SRP`
+                  : 'Matches current SRP baseline'}
               </div>
             </div>
           </div>
 
-          {/* Difference Math Box */}
-          <div
-            style={{
-              background: '#fef2f2',
-              border: '1px solid #fca5a5',
-              borderRadius: '16px',
-              padding: '16px 20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px'
-            }}
-          >
-            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#dc2626' }}>
-              ₱2.00 above current SRP
-            </div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#dc2626' }}>
-              14.6% higher than the previous verified price
-            </div>
-          </div>
-
-          {/* MANDATORY Legal Disclaimer Banner (CRITICAL) */}
+          {/* Mandatory Legal Disclaimer Banner */}
           <div
             style={{
               background: '#fffbeb',
@@ -882,84 +1212,82 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               padding: '14px 16px',
               display: 'flex',
               gap: '12px',
-              alignItems: 'center'
+              alignItems: 'flex-start'
             }}
           >
-            <AlertTriangle size={22} color="#d97706" style={{ flexShrink: 0 }} />
-            <div style={{ fontSize: '0.86rem', fontWeight: 600, color: '#92400e', lineHeight: 1.35 }}>
-              A possible price difference was found. This does not automatically confirm a violation.
+            <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.4 }}>
+              <strong>INFORMATIONAL NOTICE:</strong> {comparisonResult.informational_notice}
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-            {/* Primary Blue Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
+              className="btn-primary"
               onClick={handleReportWithReceipt}
-              style={{
-                background: '#1d4ed8',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '14px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '2px',
-                boxShadow: '0 2px 6px rgba(29, 78, 216, 0.25)',
-                transition: 'all 0.15s ease'
-              }}
+              style={{ height: '50px', fontSize: '0.95rem', fontWeight: 700, borderRadius: '12px' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: 700 }}>
-                <FileText size={18} /> Report using receipt
-              </div>
-              <div style={{ fontSize: '0.76rem', color: '#dbeafe', fontWeight: 400 }}>
-                Requires an actual checkout receipt.
-              </div>
+              Report using receipt
             </button>
 
-            {/* Secondary White Button */}
             <button
-              onClick={() => setStep(1)}
+              onClick={handleRetake}
               style={{
+                height: '48px',
+                borderRadius: '12px',
+                border: '1px solid #cbd5e1',
                 background: '#ffffff',
                 color: '#0f172a',
-                border: '1px solid #cbd5e1',
-                borderRadius: '14px',
-                padding: '12px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                fontSize: '0.98rem',
-                fontWeight: 700
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                cursor: 'pointer'
               }}
             >
-              <ScanLine size={18} /> Scan another item
+              Scan another item
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STATE 9: ERROR STATE */}
+      {scannerState === 'ERROR' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', gap: '16px' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={32} />
+          </div>
+
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            We could not read this shelf tag
+          </h2>
+
+          <p style={{ fontSize: '0.88rem', color: '#64748b', maxWidth: '360px', margin: 0, lineHeight: 1.4 }}>
+            {errorMessage}
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '320px', marginTop: '12px' }}>
+            <button
+              className="btn-primary"
+              onClick={handleRetake}
+              style={{ height: '48px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 700 }}
+            >
+              Retake Image
             </button>
 
-            {/* Bottom Link */}
             <button
-              onClick={handleViewPriceHistory}
+              onClick={() => setActiveTab && setActiveTab('prices')}
               style={{
-                background: 'none',
-                border: 'none',
-                color: '#2563eb',
+                height: '48px',
+                borderRadius: '12px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
                 fontSize: '0.9rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '4px',
-                padding: '8px 0',
-                marginTop: '4px'
+                fontWeight: 700,
+                cursor: 'pointer'
               }}
             >
-              View price history and details <ChevronRight size={16} />
+              Search Prices Manually
             </button>
           </div>
         </div>
