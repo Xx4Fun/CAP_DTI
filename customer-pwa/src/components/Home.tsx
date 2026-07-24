@@ -24,14 +24,14 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* 1. Hero Header */}
-      <div>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: '6px', lineHeight: 1.25 }}>
+      <div style={{ marginBottom: '0px' }}>
+        <h1 style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a', marginBottom: '6px', lineHeight: '32px', letterSpacing: '-0.02em' }}>
           Check current commodity prices
         </h1>
-        <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.4 }}>
-          Scan a shelf tag or submit a checkout receipt for DTI evaluation.
+        <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: '22px' }}>
+          Scan a shelf tag or submit a receipt for DTI evaluation.
         </p>
       </div>
 
