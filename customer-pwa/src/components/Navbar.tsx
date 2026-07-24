@@ -1,115 +1,210 @@
-import { useState } from 'react';
-import { ClipboardList, Home, Menu, ScanLine, Tag, X } from 'lucide-react';
-import type { AppRoute } from '../app/routing';
-import type { RegulatoryStatus } from '../app/status';
-import { Dialog } from './ui/Dialog';
-import { IconButton } from './ui/IconButton';
+import React, { useState, useEffect } from 'react';
+import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, WifiOff, X } from 'lucide-react';
 
-type NavbarProps = {
-  route: AppRoute;
-  onNavigate: (route: AppRoute) => void;
-  regulatoryStatus: RegulatoryStatus;
-};
+interface NavbarProps {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  stateOfCalamity: boolean;
+}
 
-const primaryItems: Array<{
-  label: string;
-  route: AppRoute;
-  icon: typeof Home;
-  active: AppRoute['name'][];
-}> = [
-  { label: 'Home', route: { name: 'home' }, icon: Home, active: ['home'] },
-  { label: 'Prices', route: { name: 'prices' }, icon: Tag, active: ['prices', 'product'] },
-  { label: 'Scan', route: { name: 'scan' }, icon: ScanLine, active: ['scan'] },
-  { label: 'Reports', route: { name: 'reports' }, icon: ClipboardList, active: ['reports', 'new-report', 'track-report'] },
-];
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOfCalamity }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
-export function Navbar({ route, onNavigate, regulatoryStatus }: NavbarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [dialog, setDialog] = useState<'how' | 'privacy' | 'about' | null>(null);
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
-  const statusText = regulatoryStatus.kind === 'available'
-    ? regulatoryStatus.config.state_of_calamity ? 'Price freeze active' : 'Current bulletin'
-    : regulatoryStatus.kind === 'loading' ? 'Checking bulletin' : 'Status unavailable';
+
 
   return (
     <>
-      <header className="site-header">
-        <a className="brand-lockup" href="/" onClick={(event) => {
-          event.preventDefault();
-          onNavigate({ name: 'home' });
-        }}>
-          <img src="/brand-mark.webp" alt="" width="48" height="48" />
-          <span>
-            <strong>PRICE-<em>Watch</em></strong>
-            <small>DTI Consumer Price Guide</small>
-          </span>
-        </a>
-        <div className="header-actions">
-          <span className={`bulletin-pill bulletin-pill--${regulatoryStatus.kind}`}>
-            <span aria-hidden="true" />
-            {statusText}
-          </span>
-          <IconButton label={menuOpen ? 'Close information menu' : 'Open information menu'} onClick={() => setMenuOpen((value) => !value)}>
-            {menuOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
-          </IconButton>
+      <header className="navbar-top" style={{ height: '68px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+          <img
+            className="brand-logo"
+            src="/logo_icon.png"
+            alt=""
+            style={{
+              height: '38px',
+              width: 'auto',
+              objectFit: 'contain',
+              mixBlendMode: 'multiply',
+              flexShrink: 0
+            }}
+          />
+          <div className="brand-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
+            <div className="brand-name" style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: '1.1', whiteSpace: 'nowrap', letterSpacing: '-0.025em' }}>
+              <span style={{ color: '#0f172a' }}>PRICE-</span>
+              <span style={{ color: '#1d4ed8' }}>Watch</span>
+            </div>
+            <div className="brand-subtitle" style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400, lineHeight: '1.1', whiteSpace: 'nowrap', marginTop: '2px' }}>
+              Consumer Price Guide
+            </div>
+          </div>
         </div>
+
+        <button
+          className="menu-button"
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+          style={{
+            minWidth: '44px',
+            minHeight: '44px',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'none',
+            border: 'none',
+            borderRadius: '10px',
+            color: '#0f172a',
+            cursor: 'pointer',
+            flexShrink: 0,
+            transition: 'background-color 0.15s ease'
+          }}
+        >
+          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
       </header>
 
-      {menuOpen && (
-        <nav className="secondary-menu" aria-label="Information menu">
-          <button type="button" onClick={() => { setDialog('how'); setMenuOpen(false); }}>How PRICE-Watch works</button>
-          <button type="button" onClick={() => { setDialog('privacy'); setMenuOpen(false); }}>Privacy and evidence</button>
-          <button type="button" onClick={() => { setDialog('about'); setMenuOpen(false); }}>About and language readiness</button>
-        </nav>
+      {/* Exceptional Status Notices (Rendered BELOW Header, NOT inside Header) */}
+      {stateOfCalamity && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            background: '#fef2f2',
+            borderBottom: '1px solid #fca5a5',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            color: '#dc2626',
+            fontWeight: 600,
+            maxWidth: '600px',
+            margin: '0 auto'
+          }}
+        >
+          <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
+          <span>Price Freeze active · View applicable prices</span>
+        </div>
       )}
 
-      <nav className="nav-bottom" aria-label="Primary">
-        {primaryItems.map((item) => {
-          const Icon = item.icon;
-          const active = item.active.includes(route.name);
-          return (
-            <button
-              key={item.label}
-              type="button"
-              className={`nav-item ${active ? 'active' : ''}`}
-              aria-current={active ? 'page' : undefined}
-              onClick={() => onNavigate(item.route)}
-            >
-              <Icon aria-hidden="true" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {isOffline && !stateOfCalamity && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            background: '#fffbeb',
+            borderBottom: '1px solid #fde68a',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            color: '#b45309',
+            fontWeight: 600,
+            maxWidth: '600px',
+            margin: '0 auto'
+          }}
+        >
+          <WifiOff size={15} color="#b45309" style={{ flexShrink: 0 }} />
+          <span>Offline · Showing previously saved public price information</span>
+        </div>
+      )}
 
-      <Dialog open={dialog !== null} onClose={() => setDialog(null)} title={
-        dialog === 'how' ? 'How PRICE-Watch works' :
-          dialog === 'privacy' ? 'Privacy and evidence' :
-            'About PRICE-Watch'
-      }>
-        {dialog === 'how' && (
-          <div className="prose">
-            <p>Check an official DTI reference price, compare a shelf tag, or submit a checkout receipt for human evaluation.</p>
-            <ol>
-              <li>Find the exact product and package size.</li>
-              <li>Use Scan for an informational shelf-price comparison.</li>
-              <li>Use Reports only after checkout when you have the physical receipt.</li>
-            </ol>
+      {/* Compact Quick Menu Drawer */}
+      {isMenuOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '68px',
+            left: 0,
+            right: 0,
+            background: '#ffffff',
+            borderBottom: '1px solid #e2e8f0',
+            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+            zIndex: 99,
+            padding: '16px',
+            maxWidth: '600px',
+            margin: '0 auto'
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              onClick={() => { setActiveTab('home'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'home' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'home' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              Home Dashboard
+            </button>
+            <button
+              onClick={() => { setActiveTab('prices'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'prices' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'prices' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              SRP Price Directory
+            </button>
+            <button
+              onClick={() => { setActiveTab('scan'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'scan' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'scan' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              Live Shelf Tag Scanner
+            </button>
+            <button
+              onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'reports' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'reports' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              Formal Receipt Reporting
+            </button>
           </div>
-        )}
-        {dialog === 'privacy' && (
-          <div className="prose">
-            <p>Receipt evidence is captured live and sent through a secure, tamper-evident workflow. Images remain in memory until submission and are not stored in this browser.</p>
-            <p>Each report is reviewed by authorized DTI personnel. A comparison result alone does not confirm a violation.</p>
-          </div>
-        )}
-        {dialog === 'about' && (
-          <div className="prose">
-            <p>PRICE-Watch is a consumer price-transparency service for DTI monitoring.</p>
-            <p>The interface currently uses English. Filipino and regional-language support is planned.</p>
-          </div>
-        )}
-      </Dialog>
+        </div>
+      )}
+
+      {/* Fixed 4-tab bottom navigation */}
+      <nav className="nav-bottom">
+        <button
+          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
+          onClick={() => setActiveTab('home')}
+        >
+          <Home size={20} />
+          <span>Home</span>
+        </button>
+
+        <button
+          className={`nav-item ${activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores' ? 'active' : ''}`}
+          onClick={() => setActiveTab('prices')}
+        >
+          <Tag size={20} />
+          <span>Prices</span>
+        </button>
+
+        <button
+          className={`nav-item ${activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'active' : ''}`}
+          onClick={() => setActiveTab('scan')}
+        >
+          <Scan size={20} />
+          <span>Scan</span>
+        </button>
+
+        <button
+          className={`nav-item ${activeTab === 'reports' || activeTab === 'report' || activeTab === 'track' ? 'active' : ''}`}
+          onClick={() => setActiveTab('reports')}
+        >
+          <ClipboardList size={20} />
+          <span>Reports</span>
+        </button>
+      </nav>
     </>
   );
-}
+};
+
+export default Navbar;

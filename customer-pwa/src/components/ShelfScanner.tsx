@@ -1,151 +1,1357 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Camera, Check, RefreshCw, Search, X } from 'lucide-react';
-import { apiClient, type Commodity, type ComparisonResultResponse, type Establishment, type ScanTagResponse } from '../api/client';
-import { consumeHandoff, writeHandoff } from '../app/handoffs';
-import type { AppRoute } from '../app/routing';
-import { fallbackCommodities } from '../data/srpFallback';
-import { fallbackEstablishments } from '../data/establishments';
-import { CameraShell } from './CameraShell';
-import { StorePicker } from './StorePicker';
-import { PriceStrip } from './ui/PriceStrip';
-import { StatusBanner } from './ui/StatusBanner';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  X,
+  Search,
+  MapPin,
+  Clock,
+  CheckCircle2,
+  Zap,
+  ZapOff,
+  RotateCw,
+  Camera,
+  Scale,
+  AlertTriangle,
+  Tag,
+  Check,
+  RefreshCw
+} from 'lucide-react';
+import {
+  apiClient,
+  type Establishment,
+  type Commodity,
+  type ScanTagResponse,
+  type ComparisonResultResponse
+} from '../api/client';
 
-type ScannerState = 'store' | 'camera' | 'review' | 'analyzing' | 'product' | 'price' | 'comparing' | 'result';
-type FacingMode = 'environment' | 'user';
-type ShelfScannerProps = { onNavigate: (route: AppRoute) => void; isOnline: boolean };
-const stopStream = (stream: MediaStream | null) => stream?.getTracks().forEach((track) => track.stop());
+interface ShelfScannerProps {
+  setActiveTab?: (tab: string) => void;
+}
 
-export function ShelfScanner({ onNavigate, isOnline }: ShelfScannerProps) {
-  const [state, setState] = useState<ScannerState>('store');
-  const [stores, setStores] = useState<Establishment[]>(fallbackEstablishments);
-  const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
-  const [recentStoreId, setRecentStoreId] = useState<number | null>(() => { const value = sessionStorage.getItem('price-watch-recent-store'); return value ? Number(value) : null; });
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [facingMode, setFacingMode] = useState<FacingMode>('environment');
-  const [torchSupported, setTorchSupported] = useState(false);
-  const [torchOn, setTorchOn] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<Commodity[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Commodity | null>(null);
-  const [productQuery, setProductQuery] = useState('');
-  const [displayedPrice, setDisplayedPrice] = useState('');
-  const [error, setError] = useState('');
-  const [result, setResult] = useState<ComparisonResultResponse | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const updateStream = (next: MediaStream | null) => { streamRef.current = next; setStream(next); };
+const defaultEstablishments: (Establishment & { photoType?: string; barangay?: string })[] = [
+  {
+    id: 1,
+    dti_sec_number: 'SEC-CS202612345',
+    store_name: 'Super Metro San Jose',
+    owner_name: 'Metro Retail Stores Group Inc.',
+    latitude: 10.7424,
+    longitude: 121.9406,
+    address: 'Tradetown, San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'Tradetown',
+    photoType: 'super_metro'
+  },
+  {
+    id: 2,
+    dti_sec_number: 'SEC-CS202654321',
+    store_name: 'Gaisano Grand Antique',
+    owner_name: 'Gaisano Grand Malls Group',
+    latitude: 10.7465,
+    longitude: 121.9430,
+    address: 'San Angel, San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'San Angel',
+    photoType: 'gaisano'
+  },
+  {
+    id: 3,
+    dti_sec_number: 'SEC-CS202699887',
+    store_name: 'Robinsons Superstore Antique',
+    owner_name: 'Robinsons Retail Holdings Inc.',
+    latitude: 10.7480,
+    longitude: 121.9450,
+    address: 'Brgy. 8 (Poblacion), San Jose de Buenavista',
+    recidivism_index: 0,
+    barangay: 'Brgy. 8 (Poblacion)',
+    photoType: 'robinsons'
+  }
+];
 
-  useEffect(() => {
-    let active = true;
-    apiClient.get('/public/establishments').then((response) => {
-      if (active && response.data?.success && Array.isArray(response.data.data)) setStores(response.data.data);
-    }).catch(() => undefined);
-    const handoff = consumeHandoff();
-    if (handoff?.kind === 'price-to-scan') setSelectedProduct(fallbackCommodities.find((item) => item.id === handoff.commodityId) ?? null);
-    return () => { active = false; stopStream(streamRef.current); };
-  }, []);
-  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
+  const name = storeName.toLowerCase();
 
-  const openCamera = async (mode = facingMode) => {
-    stopStream(streamRef.current); updateStream(null); setCameraError(null); setTorchSupported(false); setTorchOn(false); setState('camera');
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera capture is not supported by this browser.');
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: mode } }, audio: false });
-      updateStream(mediaStream);
-      const capabilities = mediaStream.getVideoTracks()[0]?.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
-      setTorchSupported(Boolean(capabilities?.torch));
-    } catch (reason) {
-      const blocked = reason instanceof DOMException && reason.name === 'NotAllowedError';
-      setCameraError(blocked ? 'Camera access is blocked. Allow camera access in your browser, then try again.' : reason instanceof Error ? reason.message : 'We could not start the camera. Check your browser settings and try again.');
-    }
-  };
-  const closeCamera = () => { stopStream(streamRef.current); updateStream(null); setState('store'); };
-  const toggleTorch = async () => {
-    const track = streamRef.current?.getVideoTracks()[0]; if (!track || !torchSupported) return;
-    const next = !torchOn; await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] }); setTorchOn(next);
-  };
-  const switchCamera = () => { const next = facingMode === 'environment' ? 'user' : 'environment'; setFacingMode(next); void openCamera(next); };
-  const capture = () => {
-    const video = videoRef.current;
-    if (!video || video.readyState < 2 || video.videoWidth === 0) { setCameraError('The camera is not ready. Hold the device steady and try again.'); return; }
-    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext('2d')?.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
-      if (!blob) { setCameraError('We could not capture this image. Try the camera again.'); return; }
-      stopStream(streamRef.current); updateStream(null); if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setCapturedBlob(blob); setPreviewUrl(URL.createObjectURL(blob)); setState('review');
-    }, 'image/jpeg', .9);
-  };
-  const analyze = async () => {
-    if (!capturedBlob || !selectedStore) return;
-    if (!isOnline) { setError('Shelf-tag analysis requires a live connection. Reconnect and retry.'); return; }
-    setState('analyzing'); setError('');
-    const form = new FormData(); form.append('image', capturedBlob, 'shelf-tag.jpg'); form.append('store_id', String(selectedStore.id));
-    try {
-      const response = await apiClient.post('/public/scan-tag', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      if (!response.data?.success) throw new Error('The shelf tag could not be read.');
-      const scan = response.data.data as ScanTagResponse; setCandidates(scan.candidates ?? []);
-      if (scan.detected_price !== null) setDisplayedPrice(String(scan.detected_price));
-      setState('product'); if ((scan.candidates ?? []).length === 0) setError('We could not match this shelf tag. Search for the product manually.');
-    } catch (reason) {
-      setCandidates([]); setState('product'); setError(reason instanceof Error ? reason.message : 'We could not read this shelf tag. Retake it or enter the product and price manually.');
-    }
-  };
-  const productOptions = useMemo(() => {
-    const pool = candidates.length > 0 ? candidates : fallbackCommodities; const needle = productQuery.trim().toLowerCase();
-    return pool.filter((item) => !needle || item.commodity_name.toLowerCase().includes(needle)).slice(0, 30);
-  }, [candidates, productQuery]);
-  const compare = async (event: FormEvent) => {
-    event.preventDefault(); const numericPrice = Number(displayedPrice);
-    if (!selectedStore || !selectedProduct || !Number.isFinite(numericPrice) || numericPrice <= 0) { setError('Enter a valid displayed price before comparing.'); return; }
-    setState('comparing'); setError('');
-    try {
-      const response = await apiClient.post('/public/compare-price', { store_id: selectedStore.id, commodity_id: selectedProduct.id, displayed_price: numericPrice });
-      if (!response.data?.success) throw new Error('The comparison could not be completed.');
-      setResult(response.data.data); setState('result');
-    } catch (reason) { setState('price'); setError(reason instanceof Error ? reason.message : 'We could not compare this price. Nothing was recorded. Try again.'); }
-  };
+  if (photoType === 'super_metro' || name.includes('super metro') || name.includes('metro')) {
+    return (
+      <div
+        style={{
+          width: '76px',
+          height: '76px',
+          borderRadius: '12px',
+          background: 'linear-gradient(180deg, #15803d 0%, #166534 40%, #f1f5f9 40%, #f8fafc 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '6px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ background: '#166534', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+            Metro
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '16px', height: '24px', background: '#3b82f6', opacity: 0.8, borderRadius: '2px 2px 0 0' }} />
+          <div style={{ width: '18px', height: '24px', background: '#94a3b8', opacity: 0.6, borderRadius: '2px 2px 0 0' }} />
+        </div>
+      </div>
+    );
+  }
 
-  if (state === 'camera') return <CameraShell title="Scan shelf tag" subtitle={selectedStore?.store_name ?? 'Selected store'} stream={stream} error={cameraError} canCapture={Boolean(stream)} torchSupported={torchSupported} torchOn={torchOn} onClose={closeCamera} onRetry={() => void openCamera()} onManualEntry={() => { closeCamera(); setState('product'); }} onToggleTorch={() => void toggleTorch()} onSwitchCamera={switchCamera} onCapture={capture} videoRef={videoRef} />;
+  if (photoType === 'gaisano' || name.includes('gaisano')) {
+    return (
+      <div
+        style={{
+          width: '76px',
+          height: '76px',
+          borderRadius: '12px',
+          background: 'linear-gradient(180deg, #1d4ed8 0%, #1e40af 40%, #cbd5e1 40%, #f8fafc 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '6px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ background: '#1e40af', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
+          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+            GAISANO
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '22px', height: '24px', background: '#3b82f6', borderRadius: '2px 2px 0 0' }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (photoType === 'robinsons' || name.includes('robinson')) {
+    return (
+      <div
+        style={{
+          width: '76px',
+          height: '76px',
+          borderRadius: '12px',
+          background: 'linear-gradient(180deg, #dc2626 0%, #b91c1c 40%, #e2e8f0 40%, #f8fafc 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '6px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ background: '#b91c1c', padding: '2px 4px', borderRadius: '4px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
+          <div style={{ fontSize: '0.48rem', fontWeight: 800, color: '#ffffff' }}>ROBINSONS</div>
+        </div>
+        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
+          <div style={{ width: '24px', height: '24px', background: '#64748b', borderRadius: '2px 2px 0 0' }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <section className="workflow-page scanner-page" aria-labelledby="scanner-title">
-      <header className="page-header"><p className="page-kicker">Informational comparison</p><h1 id="scanner-title">Compare a shelf price</h1><p className="page-intro">Choose the store, capture its shelf tag, then confirm the exact product and displayed price.</p></header>
-      {!isOnline && <StatusBanner variant="offline" title="Scanner requires a live connection">You can choose a store and product, but image analysis and comparison are unavailable offline.</StatusBanner>}
-      {state === 'store' && <>
-        {selectedProduct && <div className="starting-with"><span><small>Starting with product</small><strong>{selectedProduct.commodity_name}</strong></span><button type="button" aria-label="Remove starting product" onClick={() => setSelectedProduct(null)}><X aria-hidden="true" /></button></div>}
-        <StorePicker stores={stores} selectedId={selectedStore?.id ?? null} recentStoreId={recentStoreId} onSelect={setSelectedStore} title="Where are you checking the price?" />
-        <div className="sticky-actions"><button className="button button--primary" type="button" disabled={!selectedStore || !isOnline} onClick={() => { if (!selectedStore) return; sessionStorage.setItem('price-watch-recent-store', String(selectedStore.id)); setRecentStoreId(selectedStore.id); void openCamera(); }}><Camera aria-hidden="true" /> Open camera</button></div>
-      </>}
-      {state === 'review' && previewUrl && <section className="review-panel">
-        <div className="workflow-heading"><button className="back-link" type="button" onClick={() => void openCamera()}><ArrowLeft aria-hidden="true" /> Retake</button><p>Step 2 of 4</p></div><h2>Use this shelf-tag photo?</h2>
-        <img className="capture-preview" src={previewUrl} alt="Captured shelf tag" />
-        {error && <StatusBanner variant="error" title="Could not continue">{error}</StatusBanner>}
-        <div className="button-row"><button className="button button--secondary" type="button" onClick={() => void openCamera()}><RefreshCw aria-hidden="true" /> Retake</button><button className="button button--primary" type="button" onClick={() => void analyze()}>Analyze shelf tag</button></div>
-      </section>}
-      {state === 'analyzing' && <div className="processing-state" role="status"><RefreshCw aria-hidden="true" /><h2>Reading shelf tag</h2><p>Uploading securely and looking for product and price text…</p></div>}
-      {state === 'product' && <section className="workflow-card">
-        <div className="workflow-heading"><button className="back-link" type="button" onClick={() => setState('store')}><ArrowLeft aria-hidden="true" /> Change store</button><p>Step 3 of 4</p></div><h2>Confirm the product</h2><p>Choose the exact brand and package size. A suggested match is not a confirmed identification.</p>
-        {error && <StatusBanner variant="warning" title="Manual selection needed">{error}</StatusBanner>}
-        <div className="search-control"><label htmlFor="scanner-product-search">Search product</label><div><Search aria-hidden="true" /><input id="scanner-product-search" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} /></div></div>
-        <div className="candidate-list">{productOptions.map((item) => <button type="button" className={selectedProduct?.id === item.id ? 'is-selected' : ''} aria-pressed={selectedProduct?.id === item.id} key={item.id} onClick={() => setSelectedProduct(item)}><span><strong>{item.commodity_name}</strong><small>{item.unit || item.package_size} · Reference ₱{item.baseline_price.toFixed(2)}</small></span>{selectedProduct?.id === item.id && <Check aria-hidden="true" />}</button>)}</div>
-        <div className="sticky-actions"><button className="button button--primary" type="button" disabled={!selectedProduct} onClick={() => setState('price')}>Continue with product</button></div>
-      </section>}
-      {(state === 'price' || state === 'comparing') && selectedProduct && <form className="workflow-card" onSubmit={compare}>
-        <div className="workflow-heading"><button className="back-link" type="button" onClick={() => setState('product')}><ArrowLeft aria-hidden="true" /> Change product</button><p>Step 4 of 4</p></div><h2>Confirm the displayed shelf price</h2>
-        <div className="selected-summary"><small>{selectedStore?.store_name}</small><strong>{selectedProduct.commodity_name}</strong><span>DTI reference: ₱{selectedProduct.baseline_price.toFixed(2)}</span></div>
-        <label className="price-entry" htmlFor="displayed-price"><span>Displayed shelf price</span><div><strong>₱</strong><input id="displayed-price" inputMode="decimal" value={displayedPrice} onChange={(event) => setDisplayedPrice(event.target.value)} aria-describedby={error ? 'displayed-price-error' : undefined} /></div></label>
-        {error && <StatusBanner variant="error" title="Comparison unavailable"><span id="displayed-price-error">{error}</span></StatusBanner>}
-        <button className="button button--primary" type="submit" disabled={state === 'comparing'}>{state === 'comparing' ? 'Comparing…' : 'Compare prices'}</button>
-      </form>}
-      {state === 'result' && result && <section className="comparison-result">
-        <p className="page-kicker">Comparison complete</p><h2>{result.comparison_label}</h2>
-        <PriceStrip label="Shelf price" value={`₱${result.displayed_price.toFixed(2)}`} note={result.store.store_name} />
-        <div className="comparison-rows"><div><span>DTI reference price</span><strong>₱{result.baseline_price.toFixed(2)}</strong></div><div><span>Difference</span><strong>{result.difference_pesos >= 0 ? '+' : '−'}₱{Math.abs(result.difference_pesos).toFixed(2)} ({Math.abs(result.percentage_srp - 100).toFixed(1)}%)</strong></div></div>
-        <StatusBanner variant="info" title="This result is informational">{result.informational_notice || 'A shelf-price comparison does not automatically confirm a violation. DTI evaluates reports using the applicable bulletin and evidence.'}</StatusBanner>
-        <div className="button-row"><button className="button button--secondary" type="button" onClick={() => { setResult(null); setState('store'); }}>Scan another</button><button className="button button--primary" type="button" onClick={() => { writeHandoff({ kind: 'scan-to-report', storeId: result.store.id, commodityId: result.product.id, displayedPrice: result.displayed_price, baselinePrice: result.baseline_price }); onNavigate({ name: 'new-report' }); }}>Report with receipt</button></div>
-      </section>}
-    </section>
+    <div
+      style={{
+        width: '76px',
+        height: '76px',
+        borderRadius: '12px',
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
+      }}
+    >
+      <Tag size={28} color="#2563eb" />
+    </div>
   );
-}
+};
+
+export const StoreFacadeImage = CompactStoreFacade;
+
+export type ScannerStepState =
+  | 'SELECT_STORE'
+  | 'CAMERA_LIVE'
+  | 'CAPTURE_REVIEW'
+  | 'UPLOADING'
+  | 'CANDIDATE_SELECTION'
+  | 'ENTER_PRICE'
+  | 'COMPARING'
+  | 'RESULT'
+  | 'ERROR';
+
+export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
+  const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
+
+  // Store Selection State
+  const [stores, setStores] = useState<Establishment[]>(defaultEstablishments);
+  const [selectedStore, setSelectedStore] = useState<Establishment | null>(defaultEstablishments[0]);
+  const [recentlyUsedStore, setRecentlyUsedStore] = useState<Establishment | null>(defaultEstablishments[0]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent' | 'barangay'>('all');
+
+  // Camera & Capture State
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [flashOn, setFlashOn] = useState(false);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [cameraError, setCameraError] = useState('');
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+  const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
+
+  // Dynamic Scan & Candidate Matching State
+  const [processingStage, setProcessingStage] = useState<string>('Uploading shelf tag...');
+  const [scanResponse, setScanResponse] = useState<ScanTagResponse | null>(null);
+  const [candidates, setCandidates] = useState<Commodity[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<Commodity | null>(null);
+  const [userPriceInput, setUserPriceInput] = useState<string>('');
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    fetchStores();
+  }, []);
+
+  // Body Scroll Locking for Full-Screen Camera
+  useEffect(() => {
+    if (scannerState === 'CAMERA_LIVE') {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      startCamera();
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      stopCamera();
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      stopCamera();
+    };
+  }, [scannerState, facingMode]);
+
+  const resetAllScanData = () => {
+    if (capturedPreviewUrl) {
+      URL.revokeObjectURL(capturedPreviewUrl);
+    }
+    setCapturedBlob(null);
+    setCapturedPreviewUrl(null);
+    setScanResponse(null);
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setUserPriceInput('');
+    setComparisonResult(null);
+    setErrorMessage('');
+  };
+
+  const fetchStores = async () => {
+    try {
+      const res = await apiClient.get('/public/establishments');
+      if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        const apiStores: Establishment[] = res.data.data;
+        const merged = [...defaultEstablishments];
+        apiStores.forEach((s) => {
+          if (!merged.some((m) => m.id === s.id || m.store_name.toLowerCase() === s.store_name.toLowerCase())) {
+            merged.push(s);
+          }
+        });
+        setStores(merged);
+        setSelectedStore(merged[0]);
+      }
+    } catch (err) {
+      console.warn('Using verified store directory for fallback:', err);
+    }
+  };
+
+  const startCamera = async () => {
+    setCameraError('');
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facingMode } },
+        audio: false,
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      console.warn('Camera stream error:', err);
+      setCameraError('Camera access is unavailable on this device or permission was denied.');
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      setStream(null);
+    }
+  };
+
+  const toggleCameraFacing = () => {
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  const handleStartScanForStore = (store: Establishment) => {
+    resetAllScanData();
+    setSelectedStore(store);
+    setRecentlyUsedStore(store);
+    setScannerState('CAMERA_LIVE');
+  };
+
+  const handleShutterCapture = () => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const previewUrl = URL.createObjectURL(blob);
+          setCapturedBlob(blob);
+          setCapturedPreviewUrl(previewUrl);
+          stopCamera();
+          setScannerState('CAPTURE_REVIEW');
+        }
+      },
+      'image/jpeg',
+      0.9
+    );
+  };
+
+  const handleRetake = () => {
+    resetAllScanData();
+    setScannerState('CAMERA_LIVE');
+  };
+
+  const handleUploadAndAnalyze = async () => {
+    if (!capturedBlob || !selectedStore) {
+      setErrorMessage('No captured frame or store selected. Please retake the image.');
+      setScannerState('ERROR');
+      return;
+    }
+
+    setScannerState('UPLOADING');
+    setProcessingStage('Uploading shelf tag image to DTI server...');
+
+    try {
+      const formData = new FormData();
+      formData.append('image', capturedBlob, 'shelf_tag.jpg');
+      formData.append('store_id', String(selectedStore.id));
+
+      setProcessingStage('Reading tag text & matching database records...');
+
+      const res = await apiClient.post('/public/scan-tag', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (res.data && res.data.success && res.data.data) {
+        const scanData: ScanTagResponse = res.data.data;
+        setScanResponse(scanData);
+
+        const fetchedCandidates: Commodity[] = scanData.candidates || [];
+        setCandidates(fetchedCandidates);
+
+        if (scanData.detected_price) {
+          setUserPriceInput(String(scanData.detected_price));
+        }
+
+        if (fetchedCandidates.length === 1) {
+          setSelectedCandidate(fetchedCandidates[0]);
+          executeComparison(fetchedCandidates[0], scanData.detected_price || 0);
+        } else if (fetchedCandidates.length > 1) {
+          setScannerState('CANDIDATE_SELECTION');
+        } else {
+          setScannerState('ENTER_PRICE');
+        }
+      } else {
+        throw new Error('Could not parse shelf tag OCR output.');
+      }
+    } catch (err: any) {
+      console.error('Shelf scan API error:', err);
+      setErrorMessage(
+        err.response?.data?.message || 'We could not read this shelf tag. Please ensure lighting is adequate and text is clear.'
+      );
+      setScannerState('ERROR');
+    }
+  };
+
+  const handleSelectCandidate = (candidate: Commodity) => {
+    setSelectedCandidate(candidate);
+    const initialPrice = scanResponse?.detected_price ? String(scanResponse.detected_price) : String(candidate.baseline_price);
+    setUserPriceInput(initialPrice);
+    setScannerState('ENTER_PRICE');
+  };
+
+  const handleConfirmPriceAndCompare = () => {
+    const parsedPrice = parseFloat(userPriceInput);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      alert('Please enter a valid positive shelf price.');
+      return;
+    }
+    if (!selectedCandidate) {
+      alert('Please select a valid commodity candidate.');
+      return;
+    }
+    executeComparison(selectedCandidate, parsedPrice);
+  };
+
+  const executeComparison = async (candidate: Commodity, price: number) => {
+    if (!selectedStore) return;
+
+    setScannerState('COMPARING');
+    setProcessingStage('Fetching active price bulletin & history...');
+
+    try {
+      const res = await apiClient.post('/public/compare-price', {
+        store_id: selectedStore.id,
+        srp_bulletin_id: candidate.id,
+        displayed_price: price,
+      });
+
+      if (res.data && res.data.success && res.data.data) {
+        setComparisonResult(res.data.data);
+        setScannerState('RESULT');
+      } else {
+        throw new Error('Regulatory comparison service returned an invalid response.');
+      }
+    } catch (err: any) {
+      console.error('Comparison API error:', err);
+      setErrorMessage(
+        err.response?.data?.message || 'Unable to connect to regulatory price server to compute comparison.'
+      );
+      setScannerState('ERROR');
+    }
+  };
+
+  const filteredStores = stores.filter((s) => {
+    const q = searchTerm.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      s.store_name.toLowerCase().includes(q) ||
+      s.address.toLowerCase().includes(q) ||
+      s.owner_name.toLowerCase().includes(q)
+    );
+  });
+
+  const handleReportWithReceipt = () => {
+    if (comparisonResult) {
+      sessionStorage.setItem(
+        'report_prefill',
+        JSON.stringify({
+          store_id: comparisonResult.store.id,
+          store_name: comparisonResult.store.store_name,
+          address: comparisonResult.store.address,
+          product_name: comparisonResult.product.commodity_name,
+          shelf_price: comparisonResult.displayed_price,
+          srp_baseline: comparisonResult.baseline_price
+        })
+      );
+    }
+    if (setActiveTab) {
+      setActiveTab('reports');
+    }
+  };
+
+  return (
+    <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+      
+
+
+      {/* SCREEN 1: STORE SELECTION */}
+      {scannerState === 'SELECT_STORE' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            
+            {/* Search Input Bar */}
+            <div style={{ position: 'relative' }}>
+              <Search style={{ position: 'absolute', left: '14px', top: '17px', color: '#94a3b8' }} size={18} />
+              <input
+                type="text"
+                className="input-field"
+                style={{
+                  paddingLeft: '42px',
+                  paddingRight: searchTerm ? '40px' : '16px',
+                  height: '52px',
+                  borderRadius: '12px',
+                  fontSize: '0.95rem',
+                  border: '1px solid #e2e8f0',
+                  background: '#ffffff'
+                }}
+                placeholder="Search store name, barangay, or address"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  style={{ position: 'absolute', right: '12px', top: '15px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Filter Chips Bar */}
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none' }}>
+              <button
+                onClick={() => setActiveFilterChip(activeFilterChip === 'nearby' ? 'all' : 'nearby')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '9999px',
+                  border: activeFilterChip === 'nearby' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                  background: activeFilterChip === 'nearby' ? '#eff6ff' : '#ffffff',
+                  color: activeFilterChip === 'nearby' ? '#1d4ed8' : '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <MapPin size={14} color="#2563eb" />
+                Nearby stores
+              </button>
+
+              <button
+                onClick={() => setActiveFilterChip(activeFilterChip === 'recent' ? 'all' : 'recent')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '9999px',
+                  border: activeFilterChip === 'recent' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                  background: activeFilterChip === 'recent' ? '#eff6ff' : '#ffffff',
+                  color: activeFilterChip === 'recent' ? '#1d4ed8' : '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Clock size={14} color="#2563eb" />
+                Recently selected
+              </button>
+            </div>
+
+            {/* Recently Used Store Shortcut Card */}
+            {recentlyUsedStore && !searchTerm && (
+              <div
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '14px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase' }}>
+                    Recently Used
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                    {recentlyUsedStore.store_name}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    {recentlyUsedStore.address}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleStartScanForStore(recentlyUsedStore)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  Use this store
+                </button>
+              </div>
+            )}
+
+            {/* Compact Consumer Store Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {filteredStores.map((store) => {
+                const isSelected = selectedStore?.id === store.id;
+                return (
+                  <div
+                    key={store.id}
+                    onClick={() => setSelectedStore(store)}
+                    style={{
+                      background: '#ffffff',
+                      border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                      borderRadius: '14px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <CompactStoreFacade photoType={(store as any).photoType} storeName={store.store_name} />
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                        <CheckCircle2 size={14} color="#2563eb" />
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                          Verified store
+                        </span>
+                      </div>
+
+                      <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: '0 0 2px 0', lineHeight: 1.25 }}>
+                        {store.store_name}
+                      </h3>
+
+                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, lineHeight: 1.3 }}>
+                        {store.address}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartScanForStore(store);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        background: isSelected ? '#1d4ed8' : '#f1f5f9',
+                        color: isSelected ? '#ffffff' : '#0f172a',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        border: isSelected ? 'none' : '1px solid #cbd5e1',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
+                      }}
+                    >
+                      {isSelected ? 'Selected ✓' : 'Select'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sticky Bottom Action Area */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
+              background: '#ffffff',
+              borderTop: '1px solid #e2e8f0',
+              zIndex: 90
+            }}
+          >
+            <button
+              className="btn-primary"
+              disabled={!selectedStore}
+              onClick={() => selectedStore && handleStartScanForStore(selectedStore)}
+              style={{ width: '100%', height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
+            >
+              Continue to Live Camera
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SCREEN 2: TRUE FULL-SCREEN LIVE CAMERA PREVIEW */}
+      {scannerState === 'CAMERA_LIVE' && (
+        <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden' }}>
+          
+          {/* Top Translucent Control Overlay */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 20,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: 'calc(12px + env(safe-area-inset-top)) 16px 12px 16px',
+              background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff' }}>
+              <MapPin size={16} color="#3b82f6" />
+              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>
+                {selectedStore?.store_name || 'Select Store'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setFlashOn(!flashOn)}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                aria-label="Toggle flash"
+              >
+                {flashOn ? <Zap size={20} /> : <ZapOff size={20} />}
+              </button>
+
+              <button
+                onClick={toggleCameraFacing}
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                aria-label="Switch camera"
+              >
+                <RotateCw size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Live Video Element */}
+          {!cameraError ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', color: '#94a3b8', textAlign: 'center' }}>
+              <Camera size={48} color="#64748b" style={{ marginBottom: '12px' }} />
+              <div style={{ color: '#ffffff', fontWeight: 700, marginBottom: '6px' }}>Live Camera Unavailable</div>
+              <p style={{ fontSize: '0.85rem', maxWidth: '300px' }}>{cameraError}</p>
+            </div>
+          )}
+
+          {/* Compact Instruction Overlay */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(68px + env(safe-area-inset-top))',
+              left: '16px',
+              right: '16px',
+              zIndex: 15,
+              background: 'rgba(15, 23, 42, 0.82)',
+              backdropFilter: 'blur(8px)',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              textAlign: 'center',
+              color: '#ffffff'
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>
+              Align the shelf tag inside the frame.
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '2px' }}>
+              Include product name, package size, and displayed price.
+            </div>
+          </div>
+
+          {/* Horizontal Shelf-Tag Framing Guide (Aspect Ratio ~2:1, Corner Bracket Marks Only) */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '48%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '85%',
+              maxWidth: '320px',
+              height: '130px',
+              zIndex: 15,
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '28px', height: '28px', borderTop: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '8px 0 0 0' }} />
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '28px', height: '28px', borderTop: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 8px 0 0' }} />
+            <div style={{ position: 'absolute', bottom: 0, left: 0, width: '28px', height: '28px', borderBottom: '4px solid #3b82f6', borderLeft: '4px solid #3b82f6', borderRadius: '0 0 0 8px' }} />
+            <div style={{ position: 'absolute', bottom: 0, right: 0, width: '28px', height: '28px', borderBottom: '4px solid #3b82f6', borderRight: '4px solid #3b82f6', borderRadius: '0 0 8px 0' }} />
+          </div>
+
+          {/* Bottom Capture Overlay */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 20,
+              padding: '16px 16px calc(20px + env(safe-area-inset-bottom)) 16px',
+              background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '10px'
+            }}
+          >
+            <span style={{ fontSize: '0.78rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
+              Hold steady · Lighting looks good
+            </span>
+
+            <button
+              onClick={handleShutterCapture}
+              style={{
+                width: '76px',
+                height: '76px',
+                borderRadius: '50%',
+                border: '4px solid #ffffff',
+                background: 'transparent',
+                padding: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+              }}
+              aria-label="Capture Shutter"
+            >
+              <div
+                style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  background: '#ffffff',
+                }}
+              />
+            </button>
+
+            <span style={{ fontSize: '0.78rem', color: '#cbd5e1', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 500 }}>
+              Tap to capture shelf tag
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* CAPTURE REVIEW */}
+      {scannerState === 'CAPTURE_REVIEW' && capturedPreviewUrl && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Review Captured Shelf Tag
+          </h2>
+
+          <div
+            style={{
+              position: 'relative',
+              borderRadius: '14px',
+              overflow: 'hidden',
+              border: '2px solid #e2e8f0',
+              maxHeight: '340px',
+              background: '#09090b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <img
+              src={capturedPreviewUrl}
+              alt="Captured Shelf Tag"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '340px' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <button
+              onClick={handleRetake}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              <RefreshCw size={16} />
+              Retake
+            </button>
+
+            <button
+              onClick={handleUploadAndAnalyze}
+              className="btn-primary"
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              <Check size={18} />
+              Use capture
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* UPLOADING / COMPARING PROGRESS */}
+      {(scannerState === 'UPLOADING' || scannerState === 'COMPARING') && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center', gap: '16px' }}>
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              border: '4px solid #dbeafe',
+              borderTopColor: '#1d4ed8',
+              animation: 'spin 1s linear infinite'
+            }}
+          />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          <div>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>
+              Analyzing Shelf Tag
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: '#64748b', margin: 0 }}>
+              {processingStage}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* CANDIDATE SELECTION */}
+      {scannerState === 'CANDIDATE_SELECTION' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Select Product Match
+          </h2>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+            We found possible matching regulated commodities for this shelf tag:
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {candidates.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => handleSelectCandidate(c)}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                    {c.commodity_name}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                    {c.category} · {c.unit}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
+                    ₱{Number(c.baseline_price).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={handleRetake}
+            style={{
+              height: '48px',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: '#0f172a',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              marginTop: '12px'
+            }}
+          >
+            Retake Tag Image
+          </button>
+        </div>
+      )}
+
+      {/* CONFIRM DISPLAYED PRICE */}
+      {scannerState === 'ENTER_PRICE' && selectedCandidate && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            Confirm Displayed Shelf Price
+          </h2>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>
+              Selected Product
+            </div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
+              {selectedCandidate.commodity_name}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+              {selectedCandidate.unit} · Current SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+              Displayed Shelf Price (₱)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              className="input-field"
+              style={{
+                height: '50px',
+                fontSize: '1.2rem',
+                fontWeight: 800,
+                borderRadius: '12px',
+                padding: '0 16px',
+                border: '1.5px solid #2563eb',
+                background: '#ffffff'
+              }}
+              placeholder="e.g. 23.50"
+              value={userPriceInput}
+              onChange={(e) => setUserPriceInput(e.target.value)}
+            />
+          </div>
+
+          <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px', color: '#92400e', fontSize: '0.8rem', lineHeight: 1.35 }}>
+            ⚠️ Any manual price correction is used only for this informational comparison and is not an official monitoring record.
+          </div>
+
+          <button
+            className="btn-primary"
+            onClick={handleConfirmPriceAndCompare}
+            style={{ height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
+          >
+            Compute Regulatory Comparison
+          </button>
+        </div>
+      )}
+
+      {/* SCREEN 3: DYNAMIC COMPARISON RESULT */}
+      {scannerState === 'RESULT' && comparisonResult && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: '90px' }}>
+          
+          <div style={{ textAlign: 'center', paddingTop: '4px' }}>
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fef3c7' : '#dcfce7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 10px auto',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+              }}
+            >
+              <Scale size={28} color={comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'} />
+            </div>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+              Comparison Result
+            </h1>
+          </div>
+
+          {/* Store & Product Section */}
+          <div
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Store</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
+                {comparisonResult.store.store_name}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Product</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
+                {comparisonResult.product.commodity_name}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
+              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
+                {comparisonResult.product.unit || 'Standard'}
+              </span>
+            </div>
+          </div>
+
+          {/* Prices Comparison Section */}
+          <div
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  padding: '10px 12px'
+                }}
+              >
+                <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginBottom: '2px' }}>
+                  Displayed Shelf Price
+                </div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#0f172a' }}>
+                  ₱{Number(comparisonResult.displayed_price).toFixed(2)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '10px',
+                  padding: '10px 12px'
+                }}
+              >
+                <div style={{ fontSize: '0.7rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
+                  {comparisonResult.comparison_label}
+                </div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#1d4ed8' }}>
+                  ₱{Number(comparisonResult.baseline_price).toFixed(2)}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
+                  Effective {comparisonResult.product.effective_date}
+                </div>
+              </div>
+            </div>
+
+            {/* Historical Store Price Subcard */}
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                fontSize: '0.8rem',
+                color: '#475569'
+              }}
+            >
+              {comparisonResult.previous_verified_price ? (
+                <div>
+                  Previous verified store price was{' '}
+                  <strong style={{ color: '#0f172a' }}>
+                    ₱{Number(comparisonResult.previous_verified_price).toFixed(2)}
+                  </strong>{' '}
+                  on {comparisonResult.previous_recorded_date}.
+                </div>
+              ) : (
+                <div>No verified historical store price is currently available.</div>
+              )}
+            </div>
+
+            {/* Price Difference Indicator Box */}
+            <div
+              style={{
+                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fffbeb' : '#f0fdf4',
+                border: comparisonResult.comparison_status === 'ABOVE_SRP' ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                borderRadius: '12px',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '0.9rem',
+                  fontWeight: 800,
+                  color: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'
+                }}
+              >
+                {comparisonResult.comparison_status === 'ABOVE_SRP'
+                  ? `₱${Number(comparisonResult.difference_pesos).toFixed(2)} above current SRP (${comparisonResult.percentage_srp}% higher)`
+                  : comparisonResult.comparison_status === 'BELOW_SRP'
+                  ? `₱${Math.abs(comparisonResult.difference_pesos).toFixed(2)} below current SRP`
+                  : 'Matches current SRP baseline'}
+              </div>
+            </div>
+          </div>
+
+          {/* Informational Banner */}
+          <div
+            style={{
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start'
+            }}
+          >
+            <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.78rem', color: '#92400e', lineHeight: 1.35 }}>
+              <strong>INFORMATIONAL NOTICE:</strong> {comparisonResult.informational_notice}
+            </div>
+          </div>
+
+          {/* Sticky Bottom Actions */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxWidth: '600px',
+              margin: '0 auto',
+              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
+              background: '#ffffff',
+              borderTop: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              zIndex: 90
+            }}
+          >
+            <button
+              className="btn-primary"
+              onClick={handleReportWithReceipt}
+              style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
+            >
+              Report using receipt
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                onClick={handleRetake}
+                style={{
+                  height: '42px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Scan another item
+              </button>
+
+              <button
+                onClick={() => setActiveTab && setActiveTab('prices')}
+                style={{
+                  height: '42px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#1d4ed8',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                View price history
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ERROR STATE */}
+      {scannerState === 'ERROR' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', gap: '16px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={28} />
+          </div>
+
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+            We could not read this shelf tag
+          </h2>
+
+          <p style={{ fontSize: '0.85rem', color: '#64748b', maxWidth: '340px', margin: 0, lineHeight: 1.4 }}>
+            {errorMessage}
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
+            <button
+              className="btn-primary"
+              onClick={handleRetake}
+              style={{ height: '46px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700 }}
+            >
+              Retake Image
+            </button>
+
+            <button
+              onClick={() => setActiveTab && setActiveTab('prices')}
+              style={{
+                height: '46px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Search Prices Manually
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ShelfScanner;

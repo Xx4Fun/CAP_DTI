@@ -1,75 +1,98 @@
-import { useEffect, useState } from 'react';
-import { apiClient, type SystemConfig } from './api/client';
-import { navigate, type AppRoute } from './app/routing';
-import type { RegulatoryStatus } from './app/status';
-import { useAppRoute } from './hooks/useAppRoute';
-import { useConnectivity } from './hooks/useConnectivity';
-import { ConnectivityNotice } from './components/ConnectivityNotice';
-import { FormalReport } from './components/FormalReport';
-import { Home } from './components/Home';
+import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
-import { ProductDetail } from './components/ProductDetail';
-import { ShelfScanner } from './components/ShelfScanner';
+import { OfflineBanner } from './components/OfflineBanner';
+import { Home } from './components/Home';
 import { SrpSearch } from './components/SrpSearch';
+import { ShelfScanner } from './components/ShelfScanner';
+import { FormalReport } from './components/FormalReport';
 import { TrackReport } from './components/TrackReport';
+import { apiClient, type SystemConfig } from './api/client';
 
-type TrackingCredentials = { reference: string; token: string };
-
-export default function App() {
-  const route = useAppRoute();
-  const isOnline = useConnectivity();
-  const [regulatoryStatus, setRegulatoryStatus] = useState<RegulatoryStatus>({ kind: 'loading' });
-  const [trackingCredentials, setTrackingCredentials] = useState<TrackingCredentials | null>(null);
+export const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<string>('home');
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
 
   useEffect(() => {
-    let active = true;
-    setRegulatoryStatus({ kind: 'loading' });
-    apiClient.get('/public/config')
-      .then((response) => {
-        if (!active) return;
-        if (response.data?.success && response.data.data) {
-          setRegulatoryStatus({ kind: 'available', config: response.data.data as SystemConfig });
-        } else {
-          setRegulatoryStatus({ kind: 'unavailable', reason: 'request-failed' });
-        }
-      })
-      .catch(() => {
-        if (active) setRegulatoryStatus({ kind: 'unavailable', reason: isOnline ? 'request-failed' : 'offline' });
-      });
-    return () => { active = false; };
-  }, [isOnline]);
+    fetchConfig();
 
-  const onNavigate = (next: AppRoute) => navigate(next);
-  const scanRoute = route.name === 'scan';
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await apiClient.get('/public/config');
+      if (res.data.success) {
+        setConfig(res.data.data);
+        setLastSyncTime(new Date().toLocaleTimeString());
+      }
+    } catch (err) {
+      console.error('Offline or unable to fetch system config:', err);
+    }
+  };
+
+  const isScanTab = activeTab === 'scan' || activeTab === 'shelf-scanner';
 
   return (
-    <div className={scanRoute ? 'app app--camera-capable' : 'app'}>
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      <Navbar route={route} onNavigate={onNavigate} regulatoryStatus={regulatoryStatus} />
-      <main id="main-content" className={scanRoute ? 'app-scan-container' : 'app-container'} tabIndex={-1}>
-        {!scanRoute && !isOnline && <ConnectivityNotice isOnline={false} />}
-        {route.name === 'home' && <Home onNavigate={onNavigate} regulatoryStatus={regulatoryStatus} />}
-        {route.name === 'prices' && <SrpSearch onNavigate={onNavigate} isOnline={isOnline} />}
-        {route.name === 'product' && <ProductDetail commodityId={route.commodityId} onNavigate={onNavigate} />}
-        {route.name === 'scan' && <ShelfScanner onNavigate={onNavigate} isOnline={isOnline} />}
-        {(route.name === 'reports' || route.name === 'new-report') && (
+    <div>
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        stateOfCalamity={config?.state_of_calamity || false}
+      />
+
+      <main className={isScanTab ? 'app-scan-container' : 'app-container'}>
+        {!isScanTab && <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />}
+
+        {activeTab === 'home' && (
+          <Home
+            setActiveTab={setActiveTab}
+            stateOfCalamity={config?.state_of_calamity || false}
+          />
+        )}
+
+        {(activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores') && (
+          <SrpSearch
+            setActiveTab={setActiveTab}
+            stateOfCalamity={config?.state_of_calamity || false}
+          />
+        )}
+
+        {(activeTab === 'scan' || activeTab === 'shelf-scanner') && (
+          <ShelfScanner setActiveTab={setActiveTab} />
+        )}
+
+        {(activeTab === 'reports' || activeTab === 'report') && (
           <FormalReport
-            mode={route.name === 'new-report' ? 'new' : 'dashboard'}
-            onNavigate={onNavigate}
-            onTrackReport={(reference, token) => {
-              setTrackingCredentials({ reference, token });
-              onNavigate({ name: 'track-report' });
+            setActiveTab={setActiveTab}
+            onTrackReport={(ref, tok) => {
+              setTrackingParams({ reference: ref, token: tok });
+              setActiveTab('track');
             }}
           />
         )}
-        {route.name === 'track-report' && (
+
+        {activeTab === 'track' && (
           <TrackReport
-            initialReference={trackingCredentials?.reference}
-            initialToken={trackingCredentials?.token}
-            onNavigate={onNavigate}
+            initialReference={trackingParams?.reference}
+            initialToken={trackingParams?.token}
+            setActiveTab={setActiveTab}
           />
         )}
       </main>
     </div>
   );
-}
+};
+
+export default App;

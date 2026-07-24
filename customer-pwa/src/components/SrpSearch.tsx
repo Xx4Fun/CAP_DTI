@@ -1,136 +1,740 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ArrowRight, Filter, Search, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Search,
+  SlidersHorizontal,
+  ArrowUpDown,
+  ChevronRight,
+  Info,
+  X,
+  Layers
+} from 'lucide-react';
 import { apiClient, type Commodity } from '../api/client';
-import type { AppRoute } from '../app/routing';
 import { fallbackCommodities } from '../data/srpFallback';
-import { ConnectivityNotice } from './ConnectivityNotice';
+import { ProductDetail } from './ProductDetail';
 
-type SrpSearchProps = {
-  onNavigate: (route: AppRoute) => void;
-  isOnline: boolean;
-};
+interface SrpSearchProps {
+  setActiveTab?: (tab: string) => void;
+  stateOfCalamity?: boolean;
+}
 
-type Classification = 'all' | 'BASIC_NECESSITY' | 'PRIME_COMMODITY';
-type SortOrder = 'name' | 'price-low' | 'price-high';
+// Product illustration component for list cards
+const CardProductIllustration: React.FC<{ commodity: Commodity }> = ({ commodity }) => {
+  const name = (commodity.commodity_name || '').toLowerCase();
+  const category = (commodity.category || '').toLowerCase();
 
-export function SrpSearch({ onNavigate, isOnline }: SrpSearchProps) {
-  const [commodities, setCommodities] = useState<Commodity[]>([]);
-  const [query, setQuery] = useState(() => sessionStorage.getItem('srp_search_term') ?? '');
-  const [classification, setClassification] = useState<Classification>('all');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('name');
-  const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<'live' | 'bundled'>('live');
+  const isSardines = name.includes('sardine') || category.includes('sardine');
+  const isLuncheon = name.includes('luncheon') || name.includes('meat') || category.includes('meat');
+  const isMilk = name.includes('milk') || category.includes('milk');
+  const isCoffee = name.includes('coffee') || category.includes('coffee');
 
-  useEffect(() => {
-    sessionStorage.removeItem('srp_search_term');
-    let active = true;
-    apiClient.get('/public/commodities')
-      .then((response) => {
-        const data = response.data?.data;
-        if (!active) return;
-        if (response.data?.success && Array.isArray(data)) {
-          setCommodities(data);
-          setSource('live');
-        } else {
-          setCommodities(fallbackCommodities);
-          setSource('bundled');
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setCommodities(fallbackCommodities);
-          setSource('bundled');
-        }
-      })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
+  if (isSardines) {
+    return (
+      <div
+        style={{
+          width: '54px',
+          height: '62px',
+          borderRadius: '10px',
+          background: 'linear-gradient(145deg, #dc2626 0%, #991b1b 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '4px 3px',
+          color: '#ffffff',
+          boxShadow: '0 2px 6px rgba(153, 27, 27, 0.2)',
+          position: 'relative',
+          overflow: 'hidden',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
+        <div style={{ textAlign: 'center', marginTop: '3px' }}>
+          <div style={{ fontSize: '0.48rem', fontWeight: 800, color: '#fef08a', letterSpacing: '0.04em' }}>SABA</div>
+        </div>
+        <div style={{ width: '82%', height: '20px', background: 'rgba(255,255,255,0.18)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="22" height="12" viewBox="0 0 34 20" fill="none">
+            <path d="M2 10C8 4 20 4 28 10C20 16 8 16 2 10Z" fill="#fbbf24" stroke="#ffffff" strokeWidth="1.5" />
+          </svg>
+        </div>
+        <div style={{ fontSize: '0.42rem', fontWeight: 700, background: '#f59e0b', color: '#78350f', padding: '1px 3px', borderRadius: '3px', textAlign: 'center', width: '92%' }}>
+          TOMATO
+        </div>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
+      </div>
+    );
+  }
 
-  const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return commodities
-      .filter((item) => classification === 'all' || item.regulatory_classification === classification)
-      .filter((item) => !needle || [
-        item.commodity_name, item.category, item.brand, item.variant, item.package_size, item.unit,
-      ].some((value) => value?.toLowerCase().includes(needle)))
-      .sort((left, right) => {
-        if (sortOrder === 'price-low') return left.baseline_price - right.baseline_price;
-        if (sortOrder === 'price-high') return right.baseline_price - left.baseline_price;
-        return left.commodity_name.localeCompare(right.commodity_name);
-      });
-  }, [classification, commodities, query, sortOrder]);
+  if (isLuncheon) {
+    return (
+      <div
+        style={{
+          width: '54px',
+          height: '62px',
+          borderRadius: '10px',
+          background: 'linear-gradient(145deg, #1e3a8a 0%, #1e40af 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '4px 3px',
+          color: '#ffffff',
+          boxShadow: '0 2px 6px rgba(30, 58, 138, 0.2)',
+          position: 'relative',
+          overflow: 'hidden',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
+        <div style={{ textAlign: 'center', marginTop: '3px' }}>
+          <div style={{ fontSize: '0.45rem', fontWeight: 800, color: '#ffffff' }}>PUREFOODS</div>
+        </div>
+        <div style={{ width: '80%', height: '18px', background: '#f43f5e', borderRadius: '4px' }} />
+        <div style={{ fontSize: '0.4rem', color: '#cbd5e1' }}>MEAT</div>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
+      </div>
+    );
+  }
 
-  const reset = () => {
-    setQuery('');
-    setClassification('all');
-    setSortOrder('name');
-  };
+  if (isMilk) {
+    return (
+      <div
+        style={{
+          width: '54px',
+          height: '62px',
+          borderRadius: '10px',
+          background: 'linear-gradient(145deg, #0284c7 0%, #0369a1 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px',
+          color: '#ffffff',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ width: '22px', height: '26px', background: '#ffffff', borderRadius: '4px' }} />
+        <div style={{ fontSize: '0.5rem', fontWeight: 700 }}>MILK</div>
+      </div>
+    );
+  }
 
-  const submit = (event: FormEvent) => event.preventDefault();
+  if (isCoffee) {
+    return (
+      <div
+        style={{
+          width: '54px',
+          height: '62px',
+          borderRadius: '10px',
+          background: 'linear-gradient(145deg, #78350f 0%, #451a03 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px',
+          color: '#ffffff',
+          flexShrink: 0
+        }}
+      >
+        <div style={{ width: '22px', height: '24px', background: '#d97706', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.55rem' }}>
+          NES
+        </div>
+        <div style={{ fontSize: '0.5rem', fontWeight: 700 }}>COFFEE</div>
+      </div>
+    );
+  }
 
   return (
-    <section className="directory-page" aria-labelledby="prices-title">
-      <header className="page-header">
-        <p className="page-kicker">Official reference directory</p>
-        <h1 id="prices-title">DTI reference prices</h1>
-        <p className="page-intro">Match the exact brand, variant, and package size before comparing a price.</p>
-      </header>
+    <div
+      style={{
+        width: '54px',
+        height: '62px',
+        borderRadius: '10px',
+        background: 'linear-gradient(145deg, #3b82f6 0%, #1d4ed8 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '4px',
+        color: '#ffffff',
+        flexShrink: 0
+      }}
+    >
+      <Layers size={22} />
+      <div style={{ fontSize: '0.45rem', fontWeight: 700 }}>SRP</div>
+    </div>
+  );
+};
 
-      <ConnectivityNotice isOnline={isOnline} freshness={source} updatedAt={source === 'bundled' ? fallbackCommodities[0]?.effective_date : null} />
+export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalamity = false }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'BASIC_NECESSITY' | 'PRIME_COMMODITY'>('ALL');
+  const [selectedCommodity, setSelectedCommodity] = useState<Commodity | null>(null);
+  const [sortOption, setSortOption] = useState<'default' | 'price_low' | 'price_high' | 'name'>('default');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const activeFiltersCount = (categoryFilter !== 'ALL' ? 1 : 0) + (sortOption !== 'default' ? 1 : 0) + 2;
 
-      <form className="directory-controls" role="search" onSubmit={submit}>
-        <div className="search-control">
-          <label htmlFor="price-search">Search product, brand, or package size</label>
-          <div><Search aria-hidden="true" /><input id="price-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="e.g. sardines 155g" />{query && <button type="button" aria-label="Clear search" onClick={() => setQuery('')}><X aria-hidden="true" /></button>}</div>
-        </div>
-        <div className="filter-row">
-          <label><span><Filter aria-hidden="true" /> Classification</span>
-            <select value={classification} onChange={(event) => setClassification(event.target.value as Classification)}>
-              <option value="all">All classifications</option>
-              <option value="BASIC_NECESSITY">Basic necessities</option>
-              <option value="PRIME_COMMODITY">Prime commodities</option>
-            </select>
-          </label>
-          <label><span>Sort by</span>
-            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>
-              <option value="name">Product name</option>
-              <option value="price-low">Price: low to high</option>
-              <option value="price-high">Price: high to low</option>
-            </select>
-          </label>
-        </div>
-        {(query || classification !== 'all' || sortOrder !== 'name') && (
-          <div className="active-filters">
-            <span>{results.length} result{results.length === 1 ? '' : 's'}</span>
-            <button type="button" onClick={reset}>Reset filters</button>
-          </div>
-        )}
-      </form>
+  const [commodities, setCommodities] = useState<Commodity[]>(() => {
+    try {
+      const cached = localStorage.getItem('price_watch_srp_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading initial localStorage cache:', e);
+    }
+    return fallbackCommodities;
+  });
 
-      <div className="results-heading" aria-live="polite">
-        <strong>{loading ? 'Loading current prices…' : `${results.length} reference prices`}</strong>
-        <span>{source === 'live' ? 'Live DTI data' : 'Bundled DTI reference list'}</span>
+  const [loading, setLoading] = useState(false);
+  const [isCachedMode, setIsCachedMode] = useState(false);
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const savedTerm = sessionStorage.getItem('srp_search_term');
+    if (savedTerm) {
+      setSearchTerm(savedTerm);
+      fetchCommodities(savedTerm);
+      sessionStorage.removeItem('srp_search_term');
+    } else {
+      fetchCommodities('');
+    }
+  }, []);
+
+  const fetchCommodities = async (query = '') => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get('/public/commodities', {
+        params: { query }
+      });
+
+      if (res.data && res.data.success && Array.isArray(res.data.data)) {
+        const liveData: Commodity[] = res.data.data;
+        setCommodities(liveData);
+        setIsCachedMode(false);
+        if (!query && liveData.length > 0) {
+          try {
+            localStorage.setItem('price_watch_srp_cache', JSON.stringify(liveData));
+          } catch (e) {
+            console.warn('Unable to save latest DTI Admin prices to localStorage:', e);
+          }
+        }
+      } else {
+        throw new Error('Invalid response structure');
+      }
+    } catch (err) {
+      console.warn('API connection offline. Using fallback commodities:', err);
+      setIsCachedMode(true);
+
+      let baseDataSet = fallbackCommodities;
+      try {
+        const cached = localStorage.getItem('price_watch_srp_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            baseDataSet = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading from localStorage cache:', e);
+      }
+
+      const q = query.toLowerCase().trim();
+      const filtered = q
+        ? baseDataSet.filter(
+            (item) =>
+              item.commodity_name.toLowerCase().includes(q) ||
+              (item.category && item.category.toLowerCase().includes(q)) ||
+              (item.unit && item.unit.toLowerCase().includes(q)) ||
+              (item.regulatory_classification && item.regulatory_classification.toLowerCase().includes(q))
+          )
+        : baseDataSet;
+
+      setCommodities(filtered);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setSearchTerm(val);
+
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchCommodities(val);
+    }, 200);
+  };
+
+  // Helper formatting for list items
+  const parseItem = (item: Commodity) => {
+    let name = item.commodity_name;
+    let category = item.category || '';
+    let unit = item.unit || item.package_size || '';
+
+    if (name.includes(' - ')) {
+      const parts = name.split(' - ');
+      if (parts.length >= 2) {
+        if (!item.category) category = parts[0].trim();
+        name = parts.slice(1).join(' - ').trim();
+      }
+    }
+
+    const sizeMatch = name.match(/\(([^)]+)\)$/);
+    if (sizeMatch) {
+      if (!unit) unit = sizeMatch[1];
+      name = name.replace(/\s*\([^)]+\)$/, '');
+    }
+
+    let effDate = item.effective_date || '11 May 2026';
+    if (effDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [y, m, d] = effDate.split('-');
+      const dObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+      effDate = dObj.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+
+    return { name, category, unit, effDate };
+  };
+
+  // Filter list by category chip selection
+  const filteredList = commodities.filter((item) => {
+    if (categoryFilter === 'BASIC_NECESSITY') {
+      return item.regulatory_classification === 'BASIC_NECESSITY';
+    }
+    if (categoryFilter === 'PRIME_COMMODITY') {
+      return item.regulatory_classification === 'PRIME_COMMODITY';
+    }
+    return true;
+  });
+
+  // Apply sorting
+  const sortedList = [...filteredList].sort((a, b) => {
+    if (sortOption === 'price_low') {
+      return Number(a.baseline_price) - Number(b.baseline_price);
+    }
+    if (sortOption === 'price_high') {
+      return Number(b.baseline_price) - Number(a.baseline_price);
+    }
+    if (sortOption === 'name') {
+      return a.commodity_name.localeCompare(b.commodity_name);
+    }
+    return 0;
+  });
+
+  const handleSelectScan = (item: Commodity) => {
+    sessionStorage.setItem('selected_commodity', JSON.stringify(item));
+    if (setActiveTab) {
+      setActiveTab('scan');
+    }
+  };
+
+  const handleSelectReport = (item: Commodity) => {
+    sessionStorage.setItem('selected_commodity', JSON.stringify(item));
+    if (setActiveTab) {
+      setActiveTab('reports');
+    }
+  };
+
+  // If a commodity is selected, render ProductDetail view
+  if (selectedCommodity) {
+    return (
+      <ProductDetail
+        commodity={selectedCommodity}
+        onBack={() => setSelectedCommodity(null)}
+        onSelectScan={handleSelectScan}
+        onSelectReport={handleSelectReport}
+        stateOfCalamity={stateOfCalamity}
+      />
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      {/* 1. Header Title & Subtitle */}
+      <div>
+        <h1
+          style={{
+            fontSize: '1.75rem',
+            fontWeight: 800,
+            color: '#0f172a',
+            marginBottom: '4px',
+            lineHeight: 1.2
+          }}
+        >
+          Prices
+        </h1>
+        <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.4 }}>
+          Search current reference prices by product, brand, category, and package size.
+        </p>
       </div>
 
-      {loading ? (
-        <div className="skeleton-list" aria-label="Loading prices">{[1, 2, 3, 4].map((value) => <div key={value} />)}</div>
-      ) : results.length === 0 ? (
-        <div className="empty-state"><Search aria-hidden="true" /><h2>No matching prices</h2><p>Try a shorter product name or reset the classification filter.</p><button className="button button--secondary" type="button" onClick={reset}>Reset filters</button></div>
-      ) : (
-        <div className="product-list">
-          {results.map((commodity) => (
-            <button className="product-row" type="button" key={commodity.id} onClick={() => onNavigate({ name: 'product', commodityId: commodity.id })}>
-              <span className="product-row__copy">
-                <small>{commodity.category || 'DTI monitored product'}</small>
-                <strong>{commodity.commodity_name}</strong>
-                <span>{commodity.unit || commodity.package_size || 'Package size listed in detail'}</span>
-              </span>
-              <span className="product-row__price"><small>Reference</small><strong>₱{commodity.baseline_price.toFixed(2)}</strong></span>
-              <ArrowRight aria-hidden="true" />
+      {/* 2. Search Input Bar */}
+      <div style={{ position: 'relative' }}>
+        <Search
+          style={{ position: 'absolute', left: '14px', top: '14px', color: '#64748b' }}
+          size={18}
+        />
+        <input
+          type="text"
+          className="input-field"
+          style={{
+            paddingLeft: '42px',
+            paddingRight: searchTerm ? '40px' : '16px',
+            fontSize: '0.95rem',
+            borderRadius: '12px',
+            height: '46px',
+            border: '1px solid #e2e8f0'
+          }}
+          placeholder="Search products or brands"
+          value={searchTerm}
+          onChange={handleSearchChange}
+        />
+        {searchTerm && (
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              fetchCommodities('');
+            }}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '13px',
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer'
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* 3. Category Filter Chips Bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          overflowX: 'auto',
+          paddingBottom: '4px',
+          scrollbarWidth: 'none'
+        }}
+      >
+        <button
+          onClick={() => setCategoryFilter('ALL')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: '9999px',
+            fontSize: '0.85rem',
+            fontWeight: categoryFilter === 'ALL' ? 700 : 500,
+            background: categoryFilter === 'ALL' ? '#2563eb' : '#ffffff',
+            color: categoryFilter === 'ALL' ? '#ffffff' : '#334155',
+            border: categoryFilter === 'ALL' ? 'none' : '1px solid #e2e8f0',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow: categoryFilter === 'ALL' ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          All
+        </button>
+
+        <button
+          onClick={() => setCategoryFilter('BASIC_NECESSITY')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: '9999px',
+            fontSize: '0.85rem',
+            fontWeight: categoryFilter === 'BASIC_NECESSITY' ? 700 : 500,
+            background: categoryFilter === 'BASIC_NECESSITY' ? '#2563eb' : '#ffffff',
+            color: categoryFilter === 'BASIC_NECESSITY' ? '#ffffff' : '#334155',
+            border: categoryFilter === 'BASIC_NECESSITY' ? 'none' : '1px solid #e2e8f0',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow: categoryFilter === 'BASIC_NECESSITY' ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Basic Necessities
+        </button>
+
+        <button
+          onClick={() => setCategoryFilter('PRIME_COMMODITY')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: '9999px',
+            fontSize: '0.85rem',
+            fontWeight: categoryFilter === 'PRIME_COMMODITY' ? 700 : 500,
+            background: categoryFilter === 'PRIME_COMMODITY' ? '#2563eb' : '#ffffff',
+            color: categoryFilter === 'PRIME_COMMODITY' ? '#ffffff' : '#334155',
+            border: categoryFilter === 'PRIME_COMMODITY' ? 'none' : '1px solid #e2e8f0',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow: categoryFilter === 'PRIME_COMMODITY' ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          Prime Commodities
+        </button>
+      </div>
+
+      {/* 4. Filters & Sort Buttons */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        {/* Filters Button */}
+        <button
+          onClick={() => setIsFilterModalOpen(!isFilterModalOpen)}
+          style={{
+            background: '#ffffff',
+            border: '1px solid #2563eb',
+            borderRadius: '12px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            color: '#2563eb',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            cursor: 'pointer'
+          }}
+        >
+          <SlidersHorizontal size={18} />
+          Filters
+          <span
+            style={{
+              background: '#2563eb',
+              color: '#ffffff',
+              borderRadius: '50%',
+              width: '20px',
+              height: '20px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: 700
+            }}
+          >
+            {activeFiltersCount}
+          </span>
+        </button>
+
+        {/* Sort Button */}
+        <button
+          onClick={() => {
+            const nextSort =
+              sortOption === 'default'
+                ? 'price_low'
+                : sortOption === 'price_low'
+                ? 'price_high'
+                : sortOption === 'price_high'
+                ? 'name'
+                : 'default';
+            setSortOption(nextSort);
+          }}
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '12px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            color: '#0f172a',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            cursor: 'pointer'
+          }}
+        >
+          <ArrowUpDown size={18} />
+          Sort
+          {sortOption !== 'default' && (
+            <span style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 700 }}>
+              ({sortOption === 'price_low' ? 'Low' : sortOption === 'price_high' ? 'High' : 'A-Z'})
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Filter Modal Drawer if active */}
+      {isFilterModalOpen && (
+        <div
+          style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: '14px',
+            padding: '14px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#0f172a' }}>Filter Options</span>
+            <button
+              onClick={() => setIsFilterModalOpen(false)}
+              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+            >
+              <X size={16} />
             </button>
-          ))}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', background: '#dbeafe', color: '#1d4ed8', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
+              Active SRP Bulletin
+            </span>
+            <span style={{ fontSize: '0.8rem', background: '#d1fae5', color: '#047857', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
+              DTI Antique Monitored
+            </span>
+          </div>
         </div>
       )}
-    </section>
+
+      {/* 5. Live Status Bar */}
+      <div
+        style={{
+          background: isCachedMode ? '#fffbeb' : '#f0fdf4',
+          border: isCachedMode ? '1px solid #fde68a' : '1px solid #bbf7d0',
+          borderRadius: '12px',
+          padding: '10px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          color: isCachedMode ? '#b45309' : '#166534',
+          fontSize: '0.85rem',
+          fontWeight: 600
+        }}
+      >
+        <span
+          style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: isCachedMode ? '#d97706' : '#16a34a',
+            display: 'inline-block',
+            boxShadow: isCachedMode ? '0 0 0 3px rgba(217, 119, 6, 0.2)' : '0 0 0 3px rgba(22, 163, 74, 0.2)'
+          }}
+        />
+        <span>
+          {isCachedMode ? (
+            <>
+              <Info size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+              Offline mode · Displaying cached SRP bulletin
+            </>
+          ) : (
+            'Current · Updated 3:21 PM'
+          )}
+        </span>
+      </div>
+
+      {/* 6. Total Item Count */}
+      <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
+        {sortedList.length} prices
+      </div>
+
+      {/* 7. Product Cards List */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+          Loading reference prices...
+        </div>
+      ) : sortedList.length === 0 ? (
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            textAlign: 'center',
+            padding: '40px 16px',
+            color: '#64748b'
+          }}
+        >
+          No regulated commodities found matching "{searchTerm}".
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {sortedList.map((item) => {
+            const { name, category, unit, effDate } = parseItem(item);
+            const isBasic = item.regulatory_classification === 'BASIC_NECESSITY';
+
+            return (
+              <div
+                key={item.id}
+                onClick={() => setSelectedCommodity(item)}
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  border: '1px solid #e2e8f0',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {/* Left Product Illustration */}
+                <CardProductIllustration commodity={item} />
+
+                {/* Middle Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '1rem',
+                      color: '#0f172a',
+                      lineHeight: 1.25,
+                      marginBottom: '4px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {name}
+                  </div>
+
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '6px' }}>
+                    {category}{unit ? ` · ${unit}` : ''}
+                  </div>
+
+                  <div>
+                    <span
+                      className={`badge ${isBasic ? 'badge-green' : 'badge-blue'}`}
+                      style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                    >
+                      {isBasic ? 'Basic Necessity' : 'Prime Commodity'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right Price & Chevron */}
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '1.35rem', fontWeight: 800, color: '#2563eb' }}>
+                      ₱{Number(item.baseline_price).toFixed(2)}
+                    </span>
+                    <ChevronRight size={18} color="#0f172a" />
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                    Effective {effDate}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
-}
+};
+
+export default SrpSearch;
