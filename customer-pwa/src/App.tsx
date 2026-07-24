@@ -3,7 +3,6 @@ import { Navbar } from './components/Navbar';
 import { OfflineBanner } from './components/OfflineBanner';
 import { Home } from './components/Home';
 import { SrpSearch } from './components/SrpSearch';
-import { StoreDirectory } from './components/StoreDirectory';
 import { ShelfScanner } from './components/ShelfScanner';
 import { FormalReport } from './components/FormalReport';
 import { TrackReport } from './components/TrackReport';
@@ -60,15 +59,21 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'search' && <SrpSearch />}
+        {(activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores') && (
+          <SrpSearch />
+        )}
 
-        {activeTab === 'stores' && <StoreDirectory />}
+        {(activeTab === 'scan' || activeTab === 'shelf-scanner') && (
+          <ShelfScanner />
+        )}
 
-        {activeTab === 'shelf-scanner' && <ShelfScanner />}
+        {(activeTab === 'reports' || activeTab === 'report') && (
+          <FormalReport />
+        )}
 
-        {activeTab === 'report' && <FormalReport />}
-
-        {activeTab === 'track' && <TrackReport />}
+        {activeTab === 'track' && (
+          <TrackReport />
+        )}
       </main>
     </div>
   );

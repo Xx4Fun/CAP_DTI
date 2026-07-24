@@ -2,20 +2,25 @@
 
 :root {
   --font-primary: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  --bg-dark: #09090b;
-  --bg-surface: #121215;
-  --bg-card: rgba(24, 24, 28, 0.7);
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-highlight: rgba(245, 158, 11, 0.3);
-  --primary: #f59e0b; /* Regulatory Amber */
-  --primary-hover: #d97706;
-  --accent-red: #ef4444; /* Alert Crimson */
-  --accent-green: #10b981; /* Validated Emerald */
-  --accent-blue: #3b82f6; /* Informational Blue */
-  --text-main: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --glass-blur: blur(16px);
-  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  --bg-primary: #f8fafc;
+  --bg-dark: #f8fafc;
+  --bg-surface: #ffffff;
+  --card-bg: #ffffff;
+  --bg-card: #ffffff;
+  --border-color: #e2e8f0;
+  --border-highlight: rgba(29, 78, 216, 0.3);
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent-amber: #f59e0b;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+  --accent-blue: #3b82f6;
+  --glass-blur: blur(12px);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
 }
 
 * {
@@ -26,42 +31,41 @@
 
 body {
   font-family: var(--font-primary);
-  background-color: var(--bg-dark);
+  background-color: var(--bg-primary);
   color: var(--text-main);
   min-height: 100vh;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Glassmorphic Container & Layout */
+/* Mobile Container & Layout */
 .app-container {
-  max-width: 1000px;
+  max-width: 600px;
   margin: 0 auto;
   padding: 16px;
   padding-bottom: 90px; /* Space for mobile nav bar */
 }
 
-/* Cards & Glass Panel */
+/* Cards & Glass Panel / Clean Card Utilities */
 .glass-panel {
-  background: var(--bg-card);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: var(--shadow-lg);
-  transition: border-color 0.2s ease;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
 }
 
 .glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-md);
 }
 
 /* Emergency State Alert Override */
 .glass-panel.calamity-active {
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(40, 15, 18, 0.8);
+  border-color: #fca5a5;
+  background: #fef2f2;
 }
 
 /* Badges */
@@ -78,34 +82,34 @@ body {
 }
 
 .badge-amber {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fde68a;
 }
 
 .badge-red {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
 }
 
 .badge-green {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #d1fae5;
+  color: #059669;
+  border: 1px solid #6ee7b7;
 }
 
 .badge-blue {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: #dbeafe;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
 }
 
 /* Forms & Inputs */
 .input-field {
   width: 100%;
   padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.4);
+  background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   color: var(--text-main);
@@ -117,7 +121,7 @@ body {
 
 .input-field:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
 }
 
 .btn-primary {
@@ -127,19 +131,19 @@ body {
   gap: 8px;
   width: 100%;
   padding: 12px 20px;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: #000;
-  font-weight: 700;
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
   font-size: 0.95rem;
   border: none;
   border-radius: 10px;
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+  transition: background-color 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 2px 4px rgba(29, 78, 216, 0.2);
 }
 
 .btn-primary:hover {
-  opacity: 0.95;
+  background: var(--primary-hover);
   transform: translateY(-1px);
 }
 
@@ -156,18 +160,18 @@ body {
   gap: 8px;
   width: 100%;
   padding: 12px 20px;
-  background: rgba(255, 255, 255, 0.06);
+  background: #f1f5f9;
   color: var(--text-main);
   font-weight: 600;
   font-size: 0.95rem;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #e2e8f0;
 }
 
 /* Nav Bar & Bottom Navigation */
@@ -175,13 +179,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  background: rgba(12, 12, 15, 0.85);
-  backdrop-filter: blur(12px);
+  padding: 12px 16px;
+  background: #ffffff;
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: var(--shadow-sm);
 }
 
 .nav-bottom {
@@ -189,14 +193,14 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 68px;
-  background: rgba(12, 12, 15, 0.95);
-  backdrop-filter: blur(16px);
+  height: 64px;
+  background: #ffffff;
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-around;
   align-items: center;
   z-index: 100;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04);
 }
 
 .nav-item {
@@ -212,6 +216,8 @@ body {
   background: none;
   border: none;
   transition: color 0.15s ease;
+  padding: 6px;
+  flex: 1;
 }
 
 .nav-item.active {
@@ -238,7 +244,7 @@ body {
 .camera-overlay {
   position: absolute;
   inset: 0;
-  border: 2px dashed rgba(245, 158, 11, 0.7);
+  border: 2px dashed rgba(245, 158, 11, 0.8);
   margin: 24px;
   border-radius: 12px;
   pointer-events: none;
@@ -252,8 +258,8 @@ body {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -262,7 +268,7 @@ body {
 }
 
 .modal-content {
-  background: #18181b;
+  background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: 20px;
   max-width: 500px;
@@ -270,4 +276,5 @@ body {
   padding: 24px;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: var(--shadow-lg);
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home as HomeIcon, Search, Store, Camera, FileCheck, HelpCircle } from 'lucide-react';
+import { Home, Tag, Scan, ClipboardList, AlertTriangle } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
@@ -13,32 +13,36 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
       <header className="navbar-top">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '8px',
-            background: stateOfCalamity ? '#ef4444' : '#f59e0b',
+            width: '36px',
+            height: '36px',
+            borderRadius: '10px',
+            background: stateOfCalamity ? '#ef4444' : '#1d4ed8',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#000',
+            color: '#ffffff',
             fontWeight: 'bold',
-            fontSize: '14px'
+            boxShadow: '0 2px 4px rgba(29, 78, 216, 0.2)'
           }}>
-            PW
+            <Tag size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
+            <div style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#0f172a' }}>
               PRICE-Watch
             </div>
-            <div style={{ fontSize: '0.68rem', color: '#a1a1aa', fontWeight: 500 }}>
-              DTI Regulatory Transparency PWA
+            <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 500 }}>
+              Consumer Price Guide
             </div>
           </div>
         </div>
 
-        {stateOfCalamity && (
+        {stateOfCalamity ? (
           <span className="badge badge-red" style={{ animation: 'pulse 2s infinite' }}>
-            ⚠️ CALAMITY PROTOCOLS
+            <AlertTriangle size={12} /> CALAMITY PROTOCOLS
+          </span>
+        ) : (
+          <span className="badge badge-green">
+            NORMAL MONITORING
           </span>
         )}
       </header>
@@ -48,50 +52,36 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
           className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
           onClick={() => setActiveTab('home')}
         >
-          <HomeIcon size={20} />
+          <Home size={20} />
           <span>Home</span>
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'search' ? 'active' : ''}`}
-          onClick={() => setActiveTab('search')}
+          className={`nav-item ${activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores' ? 'active' : ''}`}
+          onClick={() => setActiveTab('prices')}
         >
-          <Search size={20} />
-          <span>SRP Search</span>
+          <Tag size={20} />
+          <span>Prices</span>
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'stores' ? 'active' : ''}`}
-          onClick={() => setActiveTab('stores')}
+          className={`nav-item ${activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'active' : ''}`}
+          onClick={() => setActiveTab('scan')}
         >
-          <Store size={20} />
-          <span>Stores</span>
+          <Scan size={20} />
+          <span>Scan</span>
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'shelf-scanner' ? 'active' : ''}`}
-          onClick={() => setActiveTab('shelf-scanner')}
+          className={`nav-item ${activeTab === 'reports' || activeTab === 'report' || activeTab === 'track' ? 'active' : ''}`}
+          onClick={() => setActiveTab('reports')}
         >
-          <Camera size={20} />
-          <span>Shelf Scan</span>
-        </button>
-
-        <button
-          className={`nav-item ${activeTab === 'report' ? 'active' : ''}`}
-          onClick={() => setActiveTab('report')}
-        >
-          <FileCheck size={20} />
-          <span>Report</span>
-        </button>
-
-        <button
-          className={`nav-item ${activeTab === 'track' ? 'active' : ''}`}
-          onClick={() => setActiveTab('track')}
-        >
-          <HelpCircle size={20} />
-          <span>Track</span>
+          <ClipboardList size={20} />
+          <span>Reports</span>
         </button>
       </nav>
     </>
   );
 };
+
+export default Navbar;
