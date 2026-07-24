@@ -80,32 +80,7 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 6. Seed some SRP bulletins
-        SrpBulletin::updateOrCreate(
-            ['commodity_name' => 'Regular Milled Rice'],
-            [
-                'baseline_price' => 38.00,
-                'effective_date' => '2026-07-15',
-                'is_active' => true,
-            ]
-        );
-
-        SrpBulletin::updateOrCreate(
-            ['commodity_name' => 'Refined White Sugar'],
-            [
-                'baseline_price' => 85.00,
-                'effective_date' => '2026-07-15',
-                'is_active' => true,
-            ]
-        );
-
-        SrpBulletin::updateOrCreate(
-            ['commodity_name' => 'Red Onion (Local)'],
-            [
-                'baseline_price' => 140.00,
-                'effective_date' => '2026-07-15',
-                'is_active' => true,
-            ]
-        );
+        // 6. Seed official DTI SRP Master List
+        $this->call(SrpMasterListSeeder::class);
     }
 }

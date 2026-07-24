@@ -12,15 +12,21 @@ class SrpBulletin extends Model
 
     protected $fillable = [
         'commodity_name',
+        'category',
+        'unit',
+        'regulatory_classification',
         'baseline_price',
         'effective_date',
         'is_active',
+        'price_freeze_applicable',
+        'price_freeze_treatment',
     ];
 
     protected $casts = [
         'baseline_price' => 'float',
         'effective_date' => 'date',
         'is_active' => 'boolean',
+        'price_freeze_applicable' => 'boolean',
     ];
 
     public function aliases(): HasMany
