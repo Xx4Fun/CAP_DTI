@@ -28,7 +28,14 @@ export const SrpSearch: React.FC = () => {
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    fetchCommodities('');
+    const savedTerm = sessionStorage.getItem('srp_search_term');
+    if (savedTerm) {
+      setSearchTerm(savedTerm);
+      fetchCommodities(savedTerm);
+      sessionStorage.removeItem('srp_search_term');
+    } else {
+      fetchCommodities('');
+    }
   }, []);
 
   const fetchCommodities = async (query = '') => {
