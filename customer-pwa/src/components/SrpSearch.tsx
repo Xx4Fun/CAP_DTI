@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Calendar, Tag, Info } from 'lucide-react';
 import { apiClient, type Commodity } from '../api/client';
+import { fallbackCommodities } from '../data/srpFallback';
 
 export const SrpSearch: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [commodities, setCommodities] = useState<Commodity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [commodities, setCommodities] = useState<Commodity[]>(fallbackCommodities);
+  const [loading, setLoading] = useState(false);
   const [isCachedMode, setIsCachedMode] = useState(false);
-  const [error, setError] = useState('');
 
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -17,55 +17,35 @@ export const SrpSearch: React.FC = () => {
 
   const fetchCommodities = async (query = '') => {
     setLoading(true);
-    setError('');
 
     try {
       const res = await apiClient.get('/public/commodities', {
         params: { query }
       });
 
-      if (res.data && res.data.success) {
-        const liveData: Commodity[] = res.data.data;
-        setCommodities(liveData);
+      if (res.data && res.data.success && Array.isArray(res.data.data)) {
+        setCommodities(res.data.data);
         setIsCachedMode(false);
-
-        // Cache the master dataset locally when empty query returns all items
-        if (!query && liveData.length > 0) {
-          try {
-            localStorage.setItem('price_watch_srp_cache', JSON.stringify(liveData));
-          } catch (e) {
-            console.warn('Unable to save SRP cache to localStorage:', e);
-          }
-        }
+      } else {
+        throw new Error('Invalid response structure');
       }
     } catch (err) {
-      console.warn('API fetch failed, falling back to local cache:', err);
-      
-      // Fallback to local cache if offline or network connection fails
-      try {
-        const cachedRaw = localStorage.getItem('price_watch_srp_cache');
-        if (cachedRaw) {
-          const cachedItems: Commodity[] = JSON.parse(cachedRaw);
-          const q = query.toLowerCase().trim();
+      console.warn('API connection offline or unavailable. Operating in local fallback mode:', err);
+      setIsCachedMode(true);
 
-          const filtered = q
-            ? cachedItems.filter(
-                (item) =>
-                  item.commodity_name.toLowerCase().includes(q) ||
-                  (item.category && item.category.toLowerCase().includes(q)) ||
-                  (item.unit && item.unit.toLowerCase().includes(q)) ||
-                  (item.regulatory_classification && item.regulatory_classification.toLowerCase().includes(q))
-              )
-            : cachedItems;
+      // Perform fast, local fuzzy search on bundled 167 SRP commodities dataset
+      const q = query.toLowerCase().trim();
+      const filtered = q
+        ? fallbackCommodities.filter(
+            (item) =>
+              item.commodity_name.toLowerCase().includes(q) ||
+              (item.category && item.category.toLowerCase().includes(q)) ||
+              (item.unit && item.unit.toLowerCase().includes(q)) ||
+              (item.regulatory_classification && item.regulatory_classification.toLowerCase().includes(q))
+          )
+        : fallbackCommodities;
 
-          setCommodities(filtered);
-          setIsCachedMode(true);
-        } else {
-          setError('Unable to load SRP bulletin records and no offline cache available.');
-        }
-      } catch (cacheErr) {
-        setError('Unable to load SRP bulletin records.');
-      }
+      setCommodities(filtered);
     } finally {
       setLoading(false);
     }
@@ -81,7 +61,7 @@ export const SrpSearch: React.FC = () => {
 
     debounceTimeoutRef.current = setTimeout(() => {
       fetchCommodities(val);
-    }, 250);
+    }, 200);
   };
 
   return (
@@ -100,7 +80,7 @@ export const SrpSearch: React.FC = () => {
             type="text"
             className="input-field"
             style={{ paddingLeft: '40px' }}
-            placeholder="Search e.g. 'Sardines', 'Milk', 'Coffee', 'Rice'..."
+            placeholder="Search e.g. 'canned', 'sardines', 'milk', 'coffee', 'rice'..."
             value={searchTerm}
             onChange={handleSearchChange}
           />
@@ -109,19 +89,13 @@ export const SrpSearch: React.FC = () => {
 
       {isCachedMode && (
         <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', color: '#fbbf24', fontSize: '0.82rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Info size={16} /> Displaying cached SRP bulletin reference (Offline or disconnected from server)
-        </div>
-      )}
-
-      {error && (
-        <div style={{ padding: '12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', color: '#f87171', fontSize: '0.85rem', marginBottom: '16px' }}>
-          {error}
+          <Info size={16} /> Displaying offline SRP bulletin reference ({fallbackCommodities.length} items available)
         </div>
       )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#a1a1aa' }}>
-          Loading official SRP bulletin records...
+          Searching official SRP bulletin records...
         </div>
       ) : commodities.length === 0 ? (
         <div className="glass-panel" style={{ textAlign: 'center', padding: '40px', color: '#a1a1aa' }}>
