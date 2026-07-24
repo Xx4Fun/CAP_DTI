@@ -13,6 +13,7 @@ export const App: React.FC = () => {
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
 
   useEffect(() => {
     fetchConfig();
@@ -71,11 +72,21 @@ export const App: React.FC = () => {
         )}
 
         {(activeTab === 'reports' || activeTab === 'report') && (
-          <FormalReport />
+          <FormalReport
+            setActiveTab={setActiveTab}
+            onTrackReport={(ref, tok) => {
+              setTrackingParams({ reference: ref, token: tok });
+              setActiveTab('track');
+            }}
+          />
         )}
 
         {activeTab === 'track' && (
-          <TrackReport />
+          <TrackReport
+            initialReference={trackingParams?.reference}
+            initialToken={trackingParams?.token}
+            setActiveTab={setActiveTab}
+          />
         )}
       </main>
     </div>
