@@ -14,7 +14,7 @@ import {
 
 interface HomeProps {
   setActiveTab: (tab: string) => void;
-  stateOfCalamity: boolean;
+  stateOfCalamity?: boolean;
 }
 
 export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => {
@@ -156,7 +156,23 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
               Current price bulletin
             </span>
           </div>
-          {stateOfCalamity ? (
+          {stateOfCalamity === undefined ? (
+            <span style={{
+              background: '#fef3c7',
+              color: '#b45309',
+              border: '1px solid #fde68a',
+              padding: '3px 10px',
+              borderRadius: '9999px',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#b45309' }} />
+              Regulatory status unavailable
+            </span>
+          ) : stateOfCalamity ? (
             <span style={{
               background: '#fee2e2',
               color: '#dc2626',

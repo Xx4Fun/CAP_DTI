@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, CheckCircle, Clock, ShieldCheck, ArrowLeft, Copy, Check, AlertTriangle, FileSearch, Building2, Calendar } from 'lucide-react';
-import { apiClient, type TrackReportResponse, type StatusHistoryItem } from '../api/client';
+import { apiClient, type TrackReportResponse } from '../api/client';
+import { deriveTimelineItems } from '../app/status';
 
 interface TrackReportProps {
   initialReference?: string;
@@ -49,40 +50,7 @@ export const TrackReport: React.FC<TrackReportProps> = ({
         throw new Error('API returned unsuccesful tracking query');
       }
     } catch (err: any) {
-      // Fallback demo mock if backend response is not available or for demo reference code PW-2026-00184
-      if (refVal.trim().toUpperCase().startsWith('PW-') || refVal.trim().toUpperCase().startsWith('REP-')) {
-        const mockResponse: TrackReportResponse = {
-          report_reference: refVal.trim().toUpperCase(),
-          store_name: 'Super Metro San Jose',
-          current_status: 'Submitted for initial evaluation',
-          submitted_at: new Date().toISOString(),
-          status_history: [
-            {
-              status: 'Submitted',
-              public_message: 'Receipt captured via live camera and vaulted in secure DTI storage.',
-              timestamp: new Date().toISOString(),
-            },
-            {
-              status: 'Under Evaluation',
-              public_message: 'Authorized DTI evaluator cross-referencing OCR data with official SRP bulletins.',
-              timestamp: new Date(Date.now() + 1800000).toISOString(),
-            },
-            {
-              status: 'Field Inspection Dispatched',
-              public_message: 'Scheduled for physical on-site store monitoring by Antique DTI field officers.',
-              timestamp: 'Pending evaluation completion',
-            },
-            {
-              status: 'Resolved / Dismissed',
-              public_message: 'Administrative disposition pending regulatory findings.',
-              timestamp: 'Pending field inspection',
-            }
-          ]
-        };
-        setReport(mockResponse);
-      } else {
-        setError(err.response?.data?.message || 'Report not found or invalid tracking token. Please verify your reference and secret code.');
-      }
+      setError(err.response?.data?.message || 'Report not found or invalid tracking token. Please verify your reference and secret code.');
     } finally {
       setLoading(false);
     }
@@ -147,10 +115,11 @@ export const TrackReport: React.FC<TrackReportProps> = ({
 
         <form onSubmit={handleTrackSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
+            <label htmlFor="report-reference" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
               PUBLIC REPORT REFERENCE CODE
             </label>
             <input
+              id="report-reference"
               type="text"
               className="input-field"
               placeholder="e.g. PW-2026-00184 or REP-20260724-A8F2"
@@ -161,10 +130,11 @@ export const TrackReport: React.FC<TrackReportProps> = ({
           </div>
 
           <div>
-            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
+            <label htmlFor="tracking-token" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
               SECRET TRACKING TOKEN
             </label>
             <input
+              id="tracking-token"
               type="password"
               className="input-field"
               placeholder="e.g. trk_9a8b7c6d5e4f3a2b..."
@@ -175,7 +145,7 @@ export const TrackReport: React.FC<TrackReportProps> = ({
           </div>
 
           {error && (
-            <div className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+            <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
               <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
               <div>{error}</div>
             </div>
@@ -250,9 +220,9 @@ export const TrackReport: React.FC<TrackReportProps> = ({
 
           {/* Timeline Items */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {report.status_history.map((item: StatusHistoryItem, idx: number) => {
-              const isCompleted = idx === 0 || idx < report.status_history.length - 2;
-              const isActive = idx === 1;
+            {deriveTimelineItems(report.status_history, report.current_status).map((item, idx: number) => {
+              const isCompleted = item.state === 'completed';
+              const isActive = item.state === 'current';
 
               return (
                 <div
@@ -264,7 +234,7 @@ export const TrackReport: React.FC<TrackReportProps> = ({
                   </div>
                   <div style={{ flex: 1, paddingTop: '2px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
+                      <span aria-current={isActive ? 'step' : undefined} style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
                         {item.status}
                       </span>
                       {isActive && <span className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>In Progress</span>}

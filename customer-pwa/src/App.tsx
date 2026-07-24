@@ -7,13 +7,33 @@ import { ShelfScanner } from './components/ShelfScanner';
 import { FormalReport } from './components/FormalReport';
 import { TrackReport } from './components/TrackReport';
 import { apiClient, type SystemConfig } from './api/client';
+import { navigate, type AppRoute } from './app/routing';
+import { useAppRoute } from './hooks/useAppRoute';
+
+const tabForRoute = (route: AppRoute): string => {
+  if (route.name === 'home') return 'home';
+  if (route.name === 'prices' || route.name === 'product') return 'prices';
+  if (route.name === 'scan') return 'scan';
+  if (route.name === 'track-report') return 'track';
+  return 'reports';
+};
+
+const routeForTab = (tab: string): AppRoute => {
+  if (tab === 'prices' || tab === 'search' || tab === 'stores') return { name: 'prices' };
+  if (tab === 'scan' || tab === 'shelf-scanner') return { name: 'scan' };
+  if (tab === 'track') return { name: 'track-report' };
+  if (tab === 'reports' || tab === 'report') return { name: 'reports' };
+  return { name: 'home' };
+};
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('home');
+  const route = useAppRoute();
+  const activeTab = tabForRoute(route);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
+  const setActiveTab = (tab: string) => navigate(routeForTab(tab));
 
   useEffect(() => {
     fetchConfig();
@@ -49,7 +69,7 @@ export const App: React.FC = () => {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        stateOfCalamity={config?.state_of_calamity || false}
+        stateOfCalamity={config?.state_of_calamity}
       />
 
       <main className={isScanTab ? 'app-scan-container' : 'app-container'}>
@@ -58,14 +78,14 @@ export const App: React.FC = () => {
         {activeTab === 'home' && (
           <Home
             setActiveTab={setActiveTab}
-            stateOfCalamity={config?.state_of_calamity || false}
+            stateOfCalamity={config?.state_of_calamity}
           />
         )}
 
         {(activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores') && (
           <SrpSearch
             setActiveTab={setActiveTab}
-            stateOfCalamity={config?.state_of_calamity || false}
+            stateOfCalamity={config?.state_of_calamity}
           />
         )}
 

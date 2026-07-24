@@ -2,55 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ShieldCheck, CheckCircle2, ChevronRight, X, Scan } from 'lucide-react';
 import { apiClient, type Establishment } from '../api/client';
 import { StoreFacadeImage } from './ShelfScanner';
+import { writeHandoff } from '../app/handoffs';
 
 interface StoreDirectoryProps {
   setActiveTab?: (tab: string) => void;
 }
 
-const defaultStoresList: (Establishment & { photoType?: string; barangay?: string })[] = [
-  {
-    id: 1,
-    dti_sec_number: 'SEC-CS202612345',
-    store_name: 'Super Metro San Jose',
-    owner_name: 'Metro Retail Stores Group Inc.',
-    latitude: 10.7424,
-    longitude: 121.9406,
-    address: 'Tradetown, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Tradetown',
-    photoType: 'super_metro'
-  },
-  {
-    id: 2,
-    dti_sec_number: 'SEC-CS202654321',
-    store_name: 'Gaisano Grand Antique',
-    owner_name: 'Gaisano Grand Malls Group',
-    latitude: 10.7465,
-    longitude: 121.9430,
-    address: 'San Angel, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'San Angel',
-    photoType: 'gaisano'
-  },
-  {
-    id: 3,
-    dti_sec_number: 'SEC-CS202699887',
-    store_name: 'Robinsons Superstore Antique',
-    owner_name: 'Robinsons Retail Holdings Inc.',
-    latitude: 10.7480,
-    longitude: 121.9450,
-    address: 'Brgy. 8 (Poblacion), San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Brgy. 8 (Poblacion)',
-    photoType: 'robinsons'
-  }
-];
-
 export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
+  const [stores, setStores] = useState<Establishment[]>([]);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchStores();
@@ -58,22 +21,20 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
 
   const fetchStores = async (query = '') => {
     setLoading(true);
+    setError('');
     try {
       const res = await apiClient.get('/public/establishments', {
         params: { query }
       });
       if (res.data && res.data.success && Array.isArray(res.data.data)) {
-        const apiStores: Establishment[] = res.data.data;
-        const merged = [...defaultStoresList];
-        apiStores.forEach((s) => {
-          if (!merged.some((m) => m.id === s.id || m.store_name.toLowerCase() === s.store_name.toLowerCase())) {
-            merged.push(s);
-          }
-        });
-        setStores(merged);
+        setStores(res.data.data);
+      } else {
+        setStores([]);
+        setError('The verified store directory is currently unavailable. Please try again.');
       }
     } catch (err) {
-      console.warn('API offline, using cached/default establishments:', err);
+      setStores([]);
+      setError('The verified store directory is currently unavailable. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -97,7 +58,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
   });
 
   const handleStartScanForStore = (store: Establishment) => {
-    sessionStorage.setItem('selected_store_id', String(store.id));
+    writeHandoff({ kind: 'store-to-scan', storeId: store.id });
     if (setActiveTab) {
       setActiveTab('scan');
     }
@@ -119,6 +80,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
       <div style={{ position: 'relative' }}>
         <Search style={{ position: 'absolute', left: '14px', top: '15px', color: '#94a3b8' }} size={18} />
         <input
+          aria-label="Search participating stores"
           type="text"
           className="input-field"
           style={{
@@ -136,6 +98,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
         />
         {searchTerm && (
           <button
+            aria-label="Clear store search"
             onClick={() => {
               setSearchTerm('');
               fetchStores('');
@@ -146,6 +109,12 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
           </button>
         )}
       </div>
+
+      {error && (
+        <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+          {error}
+        </div>
+      )}
 
       {/* Item Count */}
       <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
@@ -239,7 +208,14 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
       {/* Selected Store Detail Modal */}
       {selectedStore && (
         <div className="modal-backdrop" onClick={() => setSelectedStore(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedStore.store_name} details`}
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ fontWeight: 800, fontSize: '1.2rem', color: '#0f172a' }}>
                 {selectedStore.store_name}

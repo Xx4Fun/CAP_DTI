@@ -5,6 +5,8 @@ import {
   SwitchCamera, AlertTriangle, Building2, ExternalLink
 } from 'lucide-react';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse } from '../api/client';
+import { createFormalReportPayload } from '../app/reportIntegrity';
+import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
 
 interface FormalReportProps {
   setActiveTab?: (tab: string) => void;
@@ -41,13 +43,11 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
   // Review & Submit State
   const [affirmationChecked, setAffirmationChecked] = useState<boolean>(false);
-  const [ocrItems, setOcrItems] = useState([
-    { commodity_name: 'SABA PH SARDINES 155G', receipt_price: '23.50', baseline_price: 21.00 }
-  ]);
+  const [ocrItems, setOcrItems] = useState<Array<{ commodity_name: string; receipt_price: string; baseline_price: number }>>([]);
   const [ocrMetadata] = useState({
     transactionDate: new Date().toISOString().split('T')[0],
-    receiptNumber: '#2026-08491',
-    linesDetected: 12,
+    receiptNumber: 'Not detected',
+    linesDetected: 0,
   });
 
   // Result & Submission State
@@ -59,56 +59,30 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  // Fallback initial stores for Antique region
-  const defaultStores: Establishment[] = [
-    {
-      id: 101,
-      dti_sec_number: 'SEC-CS2019-98124',
-      store_name: 'Super Metro San Jose',
-      owner_name: 'Metro Retail Stores Group Inc.',
-      latitude: 10.7431,
-      longitude: 121.9832,
-      address: 'Tobias Fornier St., Brgy. 3, San Jose de Buenavista',
-      recidivism_index: 0
-    },
-    {
-      id: 102,
-      dti_sec_number: 'SEC-CS2020-41092',
-      store_name: 'Gaisano Grand Mall San Jose',
-      owner_name: 'Gaisano Grand Group',
-      latitude: 10.7455,
-      longitude: 121.9851,
-      address: 'Bantayan St., Brgy. 4, San Jose de Buenavista',
-      recidivism_index: 0
-    },
-    {
-      id: 103,
-      dti_sec_number: 'SEC-CS2018-77120',
-      store_name: 'Prince Town San Jose',
-      owner_name: 'Prince Retail Group',
-      latitude: 10.7412,
-      longitude: 121.9811,
-      address: 'Market Site, Brgy. 2, San Jose de Buenavista',
-      recidivism_index: 1
-    },
-    {
-      id: 104,
-      dti_sec_number: 'SEC-CS2021-33918',
-      store_name: 'LNS Grocery & General Merchandise',
-      owner_name: 'LNS Enterprises',
-      latitude: 10.7481,
-      longitude: 121.9890,
-      address: 'Brgy. Funda-Dalipe, San Jose de Buenavista',
-      recidivism_index: 0
-    }
-  ];
+  const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
 
   useEffect(() => {
     setSubmissionUuid('sub-' + Math.random().toString(36).substring(2, 12) + '-' + Date.now());
     fetchStores();
     checkCapabilities();
   }, []);
+
+  useEffect(() => {
+    const hasOpenDialog = showPrivacyModal || showGuidelinesModal || showFullNoticeModal || showFullReceiptModal;
+    if (!hasOpenDialog) return;
+
+    const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
+    dialogs[dialogs.length - 1]?.focus();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (showFullReceiptModal) setShowFullReceiptModal(false);
+      else if (showFullNoticeModal) setShowFullNoticeModal(false);
+      else if (showGuidelinesModal) setShowGuidelinesModal(false);
+      else setShowPrivacyModal(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showPrivacyModal, showGuidelinesModal, showFullNoticeModal, showFullReceiptModal]);
 
   const checkCapabilities = () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -121,11 +95,17 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       const res = await apiClient.get('/public/establishments');
       if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
         setStores(res.data.data);
+        const requestedStoreId = handoffRef.current?.kind === 'scan-to-report'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(res.data.data.find((store: Establishment) => store.id === requestedStoreId) || null);
       } else {
-        setStores(defaultStores);
+        setStores([]);
+        setError('The verified store directory is currently unavailable. Please try again.');
       }
     } catch (err) {
-      setStores(defaultStores);
+      setStores([]);
+      setError('The verified store directory is currently unavailable. Please try again.');
     }
   };
 
@@ -136,19 +116,14 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       const res = await apiClient.post('/public/capture-session', { store_id: store.id });
       if (res.data && res.data.success) {
         setCaptureSession(res.data.data);
+        setShowGuidelinesModal(true);
+      } else {
+        throw new Error('Capture session was not created.');
       }
     } catch (err) {
-      // Mock session fallback
-      setCaptureSession({
-        capture_session_id: Math.floor(Math.random() * 10000),
-        session_uuid: 'sess-' + Math.random().toString(36).substring(2, 10),
-        capture_token: 'tok_' + Math.random().toString(36).substring(2, 15),
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
-        max_file_size: 10,
-        accepted_types: ['image/jpeg', 'image/png']
-      });
+      setCaptureSession(null);
+      setError('Could not start secure receipt capture. No report has been created. Please try again.');
     }
-    setShowGuidelinesModal(true);
   };
 
   const startCamera = async () => {
@@ -166,8 +141,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
         videoRef.current.srcObject = mediaStream;
       }
     } catch (err) {
-      // If camera access fails (e.g. permissions or non-https test env), generate realistic canvas fallback
-      console.warn('Camera access unavailable, fallback mode active:', err);
+      setError('Camera access is unavailable or permission was denied. No receipt was captured.');
     }
   };
 
@@ -192,52 +166,11 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       const ctx = canvas.getContext('2d');
 
       if (ctx) {
-        if (videoRef.current && videoRef.current.videoWidth) {
-          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        } else {
-          // Fallback generated realistic receipt illustration on canvas
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          // Receipt border & watermark
-          ctx.strokeStyle = '#cbd5e1';
-          ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
-
-          ctx.fillStyle = '#0f172a';
-          ctx.font = 'bold 24px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(selectedStore?.store_name.toUpperCase() || 'SUPER METRO SAN JOSE', canvas.width / 2, 70);
-
-          ctx.font = '16px sans-serif';
-          ctx.fillStyle = '#475569';
-          ctx.fillText(selectedStore?.address || 'San Jose de Buenavista, Antique', canvas.width / 2, 100);
-          ctx.fillText('DTI SEC: ' + (selectedStore?.dti_sec_number || 'SEC-CS2019-98124'), canvas.width / 2, 125);
-          ctx.fillText('------------------------------------------------', canvas.width / 2, 155);
-
-          ctx.textAlign = 'left';
-          ctx.font = 'bold 18px sans-serif';
-          ctx.fillText('SABA PH SARDINES 155G', 40, 210);
-          ctx.textAlign = 'right';
-          ctx.fillText('₱23.50', canvas.width - 40, 210);
-
-          ctx.textAlign = 'left';
-          ctx.font = '16px sans-serif';
-          ctx.fillText('REGULAR MILLED RICE 1KG', 40, 250);
-          ctx.textAlign = 'right';
-          ctx.fillText('₱45.00', canvas.width - 40, 250);
-
-          ctx.textAlign = 'center';
-          ctx.fillText('------------------------------------------------', canvas.width / 2, 300);
-          ctx.fillText('TOTAL: ₱68.50', canvas.width / 2, 340);
-          ctx.fillText('DATE: ' + new Date().toLocaleDateString() + '  TIME: 16:12', canvas.width / 2, 380);
-          ctx.fillText('RECEIPT NO: #2026-08491', canvas.width / 2, 410);
-
-          ctx.fillStyle = '#1e3a8a';
-          ctx.fillRect(40, 480, canvas.width - 80, 80);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 16px sans-serif';
-          ctx.fillText('DTI TAMPER-PROOF EVIDENCE SEAL', canvas.width / 2, 525);
+        if (!videoRef.current || videoRef.current.videoWidth === 0) {
+          setError('The live camera is not ready. No receipt was captured.');
+          return;
         }
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
         canvas.toBlob(async (blob) => {
           if (blob) {
@@ -265,17 +198,15 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     setError('');
 
     try {
-      const formData = new FormData();
-      formData.append('submission_uuid', submissionUuid);
-      formData.append('capture_session_id', String(captureSession?.capture_session_id || 1));
-      formData.append('capture_token', captureSession?.capture_token || 'tok_demo');
-      formData.append('store_id', String(selectedStore?.id || 101));
-      formData.append('privacy_notice_version', '1.0');
-      formData.append('image_hash', imageHash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
-      if (capturedBlob) {
-        formData.append('image', capturedBlob, 'receipt.jpg');
-      }
-      formData.append('extracted_text_json', JSON.stringify({ items: ocrItems, metadata: ocrMetadata }));
+      const formData = createFormalReportPayload({
+        submissionUuid,
+        captureSessionId: captureSession?.capture_session_id,
+        captureToken: captureSession?.capture_token || '',
+        storeId: selectedStore?.id,
+        imageHash,
+        image: capturedBlob,
+        extractedText: { items: ocrItems, metadata: ocrMetadata },
+      });
 
       const res = await apiClient.post('/public/reports', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -283,23 +214,15 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
       if (res.data && res.data.success) {
         setSubmissionResult(res.data.data);
+        setCurrentView('confirmation');
       } else {
         throw new Error('API return unsuccessful');
       }
     } catch (err: any) {
-      // Fallback response generator for demo or offline server
-      const genRef = 'PW-2026-' + Math.floor(10000 + Math.random() * 90000);
-      const genTok = 'trk_' + Math.random().toString(36).substring(2, 16);
-      const fallbackResult: FormalReportResponse = {
-        report_reference: genRef,
-        secret_tracking_token: genTok,
-        status: 'Submitted for initial evaluation',
-        submitted_at: new Date().toISOString()
-      };
-      setSubmissionResult(fallbackResult);
+      setSubmissionResult(null);
+      setError(err.response?.data?.message || err.message || 'Submission failed. No report was filed. Please try again.');
     } finally {
       setSubmitting(false);
-      setCurrentView('confirmation');
     }
   };
 
@@ -328,6 +251,12 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
+      {error && currentView !== 'camera-viewport' && (
+        <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+          {error}
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. DASHBOARD VIEW (cus_ui/Reports/1.png) */}
       {/* ========================================================================= */}
@@ -342,7 +271,18 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           </div>
 
           {/* Action Card 1: Submit a new report */}
-          <div className="action-card" onClick={() => setShowPrivacyModal(true)}>
+          <div
+            className="action-card"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowPrivacyModal(true)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setShowPrivacyModal(true);
+              }
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div className="icon-wrapper-blue">
                 <FilePlus size={24} />
@@ -364,8 +304,16 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           {/* Action Card 2: Track an existing report */}
           <div
             className="action-card"
+            role="button"
+            tabIndex={0}
             onClick={() => {
               if (setActiveTab) setActiveTab('track');
+            }}
+            onKeyDown={(event) => {
+              if ((event.key === 'Enter' || event.key === ' ') && setActiveTab) {
+                event.preventDefault();
+                setActiveTab('track');
+              }
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -432,7 +380,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
               </div>
               <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 <strong>Why are gallery uploads disabled?</strong><br />
-                To guarantee tamper-proof evidence integrity under DTI regulatory rules.<br />
+                To maintain a tamper-evident evidence trail under DTI regulatory rules.<br />
                 <strong>Does reporting auto-issue a violation?</strong><br />
                 No. All submissions require human verification by authorized DTI officers.
               </div>
@@ -446,8 +394,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* ========================================================================= */}
       {showPrivacyModal && (
         <div className="modal-backdrop">
-          <div className="modal-content">
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '4px' }}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="privacy-dialog-title" tabIndex={-1}>
+            <h2 id="privacy-dialog-title" style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '4px' }}>
               Before you submit a receipt
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
@@ -558,12 +506,12 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* Full Privacy Notice Sub-Modal */}
       {showFullNoticeModal && (
         <div className="modal-backdrop" style={{ zIndex: 300 }}>
-          <div className="modal-content" style={{ maxHeight: '80vh' }}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Full privacy notice" tabIndex={-1} style={{ maxHeight: '80vh' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px' }}>DTI Consumer Evidence Vault Privacy Policy (v1.0)</h3>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '10px', lineHeight: 1.5 }}>
               <p>1. <strong>Scope:</strong> Pursuant to R.A. 7581 (Price Act) and Data Privacy Act of 2012, all receipt evidence uploaded via PRICE-Watch is sealed in private DTI storage (<code>storage/app/private/receipt_vault</code>).</p>
               <p>2. <strong>Redaction & PII:</strong> Personal identity numbers, credit card tokens, and cashier signatures are automatically masked during administrative workflow processing.</p>
-              <p>3. <strong>Tamper-Proof Verification:</strong> Live camera frames generate an immediate SHA-256 cryptographic hash on client devices prior to transmission.</p>
+              <p>3. <strong>Tamper-Evident Verification:</strong> Live camera frames generate an immediate SHA-256 cryptographic hash on client devices prior to transmission.</p>
             </div>
             <button className="btn-primary" style={{ marginTop: '16px' }} onClick={() => setShowFullNoticeModal(false)}>
               Close Notice
@@ -707,7 +655,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* ========================================================================= */}
       {showGuidelinesModal && (
         <div className="modal-backdrop">
-          <div className="modal-content">
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Receipt capture guidelines" tabIndex={-1}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
                 Capture your receipt
@@ -771,7 +719,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           {/* Header Bar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b', padding: '10px 14px', borderRadius: '12px', color: '#fff' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600 }}>
-              <span>{selectedStore?.store_name || 'Super Metro San Jose'}</span>
+              <span>{selectedStore?.store_name || 'Selected store unavailable'}</span>
               <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>▾</span>
             </div>
 
@@ -799,7 +747,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           </p>
 
           {error && (
-            <div className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+            <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
               {error}
             </div>
           )}
@@ -922,7 +870,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.82rem' }}>
               <div>
                 <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>SELECTED STORE</span>
-                <strong style={{ color: 'var(--text-main)' }}>{selectedStore?.store_name || 'Super Metro San Jose'}</strong>
+                <strong style={{ color: 'var(--text-main)' }}>{selectedStore?.store_name || 'Selected store unavailable'}</strong>
               </div>
               <div>
                 <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.72rem' }}>CAPTURED DATE/TIME</span>
@@ -1045,7 +993,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* Full Receipt Image Lightbox Modal */}
       {showFullReceiptModal && (
         <div className="modal-backdrop" onClick={() => setShowFullReceiptModal(false)}>
-          <div className="modal-content" style={{ maxWidth: '600px', padding: '16px', background: '#0f172a', color: '#fff' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Full protected receipt" tabIndex={-1} style={{ maxWidth: '600px', padding: '16px', background: '#0f172a', color: '#fff' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Full Protected Receipt View</h3>
               <button onClick={() => setShowFullReceiptModal(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>

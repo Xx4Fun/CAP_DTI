@@ -22,49 +22,11 @@ import {
   type ScanTagResponse,
   type ComparisonResultResponse
 } from '../api/client';
+import { consumeHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
 
 interface ShelfScannerProps {
   setActiveTab?: (tab: string) => void;
 }
-
-const defaultEstablishments: (Establishment & { photoType?: string; barangay?: string })[] = [
-  {
-    id: 1,
-    dti_sec_number: 'SEC-CS202612345',
-    store_name: 'Super Metro San Jose',
-    owner_name: 'Metro Retail Stores Group Inc.',
-    latitude: 10.7424,
-    longitude: 121.9406,
-    address: 'Tradetown, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Tradetown',
-    photoType: 'super_metro'
-  },
-  {
-    id: 2,
-    dti_sec_number: 'SEC-CS202654321',
-    store_name: 'Gaisano Grand Antique',
-    owner_name: 'Gaisano Grand Malls Group',
-    latitude: 10.7465,
-    longitude: 121.9430,
-    address: 'San Angel, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'San Angel',
-    photoType: 'gaisano'
-  },
-  {
-    id: 3,
-    dti_sec_number: 'SEC-CS202699887',
-    store_name: 'Robinsons Superstore Antique',
-    owner_name: 'Robinsons Retail Holdings Inc.',
-    latitude: 10.7480,
-    longitude: 121.9450,
-    address: 'Brgy. 8 (Poblacion), San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Brgy. 8 (Poblacion)',
-    photoType: 'robinsons'
-  }
-];
 
 export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
   const name = storeName.toLowerCase();
@@ -189,15 +151,15 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
 
   // Store Selection State
-  const [stores, setStores] = useState<Establishment[]>(defaultEstablishments);
-  const [selectedStore, setSelectedStore] = useState<Establishment | null>(defaultEstablishments[0]);
-  const [recentlyUsedStore, setRecentlyUsedStore] = useState<Establishment | null>(defaultEstablishments[0]);
+  const [stores, setStores] = useState<Establishment[]>([]);
+  const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
+  const [recentlyUsedStore, setRecentlyUsedStore] = useState<Establishment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent' | 'barangay'>('all');
 
   // Camera & Capture State
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [flashOn, setFlashOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [cameraError, setCameraError] = useState('');
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
@@ -213,6 +175,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
 
   useEffect(() => {
     fetchStores();
@@ -256,17 +220,20 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       const res = await apiClient.get('/public/establishments');
       if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
         const apiStores: Establishment[] = res.data.data;
-        const merged = [...defaultEstablishments];
-        apiStores.forEach((s) => {
-          if (!merged.some((m) => m.id === s.id || m.store_name.toLowerCase() === s.store_name.toLowerCase())) {
-            merged.push(s);
-          }
-        });
-        setStores(merged);
-        setSelectedStore(merged[0]);
+        setStores(apiStores);
+        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
+      } else {
+        setStores([]);
+        setSelectedStore(null);
+        setErrorMessage('The verified store directory is currently unavailable. Please try again.');
       }
     } catch (err) {
-      console.warn('Using verified store directory for fallback:', err);
+      setStores([]);
+      setSelectedStore(null);
+      setErrorMessage('The verified store directory is currently unavailable. Please try again.');
     }
   };
 
@@ -277,7 +244,12 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         video: { facingMode: { ideal: facingMode } },
         audio: false,
       });
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      const capabilities = videoTrack?.getCapabilities?.() as
+        | (MediaTrackCapabilities & { torch?: boolean })
+        | undefined;
+      setTorchSupported(Boolean(capabilities?.torch));
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
@@ -288,9 +260,24 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   };
 
   const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    const activeStream = streamRef.current;
+    if (activeStream) {
+      activeStream.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setTorchSupported(false);
+    setFlashOn(false);
+  };
+
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !torchSupported) return;
+    const nextValue = !flashOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: nextValue } as MediaTrackConstraintSet] });
+      setFlashOn(nextValue);
+    } catch {
+      setCameraError('The flashlight could not be changed on this device.');
     }
   };
 
@@ -450,17 +437,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
   const handleReportWithReceipt = () => {
     if (comparisonResult) {
-      sessionStorage.setItem(
-        'report_prefill',
-        JSON.stringify({
-          store_id: comparisonResult.store.id,
-          store_name: comparisonResult.store.store_name,
-          address: comparisonResult.store.address,
-          product_name: comparisonResult.product.commodity_name,
-          shelf_price: comparisonResult.displayed_price,
-          srp_baseline: comparisonResult.baseline_price
-        })
-      );
+      writeHandoff({
+        kind: 'scan-to-report',
+        storeId: comparisonResult.store.id,
+        commodityId: comparisonResult.product.id,
+        displayedPrice: comparisonResult.displayed_price,
+        baselinePrice: comparisonResult.baseline_price,
+      });
     }
     if (setActiveTab) {
       setActiveTab('reports');
@@ -476,11 +459,17 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       {scannerState === 'SELECT_STORE' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            {errorMessage && (
+              <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} /> {errorMessage}
+              </div>
+            )}
             
             {/* Search Input Bar */}
             <div style={{ position: 'relative' }}>
               <Search style={{ position: 'absolute', left: '14px', top: '17px', color: '#94a3b8' }} size={18} />
               <input
+                aria-label="Search verified stores"
                 type="text"
                 className="input-field"
                 style={{
@@ -498,6 +487,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               />
               {searchTerm && (
                 <button
+                  aria-label="Clear store search"
                   onClick={() => setSearchTerm('')}
                   style={{ position: 'absolute', right: '12px', top: '15px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
                 >
@@ -717,13 +707,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => setFlashOn(!flashOn)}
+              {torchSupported && <button
+                onClick={toggleTorch}
                 style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: flashOn ? '#fbbf24' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 aria-label="Toggle flash"
               >
                 {flashOn ? <Zap size={20} /> : <ZapOff size={20} />}
-              </button>
+              </button>}
 
               <button
                 onClick={toggleCameraFacing}
@@ -745,7 +735,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           ) : (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', color: '#94a3b8', textAlign: 'center' }}>
+            <div role="alert" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', color: '#94a3b8', textAlign: 'center' }}>
               <Camera size={48} color="#64748b" style={{ marginBottom: '12px' }} />
               <div style={{ color: '#ffffff', fontWeight: 700, marginBottom: '6px' }}>Live Camera Unavailable</div>
               <p style={{ fontSize: '0.85rem', maxWidth: '300px' }}>{cameraError}</p>

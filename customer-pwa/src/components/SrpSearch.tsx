@@ -11,6 +11,7 @@ import {
 import { apiClient, type Commodity } from '../api/client';
 import { fallbackCommodities } from '../data/srpFallback';
 import { ProductDetail } from './ProductDetail';
+import { writeHandoff } from '../app/handoffs';
 
 interface SrpSearchProps {
   setActiveTab?: (tab: string) => void;
@@ -189,7 +190,9 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
   });
 
   const [loading, setLoading] = useState(false);
-  const [isCachedMode, setIsCachedMode] = useState(false);
+  const [dataSource, setDataSource] = useState<'live' | 'cached' | 'bundled'>('bundled');
+  const [lastUpdatedTime, setLastUpdatedTime] = useState('');
+  const isCachedMode = dataSource !== 'live';
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -213,7 +216,8 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
       if (res.data && res.data.success && Array.isArray(res.data.data)) {
         const liveData: Commodity[] = res.data.data;
         setCommodities(liveData);
-        setIsCachedMode(false);
+        setDataSource('live');
+        setLastUpdatedTime(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
         if (!query && liveData.length > 0) {
           try {
             localStorage.setItem('price_watch_srp_cache', JSON.stringify(liveData));
@@ -226,15 +230,15 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
       }
     } catch (err) {
       console.warn('API connection offline. Using fallback commodities:', err);
-      setIsCachedMode(true);
-
       let baseDataSet = fallbackCommodities;
+      let fallbackSource: 'cached' | 'bundled' = 'bundled';
       try {
         const cached = localStorage.getItem('price_watch_srp_cache');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
             baseDataSet = parsed;
+            fallbackSource = 'cached';
           }
         }
       } catch (e) {
@@ -253,6 +257,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
         : baseDataSet;
 
       setCommodities(filtered);
+      setDataSource(fallbackSource);
     } finally {
       setLoading(false);
     }
@@ -331,14 +336,14 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
   });
 
   const handleSelectScan = (item: Commodity) => {
-    sessionStorage.setItem('selected_commodity', JSON.stringify(item));
+    writeHandoff({ kind: 'price-to-scan', commodityId: item.id });
     if (setActiveTab) {
       setActiveTab('scan');
     }
   };
 
   const handleSelectReport = (item: Commodity) => {
-    sessionStorage.setItem('selected_commodity', JSON.stringify(item));
+    writeHandoff({ kind: 'price-to-report', commodityId: item.id });
     if (setActiveTab) {
       setActiveTab('reports');
     }
@@ -384,6 +389,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
           size={18}
         />
         <input
+          aria-label="Search products or brands"
           type="text"
           className="input-field"
           style={{
@@ -400,6 +406,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
         />
         {searchTerm && (
           <button
+            aria-label="Clear product search"
             onClick={() => {
               setSearchTerm('');
               fetchCommodities('');
@@ -624,13 +631,18 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
           }}
         />
         <span>
-          {isCachedMode ? (
+          {dataSource === 'cached' ? (
             <>
               <Info size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
               Offline mode · Displaying cached SRP bulletin
             </>
+          ) : dataSource === 'bundled' ? (
+            <>
+              <Info size={14} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+              Bundled DTI reference list · Live prices unavailable
+            </>
           ) : (
-            'Current · Updated 3:21 PM'
+            `Current · Updated ${lastUpdatedTime}`
           )}
         </span>
       </div>
