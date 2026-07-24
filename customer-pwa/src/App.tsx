@@ -60,7 +60,10 @@ export const App: React.FC = () => {
         )}
 
         {(activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores') && (
-          <SrpSearch />
+          <SrpSearch
+            setActiveTab={setActiveTab}
+            stateOfCalamity={config?.state_of_calamity || false}
+          />
         )}
 
         {(activeTab === 'scan' || activeTab === 'shelf-scanner') && (
