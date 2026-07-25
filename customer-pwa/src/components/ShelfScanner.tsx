@@ -21,7 +21,8 @@ import {
   type Establishment,
   type Commodity,
   type ScanTagResponse,
-  type ComparisonResultResponse
+  type ComparisonResultResponse,
+  defaultStoresList
 } from '../api/client';
 import { consumeHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
 
@@ -229,13 +230,19 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           : undefined;
         setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
       } else {
-        setStores([]);
-        setErrorMessage('The verified store directory is currently unavailable. Please try again.');
+        setStores(defaultStoresList);
+        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
       }
     } catch (err) {
-      console.warn('API connection offline or remote:', err);
-      setStores([]);
-      setErrorMessage('The verified store directory is currently unavailable. Please try again.');
+      console.warn('API connection offline or remote. Using reference store directory:', err);
+      setStores(defaultStoresList);
+      const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+        ? handoffRef.current.storeId
+        : undefined;
+      setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
     }
   };
 

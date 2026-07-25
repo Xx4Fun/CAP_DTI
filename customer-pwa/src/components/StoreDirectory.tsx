@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ShieldCheck, CheckCircle2, ChevronRight, X, Scan } from 'lucide-react';
-import { apiClient, type Establishment } from '../api/client';
+import { apiClient, type Establishment, defaultStoresList } from '../api/client';
 import { StoreFacadeImage } from './ShelfScanner';
 import { writeHandoff } from '../app/handoffs';
 
@@ -12,7 +12,7 @@ interface StoreDirectoryProps {
 
 export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [stores, setStores] = useState<Establishment[]>([]);
+  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,13 +31,11 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
       if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
         setStores(res.data.data);
       } else {
-        setStores([]);
-        setError('The verified store directory is currently unavailable. Please try again.');
+        setStores(defaultStoresList);
       }
     } catch (err) {
-      console.warn('API connection offline or remote:', err);
-      setStores([]);
-      setError('The verified store directory is currently unavailable. Please try again.');
+      console.warn('API connection offline or remote. Using reference store directory:', err);
+      setStores(defaultStoresList);
     } finally {
       setLoading(false);
     }

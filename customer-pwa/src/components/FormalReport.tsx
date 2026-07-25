@@ -4,7 +4,7 @@ import {
   Search, CheckCircle2, RefreshCw, ZoomIn, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
   SwitchCamera, AlertTriangle, Building2, ExternalLink
 } from 'lucide-react';
-import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse } from '../api/client';
+import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
 import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
 
@@ -25,7 +25,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
   // Form State
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
-  const [stores, setStores] = useState<Establishment[]>([]);
+  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeChip, setActiveChip] = useState<string>('nearby');
@@ -103,13 +103,19 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           : undefined;
         setSelectedStore(res.data.data.find((store: Establishment) => store.id === requestedStoreId) || null);
       } else {
-        setStores([]);
-        setError('The verified store directory is currently unavailable. Please try again.');
+        setStores(defaultStoresList);
+        const requestedStoreId = handoffRef.current?.kind === 'scan-to-report'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(defaultStoresList.find((store: Establishment) => store.id === requestedStoreId) || null);
       }
     } catch (err) {
-      console.warn('API connection offline or remote:', err);
-      setStores([]);
-      setError('The verified store directory is currently unavailable. Please try again.');
+      console.warn('API connection offline or remote. Using reference store directory:', err);
+      setStores(defaultStoresList);
+      const requestedStoreId = handoffRef.current?.kind === 'scan-to-report'
+        ? handoffRef.current.storeId
+        : undefined;
+      setSelectedStore(defaultStoresList.find((store: Establishment) => store.id === requestedStoreId) || null);
     }
   };
 

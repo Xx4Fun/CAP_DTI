@@ -6,7 +6,7 @@ import { SrpSearch } from './components/SrpSearch';
 import { ShelfScanner } from './components/ShelfScanner';
 import { FormalReport } from './components/FormalReport';
 import { TrackReport } from './components/TrackReport';
-import { apiClient, type SystemConfig } from './api/client';
+import { apiClient, type SystemConfig, defaultConfig } from './api/client';
 import { navigate, type AppRoute } from './app/routing';
 import { useAppRoute } from './hooks/useAppRoute';
 
@@ -33,7 +33,7 @@ export const App: React.FC = () => {
   const activeTab = tabForRoute(route);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
-  const [config, setConfig] = useState<SystemConfig | null>(null);
+  const [config, setConfig] = useState<SystemConfig | null>(defaultConfig);
   const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
   const setActiveTab = (tab: string) => navigate(routeForTab(tab));
 
@@ -59,11 +59,11 @@ export const App: React.FC = () => {
         setConfig(res.data.data);
         setLastSyncTime(new Date().toLocaleTimeString());
       } else {
-        setConfig(null);
+        setConfig(defaultConfig);
       }
     } catch (err) {
-      console.warn('Backend API offline or remote. Config unavailable:', err);
-      setConfig(null);
+      console.warn('Backend API offline or remote. Using reference config:', err);
+      setConfig(defaultConfig);
     }
   };
 

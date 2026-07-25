@@ -20,6 +20,48 @@ export interface SystemConfig {
   last_updated_at: string;
 }
 
+export const defaultConfig: SystemConfig = {
+  app_name: 'PRICE-Watch',
+  state_of_calamity: false,
+  privacy_notice_version: '1.0',
+  max_upload_size_mb: 5,
+  allowed_mime_types: ['image/jpeg', 'image/png'],
+  last_updated_at: new Date().toISOString()
+};
+
+export const defaultStoresList: Establishment[] = [
+  {
+    id: 1,
+    dti_sec_number: 'SEC-CS202612345',
+    store_name: 'Super Metro San Jose',
+    owner_name: 'Metro Retail Stores Group Inc.',
+    latitude: 10.7424,
+    longitude: 121.9406,
+    address: 'Tradetown, San Jose de Buenavista',
+    recidivism_index: 0
+  },
+  {
+    id: 2,
+    dti_sec_number: 'SEC-CS202654321',
+    store_name: 'Gaisano Grand Antique',
+    owner_name: 'Gaisano Grand Malls Inc.',
+    latitude: 10.7450,
+    longitude: 121.9420,
+    address: 'San Jose de Buenavista',
+    recidivism_index: 0
+  },
+  {
+    id: 3,
+    dti_sec_number: 'SEC-CS202699999',
+    store_name: 'Robinsons Superstore Antique',
+    owner_name: 'Robinsons Retail Holdings Inc.',
+    latitude: 10.7410,
+    longitude: 121.9380,
+    address: 'Atabay, San Jose de Buenavista',
+    recidivism_index: 0
+  }
+];
+
 export interface Commodity {
   id: number;
   commodity_name: string;

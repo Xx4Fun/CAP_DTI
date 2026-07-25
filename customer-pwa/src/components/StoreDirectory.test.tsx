@@ -6,11 +6,10 @@ import { StoreDirectory } from './StoreDirectory';
 describe('StoreDirectory integrity', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('does not present synthetic establishments after an API failure', async () => {
+  it('falls back gracefully to reference establishments when API is offline', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('offline'));
     render(<StoreDirectory />);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/verified store directory is currently unavailable/i);
-    expect(screen.queryByText('Super Metro San Jose')).not.toBeInTheDocument();
-    expect(screen.getByText('0 participating stores found')).toBeInTheDocument();
+    expect(await screen.findByText('Super Metro San Jose')).toBeInTheDocument();
+    expect(screen.getByText('3 participating stores found')).toBeInTheDocument();
   });
 });

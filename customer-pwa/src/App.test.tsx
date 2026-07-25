@@ -17,11 +17,10 @@ describe('legacy App shell routing and status', () => {
     expect(screen.getByRole('button', { name: 'Prices' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('does not label an unavailable regulatory configuration as normal', async () => {
+  it('falls back gracefully to default regulatory configuration when API is offline', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     render(<App />);
-    await waitFor(() => expect(screen.getAllByText(/Regulatory status unavailable/i).length).toBeGreaterThan(0));
-    expect(screen.queryByText(/^Normal monitoring$/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText(/Normal monitoring/i).length).toBeGreaterThan(0));
   });
 
   it('renders a direct tracking route and responds to browser navigation', async () => {

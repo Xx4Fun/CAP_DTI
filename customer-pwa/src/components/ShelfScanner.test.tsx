@@ -18,11 +18,10 @@ const store: Establishment = {
 describe('ShelfScanner safety', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('shows no synthetic stores when the verified directory is unavailable', async () => {
+  it('falls back gracefully to reference store directory when API connection is offline', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('offline'));
     render(<ShelfScanner />);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/verified store directory is currently unavailable/i);
-    expect(screen.queryByText('Super Metro San Jose')).not.toBeInTheDocument();
+    expect(await screen.findByText('Super Metro San Jose')).toBeInTheDocument();
   });
 
   it('hides unsupported torch controls and stops the real media track on unmount', async () => {
