@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   Tag,
   Check,
-  RefreshCw
+  RefreshCw,
+  ArrowLeft
 } from 'lucide-react';
 import {
   apiClient,
@@ -136,44 +137,7 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
 
 export const StoreFacadeImage = CompactStoreFacade;
 
-const defaultStoresList: (Establishment & { photoType?: string; barangay?: string })[] = [
-  {
-    id: 1,
-    dti_sec_number: 'SEC-CS202612345',
-    store_name: 'Super Metro San Jose',
-    owner_name: 'Metro Retail Stores Group Inc.',
-    latitude: 10.7424,
-    longitude: 121.9406,
-    address: 'Tradetown, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Tradetown',
-    photoType: 'super_metro'
-  },
-  {
-    id: 2,
-    dti_sec_number: 'SEC-CS202654321',
-    store_name: 'Gaisano Grand Antique',
-    owner_name: 'Gaisano Grand Malls Inc.',
-    latitude: 10.7450,
-    longitude: 121.9420,
-    address: 'San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Poblacion',
-    photoType: 'gaisano'
-  },
-  {
-    id: 3,
-    dti_sec_number: 'SEC-CS202699999',
-    store_name: 'Robinsons Superstore Antique',
-    owner_name: 'Robinsons Retail Holdings Inc.',
-    latitude: 10.7410,
-    longitude: 121.9380,
-    address: 'Atabay, San Jose de Buenavista',
-    recidivism_index: 0,
-    barangay: 'Atabay',
-    photoType: 'robinsons'
-  }
-];
+
 
 export type ScannerStepState =
   | 'SELECT_STORE'
@@ -265,19 +229,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           : undefined;
         setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
       } else {
-        setStores(defaultStoresList);
-        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
-          ? handoffRef.current.storeId
-          : undefined;
-        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
+        setStores([]);
+        setErrorMessage('The verified store directory is currently unavailable. Please try again.');
       }
     } catch (err) {
-      console.warn('API connection offline or remote. Using default verified stores:', err);
-      setStores(defaultStoresList);
-      const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
-        ? handoffRef.current.storeId
-        : undefined;
-      setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
+      console.warn('API connection offline or remote:', err);
+      setStores([]);
+      setErrorMessage('The verified store directory is currently unavailable. Please try again.');
     }
   };
 
@@ -743,11 +701,34 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               background: 'linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff' }}>
-              <MapPin size={16} color="#3b82f6" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>
-                {selectedStore?.store_name || 'Select Store'}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ffffff' }}>
+              <button
+                onClick={() => {
+                  stopCamera();
+                  setScannerState('SELECT_STORE');
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '44px',
+                  height: '44px',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+                aria-label="Back to store selection"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <MapPin size={16} color="#3b82f6" />
+                <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>
+                  {selectedStore?.store_name || 'Select Store'}
+                </span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -847,7 +828,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             }}
           >
             <span style={{ fontSize: '0.78rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
-              Hold steady · Lighting looks good
+              Align shelf tag inside bounding box
             </span>
 
             <button

@@ -131,9 +131,12 @@ class PublicPwaController extends Controller
             $detectedPrice = (float) $matches[1];
         }
 
+        $hasTextQuery = $queryText !== '';
         return response()->json([
             'success' => true,
-            'message' => 'Shelf tag successfully uploaded and processed by DTI OCR engine.',
+            'message' => $hasTextQuery
+                ? 'Shelf tag uploaded and matched against input text query.'
+                : 'Shelf tag uploaded. Select the corresponding product commodity below for comparison.',
             'data' => [
                 'scan_id' => 'scan_' . Str::uuid(),
                 'store' => [
@@ -143,7 +146,7 @@ class PublicPwaController extends Controller
                     'dti_sec_number' => $store->dti_sec_number,
                 ],
                 'detected_price' => $detectedPrice,
-                'ocr_status' => $candidates->isNotEmpty() ? 'SUCCESS' : 'NO_MATCH',
+                'ocr_status' => $hasTextQuery ? 'TEXT_QUERY_MATCHED' : 'MANUAL_SELECTION_REQUIRED',
                 'candidates' => $candidates,
                 'timestamp' => now()->toIso8601String(),
             ]
@@ -313,7 +316,7 @@ class PublicPwaController extends Controller
 
         $rawOcr = $request->filled('extracted_text_json')
             ? (is_string($request->extracted_text_json) ? json_decode($request->extracted_text_json, true) : $request->extracted_text_json)
-            : ['lines' => ['Sample Receipt Text'], 'ocr_confidence' => 0.95];
+            : ['lines' => [], 'ocr_confidence' => 0.0, 'status' => 'PENDING_MANUAL_REVIEW'];
 
         // 4. Generate Identifiers & Secret Tracking Token
         $reportReference = 'REP-' . date('Ymd') . '-' . strtoupper(Str::random(4));

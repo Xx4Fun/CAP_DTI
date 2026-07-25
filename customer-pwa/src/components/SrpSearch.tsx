@@ -172,7 +172,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
   const [selectedCommodity, setSelectedCommodity] = useState<Commodity | null>(null);
   const [sortOption, setSortOption] = useState<'default' | 'price_low' | 'price_high' | 'name'>('default');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const activeFiltersCount = (categoryFilter !== 'ALL' ? 1 : 0) + (sortOption !== 'default' ? 1 : 0) + 2;
+  const activeFiltersCount = (categoryFilter !== 'ALL' ? 1 : 0) + (sortOption !== 'default' ? 1 : 0);
 
   const [commodities, setCommodities] = useState<Commodity[]>(() => {
     try {

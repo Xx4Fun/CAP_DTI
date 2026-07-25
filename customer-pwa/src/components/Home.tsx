@@ -106,7 +106,7 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
 
       {/* 3. Track Report Card */}
       <div
-        onClick={() => setActiveTab('reports')}
+        onClick={() => setActiveTab('track')}
         style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',

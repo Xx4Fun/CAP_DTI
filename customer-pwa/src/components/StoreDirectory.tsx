@@ -8,38 +8,7 @@ interface StoreDirectoryProps {
   setActiveTab?: (tab: string) => void;
 }
 
-const defaultStoresList: Establishment[] = [
-  {
-    id: 1,
-    dti_sec_number: 'SEC-CS202612345',
-    store_name: 'Super Metro San Jose',
-    owner_name: 'Metro Retail Stores Group Inc.',
-    latitude: 10.7424,
-    longitude: 121.9406,
-    address: 'Tradetown, San Jose de Buenavista',
-    recidivism_index: 0
-  },
-  {
-    id: 2,
-    dti_sec_number: 'SEC-CS202654321',
-    store_name: 'Gaisano Grand Antique',
-    owner_name: 'Gaisano Grand Malls Inc.',
-    latitude: 10.7450,
-    longitude: 121.9420,
-    address: 'San Jose de Buenavista',
-    recidivism_index: 0
-  },
-  {
-    id: 3,
-    dti_sec_number: 'SEC-CS202699999',
-    store_name: 'Robinsons Superstore Antique',
-    owner_name: 'Robinsons Retail Holdings Inc.',
-    latitude: 10.7410,
-    longitude: 121.9380,
-    address: 'Atabay, San Jose de Buenavista',
-    recidivism_index: 0
-  }
-];
+
 
 export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,11 +31,13 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
       if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
         setStores(res.data.data);
       } else {
-        setStores(defaultStoresList);
+        setStores([]);
+        setError('The verified store directory is currently unavailable. Please try again.');
       }
     } catch (err) {
-      console.warn('API connection offline or remote. Using default verified stores:', err);
-      setStores(defaultStoresList);
+      console.warn('API connection offline or remote:', err);
+      setStores([]);
+      setError('The verified store directory is currently unavailable. Please try again.');
     } finally {
       setLoading(false);
     }
