@@ -273,34 +273,41 @@
   padding-left: 0.65rem;
 }
 
+.admin-sidebar button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 .admin-nav-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 0.65rem 0.85rem;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sidebar-text);
-  border: none;
-  border-left: 3px solid transparent;
-  font-weight: 500;
-  font-size: 0.9rem;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  padding: 0.65rem 0.85rem !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: none !important;
+  border-left: 3px solid transparent !important;
+  font-weight: 500 !important;
+  font-size: 0.9rem !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  box-shadow: none !important;
 }
 
 .admin-nav-item:hover {
-  background: var(--sidebar-hover-bg);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #ffffff !important;
 }
 
 .admin-nav-item.active {
-  background: var(--sidebar-active-bg);
-  border-left: 3px solid var(--sidebar-active-border);
-  color: #ffffff;
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-left: 3px solid #7dd3fc !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
 }
 
 .nav-item-content {
@@ -314,39 +321,40 @@
 }
 
 .nav-dropdown-container {
-  background: var(--sidebar-dropdown-bg);
-  border-radius: 6px;
-  margin-top: 0.25rem;
-  padding: 0.35rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  background: rgba(0, 0, 0, 0.12) !important;
+  border-radius: 6px !important;
+  margin-top: 0.25rem !important;
+  padding: 0.35rem 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.15rem !important;
 }
 
 .admin-nav-sub-item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0.5rem 0.85rem 0.5rem 2.5rem;
-  background: transparent;
-  color: var(--sidebar-text);
-  border: none;
-  border-left: 3px solid transparent;
-  font-size: 0.84rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  padding: 0.5rem 0.85rem 0.5rem 2.5rem !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  border: none !important;
+  border-left: 3px solid transparent !important;
+  font-size: 0.84rem !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  box-shadow: none !important;
 }
 
 .admin-nav-sub-item:hover {
-  background: var(--sidebar-hover-bg);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #ffffff !important;
 }
 
 .admin-nav-sub-item.active {
-  background: var(--sidebar-sub-active-bg);
-  color: var(--sidebar-sub-active-text);
-  border-left: 3px solid var(--sidebar-active-border);
-  font-weight: 600;
+  background: rgba(125, 211, 252, 0.15) !important;
+  color: #e0f2fe !important;
+  border-left: 3px solid #7dd3fc !important;
+  font-weight: 600 !important;
 }
 
 .chevron-icon {
