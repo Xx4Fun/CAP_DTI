@@ -20,6 +20,10 @@ class Store extends Model
         'recidivism_index',
         'is_active',
         'is_verified',
+        'is_public',
+        'vendor_user_id',
+        'verified_at',
+        'verified_by',
     ];
 
     protected $casts = [
@@ -28,6 +32,8 @@ class Store extends Model
         'recidivism_index' => 'integer',
         'is_active' => 'boolean',
         'is_verified' => 'boolean',
+        'is_public' => 'boolean',
+        'verified_at' => 'datetime',
     ];
 
     public function inspections(): HasMany

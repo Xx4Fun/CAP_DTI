@@ -94,13 +94,22 @@ class PublicPwaController extends Controller
 
         $store = Store::find((int) $storeId);
 
+        if (!$store) {
+            abort(response()->json([
+                'success' => false,
+                'message' => 'The selected establishment is unverified, inactive, or not eligible for public price checking.',
+            ], 422));
+        }
+
         $hasActive = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_active');
         $hasVerified = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_verified');
+        $hasPublic = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_public');
 
         $isActive = $hasActive ? $store->is_active : true;
         $isVerified = $hasVerified ? $store->is_verified : true;
+        $isPublic = $hasPublic ? $store->is_public : true;
 
-        if (!$store || !$isActive || !$isVerified) {
+        if (!$isActive || !$isVerified || !$isPublic) {
             abort(response()->json([
                 'success' => false,
                 'message' => 'The selected establishment is unverified, inactive, or not eligible for public price checking.',
@@ -119,6 +128,9 @@ class PublicPwaController extends Controller
         }
         if (\Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_verified')) {
             $query->where('is_verified', true);
+        }
+        if (\Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_public')) {
+            $query->where('is_public', true);
         }
 
         if ($request->filled('query')) {

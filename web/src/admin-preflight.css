@@ -1,0 +1,30 @@
+.app-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 1000;
+  top: -5rem;
+  left: 1rem;
+  padding: 0.7rem 1rem;
+  background: var(--admin-accent);
+  color: #111827;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.admin-product-name {
+  color: var(--admin-text) !important;
+  font-size: 1.35rem !important;
+  font-weight: 700;
+}
+
+.admin-shell button:active {
+  transform: none;
+  border-color: var(--admin-accent);
+  background: #293b53;
+}

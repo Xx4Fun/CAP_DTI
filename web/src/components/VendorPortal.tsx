@@ -45,7 +45,7 @@ export const VendorPortal: React.FC = () => {
     const isExpired = new Date(selectedNotice.due_date_timestamp) < new Date();
     if (isExpired) {
       setIsError(true);
-      setMessage('Notice has expired. Rebuttals cannot be uploaded after 48 hours (403 Forbidden).');
+      setMessage('The configured response period has expired (403 Forbidden).');
       return;
     }
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import api from '../services/api';
 
-export const StoreOnboarding: React.FC = () => {
+export const StoreOnboarding: React.FC<{ onCreated?: () => void }> = ({ onCreated }) => {
   const [secNumber, setSecNumber] = useState('');
   const [storeName, setStoreName] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -82,7 +82,7 @@ export const StoreOnboarding: React.FC = () => {
     setIsError(false);
 
     try {
-      await api.post('/stores', {
+      await api.post('/admin/stores', {
         dti_sec_number: secNumber,
         store_name: storeName,
         owner_name: ownerName,
@@ -90,7 +90,8 @@ export const StoreOnboarding: React.FC = () => {
         latitude,
         longitude
       });
-      setMessage('Store successfully onboarded and map pin saved!');
+      setMessage('Store registered privately. Verify it before enabling public visibility.');
+      onCreated?.();
       // Reset form
       setSecNumber('');
       setStoreName('');

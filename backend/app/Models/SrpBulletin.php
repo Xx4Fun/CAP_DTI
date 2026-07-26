@@ -20,6 +20,9 @@ class SrpBulletin extends Model
         'is_active',
         'price_freeze_applicable',
         'price_freeze_treatment',
+        'commodity_key',
+        'source_reference',
+        'created_by',
     ];
 
     protected $casts = [

@@ -30,7 +30,7 @@ class LegalNoticeTest extends TestCase
             'name' => 'DTI Officer',
             'email' => 'officer@dti.gov.ph',
             'password' => bcrypt('password123'),
-            'role' => 'field_officer',
+            'role' => 'dti_evaluator',
         ]);
 
         $this->vendorUser = User::create([
@@ -49,6 +49,7 @@ class LegalNoticeTest extends TestCase
             'longitude' => 121.9406,
             'address' => 'San Jose, Antique',
             'recidivism_index' => 0,
+            'vendor_user_id' => $this->vendorUser->id,
         ]);
 
         // Seed Srp Bulletin
@@ -74,16 +75,9 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(201);
-        $this->assertDatabaseHas('legal_notices', [
-            'store_id' => $this->store->id,
-            'notice_type' => 'LOI',
-            'status' => 'issued',
-        ]);
-
-        // Verify PDF was written
-        $notice = LegalNotice::first();
-        Storage::disk('public')->assertExists($notice->pdf_file_path);
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $this->assertSame(0, LegalNotice::count());
     }
 
     public function test_dispatches_sco_under_state_of_calamity()
@@ -98,15 +92,11 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(201);
-        $this->assertDatabaseHas('legal_notices', [
-            'store_id' => $this->store->id,
-            'notice_type' => 'SCO',
-        ]);
-
-        // Recidivism index increment check
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $this->assertSame(0, LegalNotice::count());
         $this->store->refresh();
-        $this->assertEquals(1, $this->store->recidivism_index);
+        $this->assertEquals(0, $this->store->recidivism_index);
     }
 
     public function test_dispatches_sco_for_repeat_offenders()
@@ -122,15 +112,11 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(201);
-        $this->assertDatabaseHas('legal_notices', [
-            'store_id' => $this->store->id,
-            'notice_type' => 'SCO',
-        ]);
-
-        // Escalates index again
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $this->assertSame(0, LegalNotice::count());
         $this->store->refresh();
-        $this->assertEquals(2, $this->store->recidivism_index);
+        $this->assertEquals(1, $this->store->recidivism_index);
     }
 
     public function test_vendor_can_upload_rebuttal_before_expiry()
@@ -155,6 +141,33 @@ class LegalNoticeTest extends TestCase
             'id' => $notice->id,
             'status' => 'rebutted',
         ]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'vendor.rebuttal_submitted', 'subject_id' => $notice->id]);
+    }
+
+    public function test_vendor_cannot_access_or_rebut_another_vendors_notice()
+    {
+        $otherVendor = User::create([
+            'name' => 'Other Vendor',
+            'email' => 'other@grocery.com',
+            'password' => bcrypt('password123'),
+            'role' => 'vendor',
+        ]);
+        $notice = LegalNotice::create([
+            'store_id' => $this->store->id,
+            'notice_type' => 'LOI',
+            'pdf_file_path' => 'notices/test.pdf',
+            'status' => 'issued',
+            'due_date_timestamp' => now()->addHours(24),
+        ]);
+
+        $this->actingAs($otherVendor, 'sanctum')
+            ->getJson("/api/notices/{$notice->id}")
+            ->assertForbidden();
+        $this->actingAs($otherVendor, 'sanctum')
+            ->postJson("/api/notices/{$notice->id}/rebuttal", [
+                'rebuttal' => UploadedFile::fake()->create('evidence.pdf', 100, 'application/pdf'),
+            ])
+            ->assertForbidden();
     }
 
     public function test_vendor_upload_rebuttal_fails_after_expiry_lockout()
@@ -176,7 +189,7 @@ class LegalNoticeTest extends TestCase
 
         $response->assertStatus(403);
         $response->assertJsonFragment([
-            'message' => 'Action Forbidden (403): Rebuttal period has expired.'
+            'message' => 'Action Forbidden (403): Response period has expired.'
         ]);
     }
 }

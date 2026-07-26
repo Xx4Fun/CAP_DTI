@@ -19,6 +19,9 @@ class TemporalInspection extends Model
         'sync_timestamp',
         'officer_signature',
         'vendor_signature',
+        'validation_status',
+        'validated_at',
+        'validated_by',
     ];
 
     protected $casts = [
@@ -26,6 +29,7 @@ class TemporalInspection extends Model
         'is_flagged' => 'boolean',
         'inspection_timestamp' => 'datetime',
         'sync_timestamp' => 'datetime',
+        'validated_at' => 'datetime',
     ];
 
     public function store(): BelongsTo
