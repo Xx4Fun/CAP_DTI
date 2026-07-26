@@ -91,7 +91,7 @@ export const CitizenTipReview: React.FC = () => {
                   padding: '0.85rem',
                   borderRadius: '8px',
                   background: isSelected ? '#eff6ff' : '#ffffff',
-                  border: isSelected ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
+                  border: isSelected ? '2px solid #1d4ed8' : '1px solid #e2e8f0',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
@@ -117,9 +117,9 @@ export const CitizenTipReview: React.FC = () => {
             style={{
               fontFamily: 'monospace',
               fontSize: '0.75rem',
-              color: '#1e3a8a',
+              color: '#1d4ed8',
               background: '#f1f5f9',
-              borderLeft: '3px solid #1e3a8a',
+              borderLeft: '3px solid #1d4ed8',
               padding: '0.5rem 0.75rem',
               borderRadius: '0 6px 6px 0',
             }}
@@ -163,9 +163,9 @@ export const CitizenTipReview: React.FC = () => {
                 style={{
                   padding: '0.55rem 1rem',
                   borderRadius: '8px',
-                  border: '1px solid #1e3a8a',
+                  border: '1px solid #1d4ed8',
                   background: '#ffffff',
-                  color: '#1e3a8a',
+                  color: '#1d4ed8',
                   fontWeight: 600,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
@@ -238,7 +238,7 @@ export const CitizenTipReview: React.FC = () => {
                 style={{
                   padding: '0.6rem 1.1rem',
                   borderRadius: '8px',
-                  background: action === 'validate' ? '#059669' : action === 'correct' ? '#1e3a8a' : '#f8fafc',
+                  background: action === 'validate' ? '#059669' : action === 'correct' ? '#1d4ed8' : '#f8fafc',
                   color: ['validate', 'correct'].includes(action) ? '#ffffff' : '#64748b',
                   border: ['validate', 'correct'].includes(action) ? 'none' : '1px solid #e2e8f0',
                   fontWeight: 600,

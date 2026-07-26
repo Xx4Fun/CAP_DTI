@@ -185,9 +185,9 @@ export const StoreManager: React.FC = () => {
                         style={{
                           padding: '0.4rem 0.75rem',
                           borderRadius: '6px',
-                          border: '1px solid #1e3a8a',
+                          border: '1px solid #1d4ed8',
                           background: '#ffffff',
-                          color: '#1e3a8a',
+                          color: '#1d4ed8',
                           fontSize: '0.8rem',
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -247,7 +247,7 @@ export const StoreManager: React.FC = () => {
               style={{
                 marginTop: '0.75rem',
                 padding: '0.55rem 1rem',
-                background: '#1e3a8a',
+                background: '#1d4ed8',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: '8px',

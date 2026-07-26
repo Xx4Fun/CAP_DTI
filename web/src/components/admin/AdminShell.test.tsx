@@ -18,23 +18,23 @@ describe('AdminShell', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
     expect(screen.getByRole('navigation', { name: /DTI Admin modules/i })).toBeInTheDocument()
-    for (const label of ['Overview', 'Stores', 'SRP', 'Receipt review', 'Emergency', 'Notice drafts', 'Audit']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    for (const label of ['Dashboard Overview', 'GIS & Establishments', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
+      expect(screen.getByRole('button', { name: new RegExp(label, 'i') })).toBeInTheDocument()
     }
   })
 
   it('limits a field officer to read-only overview and analytics', () => {
     render(<AdminShell user={{ id: 2, name: 'Officer', email: 'officer@dti.test', role: 'field_officer' }} />)
 
-    expect(screen.getByRole('button', { name: 'Overview' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Analytics' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Emergency' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Dashboard Overview/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Price Regulation/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Emergency Protocol/i })).not.toBeInTheDocument()
   })
 
   it('moves focus to the selected panel heading', async () => {
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
-    await user.click(screen.getByRole('button', { name: 'Receipt review' }))
-    expect(screen.getByRole('heading', { name: 'Formal receipt review' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: /Consumer OCR Queue/i }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toHaveFocus()
   })
 })

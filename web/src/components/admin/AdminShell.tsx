@@ -66,7 +66,7 @@ const navSectionsConfig: NavSection[] = [
   },
 ]
 
-const panels: Record<ModuleId, { title: string; description: string; component: () => ReactElement }> = {
+const panels: Record<ModuleId, { title: string; description: string; component: (props: any) => ReactElement }> = {
   overview: { title: 'Regulatory Overview', description: 'Current Admin workload and declared regulatory context.', component: OverviewPanel },
   stores: { title: 'GIS Store Management', description: 'Register, verify, publish, and invite vendors without exposing private ownership data.', component: StoreManagementPanel },
   srp: { title: 'Temporal SRP Records', description: 'Preview and append dated SRP versions. Existing versions remain unchanged.', component: SrpManagementPanel },
@@ -291,7 +291,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
         {/* Main Panel Content */}
         <main className="admin-panel" id="admin-main">
-          <Panel />
+          <Panel onNavigate={setActiveModule} />
         </main>
       </section>
     </div>

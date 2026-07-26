@@ -17,7 +17,7 @@ export const LegalNoticeManager: React.FC = () => {
       <div className="admin-actions" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <button
           onClick={() => void adminApi.legalDraft().then(setDraft)}
-          style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: '1px solid #1e3a8a', background: '#ffffff', color: '#1e3a8a', fontWeight: 600, cursor: 'pointer' }}
+          style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: '1px solid #1d4ed8', background: '#ffffff', color: '#1d4ed8', fontWeight: 600, cursor: 'pointer' }}
         >
           Preview watermarked draft
         </button>

@@ -66,7 +66,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             style={{
               width: '54px',
               height: '54px',
-              background: '#1e3a8a',
+              background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)',
               color: '#ffffff',
               borderRadius: '12px',
               display: 'flex',
@@ -75,7 +75,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               fontSize: '1.4rem',
               fontWeight: 800,
               margin: '0 auto 0.75rem',
-              boxShadow: '0 4px 12px rgba(30, 58, 138, 0.25)',
+              boxShadow: '0 4px 14px rgba(29, 78, 216, 0.35)',
             }}
           >
             DTI
@@ -167,13 +167,13 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               padding: '0.8rem',
               borderRadius: '8px',
               border: 'none',
-              background: '#1e3a8a',
+              background: '#1d4ed8',
               color: '#ffffff',
               fontSize: '0.95rem',
               fontWeight: 700,
               cursor: loading ? 'not-allowed' : 'pointer',
               opacity: loading ? 0.7 : 1,
-              boxShadow: '0 2px 8px rgba(30, 58, 138, 0.25)',
+              boxShadow: '0 2px 8px rgba(29, 78, 216, 0.3)',
               transition: 'background-color 0.2s ease',
             }}
           >

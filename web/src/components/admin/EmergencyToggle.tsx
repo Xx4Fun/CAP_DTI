@@ -336,7 +336,7 @@ export const EmergencyToggle: React.FC = () => {
             type="submit"
             style={{
               padding: '0.6rem 1.1rem',
-              background: '#1e3a8a',
+              background: '#1d4ed8',
               color: '#ffffff',
               border: 'none',
               borderRadius: '8px',

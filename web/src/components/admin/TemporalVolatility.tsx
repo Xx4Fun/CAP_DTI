@@ -93,8 +93,8 @@ export const TemporalVolatility: React.FC = () => {
           {
             label: 'Applicable Baseline SRP',
             data: analytics.srp_series,
-            borderColor: '#1e3a8a',
-            backgroundColor: 'rgba(30, 58, 138, 0.05)',
+            borderColor: '#1d4ed8',
+            backgroundColor: 'rgba(29, 78, 216, 0.05)',
             borderWidth: 2,
             borderDash: [6, 4],
             tension: 0,
@@ -192,7 +192,7 @@ export const TemporalVolatility: React.FC = () => {
                       <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.9rem', color: isOver10Percent ? '#dc2626' : isOverSrp ? '#d97706' : '#0f172a' }}>
                         ₱{price.toFixed(2)}
                       </td>
-                      <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: '#1e3a8a' }}>
+                      <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.9rem', color: '#1d4ed8' }}>
                         {srp ? `₱${srp.toFixed(2)}` : 'Unavailable'}
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
