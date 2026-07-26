@@ -9,7 +9,8 @@ php artisan config:cache || true
 php artisan route:cache || true
 php artisan storage:link || true
 # Run database migrations
-php artisan migrate --force
+php artisan migrate --force || true
+
 
 
 # Execute Supervisord
