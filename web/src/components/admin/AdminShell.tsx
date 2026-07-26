@@ -101,10 +101,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   const [isCalamityActive, setIsCalamityActive] = useState<boolean>(false)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    analytics: true,
-    legal: true,
-  })
+  const [openCategory, setOpenCategory] = useState<string | null>('analytics')
 
   const heading = useRef<HTMLHeadingElement>(null)
 
@@ -121,8 +118,8 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     })
   }, [])
 
-  const toggleExpand = (itemId: string) => {
-    setExpandedSections((prev) => ({ ...prev, [itemId]: !prev[itemId] }))
+  const toggleCategory = (categoryId: string) => {
+    setOpenCategory((prev) => (prev === categoryId ? null : categoryId))
   }
 
   const avatarInitial = user.name ? user.name.charAt(0).toUpperCase() : 'E'
@@ -200,7 +197,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               {sec.items.map((item) => {
                 const IconComponent = item.icon
                 const isParentActive = activeModule === item.id || item.subItems?.some((s) => s.id === activeModule)
-                const isExpanded = !!expandedSections[item.id]
+                const isOpen = openCategory === item.id
 
                 return (
                   <div key={item.id} className="nav-group">
@@ -210,7 +207,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                       onClick={() => {
                         setActiveModule(item.id)
                         if (item.subItems) {
-                          setExpandedSections((prev) => ({ ...prev, [item.id]: true }))
+                          toggleCategory(item.id)
                         }
                         setIsMobileOpen(false)
                       }}
@@ -223,17 +220,17 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                       {!isCollapsed && item.subItems && (
                         <ChevronDown
                           size={16}
-                          className={`chevron-icon ${isExpanded ? 'open' : ''}`}
+                          className={`chevron-icon ${isOpen ? 'open' : ''}`}
                           onClick={(e) => {
                             e.stopPropagation()
-                            toggleExpand(item.id)
+                            toggleCategory(item.id)
                           }}
                         />
                       )}
                     </button>
 
-                    {!isCollapsed && item.subItems && isExpanded && (
-                      <div className="nav-dropdown-container">
+                    {!isCollapsed && item.subItems && (
+                      <div className={`nav-dropdown-container ${isOpen ? 'open' : ''}`}>
                         {item.subItems.map((sub) => (
                           <button
                             key={sub.id}

@@ -118,6 +118,34 @@
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
 }
 
+/* Custom ultra-thin 4px scrollbar */
+.admin-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.admin-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.admin-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.nav-item-content span,
+.user-card-name,
+.user-card-role,
+.brand-text h2,
+.brand-text p {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
 .admin-sidebar.collapsed {
   width: 72px;
   min-width: 72px;
@@ -323,11 +351,22 @@
 .nav-dropdown-container {
   background: rgba(0, 0, 0, 0.12) !important;
   border-radius: 6px !important;
-  margin-top: 0.25rem !important;
-  padding: 0.35rem 0 !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 0.15rem !important;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
+  padding: 0;
+  transition: max-height 0.25s ease, opacity 0.25s ease, margin-top 0.25s ease, padding 0.25s ease;
+}
+
+.nav-dropdown-container.open {
+  max-height: 300px;
+  opacity: 1;
+  margin-top: 0.25rem;
+  padding: 0.35rem 0;
 }
 
 .admin-nav-sub-item {
