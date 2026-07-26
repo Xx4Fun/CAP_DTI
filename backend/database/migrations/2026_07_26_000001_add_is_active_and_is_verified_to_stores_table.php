@@ -7,26 +7,35 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::table('stores', function (Blueprint $table) {
-            if (!Schema::hasColumn('stores', 'is_active')) {
-                $table->boolean('is_active')->default(true);
-            }
-            if (!Schema::hasColumn('stores', 'is_verified')) {
-                $table->boolean('is_verified')->default(true);
-            }
-        });
+        $hasIsActive = Schema::hasColumn('stores', 'is_active');
+        $hasIsVerified = Schema::hasColumn('stores', 'is_verified');
 
+        if (!$hasIsActive || !$hasIsVerified) {
+            Schema::table('stores', function (Blueprint $table) use ($hasIsActive, $hasIsVerified) {
+                if (!$hasIsActive) {
+                    $table->boolean('is_active')->default(true);
+                }
+                if (!$hasIsVerified) {
+                    $table->boolean('is_verified')->default(true);
+                }
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('stores', function (Blueprint $table) {
-            if (Schema::hasColumn('stores', 'is_active')) {
-                $table->dropColumn('is_active');
-            }
-            if (Schema::hasColumn('stores', 'is_verified')) {
-                $table->dropColumn('is_verified');
-            }
-        });
+        $hasIsActive = Schema::hasColumn('stores', 'is_active');
+        $hasIsVerified = Schema::hasColumn('stores', 'is_verified');
+
+        if ($hasIsActive || $hasIsVerified) {
+            Schema::table('stores', function (Blueprint $table) use ($hasIsActive, $hasIsVerified) {
+                if ($hasIsActive) {
+                    $table->dropColumn('is_active');
+                }
+                if ($hasIsVerified) {
+                    $table->dropColumn('is_verified');
+                }
+            });
+        }
     }
 };
