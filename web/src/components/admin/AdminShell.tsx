@@ -159,7 +159,9 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
         {/* Section 1: Header Section */}
         <div className="admin-brand-header">
           <div className="brand-header-left">
-            <div className="dti-seal" title="Department of Trade and Industry">DTI</div>
+            <div className="dti-seal-logo" title="Department of Trade and Industry">
+              <img src="/dti-logo.svg" alt="Department of Trade and Industry Logo" className="dti-official-logo" />
+            </div>
             {!isCollapsed && (
               <div className="brand-text">
                 <h2>PRICE-Watch</h2>
