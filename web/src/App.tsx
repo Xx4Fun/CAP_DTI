@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Login } from './components/Login';
-import { Dashboard } from './components/Dashboard';
-import { StoreOnboarding } from './components/StoreOnboarding';
 import { VendorPortal } from './components/VendorPortal';
+import { AdminShell } from './components/admin/AdminShell';
+import { VendorInvitationAccept } from './components/VendorInvitationAccept';
+import type { AdminUser } from './types/admin';
 import 'leaflet/dist/leaflet.css';
+import './admin-preflight.css';
 
 interface User {
   id: number;
@@ -14,7 +16,6 @@ interface User {
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'onboarding'>('dashboard');
 
   useEffect(() => {
     // Check if token and user exist in local storage
@@ -27,7 +28,6 @@ function App() {
 
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
-    setActiveTab('dashboard');
   };
 
   const handleLogout = () => {
@@ -37,6 +37,11 @@ function App() {
     document.body.classList.remove('calamity-mode');
   };
 
+  const invitationToken = new URLSearchParams(window.location.search).get('token');
+  if (window.location.pathname === '/vendor-invitation' && invitationToken) {
+    return <VendorInvitationAccept token={invitationToken} />;
+  }
+
   if (!user) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
@@ -44,32 +49,23 @@ function App() {
   // Determine view based on role
   const isDTIUser = ['super_admin', 'dti_evaluator', 'field_officer'].includes(user.role);
 
+  if (isDTIUser) {
+    return (
+      <div className="admin-app-wrapper">
+        <AdminShell user={user as AdminUser} onLogout={handleLogout} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-layout">
-      {/* Premium Header */}
+      {/* Header for non-DTI users */}
       <header className="header glass">
         <div className="header-brand">
           <div className="logo-pulse"></div>
-          <h1>PRICE-Watch</h1>
+          <div className="app-title">PRICE-Watch</div>
           <span className="app-badge">Antique Office</span>
         </div>
-
-        {isDTIUser && (
-          <nav className="header-nav">
-            <button 
-              className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveTab('dashboard')}
-            >
-              Dashboard & Volatility
-            </button>
-            <button 
-              className={`nav-link ${activeTab === 'onboarding' ? 'active' : ''}`}
-              onClick={() => setActiveTab('onboarding')}
-            >
-              GIS Store Onboarding
-            </button>
-          </nav>
-        )}
 
         <div className="header-user-menu">
           <div className="user-info">
@@ -84,9 +80,7 @@ function App() {
 
       {/* Main Content Area */}
       <main className="content-area">
-        {isDTIUser ? (
-          activeTab === 'dashboard' ? <Dashboard /> : <StoreOnboarding />
-        ) : user.role === 'vendor' ? (
+        {user.role === 'vendor' ? (
           <VendorPortal />
         ) : (
           <div className="glass empty-state-card" style={{ padding: '40px', textAlign: 'center' }}>
