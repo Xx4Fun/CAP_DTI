@@ -2,11 +2,16 @@
 
 :root {
     --font-primary: 'Outfit', sans-serif;
+    --sidebar-bg: linear-gradient(180deg, #1e3a8a 0%, #1d4ed8 100%);
+    --sidebar-text: #ffffff;
+    --sidebar-muted: #bfdbfe;
+    --sidebar-active: rgba(255, 255, 255, 0.18);
+    --bg-main: #f1f5f9;
     --bg-dark: #f8fafc;
     --bg-card: #ffffff;
     --border-color: #e2e8f0;
-    --primary: #1e3a8a; /* Navy */
-    --primary-hover: #1d4ed8;
+    --primary: #1d4ed8; /* Royal Blue */
+    --primary-hover: #1e40af;
     --accent: #dc2626; /* Alert Red */
     --text-main: #0f172a;
     --text-muted: #64748b;

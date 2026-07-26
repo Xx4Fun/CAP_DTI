@@ -11,22 +11,59 @@ import './admin.css'
 export type CategoryId = 'overview' | 'stores' | 'price_regulation' | 'reports' | 'legal_engine' | 'emergency'
 export type ModuleId = 'overview' | 'stores' | 'srp' | 'reports' | 'analytics' | 'emergency' | 'legal' | 'audit'
 
-interface ModuleNav {
+interface NavItem {
   id: ModuleId
   icon: string
   label: string
   categoryName: string
+  subItems?: { id: ModuleId; label: string }[]
 }
 
-const allModules: ModuleNav[] = [
-  { id: 'overview', icon: '📊', label: 'Overview', categoryName: 'Overview' },
-  { id: 'stores', icon: '📍', label: 'Stores', categoryName: 'GIS & Establishments' },
-  { id: 'srp', icon: '📋', label: 'SRP', categoryName: 'Price Regulation' },
-  { id: 'reports', icon: '🧾', label: 'Receipt review', categoryName: 'Consumer OCR Queue' },
-  { id: 'analytics', icon: '📈', label: 'Analytics', categoryName: 'Price Regulation' },
-  { id: 'emergency', icon: '🚨', label: 'Emergency', categoryName: 'Emergency Protocol' },
-  { id: 'legal', icon: '⚖️', label: 'Notice drafts', categoryName: 'Legal Engine' },
-  { id: 'audit', icon: '🔒', label: 'Audit', categoryName: 'Legal Engine' },
+interface NavSection {
+  title: string
+  items: NavItem[]
+}
+
+const navSectionsConfig: NavSection[] = [
+  {
+    title: 'MAIN MENU',
+    items: [
+      { id: 'overview', icon: '📊', label: 'Dashboard Overview', categoryName: 'MAIN MENU' },
+      { id: 'stores', icon: '📍', label: 'GIS & Establishments', categoryName: 'MAIN MENU' },
+    ],
+  },
+  {
+    title: 'REGULATORY ENGINE',
+    items: [
+      {
+        id: 'analytics',
+        icon: '📈',
+        label: 'Price Regulation',
+        categoryName: 'REGULATORY ENGINE',
+        subItems: [
+          { id: 'analytics', label: 'Four-Week Analytics' },
+          { id: 'srp', label: 'SRP Bulletins' },
+        ],
+      },
+      { id: 'reports', icon: '🧾', label: 'Consumer OCR Queue', categoryName: 'REGULATORY ENGINE' },
+      {
+        id: 'legal',
+        icon: '⚖️',
+        label: 'Legal Engine (LOI / SCO)',
+        categoryName: 'REGULATORY ENGINE',
+        subItems: [
+          { id: 'legal', label: 'Notice Drafts' },
+          { id: 'audit', label: 'Audit Trail' },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'SYSTEM',
+    items: [
+      { id: 'emergency', icon: '🚨', label: 'Emergency Protocol', categoryName: 'SYSTEM' },
+    ],
+  },
 ]
 
 const panels: Record<ModuleId, { title: string; description: string; component: () => ReactElement }> = {
@@ -42,12 +79,13 @@ const panels: Record<ModuleId, { title: string; description: string; component: 
 
 export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () => void }) {
   const isFieldOfficer = user.role === 'field_officer'
-  const navModules = isFieldOfficer
-    ? allModules.filter((m) => m.id === 'overview' || m.id === 'analytics')
-    : allModules
-
   const [activeModule, setActiveModule] = useState<ModuleId>('overview')
   const [isCalamityActive, setIsCalamityActive] = useState<boolean>(false)
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    analytics: true,
+    legal: true,
+  })
 
   const heading = useRef<HTMLHeadingElement>(null)
 
@@ -64,48 +102,137 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     })
   }, [])
 
-  const currentModuleNav = navModules.find((m) => m.id === activeModule) || navModules[0]
+  const toggleExpand = (itemId: string) => {
+    setExpandedSections((prev) => ({ ...prev, [itemId]: !prev[itemId] }))
+  }
+
+  const avatarInitial = user.name ? user.name.charAt(0).toUpperCase() : 'E'
+
+  // Filter sections for field officer
+  const navSections = navSectionsConfig.map((sec) => ({
+    ...sec,
+    items: sec.items.filter((item) => {
+      if (!isFieldOfficer) return true
+      return item.id === 'overview' || item.id === 'analytics'
+    }),
+  })).filter((sec) => sec.items.length > 0)
+
+  // Find active nav item details for header breadcrumb
+  let activeCategoryName = 'MAIN MENU'
+  let activeLabel = panels[activeModule].title
+
+  navSectionsConfig.forEach((sec) => {
+    sec.items.forEach((item) => {
+      if (item.id === activeModule) {
+        activeCategoryName = sec.title
+        activeLabel = item.label
+      }
+      item.subItems?.forEach((sub) => {
+        if (sub.id === activeModule) {
+          activeCategoryName = sec.title
+          activeLabel = `${item.label} / ${sub.label}`
+        }
+      })
+    })
+  })
+
   const Panel = panels[activeModule].component
 
   return (
     <div className="admin-shell">
       <a className="skip-link" href="#admin-main">Skip to Admin content</a>
 
-      {/* Fixed 260px Left Sidebar */}
-      <aside className="admin-sidebar" aria-label="DTI Admin Sidebar Navigation">
+      {/* Rich Royal Blue Gradient Left Sidebar */}
+      <aside className={`admin-sidebar ${isCollapsed ? 'collapsed' : ''}`} aria-label="DTI Admin Sidebar Navigation">
+        {/* Sidebar Header */}
         <div className="admin-brand-header">
-          <div className="dti-seal" title="Department of Trade and Industry">DTI</div>
-          <div className="brand-text">
-            <h2>PRICE-Watch</h2>
-            <p>Antique Office</p>
+          <div className="brand-header-left">
+            <div className="dti-seal" title="Department of Trade and Industry">DTI</div>
+            {!isCollapsed && (
+              <div className="brand-text">
+                <h2>PRICE-Watch</h2>
+                <p>DTI Officer Portal</p>
+              </div>
+            )}
           </div>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+          >
+            {isCollapsed ? '›' : '‹'}
+          </button>
         </div>
 
+        {/* Translucent User Avatar Pill */}
+        <div className="sidebar-user-pill">
+          <div className="user-avatar-circle" title={user.name}>{avatarInitial}</div>
+          {!isCollapsed && (
+            <div className="user-pill-details">
+              <span className="user-pill-name">{user.name}</span>
+              <span className="user-pill-role">{user.role.toUpperCase().replace('_', ' ')}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Categorized Menu List */}
         <nav aria-label="DTI Admin modules">
-          {navModules.map((mod) => {
-            const isActive = activeModule === mod.id
-            return (
-              <button
-                key={mod.id}
-                className={`admin-nav-item ${isActive ? 'active' : ''}`}
-                onClick={() => setActiveModule(mod.id)}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                <span className="admin-nav-icon" aria-hidden="true">{mod.icon}</span>
-                <span>{mod.label}</span>
-              </button>
-            )
-          })}
+          {navSections.map((sec) => (
+            <div key={sec.title} className="sidebar-nav-section">
+              {!isCollapsed && <div className="nav-section-label">{sec.title}</div>}
+              {sec.items.map((item) => {
+                const isItemActive = activeModule === item.id || item.subItems?.some((s) => s.id === activeModule)
+                const isExpanded = !!expandedSections[item.id]
+
+                return (
+                  <div key={item.id} className="nav-group">
+                    <button
+                      type="button"
+                      className={`admin-nav-item ${isItemActive ? 'active' : ''}`}
+                      onClick={() => {
+                        setActiveModule(item.id)
+                        if (item.subItems) toggleExpand(item.id)
+                      }}
+                      aria-current={activeModule === item.id ? 'page' : undefined}
+                    >
+                      <div className="nav-item-content">
+                        <span className="admin-nav-icon" aria-hidden="true">{item.icon}</span>
+                        {!isCollapsed && <span>{item.label}</span>}
+                      </div>
+                      {!isCollapsed && item.subItems && (
+                        <span className="nav-chevron" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                          ›
+                        </span>
+                      )}
+                    </button>
+
+                    {!isCollapsed && item.subItems && isExpanded && (
+                      <div className="nav-sub-items">
+                        {item.subItems.map((sub) => (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            className={`admin-nav-sub-item ${activeModule === sub.id ? 'active' : ''}`}
+                            onClick={() => setActiveModule(sub.id)}
+                          >
+                            • {sub.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
+        {/* Fixed Bottom User Drawer / Logout */}
         <div className="admin-user-drawer">
-          <div className="user-drawer-info">
-            <span className="user-drawer-name">{user.name}</span>
-            <span className="user-drawer-role">{user.role.toUpperCase().replace('_', ' ')}</span>
-          </div>
           {onLogout && (
-            <button type="button" onClick={onLogout} className="logout-btn-sidebar">
-              🚪 Logout
+            <button type="button" onClick={onLogout} className="logout-btn-sidebar" title="Log out of DTI Portal">
+              🚪 {!isCollapsed && <span>Logout</span>}
             </button>
           )}
         </div>
@@ -113,30 +240,45 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
       {/* Main Workspace */}
       <section className="admin-workspace">
-        {/* Top Header */}
+        {/* Top Header Bar */}
         <header className="admin-top-header">
-          <div className="admin-breadcrumbs">
-            <span>DTI Antique</span>
-            <span>/</span>
-            <span>{currentModuleNav.categoryName}</span>
-            <span>/</span>
-            <span className="current">{currentModuleNav.label}</span>
+          <div className="header-left-group">
+            <div className="header-home-badge" title="DTI Portal Home">
+              🛡️
+            </div>
+            <div className="header-titles">
+              <h2 className="header-main-title">{panels[activeModule].title}</h2>
+              <span className="header-subtitle">
+                San Jose de Buenavista, Antique | {activeCategoryName} / {activeLabel}
+              </span>
+            </div>
           </div>
 
-          <div className="market-status-container">
-            {isCalamityActive ? (
-              <span className="market-status-badge calamity">
-                🚨 State of Calamity Active
-              </span>
-            ) : (
-              <span className="market-status-badge normal">
-                🟢 Normal Market Protocol
-              </span>
-            )}
+          <div className="header-right-group">
+            <div className="market-status-container">
+              {isCalamityActive ? (
+                <span className="market-status-badge calamity">
+                  🚨 State of Calamity Active
+                </span>
+              ) : (
+                <span className="market-status-badge normal">
+                  🟢 Normal Market Protocol
+                </span>
+              )}
+            </div>
+
+            <button type="button" className="messages-pill-btn" onClick={() => alert('DTI Regulatory Notification Queue')}>
+              💬 <span>Messages</span>
+            </button>
+
+            <div className="header-avatar-badge" title={`${user.name} (${user.role})`}>
+              <span>{avatarInitial}</span>
+              <span className="avatar-status-dot" title="Online"></span>
+            </div>
           </div>
         </header>
 
-        {/* Page Header */}
+        {/* Page Header Sub-strip */}
         <div className="admin-page-header">
           <div>
             <h1 ref={heading} tabIndex={-1}>{panels[activeModule].title}</h1>
