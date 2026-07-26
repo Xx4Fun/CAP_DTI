@@ -8,7 +8,9 @@ chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache || true
 php artisan config:cache || true
 php artisan route:cache || true
 php artisan storage:link || true
-php artisan migrate --force || true
+# Run database migrations
+php artisan migrate --force
+
 
 # Execute Supervisord
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
