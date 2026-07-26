@@ -117,25 +117,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     }),
   })).filter((sec) => sec.items.length > 0)
 
-  // Find active nav item details for header breadcrumb
-  let activeCategoryName = 'MAIN MENU'
-  let activeLabel = panels[activeModule].title
-
-  navSectionsConfig.forEach((sec) => {
-    sec.items.forEach((item) => {
-      if (item.id === activeModule) {
-        activeCategoryName = sec.title
-        activeLabel = item.label
-      }
-      item.subItems?.forEach((sub) => {
-        if (sub.id === activeModule) {
-          activeCategoryName = sec.title
-          activeLabel = `${item.label} / ${sub.label}`
-        }
-      })
-    })
-  })
-
   const Panel = panels[activeModule].component
 
   return (
@@ -190,10 +171,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                     <button
                       type="button"
                       className={`admin-nav-item ${isItemActive ? 'active' : ''}`}
-                      onClick={() => {
-                        setActiveModule(item.id)
-                        if (item.subItems) toggleExpand(item.id)
-                      }}
+                      onClick={() => setActiveModule(item.id)}
                       aria-current={activeModule === item.id ? 'page' : undefined}
                     >
                       <div className="nav-item-content">
@@ -201,7 +179,15 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                         {!isCollapsed && <span>{item.label}</span>}
                       </div>
                       {!isCollapsed && item.subItems && (
-                        <span className="nav-chevron" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                        <span
+                          className="nav-chevron"
+                          style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpand(item.id)
+                          }}
+                          title={isExpanded ? 'Collapse section' : 'Expand section'}
+                        >
                           ›
                         </span>
                       )}
@@ -249,7 +235,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             <div className="header-titles">
               <h2 className="header-main-title">{panels[activeModule].title}</h2>
               <span className="header-subtitle">
-                San Jose de Buenavista, Antique | {activeCategoryName} / {activeLabel}
+                San Jose de Buenavista, Antique
               </span>
             </div>
           </div>

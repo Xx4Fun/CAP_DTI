@@ -9,163 +9,28 @@ import { EmergencyToggle } from './EmergencyToggle'
 
 import type { ModuleId } from './AdminShell'
 
-export function OverviewPanel({ onNavigate }: { onNavigate?: (module: ModuleId) => void }) {
+export function OverviewPanel(_props: { onNavigate?: (module: ModuleId) => void }) {
   const [summary, setSummary] = useState<{ stores?: number; pending_reports?: number; active_emergencies?: number }>({})
+
   useEffect(() => {
     void adminApi.getOverview().then(setSummary).catch(() => {})
   }, [])
+
   return (
-    <div className="admin-stack" style={{ display: 'grid', gap: '1.75rem' }}>
-      {/* Header Greeting Banner */}
-      <div className="overview-greeting-banner" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#0f172a' }}>Good Evening, Officer.</h2>
-          <p style={{ margin: '0.25rem 0 0', fontSize: '0.88rem', color: '#64748b' }}>
-            San Jose de Buenavista, Antique | Active Regulatory Session &amp; Automated Surveillance
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.78rem', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '0.35rem 0.75rem', borderRadius: '20px', fontWeight: 700 }}>
-            🛡️ DTI R.A. 7581 Active
-          </span>
-        </div>
-      </div>
-
-      {/* 5-Metric Counter Cards Row */}
-      <div>
-        <h3 style={{ margin: '0 0 0.85rem', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Operational Summary</h3>
-        <div className="admin-metric-grid-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-          {/* Card 1: Compliant Stores */}
-          <article className="metric-card-green" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'grid', gap: '0.35rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <strong style={{ font: '700 2.1rem ui-monospace, monospace', color: '#059669' }}>
-              {summary.stores ?? 0}
-            </strong>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>Compliant Stores</span>
-            <small style={{ color: '#64748b', fontSize: '0.78rem' }}>Compliant stores</small>
-          </article>
-
-          {/* Card 2: Pending Scans */}
-          <article className="metric-card-amber" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'grid', gap: '0.35rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <strong style={{ font: '700 2.1rem ui-monospace, monospace', color: '#f59e0b' }}>
-              {summary.pending_reports ?? 12}
-            </strong>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>Pending Scans</span>
-            <small style={{ color: '#64748b', fontSize: '0.78rem' }}>Awaiting DTI review</small>
-          </article>
-
-          {/* Card 3: Active LOIs */}
-          <article className="metric-card-blue" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'grid', gap: '0.35rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <strong style={{ font: '700 2.1rem ui-monospace, monospace', color: '#2563eb' }}>
-              3
-            </strong>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>Active LOIs</span>
-            <small style={{ color: '#64748b', fontSize: '0.78rem' }}>48h rebuttal window</small>
-          </article>
-
-          {/* Card 4: Escalated SCOs */}
-          <article className="metric-card-purple" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'grid', gap: '0.35rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <strong style={{ font: '700 2.1rem ui-monospace, monospace', color: '#8b5cf6' }}>
-              2
-            </strong>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>Escalated SCOs</span>
-            <small style={{ color: '#64748b', fontSize: '0.78rem' }}>Field inspection queue</small>
-          </article>
-
-          {/* Card 5: Resolved Cases */}
-          <article className="metric-card-teal" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'grid', gap: '0.35rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <strong style={{ font: '700 2.1rem ui-monospace, monospace', color: '#0d9488' }}>
-              5
-            </strong>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>Resolved Cases</span>
-            <small style={{ color: '#64748b', fontSize: '0.78rem' }}>Audited and closed</small>
-          </article>
-        </div>
-      </div>
-
-      {/* Quick Access Action Grid */}
-      <div>
-        <h3 style={{ margin: '0 0 0.85rem', fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Quick Access Modules</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
-          {/* Action Card 1: GIS Store Registry */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <div>
-              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#1d4ed8', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', marginBottom: '0.85rem', boxShadow: '0 2px 6px rgba(29, 78, 216, 0.25)' }}>
-                📍
-              </div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>GIS Store Registry</h4>
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.4' }}>
-                Register commercial establishments and manage geographic pin locations.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('stores')}
-              style={{ padding: '0.5rem 0.85rem', background: 'transparent', color: '#1d4ed8', border: '1px solid #1d4ed8', borderRadius: '8px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease' }}
-            >
-              Open module →
-            </button>
-          </div>
-
-          {/* Action Card 2: Temporal Volatility */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <div>
-              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#1d4ed8', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', marginBottom: '0.85rem', boxShadow: '0 2px 6px rgba(29, 78, 216, 0.25)' }}>
-                📈
-              </div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Temporal Volatility</h4>
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.4' }}>
-                Track 4-week commodity price changes and identify baseline SRP variances.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('analytics')}
-              style={{ padding: '0.5rem 0.85rem', background: 'transparent', color: '#1d4ed8', border: '1px solid #1d4ed8', borderRadius: '8px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease' }}
-            >
-              Open module →
-            </button>
-          </div>
-
-          {/* Action Card 3: Citizen OCR Tips */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <div>
-              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#1d4ed8', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', marginBottom: '0.85rem', boxShadow: '0 2px 6px rgba(29, 78, 216, 0.25)' }}>
-                🧾
-              </div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>Citizen OCR Tips</h4>
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.4' }}>
-                Audit extracted consumer receipt scans and vault evidence images.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('reports')}
-              style={{ padding: '0.5rem 0.85rem', background: 'transparent', color: '#1d4ed8', border: '1px solid #1d4ed8', borderRadius: '8px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease' }}
-            >
-              Open module →
-            </button>
-          </div>
-
-          {/* Action Card 4: LOI & SCO Notices */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem', boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)' }}>
-            <div>
-              <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#1d4ed8', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', marginBottom: '0.85rem', boxShadow: '0 2px 6px rgba(29, 78, 216, 0.25)' }}>
-                ⚖️
-              </div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>LOI &amp; SCO Notices</h4>
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.4' }}>
-                Draft, audit, and dispatch official legal notices &amp; Show Cause Orders.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate?.('legal')}
-              style={{ padding: '0.5rem 0.85rem', background: 'transparent', color: '#1d4ed8', border: '1px solid #1d4ed8', borderRadius: '8px', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease' }}
-            >
-              Open module →
-            </button>
-          </div>
-        </div>
+    <div className="admin-stack">
+      <div className="admin-metric-grid">
+        <article>
+          <strong>{summary.stores ?? 0}</strong>
+          <span>Commercial Establishments</span>
+        </article>
+        <article>
+          <strong>{summary.pending_reports ?? 0}</strong>
+          <span>Pending Consumer Tips</span>
+        </article>
+        <article>
+          <strong>{summary.active_emergencies ?? 0}</strong>
+          <span>Active State of Calamity Status</span>
+        </article>
       </div>
     </div>
   )

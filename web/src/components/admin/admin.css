@@ -102,9 +102,20 @@
 }
 
 .admin-sidebar.collapsed {
-  width: 76px;
-  min-width: 76px;
-  max-width: 76px;
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+}
+
+.admin-sidebar.collapsed .admin-nav-item,
+.admin-sidebar.collapsed .nav-item-content,
+.admin-sidebar.collapsed .sidebar-user-pill,
+.admin-sidebar.collapsed .brand-header-left {
+  justify-content: center;
+}
+
+.admin-sidebar.collapsed .admin-nav-item {
+  padding: 0.6rem 0;
 }
 
 .admin-brand-header {
@@ -283,6 +294,43 @@
   font-size: 0.75rem;
   color: var(--sidebar-muted, #bfdbfe);
   transition: transform 0.2s ease;
+}
+
+.nav-sub-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.25rem;
+}
+
+.admin-nav-sub-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.45rem 0.75rem 0.45rem 2rem;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-muted, #bfdbfe);
+  border: none;
+  font-weight: 500;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-nav-sub-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.admin-nav-sub-item.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  border-left: 3px solid #ffffff;
+  margin-left: 0.5rem;
+  width: calc(100% - 0.5rem);
 }
 
 .admin-user-drawer {
