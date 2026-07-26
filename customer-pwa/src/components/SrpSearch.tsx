@@ -169,10 +169,11 @@ const CardProductIllustration: React.FC<{ commodity: Commodity }> = ({ commodity
 export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalamity = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'BASIC_NECESSITY' | 'PRIME_COMMODITY'>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedCommodity, setSelectedCommodity] = useState<Commodity | null>(null);
   const [sortOption, setSortOption] = useState<'default' | 'price_low' | 'price_high' | 'name'>('default');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
-  const activeFiltersCount = (categoryFilter !== 'ALL' ? 1 : 0) + (sortOption !== 'default' ? 1 : 0);
+  const activeFiltersCount = (categoryFilter !== 'ALL' ? 1 : 0) + (selectedCategory !== 'ALL' ? 1 : 0) + (sortOption !== 'default' ? 1 : 0);
 
   const [commodities, setCommodities] = useState<Commodity[]>(() => {
     try {
@@ -188,6 +189,16 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
     }
     return fallbackCommodities;
   });
+
+  const availableCategories = React.useMemo(() => {
+    const categories = new Set<string>();
+    commodities.forEach((item) => {
+      if (item.category && item.category.trim()) {
+        categories.add(item.category.trim());
+      }
+    });
+    return Array.from(categories).sort();
+  }, [commodities]);
 
   const [loading, setLoading] = useState(false);
   const [dataSource, setDataSource] = useState<'live' | 'cached' | 'bundled'>('bundled');
@@ -310,15 +321,21 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
     return { name, category, unit, effDate };
   };
 
-  // Filter list by category chip selection
+  // Filter list by category chip selection and selected category dropdown
   const filteredList = commodities.filter((item) => {
-    if (categoryFilter === 'BASIC_NECESSITY') {
-      return item.regulatory_classification === 'BASIC_NECESSITY';
-    }
-    if (categoryFilter === 'PRIME_COMMODITY') {
-      return item.regulatory_classification === 'PRIME_COMMODITY';
-    }
-    return true;
+    const matchesClassification =
+      categoryFilter === 'ALL'
+        ? true
+        : categoryFilter === 'BASIC_NECESSITY'
+        ? item.regulatory_classification === 'BASIC_NECESSITY'
+        : item.regulatory_classification === 'PRIME_COMMODITY';
+
+    const matchesCategory =
+      selectedCategory === 'ALL'
+        ? true
+        : (item.category || '').toLowerCase().trim() === selectedCategory.toLowerCase().trim();
+
+    return matchesClassification && matchesCategory;
   });
 
   // Apply sorting
@@ -494,6 +511,37 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
         </button>
       </div>
 
+      {/* Category Select Dropdown */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+        <label htmlFor="category-select" style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>
+          Category:
+        </label>
+        <select
+          id="category-select"
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: '10px',
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            color: '#0f172a',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="ALL">All Categories ({commodities.length})</option>
+          {availableCategories.map((cat) => (
+            <option key={cat} value={cat}>
+              {cat}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* 4. Filters & Sort Buttons */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         {/* Filters Button */}
@@ -649,7 +697,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
 
       {/* 6. Total Item Count */}
       <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
-        {sortedList.length} prices
+        {sortedList.length} prices{selectedCategory !== 'ALL' ? ` in ${selectedCategory}` : ''}
       </div>
 
       {/* 7. Product Cards List */}
