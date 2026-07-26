@@ -72,13 +72,14 @@ class PublicPwaController extends Controller
 
     public static function formatPublicStore(Store $store): array
     {
+        $hasVerified = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_verified');
         return [
             'id' => (int) $store->id,
             'store_name' => (string) $store->store_name,
             'address' => (string) $store->address,
             'latitude' => (float) $store->latitude,
             'longitude' => (float) $store->longitude,
-            'is_verified' => (bool) $store->is_verified,
+            'is_verified' => $hasVerified ? (bool) $store->is_verified : true,
         ];
     }
 
@@ -93,7 +94,13 @@ class PublicPwaController extends Controller
 
         $store = Store::find((int) $storeId);
 
-        if (!$store || !$store->is_active || !$store->is_verified) {
+        $hasActive = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_active');
+        $hasVerified = \Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_verified');
+
+        $isActive = $hasActive ? $store->is_active : true;
+        $isVerified = $hasVerified ? $store->is_verified : true;
+
+        if (!$store || !$isActive || !$isVerified) {
             abort(response()->json([
                 'success' => false,
                 'message' => 'The selected establishment is unverified, inactive, or not eligible for public price checking.',
@@ -105,7 +112,14 @@ class PublicPwaController extends Controller
 
     public function establishments(Request $request)
     {
-        $query = Store::where('is_active', true)->where('is_verified', true);
+        $query = Store::query();
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_active')) {
+            $query->where('is_active', true);
+        }
+        if (\Illuminate\Support\Facades\Schema::hasColumn('stores', 'is_verified')) {
+            $query->where('is_verified', true);
+        }
 
         if ($request->filled('query')) {
             $search = $request->input('query');
@@ -118,6 +132,7 @@ class PublicPwaController extends Controller
         $stores = $query->orderBy('store_name', 'asc')->get()->map(function ($store) {
             return self::formatPublicStore($store);
         });
+
 
         return response()->json([
             'success' => true,
