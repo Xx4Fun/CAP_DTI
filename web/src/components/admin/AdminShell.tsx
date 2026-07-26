@@ -176,18 +176,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
           </button>
         </div>
 
-        {/* Section 2: User Profile Card */}
-        <div className="sidebar-profile-card">
-          <div className="sidebar-avatar-circle" title={user.name}>
-            {avatarInitial}
-          </div>
-          {!isCollapsed && (
-            <div className="user-card-details">
-              <span className="user-card-name">{user.name}</span>
-              <span className="user-card-role">{user.role.toUpperCase().replace('_', ' ')}</span>
-            </div>
-          )}
-        </div>
+
 
         {/* Section 3: Accordion Dropdown Navigation Items */}
         <nav aria-label="DTI Admin modules">
