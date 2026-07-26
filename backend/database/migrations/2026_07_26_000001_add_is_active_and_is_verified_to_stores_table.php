@@ -9,12 +9,13 @@ return new class extends Migration {
     {
         Schema::table('stores', function (Blueprint $table) {
             if (!Schema::hasColumn('stores', 'is_active')) {
-                $table->boolean('is_active')->default(true)->after('recidivism_index');
+                $table->boolean('is_active')->default(true);
             }
             if (!Schema::hasColumn('stores', 'is_verified')) {
-                $table->boolean('is_verified')->default(true)->after('is_active');
+                $table->boolean('is_verified')->default(true);
             }
         });
+
     }
 
     public function down(): void
