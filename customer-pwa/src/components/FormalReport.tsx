@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, Camera, Shield, UserCheck,
+  FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, ChevronDown, ChevronUp, Camera, Shield, UserCheck,
   Search, CheckCircle2, RefreshCw, ZoomIn, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
   SwitchCamera, AlertTriangle, Building2, ExternalLink
 } from 'lucide-react';
@@ -22,6 +22,17 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   const [showGuidelinesModal, setShowGuidelinesModal] = useState<boolean>(false);
   const [showFullNoticeModal, setShowFullNoticeModal] = useState<boolean>(false);
   const [showFullReceiptModal, setShowFullReceiptModal] = useState<boolean>(false);
+
+  // Accordion State
+  const [openAccordions, setOpenAccordions] = useState<Record<string, boolean>>({
+    'how-reporting-works': false,
+    'privacy-security': false,
+    'faq': false,
+  });
+
+  const toggleAccordion = (key: string) => {
+    setOpenAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Form State
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
@@ -356,56 +367,131 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
             </div>
           </div>
 
-          {/* Info Section Cards */}
+          {/* Info Section Cards (Collapsible Accordions) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
             {/* Card: How reporting works */}
             <div className="glass-panel" style={{ margin: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <div className="icon-wrapper-amber" style={{ width: '36px', height: '36px' }}>
-                  <HelpCircle size={20} />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleAccordion('how-reporting-works')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleAccordion('how-reporting-works');
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  marginBottom: openAccordions['how-reporting-works'] ? '10px' : '0px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="icon-wrapper-amber" style={{ width: '36px', height: '36px' }}>
+                    <HelpCircle size={20} />
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
+                    How reporting works
+                  </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
-                  How reporting works
+                <div style={{ color: 'var(--text-muted)' }}>
+                  {openAccordions['how-reporting-works'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </div>
               </div>
-              <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                1. Select a verified store establishment in San Jose de Buenavista.<br />
-                2. Capture a live photo of your physical checkout receipt using your camera.<br />
-                3. DTI evaluators review extracted price data and cross-reference with official SRP bulletins.
-              </div>
+              {openAccordions['how-reporting-works'] && (
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
+                  1. Select a verified store establishment in San Jose de Buenavista.<br />
+                  2. Capture a live photo of your physical checkout receipt using your camera.<br />
+                  3. DTI evaluators review extracted price data and cross-reference with official SRP bulletins.
+                </div>
+              )}
             </div>
 
             {/* Card: Privacy notice */}
             <div className="glass-panel" style={{ margin: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
-                  <ShieldCheck size={20} />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleAccordion('privacy-security')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleAccordion('privacy-security');
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  marginBottom: openAccordions['privacy-security'] ? '10px' : '0px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
+                    Privacy & Evidence Security
+                  </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
-                  Privacy & Evidence Security
+                <div style={{ color: 'var(--text-muted)' }}>
+                  {openAccordions['privacy-security'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </div>
               </div>
-              <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Camera access is used exclusively during live receipt capture. All submitted receipt photos are encrypted, cryptographically hashed (SHA-256), and vaulted in restricted DTI storage.
-              </div>
+              {openAccordions['privacy-security'] && (
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
+                  Camera access is used exclusively during live receipt capture. All submitted receipt photos are encrypted, cryptographically hashed (SHA-256), and vaulted in restricted DTI storage.
+                </div>
+              )}
             </div>
 
             {/* Card: Frequently asked questions */}
             <div className="glass-panel" style={{ margin: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
-                  <FileText size={20} />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleAccordion('faq')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleAccordion('faq');
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  marginBottom: openAccordions['faq'] ? '10px' : '0px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
+                    <FileText size={20} />
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
+                    Frequently Asked Questions
+                  </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
-                  Frequently Asked Questions
+                <div style={{ color: 'var(--text-muted)' }}>
+                  {openAccordions['faq'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </div>
               </div>
-              <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                <strong>Why are gallery uploads disabled?</strong><br />
-                To maintain a tamper-evident evidence trail under DTI regulatory rules.<br />
-                <strong>Does reporting auto-issue a violation?</strong><br />
-                No. All submissions require human verification by authorized DTI officers.
-              </div>
+              {openAccordions['faq'] && (
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
+                  <strong>Why are gallery uploads disabled?</strong><br />
+                  To maintain a tamper-evident evidence trail under DTI regulatory rules.<br />
+                  <strong>Does reporting auto-issue a violation?</strong><br />
+                  No. All submissions require human verification by authorized DTI officers.
+                </div>
+              )}
             </div>
           </div>
         </>
