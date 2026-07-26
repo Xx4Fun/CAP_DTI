@@ -266,16 +266,14 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
     }
 
     // Format date string
-    let effDate = commodity.effective_date || '11 May 2026';
-    if (effDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [y, m, d] = effDate.split('-');
-      const dObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
-      effDate = dObj.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      });
+    let effDate = commodity.effective_date || '2026-05-11';
+    if (effDate.includes('T')) {
+      effDate = effDate.split('T')[0];
     }
+    if (effDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      effDate = effDate.trim();
+    }
+
 
     return { title, subtitle, sizeStr, effDate };
   };

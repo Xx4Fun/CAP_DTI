@@ -1645,7 +1645,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 </div>
                 {comparisonResult.product?.effective_date && (
                   <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
-                    Effective {comparisonResult.product.effective_date}
+                    Effective {comparisonResult.product.effective_date.split('T')[0]}
                   </div>
                 )}
               </div>
