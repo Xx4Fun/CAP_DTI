@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Mail, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import api from '../services/api'
 
 interface LoginProps {
@@ -8,6 +9,7 @@ interface LoginProps {
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -39,152 +41,272 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     <div
       className="login-container"
       style={{
-        minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#f8fafc',
-        padding: '1.5rem',
+        minHeight: '100vh',
+        width: '100%',
+        background: '#ffffff',
       }}
     >
+      {/* Left Column - Decorative Cover */}
       <div
-        className="login-card"
+        className="login-left-column"
         style={{
-          width: '100%',
-          maxWidth: '420px',
+          flex: 1,
+          backgroundImage: "url('/login-left.png')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          minHeight: '100vh',
+        }}
+      />
+
+      {/* Right Column - Authentication Form */}
+      <div
+        className="login-right-column"
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2.5rem 1.5rem',
           background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '16px',
-          padding: '2.5rem 2rem',
-          boxShadow: '0 4px 24px rgba(15, 23, 42, 0.06)',
-          display: 'grid',
-          gap: '1.25rem',
+          overflowY: 'auto',
+          minHeight: '100vh',
+          boxSizing: 'border-box',
         }}
       >
-        <div className="login-logo-container" style={{ textAlign: 'center' }}>
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '420px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.5rem',
+          }}
+        >
+          {/* Header */}
+          <div style={{ textAlign: 'center' }}>
+            <img
+              src="/dti-logo.svg"
+              alt="DTI Official Logo"
+              style={{ width: '90px', height: 'auto', marginBottom: '1rem' }}
+            />
+            <h1
+              style={{
+                margin: 0,
+                fontSize: '2.2rem',
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                color: '#0f172a',
+                lineHeight: 1.2,
+              }}
+            >
+              PRICE-<span style={{ color: '#0052cc' }}>Watch</span>
+            </h1>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.75rem',
+                marginTop: '0.75rem',
+                color: '#64748b',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+              }}
+            >
+              <div style={{ flex: 1, height: '1px', background: '#cbd5e1' }} />
+              <span>— DTI Admin Portal —</span>
+              <div style={{ flex: 1, height: '1px', background: '#cbd5e1' }} />
+            </div>
+          </div>
+
+          {error && (
+            <div
+              className="error-badge"
+              style={{
+                background: '#fef2f2',
+                borderLeft: '4px solid #dc2626',
+                borderTop: '1px solid #fecaca',
+                borderRight: '1px solid #fecaca',
+                borderBottom: '1px solid #fecaca',
+                color: '#b91c1c',
+                padding: '0.75rem 1rem',
+                borderRadius: '0 8px 8px 0',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+              }}
+            >
+              ⚠️ {error}
+            </div>
+          )}
+
+          {/* Form */}
+          <form
+            onSubmit={handleSubmit}
+            className="login-form"
+            style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+          >
+            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label
+                htmlFor="email"
+                style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}
+              >
+                Email address
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Mail
+                  size={18}
+                  style={{ position: 'absolute', left: '12px', color: '#64748b', pointerEvents: 'none' }}
+                />
+                <input
+                  type="email"
+                  id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your official email"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 0.875rem 0.75rem 2.5rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '0.925rem',
+                    color: '#0f172a',
+                    background: '#ffffff',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label
+                htmlFor="password"
+                style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}
+              >
+                Password
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Lock
+                  size={18}
+                  style={{ position: 'absolute', left: '12px', color: '#64748b', pointerEvents: 'none' }}
+                />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 2.5rem 0.75rem 2.5rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '0.925rem',
+                    color: '#0f172a',
+                    background: '#ffffff',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    margin: 0,
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="login-btn"
+              disabled={loading}
+              style={{
+                marginTop: '0.5rem',
+                width: '100%',
+                padding: '0.85rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: '#0052cc',
+                color: '#ffffff',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.7 : 1,
+                boxShadow: '0 2px 8px rgba(0, 82, 204, 0.25)',
+                transition: 'background-color 0.2s ease',
+              }}
+            >
+              {loading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+
+          {/* Footer */}
           <div
             style={{
-              width: '54px',
-              height: '54px',
-              background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)',
-              color: '#ffffff',
-              borderRadius: '12px',
+              marginTop: '1rem',
+              paddingTop: '1.25rem',
+              borderTop: '1px solid #e2e8f0',
+              textAlign: 'center',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.4rem',
-              fontWeight: 800,
-              margin: '0 auto 0.75rem',
-              boxShadow: '0 4px 14px rgba(29, 78, 216, 0.35)',
+              gap: '0.75rem',
             }}
           >
-            DTI
-          </div>
-          <h1 style={{ margin: 0, fontSize: '1.6rem', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>
-            PRICE-Watch
-          </h1>
-          <p className="login-subtitle" style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
-            Department of Trade and Industry | Antique Provincial Office
-          </p>
-        </div>
-
-        {error && (
-          <div
-            className="error-badge"
-            style={{
-              background: '#fef2f2',
-              borderLeft: '4px solid #dc2626',
-              borderTop: '1px solid #fecaca',
-              borderRight: '1px solid #fecaca',
-              borderBottom: '1px solid #fecaca',
-              color: '#b91c1c',
-              padding: '0.75rem 1rem',
-              borderRadius: '0 8px 8px 0',
-              fontSize: '0.85rem',
-              fontWeight: 500,
-            }}
-          >
-            ⚠️ {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="login-form" style={{ display: 'grid', gap: '1.1rem' }}>
-          <div className="input-group">
-            <label htmlFor="email" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.35rem' }}>
-              Official Email Address
-            </label>
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. evaluator@dti.gov.ph"
-              required
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: '#475569',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+              }}
+            >
+              <ShieldCheck size={18} style={{ color: '#0052cc', flexShrink: 0 }} />
+              <span>Secure. Official. Committed to Fair Trade.</span>
+            </div>
+            <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
+              Protecting Consumers. Supporting Businesses.
+            </div>
+            <div
               style={{
                 width: '100%',
-                padding: '0.7rem 0.85rem',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontSize: '0.9rem',
-                boxSizing: 'border-box',
+                height: '4px',
+                display: 'flex',
+                borderRadius: '2px',
+                overflow: 'hidden',
+                marginTop: '0.25rem',
               }}
-            />
+            >
+              <div style={{ flex: 1, background: '#0038a8' }} />
+              <div style={{ flex: 1, background: '#fcd116' }} />
+              <div style={{ flex: 1, background: '#ce1126' }} />
+            </div>
           </div>
-
-          <div className="input-group">
-            <label htmlFor="password" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.35rem' }}>
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter secure credentials"
-              required
-              style={{
-                width: '100%',
-                padding: '0.7rem 0.85rem',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontSize: '0.9rem',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="login-btn btn-primary"
-            disabled={loading}
-            style={{
-              marginTop: '0.5rem',
-              width: '100%',
-              padding: '0.8rem',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#1d4ed8',
-              color: '#ffffff',
-              fontSize: '0.95rem',
-              fontWeight: 700,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-              boxShadow: '0 2px 8px rgba(29, 78, 216, 0.3)',
-              transition: 'background-color 0.2s ease',
-            }}
-          >
-            {loading ? 'Authenticating Official Session...' : 'Sign In to Executive Portal'}
-          </button>
-        </form>
-
-        <div style={{ textAlign: 'center', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0', fontSize: '0.75rem', color: '#94a3b8' }}>
-          PRICE-Watch Regulatory System • R.A. 7581 Price Act Enforcement
         </div>
       </div>
     </div>
   )
 }
+

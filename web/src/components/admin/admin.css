@@ -954,6 +954,9 @@ td small {
 }
 
 @media(max-width:900px) {
+  .login-left-column {
+    display: none !important;
+  }
   .mobile-toggle-btn {
     display: inline-flex;
   }
