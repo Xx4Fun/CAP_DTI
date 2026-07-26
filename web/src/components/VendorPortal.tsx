@@ -140,7 +140,7 @@ export const VendorPortal: React.FC = () => {
               <p><strong>Expiry Lockout:</strong> {new Date(selectedNotice.due_date_timestamp).toLocaleString()}</p>
               
               <a 
-                href={`http://localhost:8000/storage/${selectedNotice.pdf_file_path}`} 
+                href={`${(import.meta.env.VITE_API_BASE_URL || 'https://cap-dti.onrender.com/api').replace(/\/api\/?$/, '')}/storage/${selectedNotice.pdf_file_path}`} 
                 target="_blank" 
                 rel="noreferrer"
                 className="btn-secondary view-pdf-link"

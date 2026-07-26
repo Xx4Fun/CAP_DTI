@@ -1,12 +1,13 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:8000/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'https://cap-dti.onrender.com/api',
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
     }
 });
+
 
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
