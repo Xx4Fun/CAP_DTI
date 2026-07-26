@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'tesseract' => [
+        'path' => env('TESSERACT_PATH'),
+        'language' => env('TESSERACT_LANGUAGE', 'eng'),
+        'timeout_seconds' => (int) env('TESSERACT_TIMEOUT_SECONDS', 15),
+        'page_segmentation_mode' => (int) env('TESSERACT_PSM', 11),
+        'temp_directory' => env('TESSERACT_TEMP_DIRECTORY', storage_path('app/private/scan_vault')),
+    ],
+
 ];

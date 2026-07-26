@@ -139,13 +139,12 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
 
 export const StoreFacadeImage = CompactStoreFacade;
 
-
-
 export type ScannerStepState =
   | 'SELECT_STORE'
   | 'CAMERA_LIVE'
   | 'CAPTURE_REVIEW'
   | 'UPLOADING'
+  | 'RECOVERY'
   | 'CANDIDATE_SELECTION'
   | 'ENTER_PRICE'
   | 'COMPARING'
@@ -153,6 +152,7 @@ export type ScannerStepState =
   | 'ERROR';
 
 export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
+  const isDemoEnabled = import.meta.env.VITE_ENABLE_SCANNER_DEMO === 'true';
   const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
 
   // Store Selection State
@@ -175,9 +175,16 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [scanResponse, setScanResponse] = useState<ScanTagResponse | null>(null);
   const [candidates, setCandidates] = useState<Commodity[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<Commodity | null>(null);
+  const [selectedProductSource, setSelectedProductSource] = useState<'OCR' | 'MANUAL_SEARCH'>('OCR');
   const [userPriceInput, setUserPriceInput] = useState<string>('');
   const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  // Manual Commodity Directory Search State inside Scanner
+  const [commoditySearchQuery, setCommoditySearchQuery] = useState('');
+  const [commoditySearchResults, setCommoditySearchResults] = useState<Commodity[]>([]);
+  const [isSearchingCommodities, setIsSearchingCommodities] = useState(false);
+  const [showManualDirectorySearch, setShowManualDirectorySearch] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -215,9 +222,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setScanResponse(null);
     setCandidates([]);
     setSelectedCandidate(null);
+    setSelectedProductSource('OCR');
     setUserPriceInput('');
     setComparisonResult(null);
     setErrorMessage('');
+    setShowManualDirectorySearch(false);
+    setCommoditySearchQuery('');
+    setCommoditySearchResults([]);
   };
 
   const fetchStores = async () => {
@@ -230,20 +241,53 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           ? handoffRef.current.storeId
           : undefined;
         setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
-      } else {
+      } else if (isDemoEnabled) {
         setStores(defaultStoresList);
         const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
           ? handoffRef.current.storeId
           : undefined;
         setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
+      } else {
+        setStores([]);
+        setSelectedStore(null);
       }
     } catch (err) {
-      console.warn('API connection offline or remote. Using reference store directory:', err);
-      setStores(defaultStoresList);
-      const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
-        ? handoffRef.current.storeId
-        : undefined;
-      setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
+      if (isDemoEnabled) {
+        console.warn('API connection offline. Demo mode enabled: using reference stores:', err);
+        setStores(defaultStoresList);
+        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
+          ? handoffRef.current.storeId
+          : undefined;
+        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
+      } else {
+        console.error('API connection offline when fetching stores:', err);
+        setStores([]);
+        setSelectedStore(null);
+        setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
+      }
+    }
+  };
+
+  const searchCommodities = async (query: string) => {
+    setCommoditySearchQuery(query);
+    if (!query.trim()) {
+      setCommoditySearchResults([]);
+      return;
+    }
+    setIsSearchingCommodities(true);
+    try {
+      const res = await apiClient.get('/public/commodities', { params: { query } });
+      if (res.data && res.data.success && Array.isArray(res.data.data)) {
+        setCommoditySearchResults(res.data.data);
+      } else {
+        const lower = query.toLowerCase();
+        setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+      }
+    } catch {
+      const lower = query.toLowerCase();
+      setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+    } finally {
+      setIsSearchingCommodities(false);
     }
   };
 
@@ -346,13 +390,15 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setProcessingStage('Uploading shelf tag image to DTI server...');
 
     try {
+      const scanUuid = 'scan_uuid_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
       const formData = new FormData();
       formData.append('image', capturedBlob, 'shelf_tag.jpg');
       formData.append('store_id', String(selectedStore.id));
+      formData.append('scan_uuid', scanUuid);
 
       setProcessingStage('Reading tag text & matching database records...');
 
-      const res = await apiClient.post('/public/scan-tag', formData, {
+      const res = await apiClient.post('/public/scan-tag/analyze', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -363,78 +409,122 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         const fetchedCandidates: Commodity[] = scanData.candidates || [];
         setCandidates(fetchedCandidates);
 
-        if (scanData.detected_price) {
-          setUserPriceInput(String(scanData.detected_price));
+        const priceStr = scanData.detected_price_string ?? (scanData.detected_price != null ? String(scanData.detected_price) : '');
+        setUserPriceInput(priceStr);
+        setSelectedProductSource(scanData.product_source === 'MANUAL_SEARCH' ? 'MANUAL_SEARCH' : 'OCR');
+
+        if (fetchedCandidates.length > 0) {
+          setSelectedCandidate(fetchedCandidates[0]);
+        } else {
+          setSelectedCandidate(null);
         }
 
-        if (fetchedCandidates.length === 1) {
-          setSelectedCandidate(fetchedCandidates[0]);
-          executeComparison(fetchedCandidates[0], scanData.detected_price || 0);
-        } else if (fetchedCandidates.length > 1) {
-          setScannerState('CANDIDATE_SELECTION');
-        } else {
-          setScannerState('ENTER_PRICE');
-        }
+        setScannerState('RECOVERY');
       } else {
-        throw new Error('Could not parse shelf tag OCR output.');
+        throw new Error('The shelf tag could not be processed.');
       }
     } catch (err: any) {
-      console.warn('Shelf scan API offline or remote. Transitioning to candidate selection:', err);
-      const refScanResponse: ScanTagResponse = {
-        scan_id: 'SCAN-REF-' + Date.now(),
-        store: {
-          id: selectedStore.id,
-          store_name: selectedStore.store_name,
-          address: selectedStore.address,
-          dti_sec_number: selectedStore.dti_sec_number
-        },
-        detected_price: 23.50,
-        ocr_status: 'MANUAL_SELECTION_REQUIRED',
-        candidates: fallbackCommodities,
-        timestamp: new Date().toISOString()
-      };
-      setScanResponse(refScanResponse);
-      setCandidates(fallbackCommodities);
-      setUserPriceInput('23.50');
-      setScannerState('CANDIDATE_SELECTION');
+      if (isDemoEnabled) {
+        console.warn('Shelf scan API offline or remote. Demo mode active:', err);
+        const refScanResponse: ScanTagResponse = {
+          scan_id: 'SCAN-DEMO-' + Date.now(),
+          store: {
+            id: selectedStore.id,
+            store_name: selectedStore.store_name,
+            address: selectedStore.address,
+            dti_sec_number: selectedStore.dti_sec_number
+          },
+          detected_price: 23.5,
+          detected_price_string: '23.50',
+          ocr_status: 'OCR_PRODUCT_AND_PRICE_DETECTED',
+          candidates: fallbackCommodities.slice(0, 5),
+          timestamp: new Date().toISOString()
+        };
+        setScanResponse(refScanResponse);
+        setCandidates(fallbackCommodities.slice(0, 5));
+        setSelectedCandidate(fallbackCommodities[0]);
+        setUserPriceInput('23.50');
+        setSelectedProductSource('OCR');
+        setScannerState('RECOVERY');
+      } else {
+        console.error('Shelf scan API error:', err);
+        setErrorMessage(
+          err.response?.data?.message || 'Unable to analyze shelf tag. The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
+        );
+        setScannerState('ERROR');
+      }
     }
   };
 
-  const handleSelectCandidate = (candidate: Commodity) => {
-    setSelectedCandidate(candidate);
-    const initialPrice = scanResponse?.detected_price ? String(scanResponse.detected_price) : String(candidate.baseline_price);
-    setUserPriceInput(initialPrice);
-    setScannerState('ENTER_PRICE');
+  const handleManualSelectCommodity = async (commodity: Commodity) => {
+    setSelectedCandidate(commodity);
+    setSelectedProductSource('MANUAL_SEARCH');
+
+    if (scanResponse?.scan_id) {
+      try {
+        await apiClient.post('/public/scan-tag/manual-select', {
+          scan_id: scanResponse.scan_id,
+          product_id: commodity.id,
+        });
+      } catch (err) {
+        console.warn('Manual select API call warning:', err);
+      }
+    }
   };
 
-  const handleConfirmPriceAndCompare = () => {
-    const parsedPrice = parseFloat(userPriceInput);
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      alert('Please enter a valid positive shelf price.');
-      return;
-    }
-    if (!selectedCandidate) {
-      alert('Please select a valid commodity candidate.');
-      return;
-    }
-    executeComparison(selectedCandidate, parsedPrice);
-  };
-
-  const executeComparison = async (candidate: Commodity, price: number) => {
+  const executeComparison = async (
+    candidate: Commodity,
+    price: number,
+    forcedProductSource?: 'OCR' | 'MANUAL_SEARCH',
+    forcedPriceSource?: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED'
+  ) => {
     if (!selectedStore) return;
 
     setScannerState('COMPARING');
     setProcessingStage('Fetching active price bulletin & history...');
 
+    const scanId = scanResponse?.scan_id;
+    const detectedPriceStr = scanResponse?.detected_price_string ?? (scanResponse?.detected_price != null ? String(scanResponse.detected_price) : null);
+    
+    const pSource: 'OCR' | 'MANUAL_SEARCH' = forcedProductSource || selectedProductSource;
+    let prSource: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED';
+
+    if (forcedPriceSource) {
+      prSource = forcedPriceSource;
+    } else if (detectedPriceStr !== null && detectedPriceStr !== '') {
+      const formattedUserPrice = Number(price).toFixed(2);
+      const formattedDetectedPrice = Number(detectedPriceStr).toFixed(2);
+      prSource = formattedUserPrice === formattedDetectedPrice ? 'USER_CONFIRMED' : 'USER_CORRECTED';
+    } else {
+      prSource = 'USER_ENTERED';
+    }
+
     try {
-      const res = await apiClient.post('/public/compare-price', {
-        store_id: selectedStore.id,
-        srp_bulletin_id: candidate.id,
-        displayed_price: price,
-      });
+      let res;
+      if (scanId) {
+        res = await apiClient.post('/public/scan-tag/compare', {
+          scan_id: scanId,
+          store_id: selectedStore.id,
+          product_id: candidate.id,
+          displayed_price: price,
+          product_source: pSource,
+          price_source: prSource,
+        });
+      } else {
+        res = await apiClient.post('/public/compare-price', {
+          store_id: selectedStore.id,
+          srp_bulletin_id: candidate.id,
+          displayed_price: price,
+        });
+      }
 
       if (res.data && res.data.success && res.data.data) {
-        setComparisonResult(res.data.data);
+        const data = res.data.data;
+        setComparisonResult({
+          ...data,
+          product_source: data.product_source || pSource,
+          price_source: data.price_source || prSource,
+        });
         setScannerState('RESULT');
       } else {
         throw new Error('Regulatory comparison service returned an invalid response.');
@@ -442,10 +532,23 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     } catch (err: any) {
       console.error('Comparison API error:', err);
       setErrorMessage(
-        err.response?.data?.message || 'Unable to connect to regulatory price server to compute comparison.'
+        err.response?.data?.message || 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
       );
       setScannerState('ERROR');
     }
+  };
+
+  const handleConfirmAndCompare = () => {
+    const parsedPrice = parseFloat(userPriceInput);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      alert('Please enter a valid positive shelf price.');
+      return;
+    }
+    if (!selectedCandidate) {
+      alert('Please select a valid commodity candidate or search directory for a product.');
+      return;
+    }
+    executeComparison(selectedCandidate, parsedPrice);
   };
 
   const filteredStores = stores.filter((s) => {
@@ -460,12 +563,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
   const handleReportWithReceipt = () => {
     if (comparisonResult) {
+      const storeId = comparisonResult.store.id;
+      const commodityId = comparisonResult.product?.id || (comparisonResult as any).commodity_id || (selectedCandidate ? selectedCandidate.id : 0);
+      const dispPrice = typeof comparisonResult.displayed_price === 'number'
+        ? comparisonResult.displayed_price
+        : parseFloat(String(comparisonResult.displayed_price) || '0');
+      const basePrice = typeof (comparisonResult.reference_price ?? comparisonResult.baseline_price) === 'number'
+        ? (comparisonResult.reference_price ?? comparisonResult.baseline_price) as number
+        : parseFloat(String(comparisonResult.reference_price ?? comparisonResult.baseline_price ?? '0'));
+
       writeHandoff({
         kind: 'scan-to-report',
-        storeId: comparisonResult.store.id,
-        commodityId: comparisonResult.product.id,
-        displayedPrice: comparisonResult.displayed_price,
-        baselinePrice: comparisonResult.baseline_price,
+        storeId,
+        commodityId,
+        displayedPrice: dispPrice,
+        baselinePrice: basePrice,
       });
     }
     if (setActiveTab) {
@@ -473,10 +585,31 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     }
   };
 
+  const ocrStatus = scanResponse?.ocr_status || 'OCR_PRODUCT_AND_PRICE_DETECTED';
+
   return (
     <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
-      
-
+      {isDemoEnabled && (
+        <div
+          style={{
+            background: '#fffbe6',
+            border: '1px solid #ffe58f',
+            color: '#d48806',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            textAlign: 'center',
+            margin: '8px 16px 0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px'
+          }}
+        >
+          <span>⚠️</span> Demo Data (Dev Mode Only)
+        </div>
+      )}
 
       {/* SCREEN 1: STORE SELECTION */}
       {scannerState === 'SELECT_STORE' && (
@@ -612,67 +745,75 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
             {/* Compact Consumer Store Cards */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {filteredStores.map((store) => {
-                const isSelected = selectedStore?.id === store.id;
-                return (
-                  <div
-                    key={store.id}
-                    onClick={() => setSelectedStore(store)}
-                    style={{
-                      background: '#ffffff',
-                      border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                      borderRadius: '14px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      gap: '12px',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <CompactStoreFacade photoType={(store as any).photoType} storeName={store.store_name} />
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-                        <CheckCircle2 size={14} color="#2563eb" />
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
-                          Verified store
-                        </span>
-                      </div>
-
-                      <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: '0 0 2px 0', lineHeight: 1.25 }}>
-                        {store.store_name}
-                      </h3>
-
-                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, lineHeight: 1.3 }}>
-                        {store.address}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartScanForStore(store);
-                      }}
+              {filteredStores.length === 0 ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.9rem', background: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                  <AlertTriangle size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>No Verified Stores Available</div>
+                  <div>{errorMessage || 'Unable to load verified store directory. Please check your network connection.'}</div>
+                </div>
+              ) : (
+                filteredStores.map((store) => {
+                  const isSelected = selectedStore?.id === store.id;
+                  return (
+                    <div
+                      key={store.id}
+                      onClick={() => setSelectedStore(store)}
                       style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        background: isSelected ? '#1d4ed8' : '#f1f5f9',
-                        color: isSelected ? '#ffffff' : '#0f172a',
-                        fontSize: '0.82rem',
-                        fontWeight: 700,
-                        border: isSelected ? 'none' : '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                        borderRadius: '14px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        gap: '12px',
+                        alignItems: 'center',
                         cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        flexShrink: 0
+                        boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
+                        transition: 'all 0.15s ease'
                       }}
                     >
-                      {isSelected ? 'Selected ✓' : 'Select'}
-                    </button>
-                  </div>
-                );
-              })}
+                      <CompactStoreFacade photoType={(store as any).photoType} storeName={store.store_name} />
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                          <CheckCircle2 size={14} color="#2563eb" />
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
+                            Verified store
+                          </span>
+                        </div>
+
+                        <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: '0 0 2px 0', lineHeight: 1.25 }}>
+                          {store.store_name}
+                        </h3>
+
+                        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, lineHeight: 1.3 }}>
+                          {store.address}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartScanForStore(store);
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          background: isSelected ? '#1d4ed8' : '#f1f5f9',
+                          color: isSelected ? '#ffffff' : '#0f172a',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          border: isSelected ? 'none' : '1px solid #cbd5e1',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0
+                        }}
+                      >
+                        {isSelected ? 'Selected ✓' : 'Select'}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -812,7 +953,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
           </div>
 
-          {/* Horizontal Shelf-Tag Framing Guide (Aspect Ratio ~2:1, Corner Bracket Marks Only) */}
+          {/* Horizontal Shelf-Tag Framing Guide */}
           <div
             style={{
               position: 'absolute',
@@ -981,123 +1122,377 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
-      {/* CANDIDATE SELECTION */}
-      {scannerState === 'CANDIDATE_SELECTION' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            Select Product Match
-          </h2>
-          <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-            We found possible matching regulated commodities for this shelf tag:
-          </p>
+      {/* RECOVERY & CANDIDATE MATCHING UI (Handles 5 Business OCR Recovery States) */}
+      {(scannerState === 'RECOVERY' || scannerState === 'CANDIDATE_SELECTION' || scannerState === 'ENTER_PRICE') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: '90px' }}>
+          
+          {/* STATE 1: OCR_PRODUCT_AND_PRICE_DETECTED */}
+          {ocrStatus === 'OCR_PRODUCT_AND_PRICE_DETECTED' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    ✔ OCR-Detected Tag Price: ₱{userPriceInput || '0.00'}
+                  </span>
+                  <span style={{ background: '#dbeafe', color: '#1e40af', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>
+                    OCR-Detected Product
+                  </span>
+                </div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
+                  Select Product Match
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  We found detected candidate commodities on your shelf tag:
+                </p>
+              </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {candidates.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => handleSelectCandidate(c)}
+              {/* Candidates List */}
+              {candidates.length > 0 && !showManualDirectorySearch && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {candidates.map((c) => {
+                    const isSelected = selectedCandidate?.id === c.id;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedCandidate(c);
+                          setSelectedProductSource('OCR');
+                        }}
+                        style={{
+                          background: '#ffffff',
+                          border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                          borderRadius: '14px',
+                          padding: '14px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                            {c.commodity_name}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                            {c.category || 'Commodity'} · {c.unit || c.package_size}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
+                            ₱{Number(c.baseline_price).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* STATE 2: PRODUCT_DETECTED_PRICE_MISSING */}
+          {ocrStatus === 'PRODUCT_DETECTED_PRICE_MISSING' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  Enter Displayed Shelf Price
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  Enter the displayed shelf price
+                </p>
+              </div>
+
+              {/* Informational Prompt Banner */}
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '12px', color: '#1e40af', fontSize: '0.82rem', lineHeight: 1.4 }}>
+                The price could not be read clearly. Your entered price will be used only for this informational comparison...
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                  Displayed Shelf Price (₱)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="input-field"
+                  style={{
+                    height: '50px',
+                    fontSize: '1.2rem',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    border: '1.5px solid #2563eb',
+                    background: '#ffffff'
+                  }}
+                  placeholder="Enter price (e.g. 23.50)"
+                  value={userPriceInput}
+                  onChange={(e) => setUserPriceInput(e.target.value)}
+                />
+              </div>
+
+              {/* Candidates List */}
+              {candidates.length > 0 && !showManualDirectorySearch && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>Select Detected Product:</div>
+                  {candidates.map((c) => {
+                    const isSelected = selectedCandidate?.id === c.id;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedCandidate(c);
+                          setSelectedProductSource('OCR');
+                        }}
+                        style={{
+                          background: '#ffffff',
+                          border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                          borderRadius: '14px',
+                          padding: '14px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                            {c.commodity_name}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                            {c.category || 'Commodity'} · {c.unit || c.package_size}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
+                            ₱{Number(c.baseline_price).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* STATE 3: PRICE_DETECTED_PRODUCT_MISSING */}
+          {ocrStatus === 'PRICE_DETECTED_PRODUCT_MISSING' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, width: 'fit-content' }}>
+                  ✔ OCR-Detected Tag Price: ₱{userPriceInput || '0.00'}
+                </span>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
+                  Search Commodity Directory
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  No matching product detected on tag. Please search the commodity directory to select product manually.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* STATE 4: NO_RELIABLE_PRODUCT_MATCH */}
+          {ocrStatus === 'NO_RELIABLE_PRODUCT_MATCH' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  No matching product found on shelf tag
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  Please search the commodity directory to find and select the product manually.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                  Displayed Shelf Price (₱)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="input-field"
+                  style={{
+                    height: '50px',
+                    fontSize: '1.2rem',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    border: '1.5px solid #2563eb',
+                    background: '#ffffff'
+                  }}
+                  placeholder="e.g. 23.50"
+                  value={userPriceInput}
+                  onChange={(e) => setUserPriceInput(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* STATE 5: OCR_NO_TEXT */}
+          {ocrStatus === 'OCR_NO_TEXT' && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                  No text could be read from shelf tag
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
+                  We could not extract text from the shelf tag image. You may retake the tag image or search the commodity directory manually.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                  Displayed Shelf Price (₱)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="input-field"
+                  style={{
+                    height: '50px',
+                    fontSize: '1.2rem',
+                    fontWeight: 800,
+                    borderRadius: '12px',
+                    padding: '0 16px',
+                    border: '1.5px solid #2563eb',
+                    background: '#ffffff'
+                  }}
+                  placeholder="e.g. 23.50"
+                  value={userPriceInput}
+                  onChange={(e) => setUserPriceInput(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Commodity Directory Search Component for Manual Selection (Used in states 3, 4, 5, or on demand) */}
+          {(ocrStatus === 'PRICE_DETECTED_PRODUCT_MISSING' ||
+            ocrStatus === 'NO_RELIABLE_PRODUCT_MATCH' ||
+            ocrStatus === 'OCR_NO_TEXT' ||
+            showManualDirectorySearch) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px' }}>
+              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
+                Search Commodity Directory
+              </div>
+              
+              <div style={{ position: 'relative' }}>
+                <Search style={{ position: 'absolute', left: '12px', top: '14px', color: '#94a3b8' }} size={16} />
+                <input
+                  type="text"
+                  className="input-field"
+                  style={{ paddingLeft: '38px', height: '44px', borderRadius: '10px', fontSize: '0.9rem' }}
+                  placeholder="Type commodity name, brand, or category..."
+                  value={commoditySearchQuery}
+                  onChange={(e) => searchCommodities(e.target.value)}
+                />
+              </div>
+
+              {isSearchingCommodities && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Searching commodities...</div>}
+
+              {commoditySearchResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                  {commoditySearchResults.map((item) => {
+                    const isSelected = selectedCandidate?.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleManualSelectCommodity(item)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: isSelected ? '#eff6ff' : '#f8fafc',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{item.commodity_name}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.category} · {item.unit || item.package_size}</div>
+                        </div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1d4ed8' }}>
+                          ₱{Number(item.baseline_price).toFixed(2)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Selected Candidate Preview Card */}
+          {selectedCandidate && (
+            <div style={{ background: '#ffffff', border: '1px solid #bfdbfe', borderRadius: '14px', padding: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>
+                  Selected Product
+                </span>
+                <span style={{ background: selectedProductSource === 'MANUAL_SEARCH' ? '#f3e8ff' : '#dbeafe', color: selectedProductSource === 'MANUAL_SEARCH' ? '#6b21a8' : '#1e40af', padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700 }}>
+                  {selectedProductSource === 'MANUAL_SEARCH' ? 'Manual Directory Selection' : 'OCR-Detected'}
+                </span>
+              </div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
+                {selectedCandidate.commodity_name}
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                {selectedCandidate.unit || selectedCandidate.package_size} · Baseline SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+            <button
+              className="btn-primary"
+              onClick={handleConfirmAndCompare}
+              disabled={!selectedCandidate || !userPriceInput}
+              style={{ height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
+            >
+              Compute Regulatory Comparison
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button
+                onClick={handleRetake}
                 style={{
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
                   background: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '14px',
-                  padding: '14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  boxShadow: 'var(--shadow-sm)'
+                  color: '#0f172a',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
                 }}
               >
-                <div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
-                    {c.commodity_name}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                    {c.category} · {c.unit}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
-                    ₱{Number(c.baseline_price).toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
-                </div>
-              </div>
-            ))}
-          </div>
+                Retake Image
+              </button>
 
-          <button
-            onClick={handleRetake}
-            style={{
-              height: '48px',
-              borderRadius: '12px',
-              border: '1px solid #cbd5e1',
-              background: '#ffffff',
-              color: '#0f172a',
-              fontSize: '0.9rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              marginTop: '12px'
-            }}
-          >
-            Retake Tag Image
-          </button>
-        </div>
-      )}
-
-      {/* CONFIRM DISPLAYED PRICE */}
-      {scannerState === 'ENTER_PRICE' && selectedCandidate && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            Confirm Displayed Shelf Price
-          </h2>
-
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>
-              Selected Product
-            </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
-              {selectedCandidate.commodity_name}
-            </div>
-            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              {selectedCandidate.unit} · Current SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+              <button
+                onClick={() => setShowManualDirectorySearch(!showManualDirectorySearch)}
+                style={{
+                  height: '44px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#1d4ed8',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {showManualDirectorySearch ? 'Hide Search' : 'Search Directory'}
+              </button>
             </div>
           </div>
-
-          <div>
-            <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
-              Displayed Shelf Price (₱)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className="input-field"
-              style={{
-                height: '50px',
-                fontSize: '1.2rem',
-                fontWeight: 800,
-                borderRadius: '12px',
-                padding: '0 16px',
-                border: '1.5px solid #2563eb',
-                background: '#ffffff'
-              }}
-              placeholder="e.g. 23.50"
-              value={userPriceInput}
-              onChange={(e) => setUserPriceInput(e.target.value)}
-            />
-          </div>
-
-          <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '12px', color: '#92400e', fontSize: '0.8rem', lineHeight: 1.35 }}>
-            ⚠️ Any manual price correction is used only for this informational comparison and is not an official monitoring record.
-          </div>
-
-          <button
-            className="btn-primary"
-            onClick={handleConfirmPriceAndCompare}
-            style={{ height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
-          >
-            Compute Regulatory Comparison
-          </button>
         </div>
       )}
 
@@ -1111,7 +1506,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 width: '56px',
                 height: '56px',
                 borderRadius: '50%',
-                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fef3c7' : '#dcfce7',
+                background: (comparisonResult.comparison_status === 'ABOVE_SRP' || comparisonResult.is_above_reference) ? '#fef3c7' : '#dcfce7',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1119,11 +1514,30 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
               }}
             >
-              <Scale size={28} color={comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'} />
+              <Scale size={28} color={(comparisonResult.comparison_status === 'ABOVE_SRP' || comparisonResult.is_above_reference) ? '#d97706' : '#16a34a'} />
             </div>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
               Comparison Result
             </h1>
+          </div>
+
+          {/* Mandatory Consumer Disclaimer Banner */}
+          <div
+            className="disclaimer-banner"
+            style={{
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start'
+            }}
+          >
+            <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.35 }}>
+              ⚠️ This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
+            </div>
           </div>
 
           {/* Store & Product Section */}
@@ -1135,7 +1549,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               padding: '14px 16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
+              gap: '10px',
               boxShadow: 'var(--shadow-sm)'
             }}
           >
@@ -1148,15 +1562,27 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Product</span>
-              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                {comparisonResult.product.commodity_name}
-              </span>
+              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
+                  {comparisonResult.commodity_name || comparisonResult.product?.commodity_name}
+                </span>
+                <span style={{
+                  background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
+                  color: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#6b21a8' : '#1e40af',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700
+                }}>
+                  {(comparisonResult.product_source === 'MANUAL_SEARCH') ? 'Manual Directory Selection' : 'OCR-Detected'}
+                </span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
               <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                {comparisonResult.product.unit || 'Standard'}
+                {comparisonResult.package_size || comparisonResult.unit || comparisonResult.product?.unit || 'Standard'}
               </span>
             </div>
           </div>
@@ -1183,11 +1609,23 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                   padding: '10px 12px'
                 }}
               >
-                <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginBottom: '2px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>
                   Displayed Shelf Price
                 </div>
                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#0f172a' }}>
                   ₱{Number(comparisonResult.displayed_price).toFixed(2)}
+                </div>
+                <div style={{ marginTop: '4px' }}>
+                  <span style={{
+                    background: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#fef3c7' : '#dcfce7',
+                    color: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#b45309' : '#15803d',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.68rem',
+                    fontWeight: 700
+                  }}>
+                    {(comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '✏️ Consumer-Entered Price' : '✔ OCR-Detected Tag Price'}
+                  </span>
                 </div>
               </div>
 
@@ -1200,14 +1638,16 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
-                  {comparisonResult.comparison_label}
+                  {comparisonResult.regulatory_label || comparisonResult.comparison_label || 'Current SRP'}
                 </div>
                 <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#1d4ed8' }}>
-                  ₱{Number(comparisonResult.baseline_price).toFixed(2)}
+                  ₱{Number(comparisonResult.reference_price ?? comparisonResult.baseline_price ?? 0).toFixed(2)}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
-                  Effective {comparisonResult.product.effective_date}
-                </div>
+                {comparisonResult.product?.effective_date && (
+                  <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
+                    Effective {comparisonResult.product.effective_date}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1236,49 +1676,41 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
 
             {/* Price Difference Indicator Box */}
-            <div
-              style={{
-                background: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#fffbeb' : '#f0fdf4',
-                border: comparisonResult.comparison_status === 'ABOVE_SRP' ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                borderRadius: '12px',
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px'
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '0.9rem',
-                  fontWeight: 800,
-                  color: comparisonResult.comparison_status === 'ABOVE_SRP' ? '#d97706' : '#16a34a'
-                }}
-              >
-                {comparisonResult.comparison_status === 'ABOVE_SRP'
-                  ? `₱${Number(comparisonResult.difference_pesos).toFixed(2)} above current SRP (${comparisonResult.percentage_srp}% higher)`
-                  : comparisonResult.comparison_status === 'BELOW_SRP'
-                  ? `₱${Math.abs(comparisonResult.difference_pesos).toFixed(2)} below current SRP`
-                  : 'Matches current SRP baseline'}
-              </div>
-            </div>
-          </div>
+            {(() => {
+              const label = comparisonResult.regulatory_label || comparisonResult.comparison_label || 'current SRP';
+              const isAbove = comparisonResult.is_above_reference || comparisonResult.comparison_status === 'ABOVE_SRP';
+              const isBelow = comparisonResult.comparison_status === 'BELOW_SRP';
+              const diffVal = comparisonResult.peso_difference ?? comparisonResult.difference_pesos ?? 0;
+              const numDiff = Math.abs(Number(diffVal));
 
-          {/* Informational Banner */}
-          <div
-            style={{
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: '12px',
-              padding: '12px 14px',
-              display: 'flex',
-              gap: '10px',
-              alignItems: 'flex-start'
-            }}
-          >
-            <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.78rem', color: '#92400e', lineHeight: 1.35 }}>
-              <strong>INFORMATIONAL NOTICE:</strong> {comparisonResult.informational_notice}
-            </div>
+              return (
+                <div
+                  style={{
+                    background: isAbove ? '#fffbeb' : '#f0fdf4',
+                    border: isAbove ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                    borderRadius: '12px',
+                    padding: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px'
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '0.9rem',
+                      fontWeight: 800,
+                      color: isAbove ? '#d97706' : '#16a34a'
+                    }}
+                  >
+                    {isAbove
+                      ? `₱${numDiff.toFixed(2)} above ${label}`
+                      : isBelow
+                      ? `₱${numDiff.toFixed(2)} below ${label}`
+                      : `Matches ${label} baseline`}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Sticky Bottom Actions */}
@@ -1352,11 +1784,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           </div>
 
           <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            We could not read this shelf tag
+            Unable to analyze shelf tag
           </h2>
 
           <p style={{ fontSize: '0.85rem', color: '#64748b', maxWidth: '340px', margin: 0, lineHeight: 1.4 }}>
-            {errorMessage}
+            {errorMessage || 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.'}
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>

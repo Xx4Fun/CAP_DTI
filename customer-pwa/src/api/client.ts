@@ -92,26 +92,31 @@ export interface Establishment {
 
 export interface ScanTagResponse {
   scan_id: string;
+  scan_uuid?: string;
   store: {
     id: number;
     store_name: string;
     address: string;
     dti_sec_number?: string;
   };
-  detected_price: number | null;
+  detected_price?: number | null;
+  detected_price_string?: string | null;
+  detected_price_source?: string;
+  product_source?: string;
   ocr_status: string;
   candidates: Commodity[];
-  timestamp: string;
+  timestamp?: string;
 }
 
 export interface ComparisonResultResponse {
+  scan_id?: string;
   store: {
     id: number;
     store_name: string;
     address: string;
     dti_sec_number?: string;
   };
-  product: {
+  product?: {
     id: number;
     commodity_name: string;
     category?: string;
@@ -120,17 +125,30 @@ export interface ComparisonResultResponse {
     baseline_price: number;
     effective_date: string;
   };
-  displayed_price: number;
-  baseline_price: number;
-  comparison_label: string;
-  comparison_status: 'ABOVE_SRP' | 'MATCHES_SRP' | 'BELOW_SRP';
-  difference_pesos: number;
-  percentage_srp: number;
-  previous_verified_price: number | null;
-  previous_recorded_date: string | null;
-  percentage_previous: number | null;
-  state_of_calamity: boolean;
-  informational_notice: string;
+  commodity_name?: string;
+  package_size?: string;
+  unit?: string;
+  displayed_price: number | string;
+  baseline_price?: number | string;
+  reference_price?: number | string;
+  comparison_label?: string;
+  regulatory_label?: string;
+  regulatory_mode?: string;
+  comparison_status?: 'ABOVE_SRP' | 'MATCHES_SRP' | 'BELOW_SRP' | string;
+  difference_pesos?: number | string;
+  peso_difference?: number | string;
+  percentage_srp?: number | string;
+  percent_difference?: number | string;
+  is_above_reference?: boolean;
+  product_source?: 'OCR' | 'MANUAL_SEARCH' | string;
+  price_source?: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED' | string;
+  previous_verified_price?: number | null;
+  previous_recorded_date?: string | null;
+  historical_pricing?: any;
+  percentage_previous?: number | null;
+  state_of_calamity?: boolean;
+  informational_notice?: string;
+  disclaimer?: string;
 }
 
 export interface CaptureSessionResponse {

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cap-dti-backend
+    runtime: docker
+    dockerfilePath: Dockerfile
+    context: .
+    plan: free
+    region: singapore
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_KEY
+        generateValue: true
+      - key: TESSERACT_PATH
+        value: /usr/bin/tesseract
+      - key: TESSERACT_LANGUAGE
+        value: eng
+      - key: TESSERACT_TIMEOUT_SECONDS
+        value: 15
+      - key: TESSERACT_PSM
+        value: 11

@@ -18,12 +18,16 @@ class Store extends Model
         'longitude',
         'address',
         'recidivism_index',
+        'is_active',
+        'is_verified',
     ];
 
     protected $casts = [
         'latitude' => 'float',
         'longitude' => 'float',
         'recidivism_index' => 'integer',
+        'is_active' => 'boolean',
+        'is_verified' => 'boolean',
     ];
 
     public function inspections(): HasMany

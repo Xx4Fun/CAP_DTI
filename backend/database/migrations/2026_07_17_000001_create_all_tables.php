@@ -42,6 +42,8 @@ return new class extends Migration {
             $table->decimal('longitude', 11, 8);
             $table->text('address');
             $table->integer('recidivism_index')->default(0);
+            $table->boolean('is_active')->default(true);
+            $table->boolean('is_verified')->default(true);
             $table->timestamps();
         });
 
