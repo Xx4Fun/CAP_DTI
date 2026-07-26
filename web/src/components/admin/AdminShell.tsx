@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactElement } from 'react'
+import type { ReactElement, ComponentType } from 'react'
 import type { AdminUser } from '../../types/admin'
+import {
+  LayoutDashboard,
+  MapPin,
+  TrendingUp,
+  Receipt,
+  Scale,
+  Siren,
+  ChevronDown,
+  LogOut,
+  Shield,
+  Menu,
+  X,
+} from 'lucide-react'
 import {
   AnalyticsPanel, AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel,
   ReportReviewPanel, SrpManagementPanel, StoreManagementPanel,
@@ -11,25 +24,30 @@ import './admin.css'
 export type CategoryId = 'overview' | 'stores' | 'price_regulation' | 'reports' | 'legal_engine' | 'emergency'
 export type ModuleId = 'overview' | 'stores' | 'srp' | 'reports' | 'analytics' | 'emergency' | 'legal' | 'audit'
 
-interface NavItem {
+interface NavSubItem {
   id: ModuleId
-  icon: string
+  label: string
+}
+
+interface NavItemConfig {
+  id: ModuleId
+  icon: ComponentType<{ className?: string; size?: number }>
   label: string
   categoryName: string
-  subItems?: { id: ModuleId; label: string }[]
+  subItems?: NavSubItem[]
 }
 
-interface NavSection {
+interface NavSectionConfig {
   title: string
-  items: NavItem[]
+  items: NavItemConfig[]
 }
 
-const navSectionsConfig: NavSection[] = [
+const navSectionsConfig: NavSectionConfig[] = [
   {
     title: 'MAIN MENU',
     items: [
-      { id: 'overview', icon: '📊', label: 'Dashboard Overview', categoryName: 'MAIN MENU' },
-      { id: 'stores', icon: '📍', label: 'GIS & Establishments', categoryName: 'MAIN MENU' },
+      { id: 'overview', icon: LayoutDashboard, label: 'Dashboard Overview', categoryName: 'MAIN MENU' },
+      { id: 'stores', icon: MapPin, label: 'GIS Store Registry', categoryName: 'MAIN MENU' },
     ],
   },
   {
@@ -37,7 +55,7 @@ const navSectionsConfig: NavSection[] = [
     items: [
       {
         id: 'analytics',
-        icon: '📈',
+        icon: TrendingUp,
         label: 'Price Regulation',
         categoryName: 'REGULATORY ENGINE',
         subItems: [
@@ -45,11 +63,11 @@ const navSectionsConfig: NavSection[] = [
           { id: 'srp', label: 'SRP Bulletins' },
         ],
       },
-      { id: 'reports', icon: '🧾', label: 'Consumer OCR Queue', categoryName: 'REGULATORY ENGINE' },
+      { id: 'reports', icon: Receipt, label: 'Consumer OCR Queue', categoryName: 'REGULATORY ENGINE' },
       {
         id: 'legal',
-        icon: '⚖️',
-        label: 'Legal Engine (LOI / SCO)',
+        icon: Scale,
+        label: 'Legal Engine',
         categoryName: 'REGULATORY ENGINE',
         subItems: [
           { id: 'legal', label: 'Notice Drafts' },
@@ -61,7 +79,7 @@ const navSectionsConfig: NavSection[] = [
   {
     title: 'SYSTEM',
     items: [
-      { id: 'emergency', icon: '🚨', label: 'Emergency Protocol', categoryName: 'SYSTEM' },
+      { id: 'emergency', icon: Siren, label: 'Emergency Protocol', categoryName: 'SYSTEM' },
     ],
   },
 ]
@@ -82,6 +100,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   const [activeModule, setActiveModule] = useState<ModuleId>('overview')
   const [isCalamityActive, setIsCalamityActive] = useState<boolean>(false)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
+  const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     analytics: true,
     legal: true,
@@ -123,9 +142,21 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     <div className="admin-shell">
       <a className="skip-link" href="#admin-main">Skip to Admin content</a>
 
-      {/* Rich Royal Blue Gradient Left Sidebar */}
-      <aside className={`admin-sidebar ${isCollapsed ? 'collapsed' : ''}`} aria-label="DTI Admin Sidebar Navigation">
-        {/* Sidebar Header */}
+      {/* Section 5: Mobile Overlay Backdrop */}
+      {isMobileOpen && (
+        <div
+          className="mobile-overlay-backdrop"
+          onClick={() => setIsMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Section 1 - 4: Sidebar Component */}
+      <aside
+        className={`admin-sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}
+        aria-label="DTI Admin Sidebar Navigation"
+      >
+        {/* Section 1: Header Section */}
         <div className="admin-brand-header">
           <div className="brand-header-left">
             <div className="dti-seal" title="Department of Trade and Industry">DTI</div>
@@ -146,63 +177,72 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
           </button>
         </div>
 
-        {/* Translucent User Avatar Pill */}
-        <div className="sidebar-user-pill">
-          <div className="user-avatar-circle" title={user.name}>{avatarInitial}</div>
+        {/* Section 2: User Profile Card */}
+        <div className="sidebar-profile-card">
+          <div className="sidebar-avatar-circle" title={user.name}>
+            {avatarInitial}
+          </div>
           {!isCollapsed && (
-            <div className="user-pill-details">
-              <span className="user-pill-name">{user.name}</span>
-              <span className="user-pill-role">{user.role.toUpperCase().replace('_', ' ')}</span>
+            <div className="user-card-details">
+              <span className="user-card-name">{user.name}</span>
+              <span className="user-card-role">{user.role.toUpperCase().replace('_', ' ')}</span>
             </div>
           )}
         </div>
 
-        {/* Categorized Menu List */}
+        {/* Section 3: Accordion Dropdown Navigation Items */}
         <nav aria-label="DTI Admin modules">
           {navSections.map((sec) => (
             <div key={sec.title} className="sidebar-nav-section">
               {!isCollapsed && <div className="nav-section-label">{sec.title}</div>}
               {sec.items.map((item) => {
-                const isItemActive = activeModule === item.id || item.subItems?.some((s) => s.id === activeModule)
+                const IconComponent = item.icon
+                const isParentActive = activeModule === item.id || item.subItems?.some((s) => s.id === activeModule)
                 const isExpanded = !!expandedSections[item.id]
 
                 return (
                   <div key={item.id} className="nav-group">
                     <button
                       type="button"
-                      className={`admin-nav-item ${isItemActive ? 'active' : ''}`}
-                      onClick={() => setActiveModule(item.id)}
+                      className={`admin-nav-item ${isParentActive ? 'active' : ''}`}
+                      onClick={() => {
+                        setActiveModule(item.id)
+                        if (item.subItems) {
+                          setExpandedSections((prev) => ({ ...prev, [item.id]: true }))
+                        }
+                        setIsMobileOpen(false)
+                      }}
                       aria-current={activeModule === item.id ? 'page' : undefined}
                     >
                       <div className="nav-item-content">
-                        <span className="admin-nav-icon" aria-hidden="true">{item.icon}</span>
+                        <IconComponent size={18} aria-hidden="true" />
                         {!isCollapsed && <span>{item.label}</span>}
                       </div>
                       {!isCollapsed && item.subItems && (
-                        <span
-                          className="nav-chevron"
-                          style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                        <ChevronDown
+                          size={16}
+                          className={`chevron-icon ${isExpanded ? 'open' : ''}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             toggleExpand(item.id)
                           }}
-                          title={isExpanded ? 'Collapse section' : 'Expand section'}
-                        >
-                          ›
-                        </span>
+                        />
                       )}
                     </button>
 
                     {!isCollapsed && item.subItems && isExpanded && (
-                      <div className="nav-sub-items">
+                      <div className="nav-dropdown-container">
                         {item.subItems.map((sub) => (
                           <button
                             key={sub.id}
                             type="button"
                             className={`admin-nav-sub-item ${activeModule === sub.id ? 'active' : ''}`}
-                            onClick={() => setActiveModule(sub.id)}
+                            onClick={() => {
+                              setActiveModule(sub.id)
+                              setIsMobileOpen(false)
+                            }}
                           >
-                            • {sub.label}
+                            {sub.label}
                           </button>
                         ))}
                       </div>
@@ -214,11 +254,20 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
           ))}
         </nav>
 
-        {/* Fixed Bottom User Drawer / Logout */}
+        {/* Section 4: Bottom Pinned Logout Button */}
         <div className="admin-user-drawer">
           {onLogout && (
-            <button type="button" onClick={onLogout} className="logout-btn-sidebar" title="Log out of DTI Portal">
-              🚪 {!isCollapsed && <span>Logout</span>}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileOpen(false)
+                onLogout()
+              }}
+              className="logout-btn-sidebar"
+              title="Log out of DTI Portal"
+            >
+              <LogOut size={18} />
+              {!isCollapsed && <span>Logout</span>}
             </button>
           )}
         </div>
@@ -229,8 +278,17 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
         {/* Top Header Bar */}
         <header className="admin-top-header">
           <div className="header-left-group">
+            <button
+              type="button"
+              className="mobile-toggle-btn"
+              onClick={() => setIsMobileOpen(!isMobileOpen)}
+              aria-label="Toggle mobile menu"
+            >
+              {isMobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+
             <div className="header-home-badge" title="DTI Portal Home">
-              🛡️
+              <Shield size={20} />
             </div>
             <div className="header-titles">
               <h2 className="header-main-title">{panels[activeModule].title}</h2>

@@ -18,7 +18,7 @@ describe('AdminShell', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
     expect(screen.getByRole('navigation', { name: /DTI Admin modules/i })).toBeInTheDocument()
-    for (const label of ['Dashboard Overview', 'GIS & Establishments', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
+    for (const label of ['Dashboard Overview', 'GIS Store Registry', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
       expect(screen.getByRole('button', { name: new RegExp(label, 'i') })).toBeInTheDocument()
     }
   })
