@@ -22,21 +22,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
     };
   }, []);
 
-
-
   return (
     <>
-      <header className="navbar-top" style={{ height: '68px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <header className="navbar-top" style={{ height: '68px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
         <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
           <img
             className="brand-logo"
-            src="/logo_icon.png"
-            alt=""
+            src="/price-logo.png"
+            alt="PRICE-Watch Logo"
             style={{
-              height: '38px',
+              height: '46px',
               width: 'auto',
               objectFit: 'contain',
-              mixBlendMode: 'multiply',
               flexShrink: 0
             }}
           />
@@ -76,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </button>
       </header>
 
-      {/* Exceptional Status Notices (Rendered BELOW Header, NOT inside Header) */}
+      {/* Exceptional Status Notices */}
       {stateOfCalamity && (
         <div
           role="status"

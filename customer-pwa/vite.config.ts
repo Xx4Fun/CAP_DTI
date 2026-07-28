@@ -7,13 +7,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'logo_icon.png'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'price-logo.png', 'logo_icon.png'],
       manifest: {
         name: 'PRICE-Watch Consumer PWA',
         short_name: 'PRICE-Watch',
         description: 'DTI Commodity Price Transparency & Tamper-Evident Evidence Reporting',
-        theme_color: '#1d4ed8',
-        background_color: '#f8fafc',
+        theme_color: '#ffffff',
+        background_color: '#ffffff',
         display: 'standalone',
         scope: '/',
         start_url: '/',
