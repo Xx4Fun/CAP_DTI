@@ -52,13 +52,23 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         className="login-left-column"
         style={{
           flex: 1,
-          backgroundImage: "url('/login-left.png')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
           minHeight: '100vh',
+          minWidth: 0,
+          overflow: 'hidden',
+          background: '#012a73',
         }}
-      />
+      >
+        <img
+          src="/login-left.png"
+          alt="DTI fair trade and consumer protection illustration"
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100vh',
+            objectFit: 'contain',
+          }}
+        />
+      </div>
 
       {/* Right Column - Authentication Form */}
       <div
@@ -73,6 +83,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           background: '#ffffff',
           overflowY: 'auto',
           minHeight: '100vh',
+          minWidth: 0,
           boxSizing: 'border-box',
         }}
       >
