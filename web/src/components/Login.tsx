@@ -53,9 +53,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         style={{
           flex: 1,
           minHeight: '100vh',
-          minWidth: 0,
-          overflow: 'hidden',
-          background: '#012a73',
         }}
       >
         <img
@@ -65,7 +62,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             display: 'block',
             width: '100%',
             height: '100vh',
-            objectFit: 'contain',
+            objectFit: 'cover',
           }}
         />
       </div>
@@ -83,7 +80,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           background: '#ffffff',
           overflowY: 'auto',
           minHeight: '100vh',
-          minWidth: 0,
           boxSizing: 'border-box',
         }}
       >
