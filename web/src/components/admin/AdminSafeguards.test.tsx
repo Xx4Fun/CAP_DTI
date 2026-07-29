@@ -81,6 +81,22 @@ describe('DTI Admin safeguards', () => {
     expect(screen.queryByText('Pending Consumer Tips')).not.toBeInTheDocument()
   })
 
+  it('keeps available overview counts and marks missing emergency records unavailable', async () => {
+    vi.mocked(adminApi.getOverview).mockResolvedValue({
+      stores: 12,
+      pending_reports: 3,
+      active_emergencies: null,
+      availability: { regulatory_emergencies: false },
+    })
+
+    render(<OverviewPanel />)
+
+    expect(await screen.findByText('12')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('shows a safe schema-unavailable state instead of an empty audit trail', async () => {
     vi.mocked(adminApi.getAuditEvents).mockRejectedValue({
       response: { data: { status: 'AUDIT_TRAIL_UNAVAILABLE' } },

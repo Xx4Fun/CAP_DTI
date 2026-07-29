@@ -1,5 +1,5 @@
 import api from './api'
-import type { AuditRecord, ConsumerReportRecord, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
@@ -65,7 +65,7 @@ export const adminApi = {
   }> {
     return data(await api.get('/admin/analytics/options'))
   },
-  async getOverview() {
-    return data<{ stores: number, pending_reports: number, active_emergencies: number }>(await api.get('/admin/overview'))
+  async getOverview(): Promise<AdminOverviewRecord> {
+    return data<AdminOverviewRecord>(await api.get('/admin/overview'))
   },
 }

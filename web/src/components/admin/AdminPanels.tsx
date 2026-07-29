@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
-import type { AuditRecord, SrpRecord } from '../../types/admin'
+import type { AdminOverviewRecord, AuditRecord, SrpRecord } from '../../types/admin'
 import { StoreManager } from './StoreManager'
 import { TemporalVolatility } from './TemporalVolatility'
 import { CitizenTipReview } from './CitizenTipReview'
@@ -10,7 +10,7 @@ import { EmergencyToggle } from './EmergencyToggle'
 import type { ModuleId } from './AdminShell'
 
 export function OverviewPanel(_props: { onNavigate?: (module: ModuleId) => void }) {
-  const [summary, setSummary] = useState<{ stores: number; pending_reports: number; active_emergencies: number } | null>(null)
+  const [summary, setSummary] = useState<AdminOverviewRecord | null>(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
@@ -19,6 +19,9 @@ export function OverviewPanel(_props: { onNavigate?: (module: ModuleId) => void 
 
   if (error) return <p role="alert" className="admin-inline-alert">The regulatory overview could not load. Refresh or try again later.</p>
   if (!summary) return <p role="status" className="admin-loading-state">Loading regulatory overview...</p>
+
+  const emergencyRecordsAvailable = summary.availability?.regulatory_emergencies
+    ?? summary.active_emergencies !== null
 
   return (
     <div className="admin-stack">
@@ -32,7 +35,9 @@ export function OverviewPanel(_props: { onNavigate?: (module: ModuleId) => void 
           <span>Formal Receipt Reports Awaiting Review</span>
         </article>
         <article>
-          <strong>{summary.active_emergencies}</strong>
+          <strong className={emergencyRecordsAvailable ? undefined : 'metric-unavailable'}>
+            {emergencyRecordsAvailable ? summary.active_emergencies : 'Unavailable'}
+          </strong>
           <span>Active State of Calamity Status</span>
         </article>
       </div>

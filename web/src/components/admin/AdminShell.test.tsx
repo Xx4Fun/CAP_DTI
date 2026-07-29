@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { adminApi } from '../../services/adminApi'
 import { AdminShell } from './AdminShell'
 
 vi.mock('../../services/adminApi', () => ({
@@ -42,12 +43,13 @@ describe('AdminShell', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toHaveFocus()
   })
 
-  it('opens Overview with grouped navigation collapsed and one page title', () => {
+  it('uses the sticky header as the single active page heading', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
     expect(screen.getByRole('button', { name: /Price Regulation/i })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getAllByRole('heading', { name: 'Regulatory Overview' })).toHaveLength(1)
-    expect(screen.getByRole('banner')).toHaveTextContent('DTI Officer Portal')
+    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1, name: 'Regulatory Overview' })).toBeInTheDocument()
+    expect(screen.getAllByText('DTI Officer Portal')).toHaveLength(1)
   })
 
   it('expands a navigation group without leaving the current page', async () => {
@@ -78,5 +80,14 @@ describe('AdminShell', () => {
     await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
     expect(screen.getByRole('button', { name: /Lock session/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument()
+  })
+
+  it('does not label an unavailable emergency status as normal market protocol', async () => {
+    vi.mocked(adminApi.getEmergencies).mockRejectedValueOnce(new Error('schema unavailable'))
+
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    expect(await screen.findByText('Emergency status unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('Normal Market Protocol')).not.toBeInTheDocument()
   })
 })

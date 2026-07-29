@@ -115,7 +115,7 @@ function parentCategoryFor(module: ModuleId): string | null {
 export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () => void }) {
   const isFieldOfficer = user.role === 'field_officer'
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromUrl(isFieldOfficer))
-  const [isCalamityActive, setIsCalamityActive] = useState<boolean>(false)
+  const [isCalamityActive, setIsCalamityActive] = useState<boolean | null>(null)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
   const [openCategory, setOpenCategory] = useState<string | null>(() => parentCategoryFor(readModuleFromUrl(isFieldOfficer)))
@@ -152,7 +152,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
       const hasActive = emergencies.some((e) => e.status === 'active')
       setIsCalamityActive(hasActive || document.body.classList.contains('calamity-mode'))
     }).catch(() => {
-      setIsCalamityActive(document.body.classList.contains('calamity-mode'))
+      setIsCalamityActive(document.body.classList.contains('calamity-mode') ? true : null)
     })
   }, [])
 
@@ -311,22 +311,26 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               <Shield size={20} />
             </div>
             <div className="header-titles">
-              <h2 className="header-main-title">DTI Officer Portal</h2>
+              <h1 ref={heading} tabIndex={-1} className="header-main-title">{panels[activeModule].title}</h1>
               <span className="header-subtitle">
-                San Jose de Buenavista, Antique
+                {panels[activeModule].description}
               </span>
             </div>
           </div>
 
           <div className="header-right-group">
             <div className="market-status-container">
-              {isCalamityActive ? (
+              {isCalamityActive === true ? (
                 <span className="market-status-badge calamity">
                   🚨 State of Calamity Active
                 </span>
-              ) : (
+              ) : isCalamityActive === false ? (
                 <span className="market-status-badge normal">
                   🟢 Normal Market Protocol
+                </span>
+              ) : (
+                <span className="market-status-badge unavailable">
+                  Emergency status unavailable
                 </span>
               )}
             </div>
@@ -360,17 +364,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             </div>
           </div>
         </header>
-
-        {/* Page Header Sub-strip */}
-        <div className="admin-page-header">
-          <div>
-            <h1 ref={heading} tabIndex={-1}>{panels[activeModule].title}</h1>
-            <p>{panels[activeModule].description}</p>
-          </div>
-          <div className="provenance-strip">
-            Authenticated | {user.role.replace('_', ' ')} | DTI Admin
-          </div>
-        </div>
 
         {/* Main Panel Content */}
         <main className="admin-panel" id="admin-main">

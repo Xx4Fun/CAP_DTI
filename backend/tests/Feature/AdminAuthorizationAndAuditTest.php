@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -61,5 +62,18 @@ class AdminAuthorizationAndAuditTest extends TestCase
             ->assertJsonStructure(['data' => ['stores', 'pending_reports', 'active_emergencies']])
             ->assertJsonMissing(['owner_name'])
             ->assertJsonMissing(['dti_sec_number']);
+    }
+
+    public function test_admin_overview_keeps_available_counts_when_emergency_schema_is_missing(): void
+    {
+        Sanctum::actingAs($this->user('field_officer'));
+        Schema::drop('regulatory_emergencies');
+
+        $this->getJson('/api/admin/overview')
+            ->assertOk()
+            ->assertJsonPath('data.stores', 0)
+            ->assertJsonPath('data.pending_reports', 0)
+            ->assertJsonPath('data.active_emergencies', null)
+            ->assertJsonPath('data.availability.regulatory_emergencies', false);
     }
 }

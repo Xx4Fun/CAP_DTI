@@ -506,11 +506,13 @@
   font-size: 1rem;
   font-weight: 700;
   color: #ffffff;
+  outline-offset: 4px;
 }
 
 .header-subtitle {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.65);
+  max-width: 65ch;
 }
 
 .header-right-group {
@@ -741,27 +743,10 @@
   animation: pulse 2s infinite;
 }
 
-.admin-page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.25rem 1.75rem;
-  border-bottom: 1px solid var(--admin-border);
-  background: #f8fafc;
-}
-
-.admin-page-header h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #1e3a8a;
-}
-
-.admin-page-header p {
-  color: var(--admin-muted);
-  max-width: 65ch;
-  margin-top: 0.35rem;
-  font-size: 0.9rem;
+.market-status-badge.unavailable {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(203, 213, 225, 0.28);
 }
 
 .subnav-tabs {
@@ -796,16 +781,6 @@
   border-color: #1e3a8a;
 }
 
-.provenance-strip {
-  font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
-  color: #1e293b;
-  border-left: 3px solid var(--admin-accent);
-  background: #f1f5f9;
-  padding: 0.55rem 0.7rem;
-  border-radius: 0 6px 6px 0;
-}
-
 .admin-panel {
   padding: 1.5rem 1.75rem;
 }
@@ -834,6 +809,11 @@
 .admin-metric-grid strong {
   font: 600 2.25rem ui-monospace, monospace;
   color: var(--admin-accent);
+}
+
+.admin-metric-grid strong.metric-unavailable {
+  font-size: 1.05rem;
+  color: var(--admin-muted);
 }
 
 .admin-metric-grid span {

@@ -7,6 +7,15 @@ export interface AdminUser {
   role: AdminRole
 }
 
+export interface AdminOverviewRecord {
+  stores: number
+  pending_reports: number
+  active_emergencies: number | null
+  availability?: {
+    regulatory_emergencies: boolean
+  }
+}
+
 export interface StoreRecord {
   id: number
   dti_sec_number?: string
