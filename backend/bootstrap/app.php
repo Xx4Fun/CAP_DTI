@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'ocr.rate_limit' => \App\Http\Middleware\OcrRateLimiter::class,
+            'dti.role' => \App\Http\Middleware\EnsureDtiRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\RegulatoryEmergency;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 class CalamityController extends Controller
 {
     public function show()
     {
-        $status = Cache::get('state_of_calamity', false);
+        $status = RegulatoryEmergency::query()->where('status', 'active')->exists();
         return response()->json([
             'state_of_calamity' => $status
         ]);
@@ -21,11 +21,10 @@ class CalamityController extends Controller
             'state' => 'required|boolean',
         ]);
 
-        Cache::put('state_of_calamity', $request->state);
-
         return response()->json([
-            'message' => 'State of Calamity setting updated.',
-            'state_of_calamity' => $request->state
-        ]);
+            'status' => 'REGULATORY_EMERGENCY_RECORD_REQUIRED',
+            'message' => 'Use the formal emergency declaration workflow with location, dates, and declaration reference.',
+            'state_of_calamity' => RegulatoryEmergency::query()->where('status', 'active')->exists(),
+        ], 422);
     }
 }

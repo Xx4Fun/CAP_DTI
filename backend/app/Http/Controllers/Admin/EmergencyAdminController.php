@@ -8,6 +8,7 @@ use App\Models\RegulatoryPriceRecord;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\EmergencyPriceResolver;
+use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
 
 class EmergencyAdminController extends Controller
@@ -17,9 +18,10 @@ class EmergencyAdminController extends Controller
         $auth->requireManager($request->user());
         return response()->json(['data' => RegulatoryEmergency::latest()->get()]);
     }
-    public function store(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit)
+    public function store(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
     {
         $auth->requireManager($request->user());
+        $guard->requireRecentReauthentication($request);
         $data = $request->validate([
             'location' => 'required|string', 'starts_on' => 'required|date', 'ends_on' => 'nullable|date|after_or_equal:starts_on',
             'declaration_reference' => 'required|string', 'confirmed' => 'required|accepted',
@@ -32,9 +34,10 @@ class EmergencyAdminController extends Controller
         $audit->record($request, 'emergency.confirmed', $emergency, ['declaration_reference' => $emergency->declaration_reference, 'location' => $emergency->location]);
         return response()->json(['data' => $emergency], 201);
     }
-    public function update(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, AuditTrailService $audit)
+    public function update(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
     {
         $auth->requireManager($request->user());
+        $guard->requireRecentReauthentication($request);
         $data = $request->validate([
             'status' => 'required|in:ended,cancelled',
             'ends_on' => 'nullable|required_if:status,ended|date|after_or_equal:'.$emergency->starts_on->toDateString(),
@@ -52,9 +55,10 @@ class EmergencyAdminController extends Controller
         ]);
         return response()->json(['data' => $emergency->fresh()]);
     }
-    public function storePrice(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit)
+    public function storePrice(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
     {
         $auth->requireManager($request->user());
+        $guard->requireRecentReauthentication($request);
         $data = $request->validate([
             'regulatory_emergency_id' => 'required|exists:regulatory_emergencies,id', 'commodity_key' => 'required|string',
             'price_type' => 'required|in:PRICE_FREEZE,APC', 'authoritative_price' => 'required|numeric|min:0',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { Home } from './components/Home';
 import { SrpSearch } from './components/SrpSearch';
@@ -76,6 +77,8 @@ export const App: React.FC = () => {
         setActiveTab={setActiveTab}
         stateOfCalamity={config?.state_of_calamity}
       />
+
+      <InstallPrompt visible={activeTab === 'home'} />
 
       <main className={isScanTab ? 'app-scan-container' : 'app-container'}>
         {!isScanTab && <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />}

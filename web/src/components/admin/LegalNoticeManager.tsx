@@ -3,7 +3,6 @@ import { adminApi } from '../../services/adminApi'
 
 export const LegalNoticeManager: React.FC = () => {
   const [draft, setDraft] = useState('')
-  const [blocked, setBlocked] = useState('')
 
   return (
     <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
@@ -21,19 +20,11 @@ export const LegalNoticeManager: React.FC = () => {
         >
           Preview watermarked draft
         </button>
-        <button
-          onClick={() => void adminApi.dispatchLegal().catch((error) => setBlocked(error.response?.data?.status || 'LEGAL_POLICY_UNAVAILABLE'))}
-          style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: 'none', background: '#dc2626', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
-        >
-          Attempt official dispatch
-        </button>
       </div>
 
-      {blocked && (
-        <p role="alert" style={{ margin: 0, color: '#dc2626', fontWeight: 600 }}>
-          {blocked}. No notice or deadline was created.
-        </p>
-      )}
+      <p role="status" style={{ margin: 0, color: '#7f1d1d', fontWeight: 600 }}>
+        Draft preview only. No notice, deadline, notification, or vendor state change will be created.
+      </p>
 
       {draft && (
         <iframe className="draft-frame" title="Watermarked legal draft preview" srcDoc={draft} style={{ width: '100%', minHeight: '26rem', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }} />

@@ -3,7 +3,15 @@ import { Mail, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import api from '../services/api'
 
 interface LoginProps {
-  onLoginSuccess: (user: any) => void
+  onLoginSuccess: (result: {
+    token: string
+    user: any
+    session?: {
+      expires_at: string | null
+      idle_timeout_seconds: number
+      absolute_timeout_seconds: number
+    }
+  }) => void
 }
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
@@ -20,10 +28,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
     try {
       const response = await api.post('/login', { email, password })
-      const { token, user } = response.data
-      localStorage.setItem('token', token)
-      localStorage.setItem('user', JSON.stringify(user))
-      onLoginSuccess(user)
+      onLoginSuccess(response.data)
     } catch (err: any) {
       if (err.response?.data?.message) {
         setError(err.response.data.message)

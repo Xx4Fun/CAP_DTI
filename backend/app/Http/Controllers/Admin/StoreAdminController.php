@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
+use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class StoreAdminController extends Controller
 {
@@ -36,7 +38,7 @@ class StoreAdminController extends Controller
         return response()->json(['data' => $store], 201);
     }
 
-    public function update(Request $request, Store $store, AdminAuthorizationService $auth, AuditTrailService $audit)
+    public function update(Request $request, Store $store, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
     {
         $auth->requireManager($request->user());
         $data = $request->validate([
@@ -45,6 +47,17 @@ class StoreAdminController extends Controller
             'longitude' => 'sometimes|numeric|between:-180,180', 'is_active' => 'sometimes|boolean',
             'is_verified' => 'sometimes|boolean', 'is_public' => 'sometimes|boolean',
         ]);
+        if (array_intersect(['is_verified', 'is_public'], array_keys($data))) {
+            $guard->requireRecentReauthentication($request);
+        }
+        $willBeActive = $data['is_active'] ?? (bool) $store->is_active;
+        $willBeVerified = $data['is_verified'] ?? (bool) $store->is_verified;
+        $willBePublic = $data['is_public'] ?? (bool) $store->is_public;
+        if ($willBePublic && (! $willBeActive || ! $willBeVerified)) {
+            throw ValidationException::withMessages([
+                'is_public' => ['A store must be active and verified before it can be public.'],
+            ]);
+        }
         if (($data['is_verified'] ?? null) === true) {
             $data['verified_at'] = now();
             $data['verified_by'] = $request->user()->id;

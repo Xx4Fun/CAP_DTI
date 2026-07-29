@@ -10,25 +10,29 @@ import { EmergencyToggle } from './EmergencyToggle'
 import type { ModuleId } from './AdminShell'
 
 export function OverviewPanel(_props: { onNavigate?: (module: ModuleId) => void }) {
-  const [summary, setSummary] = useState<{ stores?: number; pending_reports?: number; active_emergencies?: number }>({})
+  const [summary, setSummary] = useState<{ stores: number; pending_reports: number; active_emergencies: number } | null>(null)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
-    void adminApi.getOverview().then(setSummary).catch(() => {})
+    void adminApi.getOverview().then(setSummary).catch(() => setError(true))
   }, [])
+
+  if (error) return <p role="alert" className="admin-inline-alert">The regulatory overview could not load. Refresh or try again later.</p>
+  if (!summary) return <p role="status" className="admin-loading-state">Loading regulatory overview...</p>
 
   return (
     <div className="admin-stack">
       <div className="admin-metric-grid">
         <article>
-          <strong>{summary.stores ?? 0}</strong>
+          <strong>{summary.stores}</strong>
           <span>Commercial Establishments</span>
         </article>
         <article>
-          <strong>{summary.pending_reports ?? 0}</strong>
-          <span>Pending Consumer Tips</span>
+          <strong>{summary.pending_reports}</strong>
+          <span>Formal Receipt Reports Awaiting Review</span>
         </article>
         <article>
-          <strong>{summary.active_emergencies ?? 0}</strong>
+          <strong>{summary.active_emergencies}</strong>
           <span>Active State of Calamity Status</span>
         </article>
       </div>

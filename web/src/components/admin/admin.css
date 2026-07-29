@@ -539,6 +539,96 @@
   background: #1d4ed8;
 }
 
+.messages-pill-btn:disabled {
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.62);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.header-account {
+  position: relative;
+}
+
+.header-account-button {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 184px;
+  padding: 0.35rem 0.55rem;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.header-account-button:hover,
+.header-account-button:focus-visible {
+  background: rgba(255, 255, 255, 0.15);
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.header-account-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.header-account-copy strong {
+  max-width: 112px;
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-account-copy small {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.69rem;
+  text-transform: capitalize;
+}
+
+.header-account-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: grid;
+  min-width: 190px;
+  padding: 0.4rem;
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+}
+
+.header-account-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  color: #25324a;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.83rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header-account-menu button:hover,
+.header-account-menu button:focus-visible {
+  background: #eef4ff;
+  color: #173f8f;
+  outline: none;
+}
+
 .header-avatar-badge {
   width: 36px;
   height: 36px;
@@ -552,7 +642,54 @@
   font-weight: 700;
   font-size: 0.88rem;
   position: relative;
-  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.admin-session-boot {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  color: #334155;
+  background: #f4f7fb;
+  font-weight: 600;
+}
+
+.session-warning-dialog {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.55);
+  place-items: center;
+}
+
+.session-warning-dialog > div,
+.session-warning-dialog > form {
+  width: min(100%, 430px);
+  padding: 1.35rem;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.session-warning-dialog form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.session-warning-dialog input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.session-warning-dialog h2 {
+  margin: 0 0 0.45rem;
+  color: #14213d;
+  font-size: 1.15rem;
 }
 
 .avatar-status-dot {

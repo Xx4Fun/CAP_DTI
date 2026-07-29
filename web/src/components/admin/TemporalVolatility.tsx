@@ -10,34 +10,33 @@ import {
   Legend,
 } from 'chart.js'
 import { adminApi } from '../../services/adminApi'
-import type { StoreRecord } from '../../types/admin'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 export const TemporalVolatility: React.FC = () => {
-  const [stores, setStores] = useState<StoreRecord[]>([])
+  const [stores, setStores] = useState<Array<{ id: number; store_name: string; address: string }>>([])
+  const [commodities, setCommodities] = useState<Array<{ commodity_key: string; commodity_name: string }>>([])
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null)
+  const [selectedCommodity, setSelectedCommodity] = useState('')
   const [analytics, setAnalytics] = useState<any>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    void adminApi.getStores().then((data) => {
-      setStores(data)
-      if (data.length > 0) {
-        setSelectedStoreId(data[0].id)
-      }
+    void adminApi.getAnalyticsOptions().then((data) => {
+      setStores(data.stores)
+      setCommodities(data.commodities)
     })
   }, [])
 
   useEffect(() => {
-    if (selectedStoreId) {
+    if (selectedStoreId && selectedCommodity) {
       setLoading(true)
-      void adminApi.getAnalytics(selectedStoreId).then((res) => {
+      void adminApi.getAnalytics(selectedStoreId, selectedCommodity).then((res) => {
         setAnalytics(res)
         setLoading(false)
       })
     }
-  }, [selectedStoreId])
+  }, [selectedStoreId, selectedCommodity])
 
   const hasAnomaly = analytics?.table_rows?.some(
     (row: any) => row.srp && Number(row.price) > Number(row.srp) * 1.10
@@ -83,7 +82,7 @@ export const TemporalVolatility: React.FC = () => {
         labels: analytics.labels,
         datasets: [
           {
-            label: 'Recorded Shelf / Receipt Price',
+            label: 'Validated Regulatory Observation',
             data: analytics.price_series,
             borderColor: hasAnomaly ? '#dc2626' : '#d97706',
             backgroundColor: hasAnomaly ? 'rgba(220, 38, 38, 0.1)' : 'rgba(217, 119, 6, 0.1)',
@@ -116,11 +115,13 @@ export const TemporalVolatility: React.FC = () => {
             </p>
           </div>
 
-          <div style={{ minWidth: '240px' }}>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', fontWeight: 600, marginBottom: '0.3rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(200px, 1fr)', gap: '0.75rem' }}>
+            <div>
+            <label htmlFor="analytics-store" style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', fontWeight: 600, marginBottom: '0.3rem' }}>
               Select Establishment
             </label>
             <select
+              id="analytics-store"
               value={selectedStoreId || ''}
               onChange={(e) => setSelectedStoreId(Number(e.target.value))}
               style={{
@@ -140,6 +141,23 @@ export const TemporalVolatility: React.FC = () => {
                 </option>
               ))}
             </select>
+            </div>
+            <div>
+              <label htmlFor="analytics-commodity" style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Select Commodity
+              </label>
+              <select
+                id="analytics-commodity"
+                value={selectedCommodity}
+                onChange={(event) => setSelectedCommodity(event.target.value)}
+                style={{ width: '100%', padding: '0.55rem 0.85rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a', fontSize: '0.88rem' }}
+              >
+                <option value="" disabled>Select commodity...</option>
+                {commodities.map((commodity) => (
+                  <option key={commodity.commodity_key} value={commodity.commodity_key}>{commodity.commodity_name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -164,6 +182,9 @@ export const TemporalVolatility: React.FC = () => {
 
       {analytics?.table_rows && (
         <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
+          <p style={{ margin: '0 0 0.85rem', color: '#475569', fontWeight: 600 }}>
+            {analytics.recidivism_count ?? 0} confirmed regulatory {(analytics.recidivism_count ?? 0) === 1 ? 'finding' : 'findings'}
+          </p>
           <h4 style={{ margin: '0 0 0.85rem', fontSize: '0.98rem', color: '#0f172a', fontWeight: 700 }}>
             Four-Week Validated Price Log
           </h4>
@@ -202,11 +223,11 @@ export const TemporalVolatility: React.FC = () => {
                           </span>
                         ) : isOver10Percent ? (
                           <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: '0.75rem', fontWeight: 700 }}>
-                            🚨 Exceeds 10% Limit (SCO Required)
+                            Above SRP by more than 10%
                           </span>
                         ) : isOverSrp ? (
                           <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fffbebf', color: '#d97706', border: '1px solid #fed7aa', fontSize: '0.75rem', fontWeight: 700 }}>
-                            ⚠️ Above SRP (LOI Candidate)
+                            Above applicable SRP
                           </span>
                         ) : (
                           <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', fontSize: '0.75rem', fontWeight: 700 }}>

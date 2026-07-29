@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Login } from './components/Login';
 import { VendorPortal } from './components/VendorPortal';
 import { AdminShell } from './components/admin/AdminShell';
 import { VendorInvitationAccept } from './components/VendorInvitationAccept';
 import type { AdminUser } from './types/admin';
+import {
+  clearAdminSession,
+  getAdminLastActivity,
+  getAdminSessionState,
+  getAdminToken,
+  storeAdminToken,
+  touchAdminActivity,
+} from './services/adminSession';
+import api from './services/api';
 import 'leaflet/dist/leaflet.css';
 import './admin-preflight.css';
 
@@ -14,32 +23,149 @@ interface User {
   role: 'super_admin' | 'dti_evaluator' | 'field_officer' | 'vendor' | 'consumer';
 }
 
+interface SessionMetadata {
+  expires_at: string | null;
+  idle_timeout_seconds: number;
+  absolute_timeout_seconds: number;
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<SessionMetadata | null>(null);
+  const [booting, setBooting] = useState(() => Boolean(getAdminToken()));
+  const [sessionWarning, setSessionWarning] = useState(false);
+  const [reauthenticationOpen, setReauthenticationOpen] = useState(false);
+  const [reauthenticationError, setReauthenticationError] = useState('');
 
   useEffect(() => {
-    // Check if token and user exist in local storage
+    const adminToken = getAdminToken();
+    if (adminToken) {
+      void api.get('/admin/session').then((response) => {
+        setUser(response.data.data.user);
+        setSession(response.data.data.session);
+        touchAdminActivity();
+      }).catch(() => {
+        clearAdminSession();
+      }).finally(() => setBooting(false));
+      return;
+    }
+
     const token = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        const parsed = JSON.parse(savedUser) as User;
+        if (['vendor', 'consumer'].includes(parsed.role)) {
+          setUser(parsed);
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+    }
+    setBooting(false);
+  }, []);
+
+  const handleLoginSuccess = (result: { token: string; user: User; session?: SessionMetadata }) => {
+    const isDtiUser = ['super_admin', 'dti_evaluator', 'field_officer'].includes(result.user.role);
+    if (isDtiUser) {
+      storeAdminToken(result.token);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setSession(result.session || null);
+    } else {
+      localStorage.setItem('token', result.token);
+      localStorage.setItem('user', JSON.stringify(result.user));
+    }
+    setUser(result.user);
+  };
+
+  const handleLogout = useCallback(async (broadcast: unknown = true) => {
+    try {
+      if (getAdminToken() || localStorage.getItem('token')) {
+        await api.post('/logout');
+      }
+    } catch {
+      // Local lock still occurs if the network is unavailable; server expiry remains authoritative.
+    } finally {
+      clearAdminSession();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      setSession(null);
+      setSessionWarning(false);
+      document.body.classList.remove('calamity-mode');
+      if (broadcast === true && typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('price-watch-auth');
+        channel.postMessage({ type: 'logout' });
+        channel.close();
+      }
     }
   }, []);
 
-  const handleLoginSuccess = (loggedInUser: User) => {
-    setUser(loggedInUser);
-  };
+  useEffect(() => {
+    const isDtiUser = user && ['super_admin', 'dti_evaluator', 'field_officer'].includes(user.role);
+    if (!isDtiUser || !session) return;
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-    document.body.classList.remove('calamity-mode');
-  };
+    const noteActivity = () => {
+      touchAdminActivity();
+      setSessionWarning(false);
+    };
+    const checkSession = () => {
+      const state = getAdminSessionState(
+        getAdminLastActivity(),
+        Date.now(),
+        session.idle_timeout_seconds,
+      );
+      setSessionWarning(state === 'warning');
+      if (state === 'expired') void handleLogout();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') checkSession();
+    };
+    const onExpired = () => void handleLogout();
+    const onReauthenticationRequired = () => {
+      setReauthenticationError('');
+      setReauthenticationOpen(true);
+    };
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart'];
+    activityEvents.forEach((event) => window.addEventListener(event, noteActivity, { passive: true }));
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('admin-auth-expired', onExpired);
+    window.addEventListener('admin-reauthentication-required', onReauthenticationRequired);
+    const checkTimer = window.setInterval(checkSession, 1_000);
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState === 'visible'
+        && getAdminSessionState(getAdminLastActivity(), Date.now(), session.idle_timeout_seconds) !== 'expired') {
+        void api.get('/admin/session');
+      }
+    }, 4 * 60_000);
+    const channel = typeof BroadcastChannel !== 'undefined'
+      ? new BroadcastChannel('price-watch-auth')
+      : null;
+    if (channel) channel.onmessage = () => void handleLogout(false);
+
+    return () => {
+      activityEvents.forEach((event) => window.removeEventListener(event, noteActivity));
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('admin-auth-expired', onExpired);
+      window.removeEventListener('admin-reauthentication-required', onReauthenticationRequired);
+      window.clearInterval(checkTimer);
+      window.clearInterval(heartbeat);
+      channel?.close();
+    };
+  }, [handleLogout, session, user]);
 
   const invitationToken = new URLSearchParams(window.location.search).get('token');
   if (window.location.pathname === '/vendor-invitation' && invitationToken) {
     return <VendorInvitationAccept token={invitationToken} />;
+  }
+
+  if (booting) {
+    return <div className='admin-session-boot' role='status'>Checking secure session...</div>;
   }
 
   if (!user) {
@@ -52,7 +178,47 @@ function App() {
   if (isDTIUser) {
     return (
       <div className="admin-app-wrapper">
-        <AdminShell user={user as AdminUser} onLogout={handleLogout} />
+        <AdminShell user={user as AdminUser} onLogout={() => void handleLogout()} />
+        {sessionWarning && (
+          <div className='session-warning-dialog' role='alertdialog' aria-modal='true' aria-labelledby='session-warning-title'>
+            <div>
+              <h2 id='session-warning-title'>Session locking soon</h2>
+              <p>Your DTI Admin session will lock after 15 minutes of inactivity.</p>
+              <button type='button' onClick={() => {
+                touchAdminActivity();
+                setSessionWarning(false);
+                void api.get('/admin/session');
+              }}>Stay signed in</button>
+              <button type='button' onClick={() => void handleLogout()}>Lock now</button>
+            </div>
+          </div>
+        )}
+        {reauthenticationOpen && (
+          <div className='session-warning-dialog' role='dialog' aria-modal='true' aria-labelledby='reauthentication-title'>
+            <form onSubmit={async (event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              try {
+                await api.post('/admin/reauthenticate', { password: String(form.get('password')) });
+                setReauthenticationOpen(false);
+                setReauthenticationError('');
+                touchAdminActivity();
+              } catch (error: any) {
+                setReauthenticationError(error.response?.data?.message || 'Password confirmation failed.');
+              }
+            }}>
+              <h2 id='reauthentication-title'>Confirm sensitive action</h2>
+              <p>Enter your password, then repeat the protected action. Confirmation remains valid briefly.</p>
+              <label htmlFor='admin-reauthentication-password'>Password</label>
+              <input id='admin-reauthentication-password' name='password' type='password' autoComplete='current-password' required autoFocus />
+              {reauthenticationError && <p role='alert'>{reauthenticationError}</p>}
+              <div className='admin-actions'>
+                <button type='submit'>Confirm identity</button>
+                <button type='button' onClick={() => setReauthenticationOpen(false)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     );
   }
@@ -72,7 +238,7 @@ function App() {
             <span className="user-name">{user.name}</span>
             <span className="user-role">{user.role.toUpperCase().replace('_', ' ')}</span>
           </div>
-          <button onClick={handleLogout} className="btn-secondary logout-btn">
+          <button onClick={() => void handleLogout()} className="btn-secondary logout-btn">
             Logout
           </button>
         </div>

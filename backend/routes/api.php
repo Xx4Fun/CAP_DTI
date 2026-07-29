@@ -6,6 +6,7 @@ use App\Http\Controllers\LegalNoticeController;
 use App\Http\Controllers\CitizenTipController;
 use App\Http\Controllers\CalamityController;
 use App\Http\Controllers\Admin\AdminOverviewController;
+use App\Http\Controllers\Admin\AdminSessionController;
 use App\Http\Controllers\Admin\AuditEventController;
 use App\Http\Controllers\Admin\EmergencyAdminController;
 use App\Http\Controllers\Admin\LegalDraftController;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\PublicPwaController;
 
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/vendor-invitations/{token}/accept', [VendorInvitationController::class, 'accept']);
 
 // Public Unauthenticated Consumer PWA Routes
@@ -40,7 +41,9 @@ Route::prefix('public')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::prefix('admin')->group(function () {
+    Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {
+        Route::get('/session', [AdminSessionController::class, 'show']);
+        Route::post('/reauthenticate', [AdminSessionController::class, 'reauthenticate']);
         Route::get('/overview', [AdminOverviewController::class, 'show']);
         Route::get('/audit-events', [AuditEventController::class, 'index']);
         Route::get('/stores', [StoreAdminController::class, 'index']);
@@ -55,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports', [ReportReviewController::class, 'index']);
         Route::post('/reports/{report}/decision', [ReportReviewController::class, 'decision']);
         Route::get('/reports/{report}/evidence', [ReportReviewController::class, 'evidence']);
+        Route::get('/analytics/options', [TemporalAnalyticsController::class, 'options']);
         Route::get('/analytics/stores/{store}', [TemporalAnalyticsController::class, 'show']);
         Route::get('/emergencies', [EmergencyAdminController::class, 'index']);
         Route::post('/emergencies', [EmergencyAdminController::class, 'store']);
@@ -76,11 +80,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notices/{id}/rebuttal', [LegalNoticeController::class, 'uploadRebuttal']);
 
     // Citizen Tips
-    Route::get('/tips', [CitizenTipController::class, 'index']);
+    Route::get('/tips', [CitizenTipController::class, 'index'])
+        ->middleware('dti.role:super_admin,dti_evaluator');
     Route::post('/tips', [CitizenTipController::class, 'store']);
-    Route::post('/tips/{id}/status', [CitizenTipController::class, 'updateStatus']);
+    Route::post('/tips/{id}/status', [CitizenTipController::class, 'updateStatus'])
+        ->middleware('dti.role:super_admin,dti_evaluator');
 
     // Calamity Toggle Settings
     Route::get('/calamity', [CalamityController::class, 'show']);
-    Route::post('/calamity/toggle', [CalamityController::class, 'toggle']);
+    Route::post('/calamity/toggle', [CalamityController::class, 'toggle'])
+        ->middleware('dti.role:super_admin,dti_evaluator');
 });

@@ -7,6 +7,7 @@ use App\Models\SrpBulletin;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\SrpImportService;
 use App\Services\Admin\TemporalSrpResolver;
+use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
 
 class SrpAdminController extends Controller
@@ -21,9 +22,10 @@ class SrpAdminController extends Controller
         $auth->requireManager($request->user());
         return response()->json(['data' => $service->preview($request->all())]);
     }
-    public function import(Request $request, AdminAuthorizationService $auth, SrpImportService $service)
+    public function import(Request $request, AdminAuthorizationService $auth, SrpImportService $service, SensitiveActionGuard $guard)
     {
         $auth->requireManager($request->user());
+        $guard->requireRecentReauthentication($request);
         return response()->json(['data' => $service->import($request->all(), $request->user(), $request)], 201);
     }
     public function resolve(Request $request, AdminAuthorizationService $auth, TemporalSrpResolver $resolver)

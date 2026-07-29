@@ -59,6 +59,12 @@ export const adminApi = {
   async getAnalytics(storeId: number, commodityKey?: string) {
     return data(await api.get(`/admin/analytics/stores/${storeId}`, { params: { commodity_key: commodityKey } }))
   },
+  async getAnalyticsOptions(): Promise<{
+    stores: Array<{ id: number; store_name: string; address: string }>
+    commodities: Array<{ commodity_key: string; commodity_name: string }>
+  }> {
+    return data(await api.get('/admin/analytics/options'))
+  },
   async getOverview() {
     return data<{ stores: number, pending_reports: number, active_emergencies: number }>(await api.get('/admin/overview'))
   },

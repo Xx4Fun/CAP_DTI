@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
-import { EmergencyPanel, LegalDraftPanel, ReportReviewPanel, SrpManagementPanel } from './AdminPanels'
+import { EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel, SrpManagementPanel } from './AdminPanels'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -18,6 +18,7 @@ vi.mock('../../services/adminApi', () => ({
     getSrp: vi.fn(),
     previewSrp: vi.fn(),
     importSrp: vi.fn(),
+    getOverview: vi.fn(),
   },
 }))
 
@@ -70,11 +71,17 @@ describe('DTI Admin safeguards', () => {
     }))
   })
 
+  it('does not turn an overview request failure into misleading zero counts', async () => {
+    vi.mocked(adminApi.getOverview).mockRejectedValue(new Error('offline'))
+    render(<OverviewPanel />)
+
+    expect(screen.getByRole('status')).toHaveTextContent(/loading regulatory overview/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i)
+    expect(screen.queryByText('Pending Consumer Tips')).not.toBeInTheDocument()
+  })
+
   it('labels legal output as unavailable and previews only a watermarked draft', async () => {
     vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
-    vi.mocked(adminApi.dispatchLegal).mockRejectedValue({
-      response: { data: { status: 'LEGAL_POLICY_UNAVAILABLE' } },
-    })
     const user = userEvent.setup()
 
     render(<LegalDraftPanel />)
@@ -86,8 +93,9 @@ describe('DTI Admin safeguards', () => {
       expect.stringContaining('DRAFT - NOT AN OFFICIAL NOTICE'),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Attempt official dispatch' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('No notice or deadline was created.')
+    expect(screen.queryByRole('button', { name: /official dispatch/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/No notice, deadline, notification, or vendor state change/i)).toBeInTheDocument()
+    expect(adminApi.dispatchLegal).not.toHaveBeenCalled()
   })
 
   it('stores authoritative emergency prices against a confirmed declaration', async () => {

@@ -10,6 +10,8 @@ import {
   Siren,
   ChevronDown,
   LogOut,
+  LockKeyhole,
+  UserRound,
   Shield,
   Menu,
   X,
@@ -95,19 +97,55 @@ const panels: Record<ModuleId, { title: string; description: string; component: 
   audit: { title: 'Read-Only Audit Trail', description: 'Review sensitive Admin actions and regulatory decisions.', component: AuditPanel },
 }
 
+const allowedModules = new Set<ModuleId>(Object.keys(panels) as ModuleId[])
+
+function readModuleFromUrl(isFieldOfficer: boolean): ModuleId {
+  const requested = new URLSearchParams(window.location.search).get('module') as ModuleId | null
+  if (!requested || !allowedModules.has(requested)) return 'overview'
+  if (isFieldOfficer && requested !== 'overview' && requested !== 'analytics') return 'overview'
+  return requested
+}
+
+function parentCategoryFor(module: ModuleId): string | null {
+  if (module === 'analytics' || module === 'srp') return 'analytics'
+  if (module === 'legal' || module === 'audit') return 'legal'
+  return null
+}
+
 export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () => void }) {
   const isFieldOfficer = user.role === 'field_officer'
-  const [activeModule, setActiveModule] = useState<ModuleId>('overview')
+  const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromUrl(isFieldOfficer))
   const [isCalamityActive, setIsCalamityActive] = useState<boolean>(false)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
-  const [openCategory, setOpenCategory] = useState<string | null>('analytics')
+  const [openCategory, setOpenCategory] = useState<string | null>(() => parentCategoryFor(readModuleFromUrl(isFieldOfficer)))
+  const [accountOpen, setAccountOpen] = useState(false)
 
   const heading = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     heading.current?.focus()
   }, [activeModule])
+
+  useEffect(() => {
+    const restoreModule = () => {
+      const restored = readModuleFromUrl(isFieldOfficer)
+      setActiveModule(restored)
+      setOpenCategory(parentCategoryFor(restored))
+    }
+    const closeMenus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setAccountOpen(false)
+        setIsMobileOpen(false)
+      }
+    }
+    window.addEventListener('popstate', restoreModule)
+    window.addEventListener('keydown', closeMenus)
+    return () => {
+      window.removeEventListener('popstate', restoreModule)
+      window.removeEventListener('keydown', closeMenus)
+    }
+  }, [isFieldOfficer])
 
   useEffect(() => {
     void adminApi.getEmergencies().then((emergencies) => {
@@ -120,6 +158,15 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
   const toggleCategory = (categoryId: string) => {
     setOpenCategory((prev) => (prev === categoryId ? null : categoryId))
+  }
+
+  const navigateTo = (module: ModuleId) => {
+    if (isFieldOfficer && module !== 'overview' && module !== 'analytics') return
+    setActiveModule(module)
+    const url = new URL(window.location.href)
+    url.searchParams.set('module', module)
+    window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    setIsMobileOpen(false)
   }
 
   const avatarInitial = user.name ? user.name.charAt(0).toUpperCase() : 'E'
@@ -194,13 +241,15 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                       type="button"
                       className={`admin-nav-item ${isParentActive ? 'active' : ''}`}
                       onClick={() => {
-                        setActiveModule(item.id)
                         if (item.subItems) {
                           toggleCategory(item.id)
+                        } else {
+                          navigateTo(item.id)
                         }
-                        setIsMobileOpen(false)
                       }}
                       aria-current={activeModule === item.id ? 'page' : undefined}
+                      aria-expanded={item.subItems ? isOpen : undefined}
+                      aria-controls={item.subItems ? `nav-group-${item.id}` : undefined}
                     >
                       <div className="nav-item-content">
                         <IconComponent size={18} aria-hidden="true" />
@@ -210,25 +259,25 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                         <ChevronDown
                           size={16}
                           className={`chevron-icon ${isOpen ? 'open' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleCategory(item.id)
-                          }}
                         />
                       )}
                     </button>
 
                     {!isCollapsed && item.subItems && (
-                      <div className={`nav-dropdown-container ${isOpen ? 'open' : ''}`}>
+                      <div
+                        id={`nav-group-${item.id}`}
+                        className={`nav-dropdown-container ${isOpen ? 'open' : ''}`}
+                        aria-hidden={!isOpen}
+                      >
                         {item.subItems.map((sub) => (
                           <button
                             key={sub.id}
                             type="button"
                             className={`admin-nav-sub-item ${activeModule === sub.id ? 'active' : ''}`}
                             onClick={() => {
-                              setActiveModule(sub.id)
-                              setIsMobileOpen(false)
+                              navigateTo(sub.id)
                             }}
+                            tabIndex={isOpen ? 0 : -1}
                           >
                             {sub.label}
                           </button>
@@ -242,23 +291,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
           ))}
         </nav>
 
-        {/* Section 4: Bottom Pinned Logout Button */}
-        <div className="admin-user-drawer">
-          {onLogout && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsMobileOpen(false)
-                onLogout()
-              }}
-              className="logout-btn-sidebar"
-              title="Log out of DTI Portal"
-            >
-              <LogOut size={18} />
-              {!isCollapsed && <span>Logout</span>}
-            </button>
-          )}
-        </div>
       </aside>
 
       {/* Main Workspace */}
@@ -279,7 +311,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               <Shield size={20} />
             </div>
             <div className="header-titles">
-              <h2 className="header-main-title">{panels[activeModule].title}</h2>
+              <h2 className="header-main-title">DTI Officer Portal</h2>
               <span className="header-subtitle">
                 San Jose de Buenavista, Antique
               </span>
@@ -299,13 +331,32 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               )}
             </div>
 
-            <button type="button" className="messages-pill-btn" onClick={() => alert('DTI Regulatory Notification Queue')}>
-              💬 <span>Messages</span>
-            </button>
-
-            <div className="header-avatar-badge" title={`${user.name} (${user.role})`}>
-              <span>{avatarInitial}</span>
-              <span className="avatar-status-dot" title="Online"></span>
+            <div className="header-account">
+              <button
+                type="button"
+                className="header-account-button"
+                aria-label={`${user.name} account`}
+                aria-expanded={accountOpen}
+                aria-controls="admin-account-menu"
+                onClick={() => setAccountOpen((open) => !open)}
+              >
+                <span className="header-avatar-badge" aria-hidden="true">{avatarInitial}</span>
+                <span className="header-account-copy">
+                  <strong>{user.name}</strong>
+                  <small>{user.role.replace('_', ' ')}</small>
+                </span>
+                <UserRound size={16} aria-hidden="true" />
+              </button>
+              {accountOpen && (
+                <div className="header-account-menu" id="admin-account-menu" role="menu">
+                  <button type="button" onClick={onLogout}>
+                    <LockKeyhole size={17} aria-hidden="true" /> Lock Session
+                  </button>
+                  <button type="button" onClick={onLogout}>
+                    <LogOut size={17} aria-hidden="true" /> Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -323,7 +374,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
         {/* Main Panel Content */}
         <main className="admin-panel" id="admin-main">
-          <Panel onNavigate={setActiveModule} />
+          <Panel onNavigate={navigateTo} />
         </main>
       </section>
     </div>

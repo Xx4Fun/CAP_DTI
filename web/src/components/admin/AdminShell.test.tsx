@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminShell } from './AdminShell'
 
 vi.mock('../../services/adminApi', () => ({
@@ -14,6 +14,10 @@ vi.mock('../../services/adminApi', () => ({
 }))
 
 describe('AdminShell', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
+
   it('shows all management modules to a DTI evaluator', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
@@ -36,5 +40,43 @@ describe('AdminShell', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
     await user.click(screen.getByRole('button', { name: /Consumer OCR Queue/i }))
     expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toHaveFocus()
+  })
+
+  it('opens Overview with grouped navigation collapsed and one page title', () => {
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    expect(screen.getByRole('button', { name: /Price Regulation/i })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getAllByRole('heading', { name: 'Regulatory Overview' })).toHaveLength(1)
+    expect(screen.getByRole('banner')).toHaveTextContent('DTI Officer Portal')
+  })
+
+  it('expands a navigation group without leaving the current page', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: /Price Regulation/i }))
+
+    expect(screen.getByRole('button', { name: /Price Regulation/i })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('heading', { level: 1, name: 'Regulatory Overview' })).toBeInTheDocument()
+  })
+
+  it('restores an authorized module from the URL and updates it on navigation', async () => {
+    window.history.replaceState({}, '', '/?module=reports')
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Dashboard Overview/i }))
+    expect(new URLSearchParams(window.location.search).get('module')).toBe('overview')
+  })
+
+  it('uses a real account menu instead of unsupported message and online controls', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} onLogout={vi.fn()} />)
+
+    expect(screen.queryByRole('button', { name: /Messages/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
+    expect(screen.getByRole('button', { name: /Lock session/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument()
   })
 })
