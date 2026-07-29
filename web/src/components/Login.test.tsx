@@ -10,7 +10,7 @@ describe('Login', () => {
       name: 'DTI fair trade and consumer protection illustration',
     })
 
-    expect(artwork).toHaveAttribute('src', '/login-left.png')
+    expect(artwork).toHaveAttribute('src', '/login-left1.png')
     expect(artwork).toHaveStyle({
       width: '100%',
       height: '100vh',

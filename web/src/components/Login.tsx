@@ -56,7 +56,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         }}
       >
         <img
-          src="/login-left.png"
+          src="/login-left1.png"
           alt="DTI fair trade and consumer protection illustration"
           style={{
             display: 'block',
