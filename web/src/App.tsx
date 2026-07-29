@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Login } from './components/Login';
 import { VendorPortal } from './components/VendorPortal';
 import { AdminShell } from './components/admin/AdminShell';
@@ -36,6 +36,8 @@ function App() {
   const [sessionWarning, setSessionWarning] = useState(false);
   const [reauthenticationOpen, setReauthenticationOpen] = useState(false);
   const [reauthenticationError, setReauthenticationError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
+  const logoutInProgress = useRef(false);
 
   useEffect(() => {
     const adminToken = getAdminToken();
@@ -46,6 +48,7 @@ function App() {
         touchAdminActivity();
       }).catch(() => {
         clearAdminSession();
+        setLoginNotice('Your secure session expired. Sign in again to continue.');
       }).finally(() => setBooting(false));
       return;
     }
@@ -80,10 +83,16 @@ function App() {
       localStorage.setItem('token', result.token);
       localStorage.setItem('user', JSON.stringify(result.user));
     }
+    setLoginNotice('');
     setUser(result.user);
   };
 
-  const handleLogout = useCallback(async (broadcast: unknown = true) => {
+  const handleLogout = useCallback(async (
+    reason: 'manual' | 'inactivity' | 'expired' | 'remote' = 'manual',
+    broadcast = true,
+  ) => {
+    if (logoutInProgress.current) return;
+    logoutInProgress.current = true;
     try {
       if (getAdminToken() || localStorage.getItem('token')) {
         await api.post('/logout');
@@ -97,12 +106,22 @@ function App() {
       setUser(null);
       setSession(null);
       setSessionWarning(false);
+      setLoginNotice(
+        reason === 'inactivity'
+          ? 'You were logged out due to inactivity. Sign in again to continue.'
+          : reason === 'expired'
+            ? 'Your secure session expired. Sign in again to continue.'
+            : reason === 'remote'
+              ? 'Your session was closed in another tab.'
+              : '',
+      );
       document.body.classList.remove('calamity-mode');
       if (broadcast === true && typeof BroadcastChannel !== 'undefined') {
         const channel = new BroadcastChannel('price-watch-auth');
         channel.postMessage({ type: 'logout' });
         channel.close();
       }
+      logoutInProgress.current = false;
     }
   }, []);
 
@@ -121,12 +140,17 @@ function App() {
         session.idle_timeout_seconds,
       );
       setSessionWarning(state === 'warning');
-      if (state === 'expired') void handleLogout();
+      if (state === 'expired') void handleLogout('inactivity');
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') checkSession();
     };
-    const onExpired = () => void handleLogout();
+    const onExpired = (event: Event) => {
+      const reason = event instanceof CustomEvent && event.detail?.reason === 'inactivity'
+        ? 'inactivity'
+        : 'expired';
+      void handleLogout(reason);
+    };
     const onReauthenticationRequired = () => {
       setReauthenticationError('');
       setReauthenticationOpen(true);
@@ -146,7 +170,9 @@ function App() {
     const channel = typeof BroadcastChannel !== 'undefined'
       ? new BroadcastChannel('price-watch-auth')
       : null;
-    if (channel) channel.onmessage = () => void handleLogout(false);
+    if (channel) channel.onmessage = () => {
+      if (getAdminToken()) void handleLogout('remote', false);
+    };
 
     return () => {
       activityEvents.forEach((event) => window.removeEventListener(event, noteActivity));
@@ -169,7 +195,7 @@ function App() {
   }
 
   if (!user) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return <Login onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
   }
 
   // Determine view based on role
@@ -178,7 +204,7 @@ function App() {
   if (isDTIUser) {
     return (
       <div className="admin-app-wrapper">
-        <AdminShell user={user as AdminUser} onLogout={() => void handleLogout()} />
+        <AdminShell user={user as AdminUser} onLogout={() => void handleLogout('manual')} />
         {sessionWarning && (
           <div className='session-warning-dialog' role='alertdialog' aria-modal='true' aria-labelledby='session-warning-title'>
             <div>
@@ -189,7 +215,7 @@ function App() {
                 setSessionWarning(false);
                 void api.get('/admin/session');
               }}>Stay signed in</button>
-              <button type='button' onClick={() => void handleLogout()}>Lock now</button>
+              <button type='button' onClick={() => void handleLogout('manual')}>Lock now</button>
             </div>
           </div>
         )}
@@ -238,7 +264,7 @@ function App() {
             <span className="user-name">{user.name}</span>
             <span className="user-role">{user.role.toUpperCase().replace('_', ' ')}</span>
           </div>
-          <button onClick={() => void handleLogout()} className="btn-secondary logout-btn">
+          <button onClick={() => void handleLogout('manual')} className="btn-secondary logout-btn">
             Logout
           </button>
         </div>

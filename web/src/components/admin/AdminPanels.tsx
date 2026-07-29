@@ -193,9 +193,21 @@ export function LegalDraftPanel() {
 
 export function AuditPanel() {
   const [events, setEvents] = useState<AuditRecord[]>([])
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    void adminApi.getAuditEvents().then(setEvents)
+    void adminApi.getAuditEvents().then(setEvents).catch((requestError: unknown) => {
+      const status = (requestError as { response?: { data?: { status?: string } } })
+        .response?.data?.status
+      setError(status === 'AUDIT_TRAIL_UNAVAILABLE'
+        ? 'AUDIT_TRAIL_UNAVAILABLE — Audit storage requires the approved Admin migration before this read-only trail can be used.'
+        : 'The audit trail could not be loaded. Refresh or try again later.')
+    })
   }, [])
+
+  if (error) {
+    return <p role='alert' className='admin-inline-alert'>{error}</p>
+  }
+
   return (
     <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
       <div className="admin-table-wrap" style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>

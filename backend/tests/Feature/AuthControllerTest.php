@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class AuthControllerTest extends TestCase {
@@ -61,5 +62,25 @@ class AuthControllerTest extends TestCase {
             ->assertJson(['message' => 'Logged out successfully']);
 
         $this->assertCount(0, $user->tokens);
+    }
+
+    public function test_admin_login_remains_available_when_audit_storage_has_not_been_migrated(): void {
+        User::create([
+            'name' => 'John Doe',
+            'email' => 'john@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'dti_evaluator'
+        ]);
+        Schema::drop('audit_events');
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'john@example.com',
+            'password' => 'password123'
+        ]);
+
+        $response->assertOk()
+            ->assertJsonStructure(['token', 'user', 'session']);
+        $this->assertStringNotContainsString('SQLSTATE', $response->getContent());
+        $this->assertStringNotContainsString('audit_events', $response->getContent());
     }
 }

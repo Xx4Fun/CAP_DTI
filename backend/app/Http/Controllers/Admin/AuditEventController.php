@@ -14,6 +14,13 @@ class AuditEventController extends Controller
     {
         $authorization->requireManager($request->user());
 
+        if (! $audit->available()) {
+            return response()->json([
+                'status' => 'AUDIT_TRAIL_UNAVAILABLE',
+                'message' => 'Audit storage is not available. Apply the approved Admin migration before using audited workflows.',
+            ], 503);
+        }
+
         $events = AuditEvent::query()->latest('id')->limit(200)->get()->map(fn (AuditEvent $event) => [
             'id' => $event->id,
             'actor_id' => $event->actor_id,

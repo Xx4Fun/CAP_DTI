@@ -124,4 +124,22 @@ describe('DTI Admin application session', () => {
     expect(api.post).toHaveBeenCalledWith('/admin/reauthenticate', { password: 'correct horse' })
     expect(screen.queryByRole('dialog', { name: /confirm sensitive action/i })).not.toBeInTheDocument()
   })
+
+  it('explains when the officer was logged out due to inactivity', async () => {
+    sessionStorage.setItem('price-watch.admin.token', 'valid-token')
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: { data: {
+        user: { id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' },
+        session: { expires_at: '2026-07-30T16:00:00+00:00', idle_timeout_seconds: 900, absolute_timeout_seconds: 28800 },
+      } },
+    })
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Logged out successfully' } })
+
+    render(<App />)
+    await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
+    window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
+
+    expect(await screen.findByText('You were logged out due to inactivity. Sign in again to continue.')).toHaveAttribute('role', 'status')
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
+  })
 })

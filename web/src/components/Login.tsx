@@ -12,9 +12,10 @@ interface LoginProps {
       absolute_timeout_seconds: number
     }
   }) => void
+  notice?: string
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -30,12 +31,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       const response = await api.post('/login', { email, password })
       onLoginSuccess(response.data)
     } catch (err: any) {
-      if (err.response?.data?.message) {
-        setError(err.response.data.message)
-      } else if (err.response?.data?.errors) {
-        setError(Object.values(err.response.data.errors).flat().join(' '))
+      if (err.response?.status === 422) {
+        setError('The email or password is incorrect.')
+      } else if (err.response?.status === 429) {
+        setError('Too many sign-in attempts. Please wait and try again.')
       } else {
-        setError('Connection failed. Please check your network or server status.')
+        setError('Sign-in is temporarily unavailable. Please try again later.')
       }
     } finally {
       setLoading(false)
@@ -134,8 +135,28 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
           </div>
 
+          {notice && (
+            <div
+              role="status"
+              className="login-notice-badge"
+              style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderLeft: '4px solid #2563eb',
+                color: '#1e3a8a',
+                padding: '0.75rem 1rem',
+                borderRadius: '0 8px 8px 0',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+              }}
+            >
+              {notice}
+            </div>
+          )}
+
           {error && (
             <div
+              role="alert"
               className="error-badge"
               style={{
                 background: '#fef2f2',

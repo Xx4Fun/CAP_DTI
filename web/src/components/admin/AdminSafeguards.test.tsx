@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
-import { EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel, SrpManagementPanel } from './AdminPanels'
+import { AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel, SrpManagementPanel } from './AdminPanels'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -19,6 +19,7 @@ vi.mock('../../services/adminApi', () => ({
     previewSrp: vi.fn(),
     importSrp: vi.fn(),
     getOverview: vi.fn(),
+    getAuditEvents: vi.fn(),
   },
 }))
 
@@ -78,6 +79,17 @@ describe('DTI Admin safeguards', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/loading regulatory overview/i)
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i)
     expect(screen.queryByText('Pending Consumer Tips')).not.toBeInTheDocument()
+  })
+
+  it('shows a safe schema-unavailable state instead of an empty audit trail', async () => {
+    vi.mocked(adminApi.getAuditEvents).mockRejectedValue({
+      response: { data: { status: 'AUDIT_TRAIL_UNAVAILABLE' } },
+    })
+
+    render(<AuditPanel />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('AUDIT_TRAIL_UNAVAILABLE')
+    expect(screen.getByRole('alert')).toHaveTextContent(/approved Admin migration/i)
   })
 
   it('labels legal output as unavailable and previews only a watermarked draft', async () => {
