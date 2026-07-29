@@ -51,7 +51,7 @@ export const CitizenTipReview: React.FC = () => {
       case 'confirmed_violation':
         return { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }
       case 'pending':
-        return { background: '#fffbebf', color: '#d97706', border: '1px solid #fed7aa' }
+        return { background: '#fffbeb', color: '#d97706', border: '1px solid #fed7aa' }
       case 'no_violation':
       case 'dismissed':
       case 'rejected':
@@ -66,7 +66,7 @@ export const CitizenTipReview: React.FC = () => {
       {/* Left List of Consumer Tips/Reports */}
       <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
         <h3 style={{ margin: '0 0 0.85rem', fontSize: '1.05rem', color: '#0f172a', fontWeight: 700 }}>
-          🧾 Consumer Receipt Queue
+          Consumer Receipt Queue
         </h3>
 
         {loading && <p style={{ color: '#64748b', fontSize: '0.88rem' }}>Loading receipt queue...</p>}

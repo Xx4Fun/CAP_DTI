@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Mail, Lock, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, LoaderCircle, ShieldCheck } from 'lucide-react'
 import api from '../services/api'
 
 interface LoginProps {
@@ -273,6 +273,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
               type="submit"
               className="login-btn"
               disabled={loading}
+              aria-busy={loading}
               style={{
                 marginTop: '0.5rem',
                 width: '100%',
@@ -289,7 +290,16 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
                 transition: 'background-color 0.2s ease',
               }}
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? (
+                <>
+                  <LoaderCircle
+                    size={18}
+                    className="login-button-spinner"
+                    aria-hidden="true"
+                  />
+                  <span>Signing in...</span>
+                </>
+              ) : 'Sign in'}
             </button>
           </form>
 

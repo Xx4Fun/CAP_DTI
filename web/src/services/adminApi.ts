@@ -1,5 +1,6 @@
 import api from './api'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
@@ -17,12 +18,34 @@ export const adminApi = {
   async previewSrp(payload: unknown): Promise<Record<string, unknown>> {
     return data(await api.post('/admin/srp/import/preview', payload))
   },
-  async getSrp(): Promise<SrpRecord[]> {
-    const response = await api.get('/admin/srp')
-    return response.data.data.data
+  async getSrp(filters: SrpListFilters = {}): Promise<SrpPage | SrpRecord[]> {
+    const params = { per_page: 20, ...filters }
+    const response = await api.get('/admin/srp', { params })
+    const paginator = response.data.data
+    return {
+      records: (paginator?.data ?? paginator ?? []) as ManagedSrpRecord[],
+      pagination: {
+        current_page: paginator?.current_page ?? 1,
+        last_page: paginator?.last_page ?? 1,
+        per_page: paginator?.per_page ?? 20,
+        total: paginator?.total ?? (Array.isArray(paginator) ? paginator.length : 0),
+        from: paginator?.from ?? 1,
+        to: paginator?.to ?? (Array.isArray(paginator) ? paginator.length : 0),
+      },
+      capabilities: response.data.capabilities ?? {
+        can_publish: true,
+        status: 'AVAILABLE',
+      },
+    }
   },
   async importSrp(payload: unknown) {
     return data(await api.post('/admin/srp/import', payload))
+  },
+  async previewSrpRevision(id: number, payload: SrpRevisionPayload): Promise<SrpRevisionPreview> {
+    return data(await api.post(`/admin/srp/${id}/revisions/preview`, payload))
+  },
+  async createSrpRevision(id: number, payload: SrpRevisionPayload): Promise<ManagedSrpRecord> {
+    return data(await api.post(`/admin/srp/${id}/revisions`, payload))
   },
   async getReports(): Promise<ConsumerReportRecord[]> {
     return data(await api.get('/admin/reports'))

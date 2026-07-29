@@ -217,6 +217,21 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
     }
   }, []);
 
+  useEffect(() => {
+    const refreshLiveBulletin = () => {
+      if (document.visibilityState !== 'hidden') {
+        void fetchCommodities(searchTerm);
+      }
+    };
+
+    window.addEventListener('focus', refreshLiveBulletin);
+    document.addEventListener('visibilitychange', refreshLiveBulletin);
+    return () => {
+      window.removeEventListener('focus', refreshLiveBulletin);
+      document.removeEventListener('visibilitychange', refreshLiveBulletin);
+    };
+  }, [searchTerm]);
+
   const fetchCommodities = async (query = '') => {
     setLoading(true);
     try {

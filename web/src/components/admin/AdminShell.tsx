@@ -307,9 +307,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               {isMobileOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
 
-            <div className="header-home-badge" title="DTI Portal Home">
-              <Shield size={20} />
-            </div>
             <div className="header-titles">
               <h1 ref={heading} tabIndex={-1} className="header-main-title">{panels[activeModule].title}</h1>
               <span className="header-subtitle">
@@ -322,11 +319,11 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             <div className="market-status-container">
               {isCalamityActive === true ? (
                 <span className="market-status-badge calamity">
-                  🚨 State of Calamity Active
+                  <Siren size={14} aria-hidden="true" /> State of Calamity Active
                 </span>
               ) : isCalamityActive === false ? (
                 <span className="market-status-badge normal">
-                  🟢 Normal Market Protocol
+                  <Shield size={14} aria-hidden="true" /> Normal Market Protocol
                 </span>
               ) : (
                 <span className="market-status-badge unavailable">

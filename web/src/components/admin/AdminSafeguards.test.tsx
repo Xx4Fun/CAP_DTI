@@ -169,6 +169,7 @@ describe('DTI Admin safeguards', () => {
 
     expect(await screen.findByText('2026-08-01')).toBeInTheDocument()
     expect(screen.getByText('2026-05-01')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add SRP bulletin' }))
 
     const file = new File([
       JSON.stringify({ metadata: { effective_date: '2026-09-01' }, items: [{ item_name: 'Rice', unit: '1kg', srp: 49 }] }),

@@ -108,7 +108,7 @@ export const TemporalVolatility: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: 700 }}>
-              📈 4-Week Temporal Price Volatility
+              4-Week Temporal Price Volatility
             </h3>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
               Compare historical field inspection records against flat baseline SRPs over time.
@@ -226,12 +226,12 @@ export const TemporalVolatility: React.FC = () => {
                             Above SRP by more than 10%
                           </span>
                         ) : isOverSrp ? (
-                          <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fffbebf', color: '#d97706', border: '1px solid #fed7aa', fontSize: '0.75rem', fontWeight: 700 }}>
+                          <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#fffbeb', color: '#d97706', border: '1px solid #fed7aa', fontSize: '0.75rem', fontWeight: 700 }}>
                             Above applicable SRP
                           </span>
                         ) : (
                           <span style={{ padding: '0.25rem 0.65rem', borderRadius: '12px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', fontSize: '0.75rem', fontWeight: 700 }}>
-                            ✅ Compliant
+                            Compliant
                           </span>
                         )}
                       </td>

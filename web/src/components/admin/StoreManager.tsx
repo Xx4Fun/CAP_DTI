@@ -136,7 +136,7 @@ export const StoreManager: React.FC = () => {
                           fontWeight: 600,
                           fontSize: '0.75rem',
                           border: store.is_verified ? '1px solid #a7f3d0' : '1px solid #fed7aa',
-                          background: store.is_verified ? '#ecfdf5' : '#fffbebf',
+                          background: store.is_verified ? '#ecfdf5' : '#fffbeb',
                           color: store.is_verified ? '#059669' : '#d97706',
                           cursor: 'pointer',
                         }}
@@ -176,7 +176,7 @@ export const StoreManager: React.FC = () => {
                           border: recidivism > 0 ? '1px solid #fecaca' : '1px solid #a7f3d0',
                         }}
                       >
-                        {recidivism > 0 ? `⚠️ ${recidivism} Anomaly` : '0 Clean'}
+                        {recidivism > 0 ? `${recidivism} confirmed ${recidivism === 1 ? 'finding' : 'findings'}` : '0 Clean'}
                       </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
@@ -193,7 +193,7 @@ export const StoreManager: React.FC = () => {
                           cursor: 'pointer',
                         }}
                       >
-                        📩 Invite Vendor
+                        Invite vendor
                       </button>
                     </td>
                   </tr>
@@ -263,7 +263,7 @@ export const StoreManager: React.FC = () => {
             {link ? (
               <div>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#059669', marginBottom: '0.35rem' }}>
-                  ✅ One-Time Onboarding URL Generated
+                  One-time onboarding URL generated
                 </label>
                 <input
                   readOnly
