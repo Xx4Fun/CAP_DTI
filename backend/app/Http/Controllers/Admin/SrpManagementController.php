@@ -92,15 +92,22 @@ class SrpManagementController extends Controller
         ]);
 
         $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
+        $targetImagePath = $data['image_path'] ?? $srp->image_path;
 
-        $srp->update([
-            'commodity_key' => $commodityKey,
-            'commodity_name' => $data['commodity_name'],
-            'unit' => $data['unit'] ?? null,
-            'category' => $data['category'] ?? null,
-            'regulatory_classification' => $data['regulatory_classification'] ?? null,
-            'image_path' => $data['image_path'] ?? $srp->image_path,
-        ]);
+        // Sync metadata and image_path across all revisions of this commodity lineage
+        SrpBulletin::query()
+            ->where('commodity_key', $srp->commodity_key)
+            ->orWhere('commodity_name', $srp->commodity_name)
+            ->update([
+                'commodity_key' => $commodityKey,
+                'commodity_name' => $data['commodity_name'],
+                'unit' => $data['unit'] ?? null,
+                'category' => $data['category'] ?? null,
+                'regulatory_classification' => $data['regulatory_classification'] ?? null,
+                'image_path' => $targetImagePath,
+            ]);
+
+        $srp->refresh();
 
         $audit->record($request, 'srp.metadata_updated', $srp, [
             'commodity_name' => $srp->commodity_name,
@@ -133,9 +140,18 @@ class SrpManagementController extends Controller
             foreach ($data['updates'] as $update) {
                 $original = SrpBulletin::findOrFail($update['id']);
 
+                $imagePath = $original->image_path;
+                if (!$imagePath) {
+                    $imagePath = SrpBulletin::query()
+                        ->where('commodity_key', $original->commodity_key)
+                        ->orWhere('commodity_name', $original->commodity_name)
+                        ->whereNotNull('image_path')
+                        ->value('image_path');
+                }
+
                 $payload = [
                     'commodity_name' => $original->commodity_name,
-                    'image_path' => $original->image_path,
+                    'image_path' => $imagePath,
                     'category' => $original->category,
                     'unit' => $original->unit,
                     'regulatory_classification' => $original->regulatory_classification,

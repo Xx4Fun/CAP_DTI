@@ -26,6 +26,36 @@ const ProductIllustration: React.FC<{ commodity: Commodity; size?: number }> = (
   const category = (commodity.category || '').toLowerCase();
 
   const isSardines = name.includes('sardine') || category.includes('sardine');
+
+  if (commodity.image_path) {
+    return (
+      <div
+        style={{
+          width: `${size}px`,
+          height: `${size * 1.1}px`,
+          borderRadius: '12px',
+          overflow: 'hidden',
+          border: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0
+        }}
+      >
+        <img
+          src={commodity.image_path}
+          alt={commodity.commodity_name}
+          loading="lazy"
+          decoding="async"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = 'none';
+          }}
+        />
+      </div>
+    );
+  }
   const isLuncheon = name.includes('luncheon') || name.includes('meat') || category.includes('meat');
   const isMilk = name.includes('milk') || category.includes('milk');
   const isCoffee = name.includes('coffee') || category.includes('coffee');

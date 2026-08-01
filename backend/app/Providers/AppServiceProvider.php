@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production')) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
         RateLimiter::for('login', function (Request $request) {
             $email = Str::lower((string) $request->input('email'));
             $identity = hash('sha256', $email.'|'.$request->ip());
