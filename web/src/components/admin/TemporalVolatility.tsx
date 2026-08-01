@@ -258,60 +258,84 @@ export const TemporalVolatility: React.FC = () => {
                 Select Establishment
               </label>
 
-              {/* Single Combined Search + Dropdown Box */}
+              {/* Option 3: Pure Autocomplete Search Bar */}
               <div style={{ position: 'relative', width: '100%' }}>
                 <input
-                  type="text"
-                  placeholder="Type to filter establishments..."
-                  aria-label="Search establishment filter"
-                  value={storeSearch}
-                  onChange={(e) => setStoreSearch(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.35rem 0.65rem',
-                    fontSize: '0.75rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px 8px 0 0',
-                    background: '#f8fafc',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    borderBottom: 'none',
-                  }}
-                />
-                <select
                   id="analytics-store"
+                  type="text"
+                  placeholder="🔍 Search or select establishment..."
                   aria-label="Select establishment"
-                  value={selectedStoreId || ''}
+                  value={storeSearch}
                   onChange={(e) => {
-                    const val = Number(e.target.value)
-                    setSelectedStoreId(val)
-                    const match = stores.find((s) => s.id === val)
-                    if (match) setStoreSearch(`${match.store_name} (${match.address})`)
+                    setStoreSearch(e.target.value)
+                    const match = stores.find(
+                      (s) => s.store_name.toLowerCase() === e.target.value.toLowerCase() ||
+                             `${s.store_name} (${s.address})`.toLowerCase() === e.target.value.toLowerCase()
+                    )
+                    if (match) setSelectedStoreId(match.id)
                   }}
                   style={{
                     width: '100%',
                     padding: '0.55rem 0.85rem',
                     border: '1px solid #cbd5e1',
-                    borderRadius: '0 0 8px 8px',
+                    borderRadius: '8px',
+                    fontSize: '0.86rem',
                     background: '#ffffff',
                     color: '#0f172a',
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
+                    outline: 'none',
                     fontWeight: 600,
                     boxSizing: 'border-box',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
                   }}
-                >
-                  <option value="" disabled>
-                    {filteredStores.length > 0
-                      ? `-- Select establishment (${filteredStores.length} match) --`
-                      : 'No matching establishments'}
-                  </option>
-                  {filteredStores.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.store_name} ({st.address})
-                    </option>
-                  ))}
-                </select>
+                />
+                {storeSearch.trim().length > 0 && !selectedStoreId && (
+                  <div
+                    role="listbox"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: 0,
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 25px rgba(15, 23, 42, 0.12)',
+                      zIndex: 50,
+                      padding: '0.35rem 0',
+                    }}
+                  >
+                    {filteredStores.length > 0 ? (
+                      filteredStores.map((st) => (
+                        <div
+                          key={st.id}
+                          role="option"
+                          aria-selected={selectedStoreId === st.id}
+                          onClick={() => {
+                            setSelectedStoreId(st.id)
+                            setStoreSearch(`${st.store_name} (${st.address})`)
+                          }}
+                          style={{
+                            padding: '0.55rem 0.85rem',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            color: selectedStoreId === st.id ? '#1d4ed8' : '#0f172a',
+                            background: selectedStoreId === st.id ? '#eff6ff' : 'transparent',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
+                          {st.store_name} ({st.address})
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ padding: '0.65rem 0.85rem', fontSize: '0.82rem', color: '#64748b', textAlign: 'center' }}>
+                        No matching establishments
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -329,60 +353,84 @@ export const TemporalVolatility: React.FC = () => {
                 Select Commodity
               </label>
 
-              {/* Single Combined Search + Dropdown Box */}
+              {/* Option 3: Pure Autocomplete Search Bar */}
               <div style={{ position: 'relative', width: '100%' }}>
                 <input
-                  type="text"
-                  placeholder="Type to filter commodities..."
-                  aria-label="Search commodity filter"
-                  value={commoditySearch}
-                  onChange={(e) => setCommoditySearch(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.35rem 0.65rem',
-                    fontSize: '0.75rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px 8px 0 0',
-                    background: '#f8fafc',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    borderBottom: 'none',
-                  }}
-                />
-                <select
                   id="analytics-commodity"
+                  type="text"
+                  placeholder="🔍 Search or select commodity..."
                   aria-label="Select commodity"
-                  value={selectedCommodity}
-                  onChange={(event) => {
-                    const val = event.target.value
-                    setSelectedCommodity(val)
-                    const match = commodities.find((c) => c.commodity_key === val)
-                    if (match) setCommoditySearch(match.commodity_name)
+                  value={commoditySearch}
+                  onChange={(e) => {
+                    setCommoditySearch(e.target.value)
+                    const match = commodities.find(
+                      (c) => c.commodity_name.toLowerCase() === e.target.value.toLowerCase() ||
+                             c.commodity_key.toLowerCase() === e.target.value.toLowerCase()
+                    )
+                    if (match) setSelectedCommodity(match.commodity_key)
                   }}
                   style={{
                     width: '100%',
                     padding: '0.55rem 0.85rem',
                     border: '1px solid #cbd5e1',
-                    borderRadius: '0 0 8px 8px',
+                    borderRadius: '8px',
+                    fontSize: '0.86rem',
                     background: '#ffffff',
                     color: '#0f172a',
-                    fontSize: '0.88rem',
-                    cursor: 'pointer',
+                    outline: 'none',
                     fontWeight: 600,
                     boxSizing: 'border-box',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
                   }}
-                >
-                  <option value="" disabled>
-                    {filteredCommodities.length > 0
-                      ? `-- Select commodity (${filteredCommodities.length} match) --`
-                      : 'No matching commodities'}
-                  </option>
-                  {filteredCommodities.map((commodity) => (
-                    <option key={commodity.commodity_key} value={commodity.commodity_key}>
-                      {commodity.commodity_name}
-                    </option>
-                  ))}
-                </select>
+                />
+                {commoditySearch.trim().length > 0 && !selectedCommodity && (
+                  <div
+                    role="listbox"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: 0,
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      boxShadow: '0 10px 25px rgba(15, 23, 42, 0.12)',
+                      zIndex: 50,
+                      padding: '0.35rem 0',
+                    }}
+                  >
+                    {filteredCommodities.length > 0 ? (
+                      filteredCommodities.map((c) => (
+                        <div
+                          key={c.commodity_key}
+                          role="option"
+                          aria-selected={selectedCommodity === c.commodity_key}
+                          onClick={() => {
+                            setSelectedCommodity(c.commodity_key)
+                            setCommoditySearch(c.commodity_name)
+                          }}
+                          style={{
+                            padding: '0.55rem 0.85rem',
+                            fontSize: '0.85rem',
+                            fontWeight: 600,
+                            color: selectedCommodity === c.commodity_key ? '#1d4ed8' : '#0f172a',
+                            background: selectedCommodity === c.commodity_key ? '#eff6ff' : 'transparent',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid #f1f5f9',
+                          }}
+                        >
+                          {c.commodity_name}
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ padding: '0.65rem 0.85rem', fontSize: '0.82rem', color: '#64748b', textAlign: 'center' }}>
+                        No matching commodities
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

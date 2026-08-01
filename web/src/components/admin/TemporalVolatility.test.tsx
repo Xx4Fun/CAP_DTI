@@ -41,14 +41,19 @@ describe('TemporalVolatility', () => {
     const user = userEvent.setup()
     render(<TemporalVolatility />)
 
-    const store = await screen.findByRole('combobox', { name: /Select establishment/i })
-    const commodity = screen.getByRole('combobox', { name: /Select commodity/i })
+    const storeInput = await screen.findByLabelText(/Select establishment/i)
+    const commodityInput = screen.getByLabelText(/Select commodity/i)
     expect(adminApi.getAnalytics).not.toHaveBeenCalled()
 
-    await user.selectOptions(store, '8')
+    await user.type(storeInput, 'Verified')
+    const storeOption = await screen.findByRole('option', { name: /Verified Market/i })
+    await user.click(storeOption)
     expect(adminApi.getAnalytics).not.toHaveBeenCalled()
 
-    await user.selectOptions(commodity, 'rice-1kg')
+    await user.type(commodityInput, 'Rice')
+    const commodityOption = await screen.findByRole('option', { name: /Rice 1kg/i })
+    await user.click(commodityOption)
+
     expect(adminApi.getAnalytics).toHaveBeenCalledWith(8, 'rice-1kg')
     expect(await screen.findByText('1 confirmed regulatory finding')).toBeInTheDocument()
     expect(screen.queryByText(/SCO Required|LOI Candidate/i)).not.toBeInTheDocument()
@@ -58,16 +63,14 @@ describe('TemporalVolatility', () => {
     const user = userEvent.setup()
     render(<TemporalVolatility />)
 
-    await screen.findByRole('combobox', { name: /Select establishment/i })
-
-    const storeSearchInput = screen.getByLabelText(/Search establishment filter/i)
-    await user.type(storeSearchInput, 'Antique')
+    const storeInput = await screen.findByLabelText(/Select establishment/i)
+    await user.type(storeInput, 'Antique')
 
     expect(screen.getByRole('option', { name: /Antique Supermart/i })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Verified Market/i })).not.toBeInTheDocument()
 
-    const commoditySearchInput = screen.getByLabelText(/Search commodity filter/i)
-    await user.type(commoditySearchInput, 'Sugar')
+    const commodityInput = screen.getByLabelText(/Select commodity/i)
+    await user.type(commodityInput, 'Sugar')
 
     expect(screen.getByRole('option', { name: /Refined Sugar 1kg/i })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Rice 1kg/i })).not.toBeInTheDocument()
@@ -77,10 +80,14 @@ describe('TemporalVolatility', () => {
     const user = userEvent.setup()
     render(<TemporalVolatility />)
 
-    const store = await screen.findByRole('combobox', { name: /Select establishment/i })
-    const commodity = screen.getByRole('combobox', { name: /Select commodity/i })
-    await user.selectOptions(store, '8')
-    await user.selectOptions(commodity, 'rice-1kg')
+    const storeInput = await screen.findByLabelText(/Select establishment/i)
+    const commodityInput = screen.getByLabelText(/Select commodity/i)
+
+    await user.type(storeInput, 'Verified')
+    await user.click(await screen.findByRole('option', { name: /Verified Market/i }))
+
+    await user.type(commodityInput, 'Rice')
+    await user.click(await screen.findByRole('option', { name: /Rice 1kg/i }))
 
     // Date range pills
     expect(screen.getByRole('button', { name: /Last 7 Days/i })).toBeInTheDocument()
@@ -107,14 +114,17 @@ describe('TemporalVolatility', () => {
     const user = userEvent.setup()
     render(<TemporalVolatility />)
 
-    const store = await screen.findByRole('combobox', { name: /Select establishment/i })
-    const commodity = screen.getByRole('combobox', { name: /Select commodity/i })
-    await user.selectOptions(store, '8')
-    await user.selectOptions(commodity, 'rice-1kg')
+    const storeInput = await screen.findByLabelText(/Select establishment/i)
+    const commodityInput = screen.getByLabelText(/Select commodity/i)
+
+    await user.type(storeInput, 'Verified')
+    await user.click(await screen.findByRole('option', { name: /Verified Market/i }))
+
+    await user.type(commodityInput, 'Rice')
+    await user.click(await screen.findByRole('option', { name: /Rice 1kg/i }))
 
     const callout = await screen.findByTestId('variance-callout-card')
     expect(callout).toBeInTheDocument()
-    // 54 - 48 = 6.00, (6/48)*100 = 12.5%
     expect(screen.getByText(/\+₱6\.00 \(\+12\.5%\) above prevailing SRP ceiling — Flagged for LOI dispatch/i)).toBeInTheDocument()
   })
 })
