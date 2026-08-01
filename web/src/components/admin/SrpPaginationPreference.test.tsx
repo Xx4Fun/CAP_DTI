@@ -34,15 +34,15 @@ describe('SRP rows per page', () => {
     })
   })
 
-  it('defaults to 20 and accepts an administrator-entered value from 1 to 100', async () => {
+  it('defaults to 10 and accepts an administrator-entered value from 1 to 100', async () => {
     const user = userEvent.setup()
     render(<SrpManagementPanel />)
 
     const rows = await screen.findByRole('spinbutton', { name: 'Rows per page' })
-    expect(rows).toHaveValue(20)
+    expect(rows).toHaveValue(10)
     expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({
       page: 1,
-      per_page: 20,
+      per_page: 10,
     }))
 
     await user.click(rows)

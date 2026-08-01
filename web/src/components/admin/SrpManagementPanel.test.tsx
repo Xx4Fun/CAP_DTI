@@ -58,7 +58,7 @@ describe('SRP management workspace', () => {
     expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({
       view: 'current',
       page: 1,
-      per_page: 20,
+      per_page: 10,
     }))
   })
 

@@ -468,7 +468,7 @@ export function SrpManagementPanel() {
   const [view] = useState<SrpView>('current')
   const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(20)
+  const [perPage, setPerPage] = useState(10)
   const [records, setRecords] = useState<ManagedSrpRecord[]>([])
   const [pagination, setPagination] = useState(emptyPagination)
   const [capabilities, setCapabilities] = useState(defaultCapabilities)
@@ -527,7 +527,7 @@ export function SrpManagementPanel() {
     setQuery('')
     setCategory('')
     setPage(1)
-    setPerPage(20)
+    setPerPage(10)
   }
 
   const categories = useMemo(() => {
