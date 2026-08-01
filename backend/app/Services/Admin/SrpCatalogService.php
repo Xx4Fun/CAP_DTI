@@ -99,8 +99,9 @@ class SrpCatalogService
         }
 
         if ($category !== '') {
+            $needle = Str::lower($category);
             $records = $records->filter(
-                fn (SrpBulletin $record) => Str::lower((string) $record->category) === Str::lower($category)
+                fn (SrpBulletin $record) => Str::contains(Str::lower((string) $record->category), $needle)
             );
         }
 
@@ -144,7 +145,8 @@ class SrpCatalogService
     private function applyCategory(Builder $query, string $category): void
     {
         if ($category !== '') {
-            $query->whereRaw('LOWER(category) = ?', [Str::lower($category)]);
+            $term = '%'.Str::lower($category).'%';
+            $query->whereRaw('LOWER(category) LIKE ?', [$term]);
         }
     }
 }
