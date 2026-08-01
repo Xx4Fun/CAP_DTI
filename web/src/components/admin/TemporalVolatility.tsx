@@ -244,7 +244,7 @@ export const TemporalVolatility: React.FC = () => {
               alignItems: 'end',
             }}
           >
-            <div>
+            <div style={{ position: 'relative' }}>
               <label
                 htmlFor="analytics-store"
                 style={{
@@ -258,29 +258,29 @@ export const TemporalVolatility: React.FC = () => {
                 Select Establishment
               </label>
 
-              {/* Combined Search Bar + Select Dropdown for Establishment */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* Single Combined Search + Dropdown Box */}
+              <div style={{ position: 'relative', width: '100%' }}>
                 <input
                   type="text"
-                  placeholder="🔍 Type establishment name or address..."
+                  placeholder="Type to filter establishments..."
                   aria-label="Search establishment filter"
                   value={storeSearch}
                   onChange={(e) => setStoreSearch(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.35rem 0.65rem',
+                    fontSize: '0.75rem',
                     border: '1px solid #cbd5e1',
                     borderRadius: '8px 8px 0 0',
-                    fontSize: '0.82rem',
-                    boxSizing: 'border-box',
                     background: '#f8fafc',
-                    color: '#0f172a',
+                    boxSizing: 'border-box',
                     outline: 'none',
-                    fontWeight: 500,
+                    borderBottom: 'none',
                   }}
                 />
                 <select
                   id="analytics-store"
+                  aria-label="Select establishment"
                   value={selectedStoreId || ''}
                   onChange={(e) => {
                     const val = Number(e.target.value)
@@ -292,18 +292,18 @@ export const TemporalVolatility: React.FC = () => {
                     width: '100%',
                     padding: '0.55rem 0.85rem',
                     border: '1px solid #cbd5e1',
-                    borderTop: 'none',
                     borderRadius: '0 0 8px 8px',
                     background: '#ffffff',
                     color: '#0f172a',
                     fontSize: '0.88rem',
                     cursor: 'pointer',
                     fontWeight: 600,
+                    boxSizing: 'border-box',
                   }}
                 >
                   <option value="" disabled>
                     {filteredStores.length > 0
-                      ? `-- Select from ${filteredStores.length} matching establishment(s) --`
+                      ? `-- Select establishment (${filteredStores.length} match) --`
                       : 'No matching establishments'}
                   </option>
                   {filteredStores.map((st) => (
@@ -315,7 +315,7 @@ export const TemporalVolatility: React.FC = () => {
               </div>
             </div>
 
-            <div>
+            <div style={{ position: 'relative' }}>
               <label
                 htmlFor="analytics-commodity"
                 style={{
@@ -329,29 +329,29 @@ export const TemporalVolatility: React.FC = () => {
                 Select Commodity
               </label>
 
-              {/* Combined Search Bar + Select Dropdown for Commodity */}
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* Single Combined Search + Dropdown Box */}
+              <div style={{ position: 'relative', width: '100%' }}>
                 <input
                   type="text"
-                  placeholder="🔍 Type commodity name or key..."
+                  placeholder="Type to filter commodities..."
                   aria-label="Search commodity filter"
                   value={commoditySearch}
                   onChange={(e) => setCommoditySearch(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '0.5rem 0.75rem',
+                    padding: '0.35rem 0.65rem',
+                    fontSize: '0.75rem',
                     border: '1px solid #cbd5e1',
                     borderRadius: '8px 8px 0 0',
-                    fontSize: '0.82rem',
-                    boxSizing: 'border-box',
                     background: '#f8fafc',
-                    color: '#0f172a',
+                    boxSizing: 'border-box',
                     outline: 'none',
-                    fontWeight: 500,
+                    borderBottom: 'none',
                   }}
                 />
                 <select
                   id="analytics-commodity"
+                  aria-label="Select commodity"
                   value={selectedCommodity}
                   onChange={(event) => {
                     const val = event.target.value
@@ -363,18 +363,18 @@ export const TemporalVolatility: React.FC = () => {
                     width: '100%',
                     padding: '0.55rem 0.85rem',
                     border: '1px solid #cbd5e1',
-                    borderTop: 'none',
                     borderRadius: '0 0 8px 8px',
                     background: '#ffffff',
                     color: '#0f172a',
                     fontSize: '0.88rem',
                     cursor: 'pointer',
                     fontWeight: 600,
+                    boxSizing: 'border-box',
                   }}
                 >
                   <option value="" disabled>
                     {filteredCommodities.length > 0
-                      ? `-- Select from ${filteredCommodities.length} matching commodity(ies) --`
+                      ? `-- Select commodity (${filteredCommodities.length} match) --`
                       : 'No matching commodities'}
                   </option>
                   {filteredCommodities.map((commodity) => (
