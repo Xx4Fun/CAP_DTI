@@ -258,46 +258,61 @@ export const TemporalVolatility: React.FC = () => {
                 Select Establishment
               </label>
 
-              {/* Search input for store filtering */}
-              <input
-                type="text"
-                placeholder="Search establishment..."
-                aria-label="Search establishment filter"
-                value={storeSearch}
-                onChange={(e) => setStoreSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.4rem 0.65rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px 6px 0 0',
-                  fontSize: '0.78rem',
-                  marginBottom: '-1px',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <select
-                id="analytics-store"
-                value={selectedStoreId || ''}
-                onChange={(e) => setSelectedStoreId(Number(e.target.value))}
-                style={{
-                  width: '100%',
-                  padding: '0.55rem 0.85rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '0 0 8px 8px',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontSize: '0.88rem',
-                }}
-              >
-                <option value="" disabled>
-                  Select establishment...
-                </option>
-                {filteredStores.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.store_name} ({st.address})
+              {/* Combined Search Bar + Select Dropdown for Establishment */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Type establishment name or address..."
+                  aria-label="Search establishment filter"
+                  value={storeSearch}
+                  onChange={(e) => setStoreSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px 8px 0 0',
+                    fontSize: '0.82rem',
+                    boxSizing: 'border-box',
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    outline: 'none',
+                    fontWeight: 500,
+                  }}
+                />
+                <select
+                  id="analytics-store"
+                  value={selectedStoreId || ''}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setSelectedStoreId(val)
+                    const match = stores.find((s) => s.id === val)
+                    if (match) setStoreSearch(`${match.store_name} (${match.address})`)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.85rem',
+                    border: '1px solid #cbd5e1',
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="" disabled>
+                    {filteredStores.length > 0
+                      ? `-- Select from ${filteredStores.length} matching establishment(s) --`
+                      : 'No matching establishments'}
                   </option>
-                ))}
-              </select>
+                  {filteredStores.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.store_name} ({st.address})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div>
@@ -314,46 +329,61 @@ export const TemporalVolatility: React.FC = () => {
                 Select Commodity
               </label>
 
-              {/* Search input for commodity filtering */}
-              <input
-                type="text"
-                placeholder="Search commodity..."
-                aria-label="Search commodity filter"
-                value={commoditySearch}
-                onChange={(e) => setCommoditySearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.4rem 0.65rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px 6px 0 0',
-                  fontSize: '0.78rem',
-                  marginBottom: '-1px',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <select
-                id="analytics-commodity"
-                value={selectedCommodity}
-                onChange={(event) => setSelectedCommodity(event.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.55rem 0.85rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '0 0 8px 8px',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontSize: '0.88rem',
-                }}
-              >
-                <option value="" disabled>
-                  Select commodity...
-                </option>
-                {filteredCommodities.map((commodity) => (
-                  <option key={commodity.commodity_key} value={commodity.commodity_key}>
-                    {commodity.commodity_name}
+              {/* Combined Search Bar + Select Dropdown for Commodity */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Type commodity name or key..."
+                  aria-label="Search commodity filter"
+                  value={commoditySearch}
+                  onChange={(e) => setCommoditySearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px 8px 0 0',
+                    fontSize: '0.82rem',
+                    boxSizing: 'border-box',
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    outline: 'none',
+                    fontWeight: 500,
+                  }}
+                />
+                <select
+                  id="analytics-commodity"
+                  value={selectedCommodity}
+                  onChange={(event) => {
+                    const val = event.target.value
+                    setSelectedCommodity(val)
+                    const match = commodities.find((c) => c.commodity_key === val)
+                    if (match) setCommoditySearch(match.commodity_name)
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.55rem 0.85rem',
+                    border: '1px solid #cbd5e1',
+                    borderTop: 'none',
+                    borderRadius: '0 0 8px 8px',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="" disabled>
+                    {filteredCommodities.length > 0
+                      ? `-- Select from ${filteredCommodities.length} matching commodity(ies) --`
+                      : 'No matching commodities'}
                   </option>
-                ))}
-              </select>
+                  {filteredCommodities.map((commodity) => (
+                    <option key={commodity.commodity_key} value={commodity.commodity_key}>
+                      {commodity.commodity_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
