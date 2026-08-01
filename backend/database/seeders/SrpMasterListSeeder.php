@@ -53,13 +53,10 @@ class SrpMasterListSeeder extends Seeder
                 continue;
             }
 
-            // Build clean, unique category-prefixed commodity display name
+            // Build clean, concise commodity display name
             $commodityName = $itemName;
             if (!empty($unit) && !str_contains($itemName, $unit)) {
                 $commodityName = "{$itemName} ({$unit})";
-            }
-            if (!empty($category)) {
-                $commodityName = "{$category} - {$commodityName}";
             }
 
             // Create SrpBulletin record
