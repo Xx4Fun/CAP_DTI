@@ -219,7 +219,7 @@ export const TemporalVolatility: React.FC = () => {
         <div
           style={{
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: '1.25rem',
             flexWrap: 'wrap',
@@ -503,7 +503,7 @@ export const TemporalVolatility: React.FC = () => {
             padding: '0.85rem 1.15rem',
             display: 'flex',
             alignItems: 'center',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             gap: '0.75rem',
           }}
         >
