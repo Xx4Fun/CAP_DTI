@@ -8,13 +8,14 @@ import {
   useState,
 } from 'react'
 import {
-  CalendarClock,
+  ArrowRight,
   ChevronLeft,
   ChevronRight,
   FileJson,
   History,
-  PencilLine,
+  LayoutGrid,
   Plus,
+  RotateCcw,
   Search,
   ShieldCheck,
   X,
@@ -429,10 +430,30 @@ function RevisionModal({
   )
 }
 
+const MASTER_DTI_CATEGORIES = [
+  'Canned Fish & Marine Products',
+  'Processed Milk',
+  'Coffee',
+  'Bread',
+  'Instant Noodles',
+  'Bottled Water',
+  'Processed Pork & Beef',
+  'Condiments & Seasonings',
+  'Candles',
+  'Laundry Soap & Detergent',
+  'Toilet Soap',
+  'Batteries',
+  'Construction Materials & Cement',
+  'Electrical Supplies',
+  'Rice',
+  'Sugar',
+  'Cooking Oil',
+]
+
 export function SrpManagementPanel() {
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
-  const [view, setView] = useState<SrpView>('current')
+  const [view] = useState<SrpView>('current')
   const [category, setCategory] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
@@ -490,62 +511,160 @@ export function SrpManagementPanel() {
     }
   }
 
-  const categories = useMemo(
-    () => Array.from(new Set(records.map((record) => record.category).filter(Boolean) as string[])).sort(),
-    [records],
-  )
-  const range = pagination.total === 0
-    ? '0 records'
-    : `${pagination.from ?? 1}–${pagination.to ?? records.length} of ${pagination.total}`
+  const resetFilters = () => {
+    setQuery('')
+    setCategory('')
+    setPage(1)
+    setPerPage(20)
+  }
+
+  const categories = useMemo(() => {
+    const set = new Set<string>(MASTER_DTI_CATEGORIES)
+    records.forEach((record) => {
+      if (record.category) set.add(record.category)
+    })
+    return Array.from(set).sort()
+  }, [records])
+
+  const maxPage = pagination.last_page || 1
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = []
+    const current = pagination.current_page || 1
+    for (let i = Math.max(1, current - 2); i <= Math.min(maxPage, current + 2); i++) {
+      pages.push(i)
+    }
+    return pages
+  }, [pagination.current_page, maxPage])
 
   return (
     <section className="srp-workspace" aria-busy={loading}>
-      <header className="admin-data-toolbar">
-        <div className="admin-search-field">
-          <Search size={18} aria-hidden="true" />
-          <input
-            type="search"
-            aria-label="Search SRP bulletins"
-            placeholder="Search commodity, category, unit, or source"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-
-        <select aria-label="Filter SRP category" value={category} onChange={(event) => setCategory(event.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((item) => <option value={item} key={item}>{item}</option>)}
-        </select>
-
-        <button
-          type="button"
-          className="admin-button primary"
-          disabled={!capabilities.can_publish}
-          onClick={() => setImportOpen(true)}
-          title={capabilities.can_publish ? undefined : 'Approved versioning and audit schema required'}
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '14px',
+          border: '1px solid #e2e8f0',
+          padding: '1.15rem 1.35rem',
+          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+        }}
+      >
+        <header
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(260px, 2fr) minmax(180px, 1fr) auto auto',
+            gap: '0.85rem',
+            alignItems: 'center',
+          }}
         >
-          <Plus size={18} aria-hidden="true" />
-          Add SRP bulletin
-        </button>
-      </header>
+          <div className="admin-search-field" style={{ position: 'relative', width: '100%' }}>
+            <Search size={17} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search SRP bulletins"
+              placeholder="Search commodity name, category, POS abbreviation, or source..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.65rem 0.85rem 0.65rem 2.6rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                fontSize: '0.86rem',
+                background: '#f8fafc',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
 
-      <div className="admin-view-tabs" role="tablist" aria-label="SRP record view">
-        {([
-          ['current', ShieldCheck, 'Current'],
-          ['scheduled', CalendarClock, 'Scheduled'],
-          ['history', History, 'History'],
-        ] as const).map(([value, Icon, label]) => (
+          <select
+            aria-label="Filter SRP category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            style={{
+              padding: '0.65rem 0.85rem',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              fontSize: '0.86rem',
+              background: '#f8fafc',
+              fontWeight: 600,
+              color: '#0f172a',
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            <option value="">All categories ({categories.length})</option>
+            {categories.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+
           <button
             type="button"
-            role="tab"
-            aria-selected={view === value}
-            className={view === value ? 'active' : ''}
-            key={value}
-            onClick={() => setView(value)}
+            onClick={resetFilters}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.65rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: '#475569',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
           >
-            <Icon size={16} aria-hidden="true" /> {label}
+            <RotateCcw size={15} aria-hidden="true" /> Reset
           </button>
-        ))}
+
+          <button
+            type="button"
+            className="admin-button primary"
+            disabled={!capabilities.can_publish}
+            onClick={() => setImportOpen(true)}
+            title={capabilities.can_publish ? undefined : 'Approved versioning and audit schema required'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.65rem 1.1rem',
+              borderRadius: '8px',
+              background: '#1d4ed8',
+              color: '#ffffff',
+              fontSize: '0.86rem',
+              fontWeight: 600,
+              border: 'none',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Plus size={17} aria-hidden="true" /> Add SRP bulletin
+          </button>
+        </header>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: '0.65rem',
+            borderTop: '1px solid #f1f5f9',
+          }}
+        >
+          <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>
+            {pagination.total} records found
+          </span>
+          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+            Results update automatically as you type or change filters.
+          </span>
+        </div>
       </div>
 
       {!capabilities.can_publish && !loading && (
@@ -560,104 +679,87 @@ export function SrpManagementPanel() {
         </div>
       )}
 
-      <div className="admin-table-card">
-        <div className="admin-table-summary">
-          <span>{loading ? 'Loading SRP records…' : range}</span>
-          <div className="admin-rows-per-page-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label htmlFor="srp-rows-per-page">Rows per page</label>
-            <select
-              id="srp-rows-per-page-select"
-              aria-label="Rows per page preset"
-              value={[10, 20, 50, 100].includes(perPage) ? perPage : 'custom'}
-              onChange={(e) => {
-                const val = e.target.value
-                if (val !== 'custom') setPerPage(Number(val))
-              }}
-              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
-            >
-              <option value={10}>10</option>
-              <option value={20}>20 (Default)</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              {![10, 20, 50, 100].includes(perPage) && <option value="custom">Custom ({perPage})</option>}
-            </select>
-            <input
-              id="srp-rows-per-page"
-              type="number"
-              min={1}
-              max={100}
-              step={1}
-              aria-label="Rows per page"
-              value={perPage}
-              onChange={(event) => {
-                const next = event.currentTarget.valueAsNumber
-                if (Number.isInteger(next) && next >= 1 && next <= 100) {
-                  setPerPage(next)
-                }
-              }}
-              style={{ width: '60px', padding: '4px 6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
-            />
-          </div>
-        </div>
-
+      <div
+        className="admin-table-card"
+        style={{
+          background: '#ffffff',
+          borderRadius: '14px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+          overflow: 'hidden',
+        }}
+      >
         <div className="admin-table-wrap">
-          <table className="admin-data-table">
+          <table className="admin-data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <caption className="sr-only">SRP bulletin records</caption>
             <thead>
-              <tr>
-                <th>Commodity</th>
-                <th>Classification</th>
-                <th>Effective date</th>
-                <th>SRP</th>
-                <th>Source</th>
-                <th>Status</th>
-                <th><span className="sr-only">Actions</span></th>
+              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Commodity</th>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Category</th>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Effective Date</th>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>SRP Baseline</th>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Source Reference</th>
+                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'center', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && Array.from({ length: 4 }, (_, index) => (
                 <tr className="admin-skeleton-row" key={index}>
-                  <td colSpan={7}><span /></td>
+                  <td colSpan={6} style={{ padding: '1rem' }}><span /></td>
                 </tr>
               ))}
               {!loading && records.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
-                    <div className="admin-empty-state">
-                      <FileJson size={28} aria-hidden="true" />
-                      <strong>No SRP records found</strong>
-                      <span>Adjust the search or choose another record view.</span>
+                  <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center' }}>
+                    <div className="admin-empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <FileJson size={32} style={{ color: '#94a3b8' }} aria-hidden="true" />
+                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>No SRP records found</strong>
+                      <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Adjust search query or category filter.</span>
                     </div>
                   </td>
                 </tr>
               )}
               {!loading && records.map((record) => (
-                <tr key={record.id}>
-                  <td data-label="Commodity">
-                    <strong>{record.commodity_name}</strong>
-                    <small>{record.unit || 'Unit not specified'}</small>
+                <tr key={record.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
+                  <td data-label="Commodity" style={{ padding: '0.85rem 1.1rem' }}>
+                    <strong style={{ display: 'block', fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>{record.commodity_name}</strong>
+                    <small style={{ fontSize: '0.78rem', color: '#64748b' }}>{record.unit || 'Unit not specified'}</small>
                   </td>
-                  <td data-label="Classification">
-                    <span>{record.category || 'Uncategorized'}</span>
-                    <small>{record.regulatory_classification?.replaceAll('_', ' ') || 'No classification'}</small>
+                  <td data-label="Category" style={{ padding: '0.85rem 1.1rem' }}>
+                    <span style={{ display: 'block', fontSize: '0.85rem', color: '#334155', fontWeight: 600 }}>{record.category || 'Uncategorized'}</span>
+                    <small style={{ fontSize: '0.76rem', color: '#64748b' }}>{record.regulatory_classification?.replaceAll('_', ' ') || 'No classification'}</small>
                   </td>
-                  <td data-label="Effective date">{record.effective_date.slice(0, 10)}</td>
-                  <td data-label="SRP" className="admin-price">₱{Number(record.baseline_price).toFixed(2)}</td>
-                  <td data-label="Source">{record.source_reference || 'Legacy record'}</td>
-                  <td data-label="Status">
-                    <span className={`admin-status-badge ${view}`}>
-                      {view === 'current' ? 'Current' : view === 'scheduled' ? 'Scheduled' : 'Historical'}
-                    </span>
+                  <td data-label="Effective date" style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#475569', fontWeight: 500 }}>
+                    {record.effective_date.slice(0, 10)}
                   </td>
-                  <td data-label="Action">
+                  <td data-label="SRP" className="admin-price" style={{ padding: '0.85rem 1.1rem', color: '#1d4ed8', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.92rem' }}>
+                    ₱{Number(record.baseline_price).toFixed(2)}
+                  </td>
+                  <td data-label="Source" style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#64748b' }}>
+                    {record.source_reference || 'Official DTI Record'}
+                  </td>
+                  <td data-label="Action" style={{ padding: '0.85rem 1.1rem', textAlign: 'center' }}>
                     <button
                       type="button"
-                      className="admin-row-action"
                       disabled={!capabilities.can_publish}
                       aria-label={`Revise ${record.commodity_name}`}
                       onClick={() => setRevisionRecord(record)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: '8px',
+                        border: '1px solid #bfdbfe',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
                     >
-                      <PencilLine size={16} aria-hidden="true" /> Revise
+                      <span>Revise</span>
+                      <ArrowRight size={14} aria-hidden="true" />
                     </button>
                   </td>
                 </tr>
@@ -666,57 +768,160 @@ export function SrpManagementPanel() {
           </table>
         </div>
 
-        <nav className="admin-pagination" aria-label="SRP pagination">
-          <button
-            type="button"
-            aria-label="Previous page"
-            disabled={pagination.current_page <= 1 || loading}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-          >
-            <ChevronLeft size={17} aria-hidden="true" /> Previous
-          </button>
-
-          <div className="admin-page-jump-container" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <span>Page</span>
-            <input
-              type="number"
-              className="admin-page-input"
-              aria-label="Jump to page"
-              min={1}
-              max={pagination.last_page || 1}
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onBlur={commitPageJump}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  commitPageJump()
-                }
-              }}
+        <nav
+          aria-label="SRP pagination"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.9rem 1.25rem',
+            background: '#ffffff',
+            borderTop: '1px solid #e2e8f0',
+            flexWrap: 'wrap',
+            gap: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div
               style={{
-                width: '54px',
-                padding: '4px 6px',
-                borderRadius: '6px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
                 border: '1px solid #cbd5e1',
-                textAlign: 'center',
-                fontWeight: 600,
-                fontSize: '0.9rem',
+                background: '#f8fafc',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#64748b',
               }}
-            />
-            <span>of {pagination.last_page || 1}</span>
+            >
+              <LayoutGrid size={16} aria-hidden="true" />
+            </div>
+            <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 500 }}>
+              Showing <strong style={{ color: '#0f172a' }}>{pagination.from ?? (records.length ? 1 : 0)}–{pagination.to ?? records.length}</strong> of <strong style={{ color: '#0f172a' }}>{pagination.total}</strong> entries
+            </span>
           </div>
 
-          <button
-            type="button"
-            aria-label="Next page"
-            disabled={pagination.current_page >= pagination.last_page || loading}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            Next <ChevronRight size={17} aria-hidden="true" />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label htmlFor="srp-rows-per-page-select" style={{ fontSize: '0.84rem', color: '#64748b', fontWeight: 600 }}>
+                Rows per page
+              </label>
+              <input
+                id="srp-rows-per-page"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                aria-label="Rows per page"
+                value={perPage}
+                onChange={(event) => {
+                  const next = event.currentTarget.valueAsNumber
+                  if (Number.isInteger(next) && next >= 1 && next <= 100) {
+                    setPerPage(next)
+                  }
+                }}
+                style={{
+                  width: '54px',
+                  padding: '0.35rem 0.55rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  textAlign: 'center',
+                  fontWeight: 600,
+                  fontSize: '0.86rem',
+                  background: '#ffffff',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <button
+                type="button"
+                aria-label="Previous page"
+                disabled={pagination.current_page <= 1 || loading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: pagination.current_page <= 1 ? '#cbd5e1' : '#334155',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: pagination.current_page <= 1 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <ChevronLeft size={16} aria-hidden="true" /> Previous
+              </button>
+
+              <input
+                type="number"
+                aria-label="Jump to page"
+                className="sr-only"
+                min={1}
+                max={maxPage}
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={commitPageJump}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitPageJump()
+                  }
+                }}
+              />
+
+              {pageNumbers.map((pNum) => (
+                <button
+                  key={pNum}
+                  type="button"
+                  onClick={() => setPage(pNum)}
+                  style={{
+                    minWidth: '34px',
+                    height: '34px',
+                    padding: '0 0.5rem',
+                    borderRadius: '8px',
+                    border: pNum === pagination.current_page ? 'none' : '1px solid #cbd5e1',
+                    background: pNum === pagination.current_page ? '#2563eb' : '#ffffff',
+                    color: pNum === pagination.current_page ? '#ffffff' : '#334155',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {pNum}
+                </button>
+              ))}
+
+              <button
+                type="button"
+                aria-label="Next page"
+                disabled={pagination.current_page >= maxPage || loading}
+                onClick={() => setPage((current) => current + 1)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: pagination.current_page >= maxPage ? '#cbd5e1' : '#334155',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: pagination.current_page >= maxPage ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Next <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
         </nav>
       </div>
-
 
       {importOpen && (
         <ImportSrpModal onClose={() => setImportOpen(false)} onImported={loadRecords} />
