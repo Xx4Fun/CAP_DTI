@@ -174,4 +174,109 @@ final class AdminSrpManagementTest extends TestCase
             ->assertJsonPath('data.0.baseline_price', 50.25)
             ->assertJsonPath('data.0.effective_date', '2026-08-01');
     }
+
+    public function test_admin_can_manually_create_srp_item(): void
+    {
+        $payload = [
+            'commodity_name' => 'Instant Mami Beef',
+            'unit' => '55g',
+            'category' => 'Instant Noodles',
+            'regulatory_classification' => 'BASIC_NECESSITY',
+            'baseline_price' => 9.50,
+            'effective_date' => '2026-08-01',
+            'source_reference' => 'DTI-SRP-MANUAL-01',
+        ];
+
+        $response = $this->postJson('/api/admin/srp', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.commodity_name', 'Instant Mami Beef')
+            ->assertJsonPath('data.baseline_price', 9.50)
+            ->assertJsonPath('data.commodity_key', 'instant-mami-beef-55g');
+
+        $this->assertDatabaseHas('srp_bulletins', [
+            'id' => $response->json('data.id'),
+            'commodity_name' => 'Instant Mami Beef',
+        ]);
+    }
+
+    public function test_admin_can_update_srp_metadata_without_creating_new_version(): void
+    {
+        $item = SrpBulletin::create([
+            'commodity_name' => 'Sardines Old Typo',
+            'category' => 'Canned Goods',
+            'unit' => '155g',
+            'commodity_key' => 'sardines-old-typo-155g',
+            'baseline_price' => 20.00,
+            'effective_date' => '2026-05-11',
+            'source_reference' => 'DTI-SRP-2026-05',
+            'is_active' => true,
+        ]);
+
+        $this->putJson("/api/admin/srp/{$item->id}", [
+            'commodity_name' => 'Mega Sardines Tomato',
+            'unit' => '155g',
+            'category' => 'Canned Goods',
+            'regulatory_classification' => 'BASIC_NECESSITY',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.commodity_name', 'Mega Sardines Tomato');
+
+        $this->assertSame(1, SrpBulletin::count());
+        $item->refresh();
+        $this->assertSame('Mega Sardines Tomato', $item->commodity_name);
+        $this->assertSame(20.00, (float) $item->baseline_price);
+    }
+
+    public function test_admin_can_batch_update_srp_prices(): void
+    {
+        $item1 = SrpBulletin::create([
+            'commodity_name' => 'Item 1',
+            'unit' => '100g',
+            'commodity_key' => 'item-1-100g',
+            'baseline_price' => 10.00,
+            'effective_date' => '2026-01-01',
+            'source_reference' => 'REF-1',
+            'is_active' => true,
+        ]);
+
+        $item2 = SrpBulletin::create([
+            'commodity_name' => 'Item 2',
+            'unit' => '200g',
+            'commodity_key' => 'item-2-200g',
+            'baseline_price' => 20.00,
+            'effective_date' => '2026-01-01',
+            'source_reference' => 'REF-1',
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'effective_date' => '2026-08-01',
+            'source_reference' => 'BATCH-REF-01',
+            'change_reason' => 'Quarterly Price Adjustment',
+            'updates' => [
+                ['id' => $item1->id, 'baseline_price' => 12.50],
+                ['id' => $item2->id, 'baseline_price' => 22.00],
+            ],
+        ];
+
+        $this->postJson('/api/admin/srp/batch-revisions', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.updated_count', 2);
+
+        $this->assertSame(4, SrpBulletin::count());
+    }
+
+    public function test_admin_can_upload_commodity_image(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        $file = \Illuminate\Http\UploadedFile::fake()->image('coffee.png');
+
+        $response = $this->postJson('/api/admin/srp/upload-image', [
+            'image' => $file,
+        ])
+            ->assertCreated()
+            ->assertJsonStructure(['data' => ['image_path', 'url']]);
+
+        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($response->json('data.image_path'));
+    }
 }

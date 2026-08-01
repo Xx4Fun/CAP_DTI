@@ -14,6 +14,7 @@ class PublicCommodityController extends Controller
         $commodities = $catalog->currentRecords($search)->map(fn (SrpBulletin $record) => [
             'id' => (int) $record->id,
             'commodity_name' => (string) $record->commodity_name,
+            'image_path' => $record->image_path ? (str_starts_with($record->image_path, 'http') ? $record->image_path : asset('storage/' . $record->image_path)) : null,
             'category' => $record->category,
             'unit' => $record->unit,
             'regulatory_classification' => $record->regulatory_classification,

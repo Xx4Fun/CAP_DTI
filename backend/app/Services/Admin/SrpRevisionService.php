@@ -67,6 +67,7 @@ class SrpRevisionService
     {
         return [
             'commodity_name' => $data['commodity_name'],
+            'image_path' => $data['image_path'] ?? $original->image_path,
             'category' => $data['category'] ?? $original->category,
             'unit' => $data['unit'] ?? $original->unit,
             'regulatory_classification' => $data['regulatory_classification'] ?? $original->regulatory_classification,

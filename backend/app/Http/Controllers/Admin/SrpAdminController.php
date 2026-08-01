@@ -72,6 +72,24 @@ class SrpAdminController extends Controller
         ]);
     }
 
+    public function uploadImage(Request $request, AdminAuthorizationService $auth)
+    {
+        $auth->requireManager($request->user());
+
+        $request->validate([
+            'image' => 'required|image|mimes:webp,jpeg,png,jpg|max:2048',
+        ]);
+
+        $path = $request->file('image')->store('commodity_images', 'public');
+
+        return response()->json([
+            'data' => [
+                'image_path' => $path,
+                'url' => asset('storage/' . $path),
+            ],
+        ], 201);
+    }
+
     private function requireVersioning(SrpCatalogService $catalog): void
     {
         if ($catalog->capabilities()['can_publish']) {

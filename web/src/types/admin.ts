@@ -61,6 +61,7 @@ export interface RegulatoryEmergencyRecord {
 export interface SrpRecord {
   id: number
   commodity_name: string
+  image_path?: string | null
   unit: string | null
   baseline_price: number
   effective_date: string

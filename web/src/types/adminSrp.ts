@@ -39,6 +39,7 @@ export interface SrpPage {
 
 export interface SrpRevisionPayload {
   commodity_name: string
+  image_path?: string | null
   category?: string | null
   unit?: string | null
   regulatory_classification?: string | null
@@ -54,4 +55,33 @@ export interface SrpRevisionPreview {
   changed_fields: string[]
   becomes_public_on: string
   historical_resolution_preserved: boolean
+}
+
+export interface CreateSrpPayload {
+  commodity_name: string
+  unit?: string | null
+  category?: string | null
+  regulatory_classification?: string | null
+  baseline_price: number
+  effective_date: string
+  source_reference: string
+  image_path?: string | null
+}
+
+export interface UpdateSrpMetadataPayload {
+  commodity_name: string
+  unit?: string | null
+  category?: string | null
+  regulatory_classification?: string | null
+  image_path?: string | null
+}
+
+export interface BatchSrpUpdatePayload {
+  effective_date: string
+  source_reference: string
+  change_reason: string
+  updates: Array<{
+    id: number
+    baseline_price: number
+  }>
 }

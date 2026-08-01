@@ -29,6 +29,7 @@ class SrpImportService
             $key = Str::slug(trim($item['item_name'].' '.($item['unit'] ?? '')));
             return [
                 'commodity_key' => $key, 'commodity_name' => $item['item_name'],
+                'image_path' => $item['image_path'] ?? null,
                 'category' => $item['category'] ?? null, 'unit' => $item['unit'] ?? null,
                 'regulatory_classification' => $item['regulatory_classification'] ?? null,
                 'baseline_price' => (float) $item['srp'], 'effective_date' => $date,

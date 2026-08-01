@@ -7,10 +7,10 @@ import { SrpManagementPanel } from './AdminPanels'
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getSrp: vi.fn(),
-    previewSrp: vi.fn(),
-    importSrp: vi.fn(),
-    previewSrpRevision: vi.fn(),
-    createSrpRevision: vi.fn(),
+    createSrpItem: vi.fn(),
+    updateSrpMetadata: vi.fn(),
+    batchUpdateSrpPrices: vi.fn(),
+    uploadCommodityImage: vi.fn(),
   },
 }))
 
@@ -47,14 +47,13 @@ describe('SRP management workspace', () => {
     vi.mocked(adminApi.getSrp).mockResolvedValue(page)
   })
 
-  it('shows the searchable paginated bulletin table before the import workflow', async () => {
+  it('shows the searchable paginated bulletin table before opening modals', async () => {
     render(<SrpManagementPanel />)
 
     expect(await screen.findByRole('table', { name: 'SRP bulletin records' })).toBeInTheDocument()
     expect(screen.getByText('Premium Rice')).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Search SRP bulletins' })).toBeInTheDocument()
     expect(screen.getByText(/entries/i)).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'SRP JSON' })).not.toBeInTheDocument()
     expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({
       view: 'current',
       page: 1,
@@ -62,52 +61,55 @@ describe('SRP management workspace', () => {
     }))
   })
 
-  it('opens the existing JSON preview workflow in an accessible modal', async () => {
+  it('opens the manual item creation modal when clicking Add SRP Item', async () => {
     const user = userEvent.setup()
     render(<SrpManagementPanel />)
 
     await screen.findByText('Premium Rice')
-    await user.click(screen.getByRole('button', { name: 'Add SRP bulletin' }))
+    await user.click(screen.getByRole('button', { name: 'Add SRP Item' }))
 
-    expect(screen.getByRole('dialog', { name: 'Add SRP bulletin' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Upload SRP JSON')).toBeInTheDocument()
-    expect(screen.getByLabelText('Authoritative source reference')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'SRP JSON' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Add SRP bulletin item' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Commodity Name')).toBeInTheDocument()
+    expect(screen.getByLabelText('SRP Baseline (₱)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Authoritative Source Reference')).toBeInTheDocument()
   })
 
-  it('requests the next server page and previews an append-only revision', async () => {
-    vi.mocked(adminApi.previewSrpRevision).mockResolvedValue({
-      original: page.records[0],
-      proposed: { ...page.records[0], baseline_price: 50, effective_date: '2026-08-01' },
-      changed_fields: ['baseline_price', 'effective_date', 'source_reference'],
-      becomes_public_on: '2026-08-01',
-      historical_resolution_preserved: true,
+  it('opens the edit metadata modal and updates item details', async () => {
+    vi.mocked(adminApi.updateSrpMetadata).mockResolvedValue({
+      ...page.records[0],
+      commodity_name: 'Super Premium Rice',
     })
     const user = userEvent.setup()
     render(<SrpManagementPanel />)
 
     await screen.findByText('Premium Rice')
-    await user.click(screen.getByRole('button', { name: 'Next page' }))
-    await waitFor(() => expect(adminApi.getSrp).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2 }),
-    ))
+    await user.click(screen.getByRole('button', { name: 'Edit Premium Rice' }))
 
-    await user.click(screen.getByRole('button', { name: /Revise Premium Rice/i }))
-    const dialog = screen.getByRole('dialog', { name: 'Create SRP revision' })
+    const dialog = screen.getByRole('dialog', { name: 'Edit commodity details' })
     expect(dialog).toBeInTheDocument()
 
-    await user.clear(screen.getByRole('spinbutton', { name: 'Revised SRP' }))
-    await user.type(screen.getByRole('spinbutton', { name: 'Revised SRP' }), '50')
-    await user.type(screen.getByLabelText('Effective date'), '2026-08-01')
-    await user.clear(screen.getByLabelText('Authoritative source reference'))
-    await user.type(screen.getByLabelText('Authoritative source reference'), 'DTI-SRP-2026-08')
-    await user.type(screen.getByLabelText('Change reason'), 'Approved August bulletin.')
-    await user.click(screen.getByRole('button', { name: 'Preview revision' }))
+    await user.clear(screen.getByLabelText('Commodity Name'))
+    await user.type(screen.getByLabelText('Commodity Name'), 'Super Premium Rice')
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
-    expect(await screen.findByText(/Customer PWA update scheduled for 2026-08-01/i)).toBeInTheDocument()
-    expect(adminApi.previewSrpRevision).toHaveBeenCalledWith(7, expect.objectContaining({
-      baseline_price: 50,
-      effective_date: '2026-08-01',
+    expect(adminApi.updateSrpMetadata).toHaveBeenCalledWith(7, expect.objectContaining({
+      commodity_name: 'Super Premium Rice',
     }))
+  })
+
+  it('opens the 2-step batch update modal for price revisions', async () => {
+    const user = userEvent.setup()
+    render(<SrpManagementPanel />)
+
+    await screen.findByText('Premium Rice')
+    await user.click(screen.getByRole('button', { name: 'Update SRP Prices' }))
+
+    expect(screen.getByRole('dialog', { name: 'Update SRP prices — Step 1: Bulletin Details' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Unified Effective Date'), '2026-08-01')
+    await user.type(screen.getByLabelText('Authoritative Source Reference'), 'DTI-SRP-2026-08')
+    await user.type(screen.getByLabelText('Change Reason / Bulletin Note'), 'Quarterly bulletin update')
+    await user.click(screen.getByRole('button', { name: 'Next: Edit Prices →' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Update SRP prices — Step 2: Revise Prices' })).toBeInTheDocument()
   })
 })

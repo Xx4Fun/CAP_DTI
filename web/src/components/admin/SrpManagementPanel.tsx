@@ -8,16 +8,15 @@ import {
   useState,
 } from 'react'
 import {
-  ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Edit3,
   FileJson,
-  History,
   LayoutGrid,
   Plus,
   RotateCcw,
   Search,
-  ShieldCheck,
+  TrendingUp,
   X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
@@ -28,8 +27,6 @@ import type {
   SrpListFilters,
   SrpPage,
   SrpPagination,
-  SrpRevisionPayload,
-  SrpRevisionPreview,
   SrpView,
 } from '../../types/adminSrp'
 import './admin.css'
@@ -106,9 +103,11 @@ function AdminModal({
     }
 
     if (event.key !== 'Tab') return
-    const focusable = Array.from(panel.current?.querySelectorAll<HTMLElement>(
-      'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])',
-    ) ?? [])
+    const focusable = Array.from(
+      panel.current?.querySelectorAll<HTMLElement>(
+        'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])',
+      ) ?? [],
+    )
     if (focusable.length === 0) return
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
@@ -122,9 +121,12 @@ function AdminModal({
   }
 
   return (
-    <div className="admin-modal-backdrop" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose()
-    }}>
+    <div
+      className="admin-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
       <div
         ref={panel}
         className="admin-modal"
@@ -148,176 +150,46 @@ function AdminModal({
   )
 }
 
-function ImportSrpModal({
-  onClose,
-  onImported,
-}: {
-  onClose: () => void
-  onImported: () => Promise<void>
-}) {
-  const [source, setSource] = useState('')
-  const [payload, setPayload] = useState('')
-  const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const parsed = () => {
-    const value = JSON.parse(payload)
-    value.metadata = { ...value.metadata, source_reference: source }
-    return value
-  }
-
-  const previewImport = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      setPreview(await adminApi.previewSrp(parsed()))
-    } catch (requestError) {
-      setPreview(null)
-      setError(requestMessage(requestError))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const importBulletin = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      await adminApi.importSrp(parsed())
-      await onImported()
-      onClose()
-    } catch (requestError) {
-      setError(requestMessage(requestError))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <AdminModal title="Add SRP bulletin" onClose={onClose}>
-      <form className="admin-form admin-modal-form" onSubmit={previewImport}>
-        <div className="admin-field">
-          <label htmlFor="srp-json-upload">Upload SRP JSON</label>
-          <input
-            id="srp-json-upload"
-            type="file"
-            accept="application/json,.json"
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              if (file) {
-                setPayload(await file.text())
-                setPreview(null)
-              }
-            }}
-          />
-          <small>Select the approved bulletin export. The file is previewed before publication.</small>
-        </div>
-
-        <div className="admin-field">
-          <label htmlFor="srp-source-ref">Authoritative source reference</label>
-          <input
-            id="srp-source-ref"
-            value={source}
-            onChange={(event) => {
-              setSource(event.target.value)
-              setPreview(null)
-            }}
-            required
-          />
-        </div>
-
-        <div className="admin-field">
-          <label htmlFor="srp-payload-json">SRP JSON</label>
-          <textarea
-            id="srp-payload-json"
-            rows={10}
-            value={payload}
-            onChange={(event) => {
-              setPayload(event.target.value)
-              setPreview(null)
-            }}
-            required
-            spellCheck={false}
-          />
-        </div>
-
-        {error && <p className="admin-feedback error" role="alert">{error}</p>}
-        {preview && (
-          <section className="srp-preview" aria-live="polite">
-            <div><strong>{String(preview.insert_count ?? 0)}</strong><span>New versions</span></div>
-            <div><strong>{String(preview.duplicate_count ?? 0)}</strong><span>Duplicates skipped</span></div>
-            <div><strong>{String(preview.effective_date ?? '—')}</strong><span>Effective date</span></div>
-          </section>
-        )}
-
-        <footer className="admin-modal-actions">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="admin-button secondary" disabled={busy || !payload || !source}>
-            {busy ? 'Checking…' : 'Preview import'}
-          </button>
-          <button
-            type="button"
-            className="admin-button primary"
-            disabled={busy || !preview}
-            onClick={() => void importBulletin()}
-          >
-            Import new versions
-          </button>
-        </footer>
-      </form>
-    </AdminModal>
-  )
-}
-
-function RevisionModal({
-  record,
+function CreateSrpModal({
   onClose,
   onCreated,
+  categories,
 }: {
-  record: ManagedSrpRecord
   onClose: () => void
   onCreated: () => Promise<void>
+  categories: string[]
 }) {
-  const [price, setPrice] = useState(String(record.baseline_price))
+  const [commodityName, setCommodityName] = useState('')
+  const [unit, setUnit] = useState('')
+  const [category, setCategory] = useState('')
+  const [regulatoryClassification, setRegulatoryClassification] = useState('BASIC_NECESSITY')
+  const [baselinePrice, setBaselinePrice] = useState('')
   const [effectiveDate, setEffectiveDate] = useState('')
-  const [source, setSource] = useState(record.source_reference ?? '')
-  const [reason, setReason] = useState('')
-  const [preview, setPreview] = useState<SrpRevisionPreview | null>(null)
+  const [sourceReference, setSourceReference] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const revisionPayload = (): SrpRevisionPayload => ({
-    commodity_name: record.commodity_name,
-    category: record.category,
-    unit: record.unit,
-    regulatory_classification: record.regulatory_classification,
-    baseline_price: Number(price),
-    effective_date: effectiveDate,
-    source_reference: source,
-    change_reason: reason,
-  })
-
-  const previewRevision = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      setPreview(await adminApi.previewSrpRevision(record.id, revisionPayload()))
-    } catch (requestError) {
-      setPreview(null)
-      setError(requestMessage(requestError))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const createRevision = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      await adminApi.createSrpRevision(record.id, revisionPayload())
+      let imagePath: string | undefined = undefined
+      if (imageFile) {
+        const uploadRes = await adminApi.uploadCommodityImage(imageFile)
+        imagePath = uploadRes.image_path
+      }
+      await adminApi.createSrpItem({
+        commodity_name: commodityName,
+        unit: unit || undefined,
+        category: category || undefined,
+        regulatory_classification: regulatoryClassification,
+        baseline_price: Number(baselinePrice),
+        effective_date: effectiveDate,
+        source_reference: sourceReference,
+        image_path: imagePath,
+      })
       await onCreated()
       onClose()
     } catch (requestError) {
@@ -328,104 +200,535 @@ function RevisionModal({
   }
 
   return (
-    <AdminModal title="Create SRP revision" onClose={onClose}>
-      <div className="srp-version-context">
-        <History size={18} aria-hidden="true" />
-        <div>
-          <strong>{record.commodity_name}</strong>
-          <span>Current version remains unchanged for historical receipt and inspection dates.</span>
-        </div>
-      </div>
-
-      <form className="admin-form admin-modal-form" onSubmit={previewRevision}>
+    <AdminModal title="Add SRP bulletin item" onClose={onClose}>
+      <form className="admin-form admin-modal-form" onSubmit={handleSubmit}>
         <div className="admin-form-grid">
           <div className="admin-field">
-            <label htmlFor="revision-price">Revised SRP</label>
+            <label htmlFor="create-commodity-name">Commodity Name</label>
             <input
-              id="revision-price"
-              type="number"
-              min="0"
-              step="0.01"
-              value={price}
-              onChange={(event) => {
-                setPrice(event.target.value)
-                setPreview(null)
-              }}
+              id="create-commodity-name"
+              type="text"
+              value={commodityName}
+              onChange={(e) => setCommodityName(e.target.value)}
+              placeholder="e.g. Nescafé Classic"
               required
             />
           </div>
           <div className="admin-field">
-            <label htmlFor="revision-effective-date">Effective date</label>
+            <label htmlFor="create-unit">Unit / Weight</label>
             <input
-              id="revision-effective-date"
+              id="create-unit"
+              type="text"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              placeholder="e.g. 50g, 155g, 330ml"
+            />
+          </div>
+        </div>
+
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label htmlFor="create-category">Category</label>
+            <select
+              id="create-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">Select category...</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="admin-field">
+            <label htmlFor="create-classification">Regulatory Classification</label>
+            <select
+              id="create-classification"
+              value={regulatoryClassification}
+              onChange={(e) => setRegulatoryClassification(e.target.value)}
+            >
+              <option value="BASIC_NECESSITY">Basic Necessity</option>
+              <option value="PRIME_COMMODITY">Prime Commodity</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label htmlFor="create-price">SRP Baseline (₱)</label>
+            <input
+              id="create-price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={baselinePrice}
+              onChange={(e) => setBaselinePrice(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+          </div>
+          <div className="admin-field">
+            <label htmlFor="create-effective-date">Effective Date</label>
+            <input
+              id="create-effective-date"
               type="date"
               value={effectiveDate}
-              min={record.effective_date.slice(0, 10)}
-              onChange={(event) => {
-                setEffectiveDate(event.target.value)
-                setPreview(null)
-              }}
+              onChange={(e) => setEffectiveDate(e.target.value)}
               required
             />
           </div>
         </div>
 
         <div className="admin-field">
-          <label htmlFor="revision-source">Authoritative source reference</label>
+          <label htmlFor="create-source">Authoritative Source Reference</label>
           <input
-            id="revision-source"
-            value={source}
-            onChange={(event) => {
-              setSource(event.target.value)
-              setPreview(null)
-            }}
+            id="create-source"
+            type="text"
+            value={sourceReference}
+            onChange={(e) => setSourceReference(e.target.value)}
+            placeholder="e.g. DTI Memorandum Circular No. 2026-01"
             required
           />
         </div>
 
         <div className="admin-field">
-          <label htmlFor="revision-reason">Change reason</label>
-          <textarea
-            id="revision-reason"
-            rows={3}
-            value={reason}
-            onChange={(event) => {
-              setReason(event.target.value)
-              setPreview(null)
+          <label htmlFor="create-image">Product Image (Optional WebP / PNG / JPG)</label>
+          <input
+            id="create-image"
+            type="file"
+            accept="image/webp,image/jpeg,image/png,image/jpg"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) setImageFile(file)
             }}
-            required
           />
         </div>
 
         {error && <p className="admin-feedback error" role="alert">{error}</p>}
-        {preview && (
-          <section className="srp-impact-preview" aria-live="polite">
-            <ShieldCheck size={20} aria-hidden="true" />
-            <div>
-              <strong>Customer PWA update scheduled for {preview.becomes_public_on}</strong>
-              <span>
-                ₱{Number(preview.original.baseline_price).toFixed(2)} → ₱{Number(preview.proposed.baseline_price).toFixed(2)}.
-                Historical versions remain available for date-correct resolution.
-              </span>
-            </div>
-          </section>
-        )}
 
         <footer className="admin-modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="admin-button secondary" disabled={busy}>
-            {busy ? 'Checking…' : 'Preview revision'}
-          </button>
-          <button
-            type="button"
-            className="admin-button primary"
-            disabled={busy || !preview}
-            onClick={() => void createRevision()}
-          >
-            Schedule revised version
+          <button type="submit" className="admin-button primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Add Item'}
           </button>
         </footer>
       </form>
+    </AdminModal>
+  )
+}
+
+function EditMetadataModal({
+  record,
+  onClose,
+  onUpdated,
+  categories,
+}: {
+  record: ManagedSrpRecord
+  onClose: () => void
+  onUpdated: () => Promise<void>
+  categories: string[]
+}) {
+  const [commodityName, setCommodityName] = useState(record.commodity_name)
+  const [unit, setUnit] = useState(record.unit ?? '')
+  const [category, setCategory] = useState(record.category ?? '')
+  const [regulatoryClassification, setRegulatoryClassification] = useState(
+    record.regulatory_classification ?? 'BASIC_NECESSITY',
+  )
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      let imagePath = record.image_path ?? undefined
+      if (imageFile) {
+        const uploadRes = await adminApi.uploadCommodityImage(imageFile)
+        imagePath = uploadRes.image_path
+      }
+      await adminApi.updateSrpMetadata(record.id, {
+        commodity_name: commodityName,
+        unit: unit || undefined,
+        category: category || undefined,
+        regulatory_classification: regulatoryClassification,
+        image_path: imagePath,
+      })
+      await onUpdated()
+      onClose()
+    } catch (requestError) {
+      setError(requestMessage(requestError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AdminModal title="Edit commodity details" onClose={onClose}>
+      <form className="admin-form admin-modal-form" onSubmit={handleSubmit}>
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label htmlFor="edit-commodity-name">Commodity Name</label>
+            <input
+              id="edit-commodity-name"
+              type="text"
+              value={commodityName}
+              onChange={(e) => setCommodityName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="admin-field">
+            <label htmlFor="edit-unit">Unit / Weight</label>
+            <input
+              id="edit-unit"
+              type="text"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label htmlFor="edit-category">Category</label>
+            <select
+              id="edit-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">Select category...</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="admin-field">
+            <label htmlFor="edit-classification">Regulatory Classification</label>
+            <select
+              id="edit-classification"
+              value={regulatoryClassification}
+              onChange={(e) => setRegulatoryClassification(e.target.value)}
+            >
+              <option value="BASIC_NECESSITY">Basic Necessity</option>
+              <option value="PRIME_COMMODITY">Prime Commodity</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="admin-field">
+          <label htmlFor="edit-image">Product Image (Optional WebP / PNG / JPG)</label>
+          <input
+            id="edit-image"
+            type="file"
+            accept="image/webp,image/jpeg,image/png,image/jpg"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) setImageFile(file)
+            }}
+          />
+          {record.image_path && <small style={{ color: '#059669' }}>Current image: {record.image_path}</small>}
+        </div>
+
+        {error && <p className="admin-feedback error" role="alert">{error}</p>}
+
+        <footer className="admin-modal-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="submit" className="admin-button primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Save Changes'}
+          </button>
+        </footer>
+      </form>
+    </AdminModal>
+  )
+}
+
+function BatchUpdateSrpModal({
+  onClose,
+  onUpdated,
+}: {
+  onClose: () => void
+  onUpdated: () => Promise<void>
+}) {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [effectiveDate, setEffectiveDate] = useState('')
+  const [sourceReference, setSourceReference] = useState('')
+  const [changeReason, setChangeReason] = useState('')
+
+  const [items, setItems] = useState<ManagedSrpRecord[]>([])
+  const [loadingItems, setLoadingItems] = useState(false)
+  const [modalSearch, setModalSearch] = useState('')
+  const [priceEdits, setPriceEdits] = useState<Record<number, string>>({})
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const goToStep2 = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!effectiveDate || !sourceReference || !changeReason) return
+    setStep(2)
+    setLoadingItems(true)
+    setError('')
+    try {
+      const pageResult = normalizePage(await adminApi.getSrp({ per_page: 1000 }))
+      setItems(pageResult.records)
+    } catch (err) {
+      setError(requestMessage(err))
+    } finally {
+      setLoadingItems(false)
+    }
+  }
+
+  const filteredItems = useMemo(() => {
+    if (!modalSearch.trim()) return items
+    const q = modalSearch.toLowerCase()
+    return items.filter(
+      (item) =>
+        item.commodity_name.toLowerCase().includes(q) ||
+        (item.category && item.category.toLowerCase().includes(q)),
+    )
+  }, [items, modalSearch])
+
+  const handlePriceChange = (id: number, val: string) => {
+    setPriceEdits((prev) => ({ ...prev, [id]: val }))
+  }
+
+  const changedUpdates = useMemo(() => {
+    const updates: Array<{ id: number; baseline_price: number }> = []
+    Object.entries(priceEdits).forEach(([idStr, val]) => {
+      const numVal = parseFloat(val)
+      if (!isNaN(numVal) && numVal >= 0) {
+        updates.push({ id: Number(idStr), baseline_price: numVal })
+      }
+    })
+    return updates
+  }, [priceEdits])
+
+  const handleFinalSubmit = async () => {
+    if (changedUpdates.length === 0) {
+      setError('Please enter at least one updated SRP price.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await adminApi.batchUpdateSrpPrices({
+        effective_date: effectiveDate,
+        source_reference: sourceReference,
+        change_reason: changeReason,
+        updates: changedUpdates,
+      })
+      await onUpdated()
+      onClose()
+    } catch (requestError) {
+      setError(requestMessage(requestError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AdminModal
+      title={
+        step === 1
+          ? 'Update SRP prices — Step 1: Bulletin Details'
+          : 'Update SRP prices — Step 2: Revise Prices'
+      }
+      onClose={onClose}
+    >
+      {step === 1 ? (
+        <form className="admin-form admin-modal-form" onSubmit={goToStep2}>
+          <div className="admin-field">
+            <label htmlFor="batch-effective-date">Unified Effective Date</label>
+            <input
+              id="batch-effective-date"
+              type="date"
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              required
+            />
+            <small>All updated prices in this batch will take effect on this date.</small>
+          </div>
+
+          <div className="admin-field">
+            <label htmlFor="batch-source-ref">Authoritative Source Reference</label>
+            <input
+              id="batch-source-ref"
+              type="text"
+              value={sourceReference}
+              onChange={(e) => setSourceReference(e.target.value)}
+              placeholder="e.g. DTI Memorandum Circular No. 2026-03"
+              required
+            />
+          </div>
+
+          <div className="admin-field">
+            <label htmlFor="batch-reason">Change Reason / Bulletin Note</label>
+            <textarea
+              id="batch-reason"
+              rows={3}
+              value={changeReason}
+              onChange={(e) => setChangeReason(e.target.value)}
+              placeholder="e.g. Quarterly SRP adjustment based on raw material fluctuations."
+              required
+            />
+          </div>
+
+          <footer className="admin-modal-actions">
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="admin-button primary">
+              Next: Edit Prices →
+            </button>
+          </footer>
+        </form>
+      ) : (
+        <div className="admin-form admin-modal-form">
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              marginBottom: '0.75rem',
+            }}
+          >
+            <div className="admin-search-field" style={{ position: 'relative', flex: 1 }}>
+              <Search
+                size={16}
+                style={{
+                  position: 'absolute',
+                  left: '0.75rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#94a3b8',
+                }}
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                placeholder="Filter commodities in this list..."
+                value={modalSearch}
+                onChange={(e) => setModalSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem 0.5rem 2.4rem',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.84rem',
+                }}
+              />
+            </div>
+            <span
+              style={{
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                color: '#1d4ed8',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {changedUpdates.length} items modified
+            </span>
+          </div>
+
+          <div
+            style={{
+              maxHeight: '380px',
+              overflowY: 'auto',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+            }}
+          >
+            {loadingItems ? (
+              <p style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>
+                Loading commodities list…
+              </p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                    <th style={{ padding: '0.6rem 0.85rem', color: '#64748b' }}>Commodity</th>
+                    <th style={{ padding: '0.6rem 0.85rem', color: '#64748b' }}>Current SRP</th>
+                    <th style={{ padding: '0.6rem 0.85rem', color: '#64748b', width: '140px' }}>
+                      New SRP (₱)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const hasEdit =
+                      priceEdits[item.id] !== undefined && priceEdits[item.id] !== ''
+                    return (
+                      <tr
+                        key={item.id}
+                        style={{
+                          borderBottom: '1px solid #f1f5f9',
+                          background: hasEdit ? '#eff6ff' : 'transparent',
+                        }}
+                      >
+                        <td style={{ padding: '0.6rem 0.85rem' }}>
+                          <strong style={{ display: 'block', color: '#0f172a' }}>
+                            {item.commodity_name}
+                          </strong>
+                          <small style={{ color: '#64748b' }}>{item.unit || item.category}</small>
+                        </td>
+                        <td
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                          }}
+                        >
+                          ₱{Number(item.baseline_price).toFixed(2)}
+                        </td>
+                        <td style={{ padding: '0.6rem 0.85rem' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={Number(item.baseline_price).toFixed(2)}
+                            value={priceEdits[item.id] ?? ''}
+                            onChange={(e) => handlePriceChange(item.id, e.target.value)}
+                            style={{
+                              width: '110px',
+                              padding: '0.35rem 0.5rem',
+                              borderRadius: '6px',
+                              border: hasEdit ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                              fontWeight: 700,
+                              color: hasEdit ? '#1d4ed8' : '#0f172a',
+                              textAlign: 'right',
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {error && <p className="admin-feedback error" role="alert">{error}</p>}
+
+          <footer className="admin-modal-actions">
+            <button type="button" onClick={() => setStep(1)}>
+              ← Back
+            </button>
+            <button
+              type="button"
+              className="admin-button primary"
+              disabled={busy || changedUpdates.length === 0}
+              onClick={() => void handleFinalSubmit()}
+            >
+              {busy ? 'Saving…' : `Submit ${changedUpdates.length} SRP Updates`}
+            </button>
+          </footer>
+        </div>
+      )}
     </AdminModal>
   )
 }
@@ -474,8 +777,11 @@ export function SrpManagementPanel() {
   const [capabilities, setCapabilities] = useState(defaultCapabilities)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [importOpen, setImportOpen] = useState(false)
-  const [revisionRecord, setRevisionRecord] = useState<ManagedSrpRecord | null>(null)
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editRecord, setEditRecord] = useState<ManagedSrpRecord | null>(null)
+  const [batchOpen, setBatchOpen] = useState(false)
+
   const [pageInput, setPageInput] = useState('1')
 
   const loadRecords = useCallback(async () => {
@@ -565,17 +871,27 @@ export function SrpManagementPanel() {
         <header
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(260px, 2fr) minmax(180px, 1fr) auto auto',
-            gap: '0.85rem',
+            gridTemplateColumns: 'minmax(240px, 2fr) minmax(160px, 1fr) auto auto auto',
+            gap: '0.75rem',
             alignItems: 'center',
           }}
         >
           <div className="admin-search-field" style={{ position: 'relative', width: '100%' }}>
-            <Search size={17} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} aria-hidden="true" />
+            <Search
+              size={17}
+              style={{
+                position: 'absolute',
+                left: '0.85rem',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#94a3b8',
+              }}
+              aria-hidden="true"
+            />
             <input
               type="search"
               aria-label="Search SRP bulletins"
-              placeholder="Search commodity name, category, POS abbreviation, or source..."
+              placeholder="Search commodity name, category, or source..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               style={{
@@ -622,7 +938,7 @@ export function SrpManagementPanel() {
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.4rem',
-              padding: '0.65rem 1rem',
+              padding: '0.65rem 0.85rem',
               borderRadius: '8px',
               border: '1px solid #cbd5e1',
               background: '#ffffff',
@@ -638,15 +954,37 @@ export function SrpManagementPanel() {
 
           <button
             type="button"
-            className="admin-button primary"
+            className="admin-button secondary"
             disabled={!capabilities.can_publish}
-            onClick={() => setImportOpen(true)}
-            title={capabilities.can_publish ? undefined : 'Approved versioning and audit schema required'}
+            onClick={() => setBatchOpen(true)}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '0.45rem',
-              padding: '0.65rem 1.1rem',
+              padding: '0.65rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #3b82f6',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontSize: '0.86rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <TrendingUp size={16} aria-hidden="true" /> Update SRP Prices
+          </button>
+
+          <button
+            type="button"
+            className="admin-button primary"
+            disabled={!capabilities.can_publish}
+            onClick={() => setCreateOpen(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.65rem 1rem',
               borderRadius: '8px',
               background: '#1d4ed8',
               color: '#ffffff',
@@ -657,7 +995,7 @@ export function SrpManagementPanel() {
               whiteSpace: 'nowrap',
             }}
           >
-            <Plus size={17} aria-hidden="true" /> Add SRP bulletin
+            <Plus size={17} aria-hidden="true" /> Add SRP Item
           </button>
         </header>
 
@@ -687,7 +1025,9 @@ export function SrpManagementPanel() {
       {error && (
         <div className="admin-feedback error" role="alert">
           <span>{error}</span>
-          <button type="button" onClick={() => void loadRecords()}>Retry</button>
+          <button type="button" onClick={() => void loadRecords()}>
+            Retry
+          </button>
         </div>
       )}
 
@@ -706,76 +1046,214 @@ export function SrpManagementPanel() {
             <caption className="sr-only">SRP bulletin records</caption>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Commodity</th>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Category</th>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Effective Date</th>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>SRP Baseline</th>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'left', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Source Reference</th>
-                <th style={{ padding: '0.85rem 1.1rem', textAlign: 'center', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', fontWeight: 700 }}>Action</th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'left',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  Commodity
+                </th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'left',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  Category
+                </th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'left',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  Effective Date
+                </th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'left',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  SRP Baseline
+                </th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'left',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  Source Reference
+                </th>
+                <th
+                  style={{
+                    padding: '0.85rem 1.1rem',
+                    textAlign: 'center',
+                    fontSize: '0.74rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: '#64748b',
+                    fontWeight: 700,
+                  }}
+                >
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
-              {loading && Array.from({ length: 4 }, (_, index) => (
-                <tr className="admin-skeleton-row" key={index}>
-                  <td colSpan={6} style={{ padding: '1rem' }}><span /></td>
-                </tr>
-              ))}
+              {loading &&
+                Array.from({ length: 4 }, (_, index) => (
+                  <tr className="admin-skeleton-row" key={index}>
+                    <td colSpan={6} style={{ padding: '1rem' }}>
+                      <span />
+                    </td>
+                  </tr>
+                ))}
               {!loading && records.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center' }}>
-                    <div className="admin-empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                    <div
+                      className="admin-empty-state"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                      }}
+                    >
                       <FileJson size={32} style={{ color: '#94a3b8' }} aria-hidden="true" />
-                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>No SRP records found</strong>
-                      <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Adjust search query or category filter.</span>
+                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>
+                        No SRP records found
+                      </strong>
+                      <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                        Adjust search query or category filter.
+                      </span>
                     </div>
                   </td>
                 </tr>
               )}
-              {!loading && records.map((record) => (
-                <tr key={record.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
-                  <td data-label="Commodity" style={{ padding: '0.85rem 1.1rem' }}>
-                    <strong style={{ display: 'block', fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>{record.commodity_name}</strong>
-                    <small style={{ fontSize: '0.78rem', color: '#64748b' }}>{record.unit || 'Unit not specified'}</small>
-                  </td>
-                  <td data-label="Category" style={{ padding: '0.85rem 1.1rem' }}>
-                    <span style={{ display: 'block', fontSize: '0.85rem', color: '#334155', fontWeight: 600 }}>{record.category || 'Uncategorized'}</span>
-                    <small style={{ fontSize: '0.76rem', color: '#64748b' }}>{record.regulatory_classification?.replaceAll('_', ' ') || 'No classification'}</small>
-                  </td>
-                  <td data-label="Effective date" style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#475569', fontWeight: 500 }}>
-                    {record.effective_date.slice(0, 10)}
-                  </td>
-                  <td data-label="SRP" className="admin-price" style={{ padding: '0.85rem 1.1rem', color: '#1d4ed8', fontWeight: 700, fontFamily: 'monospace', fontSize: '0.92rem' }}>
-                    ₱{Number(record.baseline_price).toFixed(2)}
-                  </td>
-                  <td data-label="Source" style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#64748b' }}>
-                    {record.source_reference || 'Official DTI Record'}
-                  </td>
-                  <td data-label="Action" style={{ padding: '0.85rem 1.1rem', textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      disabled={!capabilities.can_publish}
-                      aria-label={`Revise ${record.commodity_name}`}
-                      onClick={() => setRevisionRecord(record)}
+              {!loading &&
+                records.map((record) => (
+                  <tr
+                    key={record.id}
+                    style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}
+                  >
+                    <td data-label="Commodity" style={{ padding: '0.85rem 1.1rem' }}>
+                      <strong
+                        style={{
+                          display: 'block',
+                          fontSize: '0.9rem',
+                          color: '#0f172a',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {record.commodity_name}
+                      </strong>
+                      <small style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        {record.unit || 'Unit not specified'}
+                      </small>
+                    </td>
+                    <td data-label="Category" style={{ padding: '0.85rem 1.1rem' }}>
+                      <span
+                        style={{
+                          display: 'block',
+                          fontSize: '0.85rem',
+                          color: '#334155',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {record.category || 'Uncategorized'}
+                      </span>
+                      <small style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                        {record.regulatory_classification?.replaceAll('_', ' ') ||
+                          'No classification'}
+                      </small>
+                    </td>
+                    <td
+                      data-label="Effective date"
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        padding: '0.45rem 0.85rem',
-                        borderRadius: '8px',
-                        border: '1px solid #bfdbfe',
-                        background: '#eff6ff',
-                        color: '#1d4ed8',
-                        fontSize: '0.82rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
+                        padding: '0.85rem 1.1rem',
+                        fontSize: '0.85rem',
+                        color: '#475569',
+                        fontWeight: 500,
                       }}
                     >
-                      <span>Revise</span>
-                      <ArrowRight size={14} aria-hidden="true" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      {record.effective_date.slice(0, 10)}
+                    </td>
+                    <td
+                      data-label="SRP"
+                      className="admin-price"
+                      style={{
+                        padding: '0.85rem 1.1rem',
+                        color: '#1d4ed8',
+                        fontWeight: 700,
+                        fontFamily: 'monospace',
+                        fontSize: '0.92rem',
+                      }}
+                    >
+                      ₱{Number(record.baseline_price).toFixed(2)}
+                    </td>
+                    <td
+                      data-label="Source"
+                      style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#64748b' }}
+                    >
+                      {record.source_reference || 'Official DTI Record'}
+                    </td>
+                    <td
+                      data-label="Action"
+                      style={{ padding: '0.85rem 1.1rem', textAlign: 'center' }}
+                    >
+                      <button
+                        type="button"
+                        disabled={!capabilities.can_publish}
+                        aria-label={`Edit ${record.commodity_name}`}
+                        onClick={() => setEditRecord(record)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          padding: '0.45rem 0.85rem',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          color: '#334155',
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Edit3 size={14} aria-hidden="true" />
+                        <span>Edit</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -810,13 +1288,20 @@ export function SrpManagementPanel() {
               <LayoutGrid size={16} aria-hidden="true" />
             </div>
             <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: 500 }}>
-              Showing <strong style={{ color: '#0f172a' }}>{pagination.from ?? (records.length ? 1 : 0)}–{pagination.to ?? records.length}</strong> of <strong style={{ color: '#0f172a' }}>{pagination.total}</strong> entries
+              Showing{' '}
+              <strong style={{ color: '#0f172a' }}>
+                {pagination.from ?? (records.length ? 1 : 0)}–{pagination.to ?? records.length}
+              </strong>{' '}
+              of <strong style={{ color: '#0f172a' }}>{pagination.total}</strong> entries
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <label htmlFor="srp-rows-per-page-select" style={{ fontSize: '0.84rem', color: '#64748b', fontWeight: 600 }}>
+              <label
+                htmlFor="srp-rows-per-page-select"
+                style={{ fontSize: '0.84rem', color: '#64748b', fontWeight: 600 }}
+              >
                 Rows per page
               </label>
               <input
@@ -935,15 +1420,25 @@ export function SrpManagementPanel() {
         </nav>
       </div>
 
-      {importOpen && (
-        <ImportSrpModal onClose={() => setImportOpen(false)} onImported={loadRecords} />
-      )}
-      {revisionRecord && (
-        <RevisionModal
-          record={revisionRecord}
-          onClose={() => setRevisionRecord(null)}
+      {createOpen && (
+        <CreateSrpModal
+          onClose={() => setCreateOpen(false)}
           onCreated={loadRecords}
+          categories={categories}
         />
+      )}
+
+      {editRecord && (
+        <EditMetadataModal
+          record={editRecord}
+          onClose={() => setEditRecord(null)}
+          onUpdated={loadRecords}
+          categories={categories}
+        />
+      )}
+
+      {batchOpen && (
+        <BatchUpdateSrpModal onClose={() => setBatchOpen(false)} onUpdated={loadRecords} />
       )}
     </section>
   )

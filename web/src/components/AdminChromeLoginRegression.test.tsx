@@ -13,13 +13,16 @@ vi.mock('../services/api', () => ({
 describe('DTI Admin chrome and login feedback', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('uses the original sidebar gradient for both the sidebar and sticky header', () => {
+  it('uses the original sidebar gradient for the sidebar and solid top color for sticky header', () => {
     expect(adminCss).toContain(
       '--sidebar-gradient: linear-gradient(160deg, #1a2744 0%, #1e3a8a 60%, #2563eb 100%);',
     )
     expect(adminCss).not.toContain('--sidebar-gradient: var(--admin-chrome);')
     expect(adminCss).toMatch(
-      /\.admin-sidebar,\s*\.admin-top-header\s*\{[^}]*background:\s*var\(--sidebar-gradient\)\s*!important;/s,
+      /\.admin-sidebar\s*\{[^}]*background:\s*var\(--sidebar-gradient\)\s*!important;/s,
+    )
+    expect(adminCss).toMatch(
+      /\.admin-top-header\s*\{[^}]*background:\s*#1a2744\s*!important;/s,
     )
   })
 

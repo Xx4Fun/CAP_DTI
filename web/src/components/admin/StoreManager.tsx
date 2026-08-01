@@ -3,7 +3,6 @@ import { adminApi } from '../../services/adminApi'
 import type { StoreRecord } from '../../types/admin'
 import { StoreOnboarding } from '../StoreOnboarding'
 import { StoreMap, getStoreStatusInfo } from './StoreMap'
-import { Building2, Search, Plus, MapPin, Mail } from 'lucide-react'
 
 type StatusFilter = 'all' | 'compliant' | 'anomaly' | 'flagged'
 
@@ -13,7 +12,7 @@ export const StoreManager: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [inviteFor, setInviteFor] = useState<number | null>(null)
+  const [inviteStore, setInviteStore] = useState<StoreRecord | null>(null)
   const [email, setEmail] = useState('')
   const [link, setLink] = useState('')
   const [loading, setLoading] = useState(false)
@@ -29,11 +28,6 @@ export const StoreManager: React.FC = () => {
   useEffect(() => {
     loadStores()
   }, [])
-
-  const toggle = async (store: StoreRecord, field: 'is_active' | 'is_verified' | 'is_public') => {
-    const updated = await adminApi.updateStore(store.id, { [field]: !store[field] })
-    setStores((current) => current.map((item) => (item.id === updated.id ? updated : item)))
-  }
 
   const counts = {
     all: stores.length,
@@ -66,6 +60,7 @@ export const StoreManager: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>Onboard New Establishment</h3>
             <button
+              type="button"
               onClick={() => setShowOnboarding(false)}
               style={{ padding: '0.35rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', fontSize: '0.8rem', cursor: 'pointer' }}
             >
@@ -86,8 +81,8 @@ export const StoreManager: React.FC = () => {
         {/* Header & Controls */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Building2 size={20} style={{ color: '#1e3a8a' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <i className="fa-solid fa-building" style={{ color: '#1e3a8a', fontSize: '1.2rem' }} aria-hidden="true" />
               <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>Commercial Establishment Registry</h3>
             </div>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
@@ -97,7 +92,7 @@ export const StoreManager: React.FC = () => {
 
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', width: '260px' }}>
-              <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }} aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Search stores or SEC #..."
@@ -132,7 +127,7 @@ export const StoreManager: React.FC = () => {
                 cursor: 'pointer',
               }}
             >
-              <Plus size={16} /> Onboard Establishment
+              <i className="fa-solid fa-plus" aria-hidden="true" /> Onboard Establishment
             </button>
           </div>
         </div>
@@ -221,14 +216,11 @@ export const StoreManager: React.FC = () => {
                   <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
                     SEC Number
                   </th>
-                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Active
+                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
+                    Address
                   </th>
-                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Verified
-                  </th>
-                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    GIS Status
+                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
+                    Findings
                   </th>
                   <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
                     Actions
@@ -238,14 +230,14 @@ export const StoreManager: React.FC = () => {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
+                    <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
                       Loading store registry...
                     </td>
                   </tr>
                 )}
                 {!loading && filteredStores.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
+                    <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
                       No commercial establishments match selected status filter or search criteria.
                     </td>
                   </tr>
@@ -267,96 +259,31 @@ export const StoreManager: React.FC = () => {
                     >
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <strong style={{ color: '#0f172a', fontSize: '0.88rem', display: 'block' }}>{store.store_name}</strong>
-                        <small style={{ color: '#64748b', fontSize: '0.76rem' }}>{store.address}</small>
-                        <div style={{ marginTop: '0.25rem' }}>
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '0.15rem 0.5rem',
-                              borderRadius: '10px',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              background: statusInfo.bg,
-                              color: statusInfo.color,
-                              border: `1px solid ${statusInfo.border}`,
-                            }}
-                          >
-                            {statusInfo.label}
-                          </span>
-                        </div>
                       </td>
 
                       <td style={{ padding: '0.75rem 0.75rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#1e3a8a' }}>
                         {store.dti_sec_number || 'N/A'}
                       </td>
 
-                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
-                        <button
-                          className="status-control"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void toggle(store, 'is_active')
-                          }}
-                          aria-pressed={store.is_active}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '6px',
-                            fontWeight: 600,
-                            fontSize: '0.72rem',
-                            border: store.is_active ? '1px solid #a7f3d0' : '1px solid #fecaca',
-                            background: store.is_active ? '#ecfdf5' : '#fef2f2',
-                            color: store.is_active ? '#059669' : '#dc2626',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {store.is_active ? 'Active' : 'Disabled'}
-                        </button>
+                      <td style={{ padding: '0.75rem 0.75rem', fontSize: '0.8rem', color: '#475569' }}>
+                        {store.address}
                       </td>
 
-                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
-                        <button
-                          className="status-control"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void toggle(store, 'is_verified')
-                          }}
-                          aria-pressed={store.is_verified}
+                      <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                        <span
                           style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '6px',
-                            fontWeight: 600,
+                            display: 'inline-block',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '12px',
                             fontSize: '0.72rem',
-                            border: store.is_verified ? '1px solid #a7f3d0' : '1px solid #fed7aa',
-                            background: store.is_verified ? '#ecfdf5' : '#fffbeb',
-                            color: store.is_verified ? '#059669' : '#d97706',
-                            cursor: 'pointer',
+                            fontWeight: 700,
+                            background: statusInfo.bg,
+                            color: statusInfo.color,
+                            border: `1px solid ${statusInfo.border}`,
                           }}
                         >
-                          {store.is_verified ? 'Verified' : 'Unverified'}
-                        </button>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
-                        <button
-                          className="status-control"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void toggle(store, 'is_public')
-                          }}
-                          aria-pressed={store.is_public}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '6px',
-                            fontWeight: 600,
-                            fontSize: '0.72rem',
-                            border: store.is_public ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                            background: store.is_public ? '#eff6ff' : '#f8fafc',
-                            color: store.is_public ? '#1e3a8a' : '#64748b',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {store.is_public ? 'Public' : 'Private'}
-                        </button>
+                          {statusInfo.label}
+                        </span>
                       </td>
 
                       <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
@@ -369,7 +296,7 @@ export const StoreManager: React.FC = () => {
                             }}
                             title="Center on GIS Map"
                             style={{
-                              padding: '0.3rem 0.5rem',
+                              padding: '0.35rem 0.6rem',
                               borderRadius: '6px',
                               border: '1px solid #bfdbfe',
                               background: '#eff6ff',
@@ -377,23 +304,25 @@ export const StoreManager: React.FC = () => {
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               cursor: 'pointer',
-                              display: 'flex',
+                              display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '0.2rem',
+                              gap: '0.35rem',
                             }}
                           >
-                            <MapPin size={13} /> Map
+                            <i className="fa-solid fa-location-dot" aria-hidden="true" /> Map
                           </button>
 
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setInviteFor(store.id)
+                              setInviteStore(store)
+                              setEmail('')
+                              setLink('')
                             }}
                             title="Invite Vendor"
                             style={{
-                              padding: '0.3rem 0.5rem',
+                              padding: '0.35rem 0.6rem',
                               borderRadius: '6px',
                               border: '1px solid #cbd5e1',
                               background: '#ffffff',
@@ -401,12 +330,12 @@ export const StoreManager: React.FC = () => {
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               cursor: 'pointer',
-                              display: 'flex',
+                              display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '0.2rem',
+                              gap: '0.35rem',
                             }}
                           >
-                            <Mail size={13} /> Invite
+                            <i className="fa-solid fa-envelope" aria-hidden="true" /> Invite
                           </button>
                         </div>
                       </td>
@@ -430,106 +359,149 @@ export const StoreManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Vendor Invitation Modal / Inline Form */}
-      {inviteFor && (
-        <form
-          className="admin-inline-form"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            const result = await adminApi.inviteVendor(inviteFor, email)
-            setLink(result.invitation_url)
+      {/* Vendor Invitation Modal */}
+      {inviteStore && (
+        <div
+          className="admin-modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setInviteStore(null)
+            }
           }}
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '1rem',
-            padding: '1.25rem',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.05)',
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem',
           }}
         >
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>
-                Vendor Owner Email Address
-              </label>
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '480px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <i className="fa-solid fa-envelope" style={{ color: '#1e3a8a', fontSize: '1.1rem' }} aria-hidden="true" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                  Invite Vendor: {inviteStore.store_name}
+                </h3>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  setInviteFor(null)
-                  setLink('')
-                  setEmail('')
-                }}
-                style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', cursor: 'pointer' }}
+                onClick={() => setInviteStore(null)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.1rem', cursor: 'pointer', padding: '0.2rem' }}
+                aria-label="Close modal"
               >
-                Cancel
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
               </button>
             </div>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="owner@establishment.ph"
-              required
-              style={{
-                width: '100%',
-                padding: '0.6rem 0.75rem',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                background: '#ffffff',
-                color: '#0f172a',
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                marginTop: '0.75rem',
-                padding: '0.55rem 1rem',
-                background: '#1d4ed8',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Generate Expiring Vendor Link
-            </button>
-          </div>
 
-          <div>
-            {link ? (
+            <form
+              onSubmit={async (event) => {
+                event.preventDefault()
+                const result = await adminApi.inviteVendor(inviteStore.id, email)
+                setLink(result.invitation_url)
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+            >
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#059669', marginBottom: '0.35rem' }}>
-                  One-time onboarding URL generated
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.35rem' }}>
+                  Vendor Owner Email Address
                 </label>
                 <input
-                  readOnly
-                  value={link}
-                  onFocus={(event) => event.currentTarget.select()}
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="owner@establishment.ph"
+                  required
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.75rem',
-                    border: '1px solid #a7f3d0',
+                    border: '1px solid #cbd5e1',
                     borderRadius: '8px',
-                    background: '#ecfdf5',
-                    color: '#047857',
-                    fontFamily: 'monospace',
-                    fontSize: '0.8rem',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box',
                   }}
                 />
               </div>
-            ) : (
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b', alignSelf: 'center' }}>
-                Generate an onboarding link to allow store owners to access their Vendor Portal and submit legal notice rebuttals.
-              </p>
-            )}
+
+              {link && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#059669', marginBottom: '0.35rem' }}>
+                    One-time onboarding URL generated
+                  </label>
+                  <input
+                    readOnly
+                    value={link}
+                    onFocus={(event) => event.currentTarget.select()}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      border: '1px solid #a7f3d0',
+                      borderRadius: '8px',
+                      background: '#ecfdf5',
+                      color: '#047857',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8rem',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setInviteStore(null)}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '0.55rem 1.1rem',
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> Generate Invitation
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       )}
     </div>
   )
 }
-

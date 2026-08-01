@@ -65,6 +65,7 @@ export const defaultStoresList: Establishment[] = [
 export interface Commodity {
   id: number;
   commodity_name: string;
+  image_path?: string | null;
   category?: string;
   brand?: string;
   variant?: string;

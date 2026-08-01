@@ -20,6 +20,36 @@ interface SrpSearchProps {
 
 // Product illustration component for list cards
 const CardProductIllustration: React.FC<{ commodity: Commodity }> = ({ commodity }) => {
+  if (commodity.image_path) {
+    return (
+      <div
+        style={{
+          width: '54px',
+          height: '62px',
+          borderRadius: '10px',
+          overflow: 'hidden',
+          border: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0
+        }}
+      >
+        <img
+          src={commodity.image_path}
+          alt={commodity.commodity_name}
+          loading="lazy"
+          decoding="async"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = 'none';
+          }}
+        />
+      </div>
+    );
+  }
+
   const name = (commodity.commodity_name || '').toLowerCase();
   const category = (commodity.category || '').toLowerCase();
 

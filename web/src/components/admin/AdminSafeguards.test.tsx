@@ -110,6 +110,7 @@ describe('DTI Admin safeguards', () => {
 
   it('labels legal output as unavailable and previews only a watermarked draft', async () => {
     vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
+    vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
     const user = userEvent.setup()
 
     render(<LegalDraftPanel />)
@@ -159,7 +160,7 @@ describe('DTI Admin safeguards', () => {
     }))
   })
 
-  it('shows historical SRP versions and accepts a local JSON upload for preview', async () => {
+  it('shows historical SRP versions and opens the manual item creation modal', async () => {
     vi.mocked(adminApi.getSrp).mockResolvedValue([
       { id: 2, commodity_name: 'Rice', unit: '1kg', baseline_price: 48, effective_date: '2026-08-01', source_reference: 'DTI-08' },
       { id: 1, commodity_name: 'Rice', unit: '1kg', baseline_price: 46, effective_date: '2026-05-01', source_reference: 'DTI-05' },
@@ -169,12 +170,9 @@ describe('DTI Admin safeguards', () => {
 
     expect(await screen.findByText('2026-08-01')).toBeInTheDocument()
     expect(screen.getByText('2026-05-01')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Add SRP bulletin' }))
+    await user.click(screen.getByRole('button', { name: 'Add SRP Item' }))
 
-    const file = new File([
-      JSON.stringify({ metadata: { effective_date: '2026-09-01' }, items: [{ item_name: 'Rice', unit: '1kg', srp: 49 }] }),
-    ], 'srp.json', { type: 'application/json' })
-    await user.upload(screen.getByLabelText('Upload SRP JSON'), file)
-    expect((screen.getByRole('textbox', { name: 'SRP JSON' }) as HTMLTextAreaElement).value).toContain('2026-09-01')
+    expect(screen.getByRole('dialog', { name: 'Add SRP bulletin item' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Commodity Name')).toBeInTheDocument()
   })
 })

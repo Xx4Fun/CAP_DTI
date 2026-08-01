@@ -114,7 +114,7 @@ describe('DTI Admin application session', () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { data: { reauthenticated_until: '2026-07-30T10:05:00+00:00' } } })
 
     render(<App />)
-    await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
+    await screen.findByText('REGISTERED STORES')
     window.dispatchEvent(new Event('admin-reauthentication-required'))
 
     expect(await screen.findByRole('dialog', { name: /confirm sensitive action/i })).toBeInTheDocument()

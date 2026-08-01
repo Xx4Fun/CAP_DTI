@@ -1,6 +1,6 @@
 import api from './api'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
-import type { ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview } from '../types/adminSrp'
+import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
@@ -17,6 +17,15 @@ export const adminApi = {
   },
   async previewSrp(payload: unknown): Promise<Record<string, unknown>> {
     return data(await api.post('/admin/srp/import/preview', payload))
+  },
+  async createSrpItem(payload: CreateSrpPayload): Promise<ManagedSrpRecord> {
+    return data(await api.post('/admin/srp', payload))
+  },
+  async updateSrpMetadata(id: number, payload: UpdateSrpMetadataPayload): Promise<ManagedSrpRecord> {
+    return data(await api.put(`/admin/srp/${id}`, payload))
+  },
+  async batchUpdateSrpPrices(payload: BatchSrpUpdatePayload): Promise<{ updated_count: number; effective_date: string }> {
+    return data(await api.post('/admin/srp/batch-revisions', payload))
   },
   async getSrp(filters: SrpListFilters = {}): Promise<SrpPage | SrpRecord[]> {
     const params = { per_page: 20, ...filters }
@@ -46,6 +55,14 @@ export const adminApi = {
   },
   async createSrpRevision(id: number, payload: SrpRevisionPayload): Promise<ManagedSrpRecord> {
     return data(await api.post(`/admin/srp/${id}/revisions`, payload))
+  },
+  async uploadCommodityImage(file: File): Promise<{ image_path: string; url: string }> {
+    const formData = new FormData()
+    formData.append('image', file)
+    const response = await api.post('/admin/srp/upload-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data.data
   },
   async getReports(): Promise<ConsumerReportRecord[]> {
     return data(await api.get('/admin/reports'))

@@ -52,8 +52,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/stores/{store}/invitations', [VendorInvitationController::class, 'store']);
         Route::post('/invitations/{invitation}/cancel', [VendorInvitationController::class, 'cancel']);
         Route::get('/srp', [SrpManagementController::class, 'index']);
+        Route::post('/srp', [SrpManagementController::class, 'store']);
+        Route::put('/srp/{srp}', [SrpManagementController::class, 'updateMetadata']);
+        Route::post('/srp/batch-revisions', [SrpManagementController::class, 'batchRevisions']);
         Route::post('/srp/import/preview', [SrpAdminController::class, 'preview']);
         Route::post('/srp/import', [SrpAdminController::class, 'import']);
+        Route::post('/srp/upload-image', [SrpAdminController::class, 'uploadImage']);
         Route::get('/srp/resolve', [SrpAdminController::class, 'resolve']);
         Route::post('/srp/{srp}/revisions/preview', [SrpManagementController::class, 'previewRevision']);
         Route::post('/srp/{srp}/revisions', [SrpManagementController::class, 'storeRevision']);

@@ -12,6 +12,7 @@ class SrpBulletin extends Model
 
     protected $fillable = [
         'commodity_name',
+        'image_path',
         'category',
         'unit',
         'regulatory_classification',
