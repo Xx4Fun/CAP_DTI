@@ -28,7 +28,7 @@ class SrpCatalogService
     public function paginate(array $filters): LengthAwarePaginatorContract
     {
         $view = $filters['view'] ?? 'history';
-        $perPage = min(100, max(1, (int) ($filters['per_page'] ?? 20)));
+        $perPage = min(1000, max(1, (int) ($filters['per_page'] ?? 20)));
         $page = max(1, (int) ($filters['page'] ?? 1));
         $search = trim((string) ($filters['query'] ?? ''));
         $category = trim((string) ($filters['category'] ?? ''));

@@ -23,7 +23,7 @@ class SrpManagementController extends Controller
             'view' => ['sometimes', Rule::in(['current', 'scheduled', 'history'])],
             'category' => 'sometimes|nullable|string|max:255',
             'page' => 'sometimes|integer|min:1',
-            'per_page' => 'sometimes|integer|min:1|max:100',
+            'per_page' => 'sometimes|integer|min:1|max:1000',
         ]);
 
         return response()->json([
@@ -35,11 +35,9 @@ class SrpManagementController extends Controller
     public function store(
         Request $request,
         AdminAuthorizationService $auth,
-        SensitiveActionGuard $guard,
         AuditTrailService $audit
     ) {
         $auth->requireManager($request->user());
-        $guard->requireRecentReauthentication($request);
 
         $data = $request->validate([
             'commodity_name' => 'required|string|max:255',
@@ -81,11 +79,9 @@ class SrpManagementController extends Controller
         Request $request,
         SrpBulletin $srp,
         AdminAuthorizationService $auth,
-        SensitiveActionGuard $guard,
         AuditTrailService $audit
     ) {
         $auth->requireManager($request->user());
-        $guard->requireRecentReauthentication($request);
 
         $data = $request->validate([
             'commodity_name' => 'required|string|max:255',
