@@ -11,7 +11,6 @@ import {
   ChevronDown,
   LogOut,
   LockKeyhole,
-  UserRound,
   Shield,
   Menu,
   X,
