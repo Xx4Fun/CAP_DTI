@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './services/api'
@@ -137,7 +137,9 @@ describe('DTI Admin application session', () => {
 
     render(<App />)
     await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
-    window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
+    })
 
     expect(await screen.findByText('You were logged out due to inactivity. Sign in again to continue.')).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
