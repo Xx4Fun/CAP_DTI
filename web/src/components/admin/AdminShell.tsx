@@ -169,7 +169,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     setIsMobileOpen(false)
   }
 
-  const avatarInitial = user.name ? user.name.charAt(0).toUpperCase() : 'E'
+  const avatarInitial = user.role === 'super_admin' ? 'A' : user.role === 'field_officer' ? 'F' : 'E'
 
   // Filter sections for field officer
   const navSections = navSectionsConfig.map((sec) => ({
@@ -341,12 +341,18 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                 aria-controls="admin-account-menu"
                 onClick={() => setAccountOpen((open) => !open)}
               >
-                <span className="header-avatar-badge" aria-hidden="true">{avatarInitial}</span>
+                <span className={`header-avatar-badge avatar-badge-${user.role}`} aria-hidden="true">
+                  {avatarInitial}
+                  <span className="avatar-status-dot pulse" title="Session Active" aria-hidden="true" />
+                </span>
                 <span className="header-account-copy">
                   <strong>{user.name}</strong>
-                  <small>{user.role.replace('_', ' ')}</small>
+                  <span className="header-account-sub">
+                    <small>{user.role.replace('_', ' ')}</small>
+                    <span className="session-status-text">Session Active</span>
+                  </span>
                 </span>
-                <UserRound size={16} aria-hidden="true" />
+                <ChevronDown size={16} className={`account-dropdown-arrow ${accountOpen ? 'open' : ''}`} aria-hidden="true" />
               </button>
               {accountOpen && (
                 <div className="header-account-menu" id="admin-account-menu" role="menu">

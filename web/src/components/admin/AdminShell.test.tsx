@@ -90,4 +90,20 @@ describe('AdminShell', () => {
     expect(await screen.findByText('Emergency status unavailable')).toBeInTheDocument()
     expect(screen.queryByText('Normal Market Protocol')).not.toBeInTheDocument()
   })
+
+  it('renders active session status indicator and role badge initial in header account button', () => {
+    const { rerender } = render(<AdminShell user={{ id: 1, name: 'Officer Juan', email: 'juan@dti.test', role: 'dti_evaluator' }} />)
+
+    expect(screen.getByText('Session Active')).toBeInTheDocument()
+    expect(screen.getByText('dti evaluator')).toBeInTheDocument()
+    expect(screen.getByText('E')).toBeInTheDocument()
+
+    rerender(<AdminShell user={{ id: 2, name: 'Admin Boss', email: 'admin@dti.test', role: 'super_admin' }} />)
+    expect(screen.getByText('super admin')).toBeInTheDocument()
+    expect(screen.getByText('A')).toBeInTheDocument()
+
+    rerender(<AdminShell user={{ id: 3, name: 'Field Inspector', email: 'field@dti.test', role: 'field_officer' }} />)
+    expect(screen.getByText('field officer')).toBeInTheDocument()
+    expect(screen.getByText('F')).toBeInTheDocument()
+  })
 })

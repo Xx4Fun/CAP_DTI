@@ -543,19 +543,21 @@
 .header-account-button {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  min-width: 184px;
-  padding: 0.35rem 0.55rem;
+  gap: 0.75rem;
+  min-width: 210px;
+  padding: 0.4rem 0.75rem;
   color: #ffffff;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .header-account-button:hover,
 .header-account-button:focus-visible {
   background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
   outline: 2px solid rgba(255, 255, 255, 0.7);
   outline-offset: 2px;
 }
@@ -570,17 +572,49 @@
 }
 
 .header-account-copy strong {
-  max-width: 112px;
+  max-width: 130px;
   overflow: hidden;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.header-account-copy small {
-  color: rgba(255, 255, 255, 0.65);
+.header-account-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.69rem;
+}
+
+.header-account-sub small {
+  color: rgba(255, 255, 255, 0.65);
   text-transform: capitalize;
+}
+
+.session-status-text {
+  color: #6ee7b7;
+  font-weight: 600;
+  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.session-status-text::before {
+  content: "•";
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.account-dropdown-arrow {
+  color: rgba(255, 255, 255, 0.7);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.account-dropdown-arrow.open {
+  transform: rotate(180deg);
 }
 
 .header-account-menu {
@@ -592,9 +626,10 @@
   min-width: 190px;
   padding: 0.4rem;
   background: #ffffff;
-  border: 1px solid #dbe3ef;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  color: #0f172a;
 }
 
 .header-account-menu button {
@@ -602,20 +637,22 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.65rem 0.75rem;
-  color: #25324a;
+  color: #0f172a;
   background: transparent;
   border: 0;
   border-radius: 7px;
   font: inherit;
   font-size: 0.83rem;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .header-account-menu button:hover,
 .header-account-menu button:focus-visible {
-  background: #eef4ff;
-  color: #173f8f;
+  background: #f1f5f9;
+  color: #1e293b;
   outline: none;
 }
 
@@ -623,8 +660,8 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: linear-gradient(135deg, #2563eb 0%, #0284c7 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -633,6 +670,19 @@
   font-size: 0.88rem;
   position: relative;
   flex: 0 0 auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.header-avatar-badge.avatar-badge-super_admin {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+}
+
+.header-avatar-badge.avatar-badge-dti_evaluator {
+  background: linear-gradient(135deg, #2563eb 0%, #0284c7 100%);
+}
+
+.header-avatar-badge.avatar-badge-field_officer {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
 }
 
 .admin-session-boot {
@@ -684,13 +734,30 @@
 
 .avatar-status-dot {
   position: absolute;
-  bottom: 0;
-  right: 0;
+  bottom: -1px;
+  right: -1px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #059669;
+  background: #10b981;
   border: 2px solid #1a2744;
+}
+
+.avatar-status-dot.pulse {
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: status-dot-pulse 2s infinite;
+}
+
+@keyframes status-dot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 .admin-breadcrumbs {
