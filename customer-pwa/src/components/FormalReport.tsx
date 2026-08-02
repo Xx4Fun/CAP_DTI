@@ -334,13 +334,6 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* ========================================================================= */}
       {currentView === 'dashboard' && (
         <>
-          {/* Header Title */}
-          <div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)' }}>Reports</h1>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Submit a receipt for DTI evaluation or track the latest status of a submitted report.
-            </p>
-          </div>
 
           {/* Action Card 1: Submit a new report */}
           <div
