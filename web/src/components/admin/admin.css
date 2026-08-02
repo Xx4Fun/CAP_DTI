@@ -640,11 +640,11 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.85rem 1.75rem;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.88) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  color: #0f172a;
-  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a !important;
+  border-bottom: 1px solid #e2e8f0 !important;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
   flex-shrink: 0;
   z-index: 1050;
@@ -1531,10 +1531,6 @@
   background: var(--sidebar-gradient) !important;
 }
 
-.admin-top-header {
-  background: #1a2744 !important;
-}
-
 .admin-workspace,
 .admin-shell {
   background: var(--admin-canvas);
@@ -1542,8 +1538,6 @@
 
 .admin-top-header {
   min-height: 68px;
-  border-bottom-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.08);
 }
 
 .admin-panel {

@@ -22,7 +22,7 @@ describe('DTI Admin chrome and login feedback', () => {
       /\.admin-sidebar\s*\{[^}]*background:\s*var\(--sidebar-gradient\)\s*!important;/s,
     )
     expect(adminCss).toMatch(
-      /\.admin-top-header\s*\{[^}]*background:\s*#1a2744\s*!important;/s,
+      /\.admin-top-header\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.88\)\s*!important;/s,
     )
   })
 
