@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, WifiOff, X } from 'lucide-react';
+import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
@@ -9,18 +9,14 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOfCalamity }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
     };
-  }, []);
+    if (isMenuOpen) window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMenuOpen]);
+
 
   return (
     <>
@@ -41,9 +37,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             <div className="brand-name" style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: '1.1', whiteSpace: 'nowrap', letterSpacing: '-0.025em' }}>
               <span style={{ color: '#0f172a' }}>PRICE-</span>
               <span style={{ color: '#1d4ed8' }}>Watch</span>
-            </div>
-            <div className="brand-subtitle" style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400, lineHeight: '1.1', whiteSpace: 'nowrap', marginTop: '2px' }}>
-              Consumer Price Guide
             </div>
           </div>
         </div>
@@ -97,7 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </div>
       )}
 
-      {stateOfCalamity === undefined && !isOffline && (
+      {stateOfCalamity === undefined && (
         <div
           role="status"
           aria-live="polite"
@@ -120,46 +113,36 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </div>
       )}
 
-      {isOffline && !stateOfCalamity && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            background: '#fffbeb',
-            borderBottom: '1px solid #fde68a',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.8rem',
-            color: '#b45309',
-            fontWeight: 600,
-            maxWidth: '600px',
-            margin: '0 auto'
-          }}
-        >
-          <WifiOff size={15} color="#b45309" style={{ flexShrink: 0 }} />
-          <span>Offline · Showing previously saved public price information</span>
-        </div>
-      )}
-
       {/* Compact Quick Menu Drawer */}
       {isMenuOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '68px',
-            left: 0,
-            right: 0,
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
-            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-            zIndex: 99,
-            padding: '16px',
-            maxWidth: '600px',
-            margin: '0 auto'
-          }}
-        >
+        <>
+          <div
+            onClick={() => setIsMenuOpen(false)}
+            style={{
+              position: 'fixed',
+              top: '68px',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 98
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: '68px',
+              left: 0,
+              right: 0,
+              background: '#ffffff',
+              borderBottom: '1px solid #e2e8f0',
+              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+              zIndex: 99,
+              padding: '16px',
+              maxWidth: '600px',
+              margin: '0 auto'
+            }}
+          >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <button
               onClick={() => { setActiveTab('home'); setIsMenuOpen(false); }}
@@ -185,8 +168,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             >
               Formal Receipt Reporting
             </button>
+            <button
+              onClick={() => { setActiveTab('track'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'track' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'track' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              Track Report
+            </button>
           </div>
         </div>
+        </>
       )}
 
       {/* Fixed 4-tab bottom navigation */}

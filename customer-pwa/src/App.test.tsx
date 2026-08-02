@@ -27,9 +27,9 @@ describe('legacy App shell routing and status', () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     history.replaceState(null, '', '/reports/track');
     render(<App />);
-    expect(screen.getByRole('heading', { name: /Track Report Status/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Track Report Status/i })).toBeInTheDocument();
     history.pushState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
-    expect(await screen.findByRole('heading', { name: /Check current commodity prices/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Popular categories/i })).toBeInTheDocument();
   });
 });

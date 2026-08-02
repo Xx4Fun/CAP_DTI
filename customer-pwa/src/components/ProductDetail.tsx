@@ -5,7 +5,6 @@ import {
   FileCheck,
   ChevronDown,
   ChevronUp,
-  ChevronRight,
   Info,
   ShieldCheck,
   Layers
@@ -328,7 +327,10 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             fontWeight: 600,
             fontSize: '0.92rem',
             cursor: 'pointer',
-            padding: '4px 0'
+            padding: '12px 16px',
+            minHeight: '44px',
+            borderRadius: '8px',
+            marginLeft: '-16px'
           }}
         >
           <ArrowLeft size={18} />
@@ -575,7 +577,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         </button>
       </div>
 
-      {/* 6. Bulletin Source Link */}
+      {/* 6. Bulletin Source Info */}
       <div
         style={{
           background: '#ffffff',
@@ -596,7 +598,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             DTI price bulletin · Effective {effDate}
           </div>
         </div>
-        <ChevronRight size={20} color="#64748b" />
       </div>
     </div>
   );

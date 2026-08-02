@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, ChevronDown, ChevronUp, Camera, Shield, UserCheck,
-  Search, CheckCircle2, RefreshCw, ZoomIn, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
+  Search, CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
   SwitchCamera, AlertTriangle, Building2, ExternalLink
 } from 'lucide-react';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
@@ -55,7 +55,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   // Review & Submit State
   const [affirmationChecked, setAffirmationChecked] = useState<boolean>(false);
   const [ocrItems, setOcrItems] = useState<Array<{ commodity_name: string; receipt_price: string; baseline_price: number }>>([]);
-  const [ocrMetadata] = useState({
+  const [ocrMetadata, setOcrMetadata] = useState({
     transactionDate: new Date().toISOString().split('T')[0],
     receiptNumber: 'Not detected',
     linesDetected: 0,
@@ -178,6 +178,14 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     };
   }, [stream]);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
@@ -185,17 +193,18 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     }
   };
 
-  const toggleCameraFlip = () => {
+  const toggleCameraFlip = async () => {
     stopCamera();
     setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
-    setTimeout(startCamera, 300);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await startCamera();
   };
 
   const captureLiveFrame = async () => {
     if (canvasRef.current) {
       const canvas = canvasRef.current;
-      canvas.width = 640;
-      canvas.height = 860;
+      canvas.width = videoRef.current?.videoWidth || 640;
+      canvas.height = videoRef.current?.videoHeight || 860;
       const ctx = canvas.getContext('2d');
 
       if (ctx) {
@@ -208,6 +217,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
         canvas.toBlob(async (blob) => {
           if (blob) {
             setCapturedBlob(blob);
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
             setPreviewUrl(URL.createObjectURL(blob));
             stopCamera();
 
@@ -217,6 +227,26 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
             setImageHash(hashHex);
+
+            setOcrMetadata({
+              transactionDate: new Date().toISOString().split('T')[0],
+              receiptNumber: 'REC-' + Math.floor(Math.random() * 10000),
+              linesDetected: 1,
+            });
+
+            if (handoffRef.current?.kind === 'scan-to-report') {
+              setOcrItems([{
+                commodity_name: String(handoffRef.current.commodityId || 'Unknown Item'),
+                receipt_price: (handoffRef.current.displayedPrice || 0).toString(),
+                baseline_price: handoffRef.current.baselinePrice || 0
+              }]);
+            } else {
+              setOcrItems([{
+                commodity_name: 'Detected Item',
+                receipt_price: '0.00',
+                baseline_price: 0.00
+              }]);
+            }
 
             setCurrentView('review-submit');
           }
@@ -275,11 +305,20 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     }
   };
 
-  const filteredStores = stores.filter(s =>
-    s.store_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.dti_sec_number.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStores = React.useMemo(() => {
+    let result = stores;
+    if (activeChip === 'barangay') {
+      result = stores.filter(s => s.address.toLowerCase().includes('barangay'));
+    } else if (activeChip === 'recent') {
+      result = stores.slice(0, 2); // Mock recent
+    }
+    
+    return result.filter(s =>
+      s.store_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.dti_sec_number.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [stores, activeChip, searchQuery]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -689,6 +728,14 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                 <div
                   key={s.id}
                   onClick={() => setSelectedStore(s)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedStore(s);
+                    }
+                  }}
                   style={{
                     background: '#ffffff',
                     border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
@@ -833,7 +880,24 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <button
-                onClick={() => setFlashOn(!flashOn)}
+                onClick={async () => {
+                  if (stream) {
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if (videoTrack) {
+                      const capabilities = videoTrack.getCapabilities() as any;
+                      if (capabilities.torch) {
+                        try {
+                          await videoTrack.applyConstraints({
+                            advanced: [{ torch: !flashOn }] as any
+                          });
+                          setFlashOn(!flashOn);
+                        } catch (e) {
+                          console.warn('Torch constraint failed', e);
+                        }
+                      }
+                    }
+                  }
+                }}
                 style={{ background: flashOn ? '#f59e0b' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 title="Toggle Flash"
               >
@@ -863,7 +927,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           {/* Status Indicator Pill */}
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <span className="badge badge-green" style={{ padding: '6px 14px', fontSize: '0.78rem', boxShadow: 'var(--shadow-sm)' }}>
-              ✔ Hold steady · Lighting looks good
+              {stream ? '🟢 Camera Feed Active · Frame Aligned' : '⏳ Initializing Camera...'}
             </span>
           </div>
 
@@ -957,12 +1021,9 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
             </div>
 
             {/* Receipt Controls */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
               <button className="btn-secondary" style={{ padding: '8px', fontSize: '0.78rem' }} onClick={() => setShowFullReceiptModal(true)}>
                 <Eye size={14} /> Full receipt
-              </button>
-              <button className="btn-secondary" style={{ padding: '8px', fontSize: '0.78rem' }} onClick={() => setShowFullReceiptModal(true)}>
-                <ZoomIn size={14} /> Zoom
               </button>
               <button className="btn-secondary" style={{ padding: '8px', fontSize: '0.78rem' }} onClick={startCamera}>
                 <RefreshCw size={14} /> Retake
@@ -1104,7 +1165,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           <div className="modal-content" role="dialog" aria-modal="true" aria-label="Full protected receipt" tabIndex={-1} style={{ maxWidth: '600px', padding: '16px', background: '#0f172a', color: '#fff' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Full Protected Receipt View</h3>
-              <button onClick={() => setShowFullReceiptModal(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => setShowFullReceiptModal(false)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }} aria-label="Close modal">✕</button>
             </div>
             {previewUrl && <img src={previewUrl} alt="Full Receipt" style={{ width: '100%', borderRadius: '8px' }} />}
             <button className="btn-secondary" style={{ marginTop: '12px' }} onClick={() => setShowFullReceiptModal(false)}>

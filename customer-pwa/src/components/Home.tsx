@@ -25,21 +25,15 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* 1. Hero Header */}
-      <div style={{ marginBottom: '0px' }}>
-        <h1 style={{ fontSize: '1.65rem', fontWeight: 700, color: '#0f172a', marginBottom: '6px', lineHeight: '32px', letterSpacing: '-0.02em' }}>
-          Check current commodity prices
-        </h1>
-        <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: '22px' }}>
-          Scan a shelf tag or submit a receipt for DTI evaluation.
-        </p>
-      </div>
-
       {/* 2. Primary Action Cards Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
         {/* Scan Shelf Tag Card */}
         <div
           onClick={() => setActiveTab('scan')}
+          role="button"
+          tabIndex={0}
+          aria-label="Scan shelf tag"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('scan'); }}
           style={{
             background: '#f0f7ff',
             border: '1px solid #bfdbfe',
@@ -60,11 +54,8 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
             <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
               Scan shelf tag
             </div>
-            <div style={{ width: '24px', height: '2px', background: '#2563eb', margin: '6px 0 8px 0', borderRadius: '1px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#64748b', lineHeight: 1.35 }}>
-              Compare a displayed shelf price.
-            </div>
           </div>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
             <ChevronRight size={20} color="#2563eb" />
           </div>
@@ -73,6 +64,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
         {/* Report Concern Card */}
         <div
           onClick={() => setActiveTab('reports')}
+          role="button"
+          tabIndex={0}
+          aria-label="Report concern"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('reports'); }}
           style={{
             background: '#fffbeb',
             border: '1px solid #fde68a',
@@ -93,11 +88,8 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
             <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
               Report concern
             </div>
-            <div style={{ width: '24px', height: '2px', background: '#d97706', margin: '6px 0 8px 0', borderRadius: '1px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#64748b', lineHeight: 1.35 }}>
-              Submit a checkout receipt for DTI evaluation.
-            </div>
           </div>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
             <ChevronRight size={20} color="#d97706" />
           </div>
@@ -107,6 +99,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
       {/* 3. Track Report Card */}
       <div
         onClick={() => setActiveTab('track')}
+        role="button"
+        tabIndex={0}
+        aria-label="Track an existing report"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('track'); }}
         style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
@@ -269,6 +265,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
           </h2>
           <span
             onClick={() => setActiveTab('prices')}
+            role="button"
+            tabIndex={0}
+            aria-label="View all categories"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('prices'); }}
             style={{ color: '#2563eb', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
           >
             View all
@@ -279,6 +279,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
           {/* Sardines */}
           <div
             onClick={() => handleCategoryClick('Sardines')}
+            role="button"
+            tabIndex={0}
+            aria-label="View Sardines category"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Sardines'); }}
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -301,6 +305,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
           {/* Milk */}
           <div
             onClick={() => handleCategoryClick('Milk')}
+            role="button"
+            tabIndex={0}
+            aria-label="View Milk category"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Milk'); }}
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -323,6 +331,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
           {/* Coffee */}
           <div
             onClick={() => handleCategoryClick('Coffee')}
+            role="button"
+            tabIndex={0}
+            aria-label="View Coffee category"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Coffee'); }}
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -345,6 +357,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
           {/* Water */}
           <div
             onClick={() => handleCategoryClick('Water')}
+            role="button"
+            tabIndex={0}
+            aria-label="View Water category"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Water'); }}
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -369,6 +385,10 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => 
       {/* 6. Info Footer Card */}
       <div
         onClick={() => setActiveTab('prices')}
+        role="button"
+        tabIndex={0}
+        aria-label="How price checking and reporting work"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('prices'); }}
         style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',

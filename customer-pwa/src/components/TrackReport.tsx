@@ -83,13 +83,7 @@ export const TrackReport: React.FC<TrackReportProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>Track Report Status</h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            View the real-time evaluation status and public audit trail for your submitted report.
-          </p>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '-4px' }}>
         {setActiveTab && (
           <button
             className="btn-secondary"
@@ -260,6 +254,18 @@ export const TrackReport: React.FC<TrackReportProps> = ({
               <strong>Privacy & Anonymity Protected:</strong> Specific internal investigative notes and store-owner rebuttal uploads are restricted to authorized DTI legal evaluators.
             </div>
           </div>
+
+          <button
+            onClick={() => {
+              setReport(null);
+              setReference('');
+              setToken('');
+            }}
+            className="btn-primary"
+            style={{ marginTop: '20px', width: '100%' }}
+          >
+            Track Another Report
+          </button>
         </div>
       )}
     </div>

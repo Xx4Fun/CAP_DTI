@@ -10,7 +10,10 @@ export const OfflineBanner: React.FC<OfflineBannerProps> = ({ isOffline, lastSyn
   if (!isOffline) return null;
 
   return (
-    <div style={{
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
       background: 'rgba(239, 68, 68, 0.2)',
       border: '1px solid rgba(239, 68, 68, 0.4)',
       color: '#f87171',

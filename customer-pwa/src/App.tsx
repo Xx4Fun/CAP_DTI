@@ -20,10 +20,10 @@ const tabForRoute = (route: AppRoute): string => {
 };
 
 const routeForTab = (tab: string): AppRoute => {
-  if (tab === 'prices' || tab === 'search' || tab === 'stores') return { name: 'prices' };
-  if (tab === 'scan' || tab === 'shelf-scanner') return { name: 'scan' };
+  if (tab === 'prices') return { name: 'prices' };
+  if (tab === 'scan') return { name: 'scan' };
   if (tab === 'track') return { name: 'track-report' };
-  if (tab === 'reports' || tab === 'report') return { name: 'reports' };
+  if (tab === 'reports') return { name: 'reports' };
   return { name: 'home' };
 };
 
@@ -68,7 +68,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const isScanTab = activeTab === 'scan' || activeTab === 'shelf-scanner';
+  const isScanTab = activeTab === 'scan';
 
   return (
     <div>
@@ -90,18 +90,18 @@ export const App: React.FC = () => {
           />
         )}
 
-        {(activeTab === 'prices' || activeTab === 'search' || activeTab === 'stores') && (
+        {activeTab === 'prices' && (
           <SrpSearch
             setActiveTab={setActiveTab}
             stateOfCalamity={config?.state_of_calamity}
           />
         )}
 
-        {(activeTab === 'scan' || activeTab === 'shelf-scanner') && (
+        {activeTab === 'scan' && (
           <ShelfScanner setActiveTab={setActiveTab} />
         )}
 
-        {(activeTab === 'reports' || activeTab === 'report') && (
+        {activeTab === 'reports' && (
           <FormalReport
             setActiveTab={setActiveTab}
             onTrackReport={(ref, tok) => {

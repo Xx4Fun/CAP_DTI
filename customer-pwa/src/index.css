@@ -3,10 +3,7 @@
 :root {
   --font-primary: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --bg-primary: #f8fafc;
-  --bg-dark: #f8fafc;
   --bg-surface: #ffffff;
-  --card-bg: #ffffff;
-  --bg-card: #ffffff;
   --border-color: #e2e8f0;
   --border-highlight: rgba(29, 78, 216, 0.3);
   --primary: #1d4ed8;
@@ -71,7 +68,7 @@ body {
 
 /* Cards & Glass Panel / Clean Card Utilities */
 .glass-panel {
-  background: var(--card-bg);
+  background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 20px;
@@ -215,7 +212,8 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 64px;
+  height: auto;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   background: #ffffff;
   border-top: 1px solid var(--border-color);
   display: flex;

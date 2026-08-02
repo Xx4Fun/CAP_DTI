@@ -21,9 +21,11 @@ export const InstallPrompt: React.FC<InstallPromptProps> = ({ visible }) => {
   const [isInstalled, setIsInstalled] = useState(
     () => window.matchMedia?.('(display-mode: standalone)').matches ?? false,
   );
-  const [isDismissed, setIsDismissed] = useState(
-    () => sessionStorage.getItem(DISMISSED_KEY) === 'true',
-  );
+  const [isDismissed, setIsDismissed] = useState(() => {
+    const dismissedUntil = localStorage.getItem(DISMISSED_KEY);
+    if (!dismissedUntil) return false;
+    return new Date().getTime() < parseInt(dismissedUntil, 10);
+  });
 
   useEffect(() => {
     const handleInstallAvailable = (event: Event) => {
@@ -64,7 +66,8 @@ export const InstallPrompt: React.FC<InstallPromptProps> = ({ visible }) => {
   };
 
   const dismiss = () => {
-    sessionStorage.setItem(DISMISSED_KEY, 'true');
+    const expiration = new Date().getTime() + 7 * 24 * 60 * 60 * 1000;
+    localStorage.setItem(DISMISSED_KEY, expiration.toString());
     setIsDismissed(true);
     setPromptEvent(null);
   };

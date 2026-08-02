@@ -52,6 +52,6 @@ describe('PWA install promotion', () => {
     await user.click(await screen.findByRole('button', { name: 'Not now' }));
 
     expect(screen.queryByRole('button', { name: 'Install app' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Check current commodity prices/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Popular categories/i })).toBeInTheDocument();
   });
 });

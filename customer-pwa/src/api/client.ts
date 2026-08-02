@@ -89,6 +89,7 @@ export interface Establishment {
   longitude: number;
   address: string;
   recidivism_index: number;
+  photoType?: string;
 }
 
 export interface ScanTagResponse {

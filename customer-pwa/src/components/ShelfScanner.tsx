@@ -51,7 +51,7 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
         }}
       >
         <div style={{ background: '#166534', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+          <div style={{ fontSize: '0.65rem', fontWeight: 900, color: '#ffffff', lineHeight: 1.1 }}>
             Metro
           </div>
         </div>
@@ -80,7 +80,7 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
         }}
       >
         <div style={{ background: '#1e40af', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.52rem', fontWeight: 800, color: '#ffffff', lineHeight: 1.1 }}>
+          <div style={{ fontSize: '0.65rem', fontWeight: 900, color: '#ffffff', lineHeight: 1.1 }}>
             GAISANO
           </div>
         </div>
@@ -108,8 +108,8 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
         }}
       >
         <div style={{ background: '#b91c1c', padding: '2px 4px', borderRadius: '4px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
-          <div style={{ fontSize: '0.48rem', fontWeight: 800, color: '#ffffff' }}>ROBINSONS</div>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.55rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
+          <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#ffffff' }}>ROBINSONS</div>
         </div>
         <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
           <div style={{ width: '24px', height: '24px', background: '#64748b', borderRadius: '2px 2px 0 0' }} />
@@ -185,9 +185,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [commoditySearchResults, setCommoditySearchResults] = useState<Commodity[]>([]);
   const [isSearchingCommodities, setIsSearchingCommodities] = useState(false);
   const [showManualDirectorySearch, setShowManualDirectorySearch] = useState(false);
+  const searchTimeoutRef = useRef<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
 
   useEffect(() => {
@@ -212,6 +214,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       stopCamera();
     };
   }, [scannerState, facingMode]);
+
+  useEffect(() => {
+    return () => {
+      if (capturedPreviewUrl) {
+        URL.revokeObjectURL(capturedPreviewUrl);
+      }
+    };
+  }, [capturedPreviewUrl]);
 
   const resetAllScanData = () => {
     if (capturedPreviewUrl) {
@@ -274,21 +284,28 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       setCommoditySearchResults([]);
       return;
     }
-    setIsSearchingCommodities(true);
-    try {
-      const res = await apiClient.get('/public/commodities', { params: { query } });
-      if (res.data && res.data.success && Array.isArray(res.data.data)) {
-        setCommoditySearchResults(res.data.data);
-      } else {
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = window.setTimeout(async () => {
+      setIsSearchingCommodities(true);
+      try {
+        const res = await apiClient.get('/public/commodities', { params: { query } });
+        if (res.data && res.data.success && Array.isArray(res.data.data)) {
+          setCommoditySearchResults(res.data.data);
+        } else {
+          const lower = query.toLowerCase();
+          setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+        }
+      } catch {
         const lower = query.toLowerCase();
         setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+      } finally {
+        setIsSearchingCommodities(false);
       }
-    } catch {
-      const lower = query.toLowerCase();
-      setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
-    } finally {
-      setIsSearchingCommodities(false);
-    }
+    }, 300);
   };
 
   const startCamera = async () => {
@@ -350,7 +367,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     if (!videoRef.current) return;
 
     const video = videoRef.current;
-    const canvas = document.createElement('canvas');
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas');
+    }
+    const canvas = canvasRef.current;
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
 
@@ -541,23 +561,33 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const handleConfirmAndCompare = () => {
     const parsedPrice = parseFloat(userPriceInput);
     if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      alert('Please enter a valid positive shelf price.');
+      setErrorMessage('Please enter a valid positive shelf price.');
+      setScannerState('ERROR');
       return;
     }
     if (!selectedCandidate) {
-      alert('Please select a valid commodity candidate or search directory for a product.');
+      setErrorMessage('Please select a valid commodity candidate or search directory for a product.');
+      setScannerState('ERROR');
       return;
     }
     executeComparison(selectedCandidate, parsedPrice);
   };
 
   const filteredStores = stores.filter((s) => {
+    let matchesFilter = true;
+    if (activeFilterChip === 'nearby') {
+      matchesFilter = true;
+    } else if (activeFilterChip === 'recent') {
+      matchesFilter = s.id === recentlyUsedStore?.id;
+    }
+
     const q = searchTerm.toLowerCase().trim();
-    if (!q) return true;
+    if (!q) return matchesFilter;
     return (
-      s.store_name.toLowerCase().includes(q) ||
-      s.address.toLowerCase().includes(q) ||
-      s.owner_name.toLowerCase().includes(q)
+      matchesFilter &&
+      (s.store_name.toLowerCase().includes(q) ||
+       s.address.toLowerCase().includes(q) ||
+       s.owner_name.toLowerCase().includes(q))
     );
   });
 
@@ -585,7 +615,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     }
   };
 
-  const ocrStatus = scanResponse?.ocr_status || 'OCR_PRODUCT_AND_PRICE_DETECTED';
+  const ocrStatus = scanResponse?.ocr_status || (isDemoEnabled ? 'OCR_PRODUCT_AND_PRICE_DETECTED' : 'OCR_NO_TEXT');
 
   return (
     <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
@@ -757,7 +787,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                   return (
                     <div
                       key={store.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setSelectedStore(store)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedStore(store); }}
                       style={{
                         background: '#ffffff',
                         border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
@@ -929,27 +962,25 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             </div>
           )}
 
-          {/* Compact Instruction Overlay */}
+          {/* Sleek Floating Pill Badge Overlay */}
           <div
             style={{
               position: 'absolute',
               top: 'calc(68px + env(safe-area-inset-top))',
-              left: '16px',
-              right: '16px',
+              left: '50%',
+              transform: 'translateX(-50%)',
               zIndex: 15,
-              background: 'rgba(15, 23, 42, 0.82)',
+              background: 'rgba(15, 23, 42, 0.65)',
               backdropFilter: 'blur(8px)',
-              borderRadius: '12px',
-              padding: '10px 14px',
+              borderRadius: '999px',
+              padding: '6px 14px',
               textAlign: 'center',
-              color: '#ffffff'
+              color: '#ffffff',
+              whiteSpace: 'nowrap'
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>
-              Align the shelf tag inside the frame.
-            </div>
-            <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '2px' }}>
-              Include product name, package size, and displayed price.
+            <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>
+              Align tag inside frame
             </div>
           </div>
 
@@ -977,52 +1008,42 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           <div
             style={{
               position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: 'calc(20px + env(safe-area-inset-bottom))',
+              left: '50%',
+              transform: 'translateX(-50%)',
               zIndex: 20,
-              padding: '16px 16px calc(20px + env(safe-area-inset-bottom)) 16px',
-              background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.85) 100%)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               gap: '10px'
             }}
           >
-            <span style={{ fontSize: '0.78rem', color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 600 }}>
-              Align shelf tag inside bounding box
-            </span>
-
             <button
               onClick={handleShutterCapture}
               style={{
-                width: '76px',
-                height: '76px',
+                width: '64px',
+                height: '64px',
                 borderRadius: '50%',
-                border: '4px solid #ffffff',
+                border: '3px solid #ffffff',
                 background: 'transparent',
-                padding: '4px',
+                padding: '3px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                boxShadow: '0 4px 15px rgba(0,0,0,0.4)'
               }}
               aria-label="Capture Shutter"
             >
               <div
                 style={{
-                  width: '60px',
-                  height: '60px',
+                  width: '50px',
+                  height: '50px',
                   borderRadius: '50%',
                   background: '#ffffff',
                 }}
               />
             </button>
-
-            <span style={{ fontSize: '0.78rem', color: '#cbd5e1', textShadow: '0 1px 3px rgba(0,0,0,0.8)', fontWeight: 500 }}>
-              Tap to capture shelf tag
-            </span>
           </div>
         </div>
       )}
@@ -1131,7 +1152,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ background: '#dcfce7', color: '#14532d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     ✔ OCR-Detected Tag Price: ₱{userPriceInput || '0.00'}
                   </span>
                   <span style={{ background: '#dbeafe', color: '#1e40af', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>
@@ -1154,9 +1175,17 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                     return (
                       <div
                         key={c.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setSelectedCandidate(c);
                           setSelectedProductSource('OCR');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setSelectedCandidate(c);
+                            setSelectedProductSource('OCR');
+                          }
                         }}
                         style={{
                           background: '#ffffff',
@@ -1175,14 +1204,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                             {c.commodity_name}
                           </div>
                           <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                            {c.category || 'Commodity'} · {c.unit || c.package_size}
+                            {c.category || 'Commodity'} · {c.unit || c.package_size || 'Standard'}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
                             ₱{Number(c.baseline_price).toFixed(2)}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Baseline SRP</div>
                         </div>
                       </div>
                     );
@@ -1241,9 +1270,17 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                     return (
                       <div
                         key={c.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setSelectedCandidate(c);
                           setSelectedProductSource('OCR');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setSelectedCandidate(c);
+                            setSelectedProductSource('OCR');
+                          }
                         }}
                         style={{
                           background: '#ffffff',
@@ -1262,14 +1299,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                             {c.commodity_name}
                           </div>
                           <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                            {c.category || 'Commodity'} · {c.unit || c.package_size}
+                            {c.category || 'Commodity'} · {c.unit || c.package_size || 'Standard'}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
                             ₱{Number(c.baseline_price).toFixed(2)}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Baseline SRP</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Baseline SRP</div>
                         </div>
                       </div>
                     );
@@ -1283,7 +1320,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           {ocrStatus === 'PRICE_DETECTED_PRODUCT_MISSING' && (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, width: 'fit-content' }}>
+                <span style={{ background: '#dcfce7', color: '#14532d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, width: 'fit-content' }}>
                   ✔ OCR-Detected Tag Price: ₱{userPriceInput || '0.00'}
                 </span>
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
@@ -1401,7 +1438,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                     return (
                       <div
                         key={item.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleManualSelectCommodity(item)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleManualSelectCommodity(item); }}
                         style={{
                           padding: '10px 12px',
                           borderRadius: '10px',
@@ -1415,7 +1455,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                       >
                         <div>
                           <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>{item.commodity_name}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.category} · {item.unit || item.package_size}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.category || 'Commodity'} · {item.unit || item.package_size || 'Standard'}</div>
                         </div>
                         <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#1d4ed8' }}>
                           ₱{Number(item.baseline_price).toFixed(2)}
@@ -1443,7 +1483,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 {selectedCandidate.commodity_name}
               </div>
               <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                {selectedCandidate.unit || selectedCandidate.package_size} · Baseline SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+                {selectedCandidate.unit || selectedCandidate.package_size || 'Standard'} · Baseline SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
               </div>
             </div>
           )}

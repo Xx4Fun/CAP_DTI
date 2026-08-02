@@ -245,6 +245,11 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
     } else {
       fetchCommodities('');
     }
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -425,23 +430,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {/* 1. Header Title & Subtitle */}
-      <div>
-        <h1
-          style={{
-            fontSize: '1.75rem',
-            fontWeight: 800,
-            color: '#0f172a',
-            marginBottom: '4px',
-            lineHeight: 1.2
-          }}
-        >
-          Prices
-        </h1>
-        <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.4 }}>
-          Search current reference prices by product, brand, category, and package size.
-        </p>
-      </div>
+      {/* Header removed */}
 
       {/* 2. Search Input Bar */}
       <div style={{ position: 'relative' }}>
@@ -627,41 +616,30 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
         </button>
 
         {/* Sort Button */}
-        <button
-          onClick={() => {
-            const nextSort =
-              sortOption === 'default'
-                ? 'price_low'
-                : sortOption === 'price_low'
-                ? 'price_high'
-                : sortOption === 'price_high'
-                ? 'name'
-                : 'default';
-            setSortOption(nextSort);
-          }}
-          style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '10px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            color: '#0f172a',
-            fontWeight: 600,
-            fontSize: '0.9rem',
-            cursor: 'pointer'
-          }}
-        >
-          <ArrowUpDown size={18} />
-          Sort
-          {sortOption !== 'default' && (
-            <span style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 700 }}>
-              ({sortOption === 'price_low' ? 'Low' : sortOption === 'price_high' ? 'High' : 'A-Z'})
-            </span>
-          )}
-        </button>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as any)}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '10px 16px 10px 36px',
+              width: '100%',
+              color: '#0f172a',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              appearance: 'none'
+            }}
+          >
+            <option value="default">Default Order</option>
+            <option value="price_low">Price: Low to High</option>
+            <option value="price_high">Price: High to Low</option>
+            <option value="name">Name: A-Z</option>
+          </select>
+          <ArrowUpDown size={18} style={{ position: 'absolute', left: '12px', pointerEvents: 'none', color: '#64748b' }} />
+        </div>
       </div>
 
       {/* Filter Modal Drawer if active */}
@@ -686,13 +664,42 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
               <X size={16} />
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.8rem', background: '#dbeafe', color: '#1d4ed8', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
-              Active SRP Bulletin
-            </span>
-            <span style={{ fontSize: '0.8rem', background: '#d1fae5', color: '#047857', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
-              DTI Antique Monitored
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>Regulatory Classification</label>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as any)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                fontSize: '0.85rem',
+                fontWeight: 600
+              }}
+            >
+              <option value="ALL">All</option>
+              <option value="BASIC_NECESSITY">Basic Necessity</option>
+              <option value="PRIME_COMMODITY">Prime Commodity</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button
+              onClick={() => {
+                setCategoryFilter('ALL');
+                setIsFilterModalOpen(false);
+              }}
+              style={{ flex: 1, padding: '8px', borderRadius: '8px', background: '#f1f5f9', color: '#334155', fontWeight: 600, border: 'none' }}
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => setIsFilterModalOpen(false)}
+              style={{ flex: 1, padding: '8px', borderRadius: '8px', background: '#2563eb', color: '#ffffff', fontWeight: 600, border: 'none' }}
+            >
+              Apply
+            </button>
           </div>
         </div>
       )}
