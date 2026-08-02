@@ -661,9 +661,13 @@
 }
 
 .header-main-title {
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: 'Plus Jakarta Sans', 'Outfit', sans-serif;
+  font-size: 1.45rem;
+  font-weight: 800;
   color: #ffffff;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   outline-offset: 4px;
 }
 
