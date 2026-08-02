@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, ChevronDown, ChevronUp, Camera, Shield, UserCheck,
   Search, CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
-  SwitchCamera, AlertTriangle, Building2, ExternalLink
+  SwitchCamera, AlertTriangle, Building2, ExternalLink, MapPin
 } from 'lucide-react';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
@@ -860,18 +860,30 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       )}
 
       {/* ========================================================================= */}
-      {/* 5. STEP 2 OF 3: LIVE RECEIPT CAMERA VIEWPORT (cus_ui/Reports/5.png) */}
+      {/* 5. STEP 2 OF 3: LIVE RECEIPT CAMERA VIEWPORT (Fixed Zero-Scroll Viewport) */}
       {/* ========================================================================= */}
       {currentView === 'camera-viewport' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {/* Header Bar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b', padding: '10px 14px', borderRadius: '12px', color: '#fff' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600 }}>
-              <span>{selectedStore?.store_name || 'Selected store unavailable'}</span>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>▾</span>
+        <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          
+          {/* Top Control Bar */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0) 100%)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => setCurrentView('select-store')}
+                style={{ background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%', width: '38px', height: '38px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                aria-label="Back to store selection"
+              >
+                <ArrowLeft size={18} />
+              </button>
+              <div style={{ background: 'rgba(15,23,42,0.6)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <MapPin size={14} style={{ color: '#60a5fa' }} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ffffff', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedStore?.store_name || 'Store Selected'}
+                </span>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <button
                 onClick={async () => {
                   if (stream) {
@@ -891,82 +903,80 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                     }
                   }
                 }}
-                style={{ background: flashOn ? '#f59e0b' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ background: flashOn ? '#f59e0b' : 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%', width: '38px', height: '38px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                aria-label="Toggle Flash"
                 title="Toggle Flash"
               >
-                <Flashlight size={16} />
+                <Flashlight size={18} />
               </button>
               <button
                 onClick={toggleCameraFlip}
-                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%', width: '38px', height: '38px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                aria-label="Flip Camera"
                 title="Flip Camera"
               >
-                <SwitchCamera size={16} />
+                <SwitchCamera size={18} />
               </button>
             </div>
           </div>
 
-          {/* Instruction Subtitle */}
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center' }}>
-            Fit the entire receipt inside the frame. Include the store name, date, and relevant item lines.
-          </p>
+          {/* Full Viewport Camera Stream */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }}
+          />
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
 
+          {/* Receipt Bounding Box Guide */}
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '70px 20px 110px 20px', pointerEvents: 'none' }}>
+            <div style={{ width: '85%', maxWidth: '340px', height: '70%', maxHeight: '480px', border: '2px dashed #f59e0b', borderRadius: '16px', boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.55)', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <div style={{ borderTop: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '4px 0 0 0' }} />
+                <div style={{ borderTop: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 4px 0 0' }} />
+              </div>
+
+              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                <span style={{ background: 'rgba(15,23,42,0.85)', color: '#fbbf24', fontSize: '0.75rem', fontWeight: 700, padding: '5px 12px', borderRadius: '20px', border: '1px solid rgba(245,158,11,0.4)', backdropFilter: 'blur(6px)', letterSpacing: '0.02em' }}>
+                  Targeting Receipt · Include Store & Total
+                </span>
+                <span style={{ background: 'rgba(15,23,42,0.7)', color: '#94a3b8', fontSize: '0.7rem', padding: '3px 10px', borderRadius: '14px' }}>
+                  {stream ? '🟢 Camera Feed Active' : '⏳ Initializing...'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <div style={{ borderBottom: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 0 0 4px' }} />
+                <div style={{ borderBottom: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 0 4px 0' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Error Banner */}
           {error && (
-            <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
+            <div style={{ position: 'absolute', top: '70px', left: '16px', right: '16px', zIndex: 30, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', padding: '10px 14px', borderRadius: '10px', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
               {error}
             </div>
           )}
 
-          {/* Status Indicator Pill */}
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <span className="badge badge-green" style={{ padding: '6px 14px', fontSize: '0.78rem', boxShadow: 'var(--shadow-sm)' }}>
-              {stream ? '🟢 Camera Feed Active · Frame Aligned' : '⏳ Initializing Camera...'}
-            </span>
-          </div>
-
-          {/* Camera Viewfinder Box */}
-          <div className="camera-container">
-            <video ref={videoRef} autoPlay playsInline muted className="camera-video" />
-
-            {/* Bounding Box Overlay */}
-            <div className="camera-overlay">
-              <div style={{ textAlign: 'center', background: 'rgba(15,23,42,0.75)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', color: '#fbbf24', backdropFilter: 'blur(4px)' }}>
-                Targeting Checkout Receipt · Position Full Length
-              </div>
-
-              {/* Corner Framing Guides */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', height: '100%', position: 'absolute', inset: 0, padding: '12px', pointerEvents: 'none' }}>
-                <div style={{ borderTop: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '30px', height: '30px' }} />
-                <div style={{ borderTop: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '30px', height: '30px' }} />
-              </div>
-
-              <div style={{ textAlign: 'center', background: 'rgba(15,23,42,0.75)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', color: '#ffffff', backdropFilter: 'blur(4px)' }}>
-                DTI Hardware Lock Active · Gallery Disabled
-              </div>
+          {/* Bottom Shutter Control Bar */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20, padding: '16px 20px max(24px, env(safe-area-inset-bottom)) 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', background: 'linear-gradient(0deg, rgba(15,23,42,0.95) 0%, rgba(15,23,42,0) 100%)' }}>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', fontWeight: 500, letterSpacing: '0.01em' }}>
+              🔒 DTI Hardware Camera Lock · Hold Steady to Capture
             </div>
-          </div>
-
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-          {/* Shutter Button Bar */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px', marginTop: '8px' }}>
-            <button
-              className="btn-secondary"
-              style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }}
-              onClick={() => setCurrentView('select-store')}
-            >
-              <ArrowLeft size={20} />
-            </button>
 
             <button
               onClick={captureLiveFrame}
+              aria-label="Capture receipt photo"
               style={{
-                width: '68px',
-                height: '68px',
+                width: '72px',
+                height: '72px',
                 borderRadius: '50%',
                 background: '#ffffff',
                 border: '4px solid var(--primary)',
-                boxShadow: '0 4px 12px rgba(29,78,216,0.3)',
+                boxShadow: '0 0 20px rgba(37,99,235,0.5)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -975,10 +985,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
               }}
               title="Shutter Button"
             >
-              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'var(--primary)' }} />
+              <div style={{ width: '54px', height: '54px', borderRadius: '50%', background: 'var(--primary)' }} />
             </button>
-
-            <div style={{ width: '44px' }} />
           </div>
         </div>
       )}
