@@ -18,6 +18,7 @@ vi.mock('./services/adminApi', () => ({
     getReports: vi.fn().mockResolvedValue([]),
     getEmergencies: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
+    getSettings: vi.fn().mockResolvedValue({}),
   },
 }))
 
@@ -137,7 +138,12 @@ describe('DTI Admin application session', () => {
           } },
         })
       }
-      return Promise.resolve({ data: { data: {} } })
+      if (url === '/admin/overview') {
+        return Promise.resolve({
+          data: { data: { stores: 5, pending_reports: 2, active_emergencies: 0 } },
+        })
+      }
+      return Promise.resolve({ data: { data: [] } })
     })
     vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
