@@ -409,9 +409,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
             <div className="header-titles">
               <h1 ref={heading} tabIndex={-1} className="header-main-title">{panels[activeModule].title}</h1>
-              <span className="header-subtitle">
-                {panels[activeModule].description}
-              </span>
             </div>
           </div>
 

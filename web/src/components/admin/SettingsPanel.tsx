@@ -179,17 +179,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
 
   return (
     <div className="admin-panel-container">
-      {/* Header Banner */}
-      <div className="panel-header-banner">
-        <div className="panel-header-title-group">
-          <span className="panel-eyebrow">DTI Governance & Administration</span>
-          <h1 id="settings-heading" className="panel-title">System &amp; Profile Settings</h1>
-          <p className="panel-subtitle">
-            Configure your officer credentials, alert preferences, regional GIS parameters, and regulatory thresholds.
-          </p>
-        </div>
-      </div>
-
       {/* Main Settings Layout Grid */}
       <div className="settings-workspace">
         {/* Navigation Tabs (Sidebar) */}
