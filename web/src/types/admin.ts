@@ -20,6 +20,7 @@ export interface StoreRecord {
   id: number
   dti_sec_number?: string
   store_name: string
+  owner_name?: string
   address: string
   latitude: number
   longitude: number

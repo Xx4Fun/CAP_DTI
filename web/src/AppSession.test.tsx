@@ -96,6 +96,7 @@ describe('DTI Admin application session', () => {
     await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
     await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
     await user.click(screen.getByRole('button', { name: /logout/i }))
+    await user.click(screen.getByRole('button', { name: /log out/i }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/logout'))
     expect(sessionStorage.getItem('price-watch.admin.token')).toBeNull()
@@ -127,16 +128,21 @@ describe('DTI Admin application session', () => {
 
   it('explains when the officer was logged out due to inactivity', async () => {
     sessionStorage.setItem('price-watch.admin.token', 'valid-token')
-    vi.mocked(api.get).mockResolvedValueOnce({
-      data: { data: {
-        user: { id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' },
-        session: { expires_at: '2026-07-30T16:00:00+00:00', idle_timeout_seconds: 900, absolute_timeout_seconds: 28800 },
-      } },
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/admin/session') {
+        return Promise.resolve({
+          data: { data: {
+            user: { id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' },
+            session: { expires_at: '2026-07-30T16:00:00+00:00', idle_timeout_seconds: 900, absolute_timeout_seconds: 28800 },
+          } },
+        })
+      }
+      return Promise.resolve({ data: { data: {} } })
     })
-    vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Logged out successfully' } })
+    vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
     render(<App />)
-    await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
+    await screen.findByRole('heading', { level: 1, name: /overview/i })
     await act(async () => {
       window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
     })

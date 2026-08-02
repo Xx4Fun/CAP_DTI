@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { StoreRecord } from '../../types/admin'
-import { StoreOnboarding } from '../StoreOnboarding'
 import { StoreMap, getStoreStatusInfo } from './StoreMap'
+import { StoreDetailOverlay } from './StoreDetailOverlay'
 
 type StatusFilter = 'all' | 'compliant' | 'anomaly' | 'flagged'
 
@@ -11,7 +11,9 @@ export const StoreManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null)
-  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [detailStore, setDetailStore] = useState<StoreRecord | null>(null)
+  const [centerTrigger, setCenterTrigger] = useState<{ storeId: number; timestamp: number } | null>(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [inviteStore, setInviteStore] = useState<StoreRecord | null>(null)
   const [email, setEmail] = useState('')
   const [link, setLink] = useState('')
@@ -28,6 +30,25 @@ export const StoreManager: React.FC = () => {
   useEffect(() => {
     loadStores()
   }, [])
+
+  const handleCenterStore = (storeId: number) => {
+    setSelectedStoreId(storeId)
+    setCenterTrigger({ storeId, timestamp: Date.now() })
+  }
+
+  const handleOpenStoreDetail = (store: StoreRecord) => {
+    setSelectedStoreId(store.id)
+    setDetailStore(store)
+    setIsSidebarOpen(true)
+    setCenterTrigger({ storeId: store.id, timestamp: Date.now() })
+  }
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen((prev) => !prev)
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'))
+    }, 300)
+  }
 
   const counts = {
     all: stores.length,
@@ -53,309 +74,404 @@ export const StoreManager: React.FC = () => {
   })
 
   return (
-    <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
-      {/* Onboarding Drawer / Collapsible Header */}
-      {showOnboarding && (
-        <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>Onboard New Establishment</h3>
-            <button
-              type="button"
-              onClick={() => setShowOnboarding(false)}
-              style={{ padding: '0.35rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', fontSize: '0.8rem', cursor: 'pointer' }}
-            >
-              Close Panel
-            </button>
-          </div>
-          <StoreOnboarding
-            onCreated={() => {
-              loadStores()
-              setShowOnboarding(false)
-            }}
-          />
-        </div>
-      )}
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        flex: 1,
+        minHeight: 0,
+        borderRadius: '12px',
+        overflow: 'hidden',
+        border: '1px solid #e2e8f0',
+        background: '#f8fafc',
+        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)',
+      }}
+    >
+      {/* Full-Screen GIS Monitor Canvas */}
+      <StoreMap
+        stores={filteredStores}
+        selectedStoreId={selectedStoreId}
+        centerTrigger={centerTrigger}
+        onSelectStore={(store) => {
+          setSelectedStoreId(store.id)
+          setCenterTrigger({ storeId: store.id, timestamp: Date.now() })
+        }}
+        onOpenStoreDetail={handleOpenStoreDetail}
+        height="100%"
+        fullCanvas
+        title="Full-Screen GIS Store Monitoring Canvas"
+      />
 
-      {/* Main Registry Command Bar & Split View Container */}
-      <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-        {/* Header & Controls */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <i className="fa-solid fa-building" style={{ color: '#1e3a8a', fontSize: '1.2rem' }} aria-hidden="true" />
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>Commercial Establishment Registry</h3>
-            </div>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-              GIS store mapping, verification state, compliance monitoring, and vendor invitation portal.
-            </p>
-          </div>
+      {/* Floating Map Info Legend (Top Right) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          zIndex: 500,
+          background: 'rgba(255, 255, 255, 0.92)',
+          backdropFilter: 'blur(10px)',
+          padding: '0.4rem 0.85rem',
+          borderRadius: '8px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.85rem',
+          fontSize: '0.78rem',
+          color: '#0f172a',
+          fontWeight: 600,
+        }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#1e3a8a' }}>
+          <i className="fa-solid fa-layer-group" aria-hidden="true" /> CartoDB GIS Monitor
+        </span>
+        <span style={{ height: '14px', width: '1px', background: '#cbd5e1' }} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#059669' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {counts.compliant} Clean
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#d97706' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b' }} /> {counts.anomaly} Anomaly
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#dc2626' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} /> {counts.flagged} Flagged
+        </span>
+      </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', width: '260px' }}>
-              <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }} aria-hidden="true" />
-              <input
-                type="text"
-                placeholder="Search stores or SEC #..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.55rem 0.85rem 0.55rem 2.2rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontSize: '0.85rem',
-                }}
-              />
-            </div>
+      {/* Collapsible Overlay Sidebar Panel (Left Side) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '12px',
+          left: '12px',
+          bottom: '12px',
+          zIndex: 500,
+          width: isSidebarOpen ? '390px' : '54px',
+          transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          background: 'rgba(255, 255, 255, 0.96)',
+          backdropFilter: 'blur(14px)',
+          border: '1px solid #cbd5e1',
+          borderRadius: '10px',
+          boxShadow: '0 12px 28px -4px rgba(15, 23, 42, 0.15), 0 4px 8px -2px rgba(15, 23, 42, 0.08)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'visible',
+        }}
+      >
+        {/* Vertically Centered Right-Edge Collapse/Expand Toggle Button */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          title={isSidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar'}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            right: '-14px',
+            transform: 'translateY(-50%)',
+            zIndex: 600,
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            color: '#1e3a8a',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.15)',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <i className={`fa-solid ${isSidebarOpen ? 'fa-chevron-left' : 'fa-chevron-right'}`} aria-hidden="true" />
+        </button>
 
-            <button
-              type="button"
-              onClick={() => setShowOnboarding(!showOnboarding)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem 0.9rem',
-                borderRadius: '8px',
-                background: '#1e3a8a',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
+        {/* Inner Content Frame */}
+        <div style={{ width: '100%', height: '100%', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {isSidebarOpen && detailStore ? (
+            /* Fully Replaces Entire Sidebar when Viewing Store Info */
+            <StoreDetailOverlay
+              store={detailStore}
+              onClose={() => setDetailStore(null)}
+              onCenterMap={() => handleCenterStore(detailStore.id)}
+              onInviteVendor={(store) => {
+                setInviteStore(store)
+                setEmail('')
+                setLink('')
               }}
-            >
-              <i className="fa-solid fa-plus" aria-hidden="true" /> Onboard Establishment
-            </button>
-          </div>
-        </div>
+            />
+          ) : isSidebarOpen ? (
+            /* Standard Store List & Search View */
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              {/* Sidebar Header */}
+              <div
+                style={{
+                  padding: '0.85rem 1rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  background: '#ffffff',
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: '#eff6ff',
+                    border: '1px solid #bfdbfe',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#1e3a8a',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className="fa-solid fa-building-circle-check" style={{ fontSize: '0.95rem' }} aria-hidden="true" />
+                </div>
+                <div style={{ overflow: 'hidden' }}>
+                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    Store Monitoring
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    San Jose de Buenavista Zone
+                  </p>
+                </div>
+              </div>
 
-        {/* Status Filter Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('all')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: statusFilter === 'all' ? '1px solid #1e3a8a' : '1px solid #e2e8f0',
-              background: statusFilter === 'all' ? '#eff6ff' : '#f8fafc',
-              color: statusFilter === 'all' ? '#1e3a8a' : '#64748b',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            All ({counts.all})
-          </button>
+              {/* Search Input & Status Tabs */}
+              <div style={{ padding: '0.85rem 1rem 0.65rem', display: 'flex', flexDirection: 'column', gap: '0.65rem', flexShrink: 0, background: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <i
+                    className="fa-solid fa-magnifying-glass"
+                    style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search stores, address, SEC #..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem 0.5rem 2.1rem',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      background: '#f8fafc',
+                      color: '#0f172a',
+                      fontSize: '0.83rem',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
 
-          <button
-            type="button"
-            onClick={() => setStatusFilter('compliant')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: statusFilter === 'compliant' ? '1px solid #059669' : '1px solid #e2e8f0',
-              background: statusFilter === 'compliant' ? '#ecfdf5' : '#f8fafc',
-              color: statusFilter === 'compliant' ? '#059669' : '#64748b',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Compliant ({counts.compliant})
-          </button>
+                {/* Status Filter Chips */}
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: statusFilter === 'all' ? '1px solid #1e3a8a' : '1px solid #e2e8f0',
+                      background: statusFilter === 'all' ? '#eff6ff' : '#ffffff',
+                      color: statusFilter === 'all' ? '#1e3a8a' : '#64748b',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    All ({counts.all})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('compliant')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: statusFilter === 'compliant' ? '1px solid #059669' : '1px solid #e2e8f0',
+                      background: statusFilter === 'compliant' ? '#ecfdf5' : '#ffffff',
+                      color: statusFilter === 'compliant' ? '#059669' : '#64748b',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Clean ({counts.compliant})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('anomaly')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: statusFilter === 'anomaly' ? '1px solid #d97706' : '1px solid #e2e8f0',
+                      background: statusFilter === 'anomaly' ? '#fffbeb' : '#ffffff',
+                      color: statusFilter === 'anomaly' ? '#d97706' : '#64748b',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Anomaly ({counts.anomaly})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('flagged')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: statusFilter === 'flagged' ? '1px solid #dc2626' : '1px solid #e2e8f0',
+                      background: statusFilter === 'flagged' ? '#fef2f2' : '#ffffff',
+                      color: statusFilter === 'flagged' ? '#dc2626' : '#64748b',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Flagged ({counts.flagged})
+                  </button>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            onClick={() => setStatusFilter('anomaly')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: statusFilter === 'anomaly' ? '1px solid #d97706' : '1px solid #e2e8f0',
-              background: statusFilter === 'anomaly' ? '#fffbeb' : '#f8fafc',
-              color: statusFilter === 'anomaly' ? '#d97706' : '#64748b',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Minor Anomaly ({counts.anomaly})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setStatusFilter('flagged')}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: statusFilter === 'flagged' ? '1px solid #dc2626' : '1px solid #e2e8f0',
-              background: statusFilter === 'flagged' ? '#fef2f2' : '#f8fafc',
-              color: statusFilter === 'flagged' ? '#dc2626' : '#64748b',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Flagged / Recidivist ({counts.flagged})
-          </button>
-        </div>
-
-        {/* Executive Split View: Table (Left) + GIS Map (Right) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: '1.25rem', alignItems: 'start' }}>
-          {/* Left Table Section */}
-          <div className="admin-table-wrap" style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Establishment
-                  </th>
-                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    SEC Number
-                  </th>
-                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Address
-                  </th>
-                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Findings
-                  </th>
-                  <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+              {/* Scrollable Store Cards List */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {loading && (
-                  <tr>
-                    <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                      Loading store registry...
-                    </td>
-                  </tr>
+                  <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                    Loading establishments...
+                  </div>
                 )}
+
                 {!loading && filteredStores.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                      No commercial establishments match selected status filter or search criteria.
-                    </td>
-                  </tr>
+                  <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                    No establishments found matching search criteria.
+                  </div>
                 )}
+
                 {filteredStores.map((store) => {
                   const statusInfo = getStoreStatusInfo(store)
                   const isSelected = store.id === selectedStoreId
 
                   return (
-                    <tr
+                    <div
                       key={store.id}
                       onClick={() => setSelectedStoreId(store.id)}
                       style={{
-                        borderBottom: '1px solid #e2e8f0',
-                        background: isSelected ? '#eff6ff' : 'transparent',
+                        padding: '0.75rem 0.85rem',
+                        borderRadius: '8px',
+                        border: isSelected ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
+                        background: isSelected ? '#eff6ff' : '#ffffff',
                         cursor: 'pointer',
-                        transition: 'background-color 0.15s ease',
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.45rem',
+                        boxShadow: isSelected ? '0 2px 8px rgba(30, 58, 138, 0.12)' : 'none',
                       }}
                     >
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <strong style={{ color: '#0f172a', fontSize: '0.88rem', display: 'block' }}>{store.store_name}</strong>
-                      </td>
-
-                      <td style={{ padding: '0.75rem 0.75rem', fontFamily: 'monospace', fontSize: '0.8rem', color: '#1e3a8a' }}>
-                        {store.dti_sec_number || 'N/A'}
-                      </td>
-
-                      <td style={{ padding: '0.75rem 0.75rem', fontSize: '0.8rem', color: '#475569' }}>
-                        {store.address}
-                      </td>
-
-                      <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                        <strong style={{ fontSize: '0.88rem', color: '#0f172a', fontWeight: 700, lineHeight: 1.3 }}>
+                          {store.store_name}
+                        </strong>
                         <span
                           style={{
-                            display: 'inline-block',
-                            padding: '0.2rem 0.6rem',
-                            borderRadius: '12px',
-                            fontSize: '0.72rem',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '10px',
+                            fontSize: '0.7rem',
                             fontWeight: 700,
                             background: statusInfo.bg,
                             color: statusInfo.color,
                             border: `1px solid ${statusInfo.border}`,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
                           }}
                         >
                           {statusInfo.label}
                         </span>
-                      </td>
+                      </div>
 
-                      <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setSelectedStoreId(store.id)
-                            }}
-                            title="Center on GIS Map"
-                            style={{
-                              padding: '0.35rem 0.6rem',
-                              borderRadius: '6px',
-                              border: '1px solid #bfdbfe',
-                              background: '#eff6ff',
-                              color: '#1e3a8a',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                            }}
-                          >
-                            <i className="fa-solid fa-location-dot" aria-hidden="true" /> Map
-                          </button>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                        <span>
+                          <strong style={{ color: '#1e3a8a' }}>SEC #:</strong> {store.dti_sec_number || 'N/A'}
+                        </span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <i className="fa-solid fa-location-dot" style={{ color: '#94a3b8', marginRight: '0.3rem' }} aria-hidden="true" />
+                          {store.address}
+                        </span>
+                      </div>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setInviteStore(store)
-                              setEmail('')
-                              setLink('')
-                            }}
-                            title="Invite Vendor"
-                            style={{
-                              padding: '0.35rem 0.6rem',
-                              borderRadius: '6px',
-                              border: '1px solid #cbd5e1',
-                              background: '#ffffff',
-                              color: '#475569',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                            }}
-                          >
-                            <i className="fa-solid fa-envelope" aria-hidden="true" /> Invite
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem' }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedStoreId(store.id)
+                            setDetailStore(store)
+                            setIsSidebarOpen(true)
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '0.35rem 0.5rem',
+                            borderRadius: '6px',
+                            border: '1px solid #bfdbfe',
+                            background: isSelected ? '#1e3a8a' : '#eff6ff',
+                            color: isSelected ? '#ffffff' : '#1e3a8a',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.3rem',
+                          }}
+                        >
+                          <i className="fa-solid fa-circle-info" aria-hidden="true" /> Open Info
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setInviteStore(store)
+                            setEmail('')
+                            setLink('')
+                          }}
+                          style={{
+                            padding: '0.35rem 0.6rem',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                            color: '#475569',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.3rem',
+                          }}
+                        >
+                          <i className="fa-solid fa-envelope" aria-hidden="true" /> Invite
+                        </button>
+                      </div>
+                    </div>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Right GIS Map Panel */}
-          <div>
-            <StoreMap
-              stores={filteredStores}
-              selectedStoreId={selectedStoreId}
-              onSelectStore={(store) => setSelectedStoreId(store.id)}
-              height="480px"
-              title="CartoDB Light GIS Store Registry Map"
-            />
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              onClick={toggleSidebar}
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.4rem' }}
+              title="Expand GIS Registry Sidebar"
+            >
+              <i className="fa-solid fa-map-location-dot" style={{ color: '#1e3a8a', fontSize: '1.2rem' }} aria-hidden="true" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -371,7 +487,7 @@ export const StoreManager: React.FC = () => {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(15, 23, 42, 0.5)',
+            background: 'rgba(15, 23, 42, 0.55)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -387,7 +503,7 @@ export const StoreManager: React.FC = () => {
               padding: '1.5rem',
               width: '100%',
               maxWidth: '480px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
@@ -505,3 +621,4 @@ export const StoreManager: React.FC = () => {
     </div>
   )
 }
+

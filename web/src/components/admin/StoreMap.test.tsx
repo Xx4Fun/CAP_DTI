@@ -95,15 +95,15 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     expect(screen.getByText('Geographical Pin Locator')).toBeInTheDocument()
   })
 
-  it('renders StoreManager with status filters and CartoDB GIS Store Registry Map', async () => {
+  it('renders StoreManager with status filters and CartoDB GIS Store Monitoring Canvas', async () => {
     render(<StoreManager />)
 
-    expect(await screen.findByText('Commercial Establishment Registry')).toBeInTheDocument()
-    expect(screen.getByText('CartoDB Light GIS Store Registry Map')).toBeInTheDocument()
+    expect(await screen.findByText('Store Monitoring')).toBeInTheDocument()
+    expect(screen.getByText(/CartoDB GIS Monitor/i)).toBeInTheDocument()
     expect(screen.getByText('All (3)')).toBeInTheDocument()
-    expect(screen.getByText('Compliant (1)')).toBeInTheDocument()
-    expect(screen.getByText('Minor Anomaly (1)')).toBeInTheDocument()
-    expect(screen.getByText('Flagged / Recidivist (1)')).toBeInTheDocument()
+    expect(screen.getByText('Clean (1)')).toBeInTheDocument()
+    expect(screen.getByText('Anomaly (1)')).toBeInTheDocument()
+    expect(screen.getByText('Flagged (1)')).toBeInTheDocument()
   })
 })
 

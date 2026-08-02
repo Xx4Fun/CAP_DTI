@@ -9,9 +9,12 @@ export interface StoreMapProps {
   readOnly?: boolean
   stores?: StoreRecord[]
   selectedStoreId?: number | null
+  centerTrigger?: { storeId: number; timestamp: number } | null
   onSelectStore?: (store: StoreRecord) => void
+  onOpenStoreDetail?: (store: StoreRecord) => void
   height?: string
   title?: string
+  fullCanvas?: boolean
 }
 
 export function getStoreStatusInfo(store: StoreRecord): {
@@ -89,14 +92,25 @@ export const StoreMap: React.FC<StoreMapProps> = ({
   readOnly = false,
   stores,
   selectedStoreId,
+  centerTrigger,
   onSelectStore,
+  onOpenStoreDetail,
   height = '380px',
   title = 'Geographical Pin Locator',
+  fullCanvas = false,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
   const storeMarkersRef = useRef<Map<number, L.Marker>>(new Map())
+  const hasFittedBoundsRef = useRef(false)
+
+  const storesRef = useRef(stores)
+  storesRef.current = stores
+  const onSelectStoreRef = useRef(onSelectStore)
+  onSelectStoreRef.current = onSelectStore
+  const onOpenStoreDetailRef = useRef(onOpenStoreDetail)
+  onOpenStoreDetailRef.current = onOpenStoreDetail
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -109,17 +123,55 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       const initialLat = stores && stores.length > 0 ? Number(stores[0].latitude) || latitude : latitude
       const initialLng = stores && stores.length > 0 ? Number(stores[0].longitude) || longitude : longitude
 
-      mapInstance.current = L.map(mapRef.current).setView([initialLat, initialLng], 14)
+      mapInstance.current = L.map(mapRef.current, {
+        center: [initialLat, initialLng],
+        zoom: 14,
+        zoomControl: false,
+      })
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current)
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 20,
       }).addTo(mapInstance.current)
+
+      // Map-level popup event delegation for Open Store Info buttons
+      mapInstance.current.on('popupopen', (e: any) => {
+        const popupEl = e.popup?.getElement()
+        if (popupEl) {
+          const btn = popupEl.querySelector('.leaflet-open-info-btn')
+          if (btn) {
+            btn.onclick = (evt: MouseEvent) => {
+              evt.preventDefault()
+              evt.stopPropagation()
+              const storeIdStr = btn.getAttribute('data-store-id')
+              if (storeIdStr && storesRef.current) {
+                const storeId = Number(storeIdStr)
+                const targetStore = storesRef.current.find((s) => s.id === storeId)
+                if (targetStore) {
+                  onSelectStoreRef.current?.(targetStore)
+                  onOpenStoreDetailRef.current?.(targetStore)
+                }
+              }
+            }
+          }
+        }
+      })
     }
 
+    const handleResize = () => {
+      if (mapInstance.current) {
+        mapInstance.current.invalidateSize()
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+
     return () => {
+      window.removeEventListener('resize', handleResize)
       if (mapInstance.current) {
         mapInstance.current.remove()
         mapInstance.current = null
@@ -159,9 +211,17 @@ export const StoreMap: React.FC<StoreMapProps> = ({
               ${statusInfo.label}
             </span>
           </div>
-          <p style="margin: 0; font-size: 0.72rem; color: #64748b; font-family: monospace;">
+          <p style="margin: 0 0 8px; font-size: 0.72rem; color: #64748b; font-family: monospace;">
             Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}
           </p>
+          <button
+            type="button"
+            class="leaflet-open-info-btn"
+            data-store-id="${store.id}"
+            style="width: 100%; padding: 5px 8px; border-radius: 6px; border: none; background: #1d4ed8; color: #ffffff; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;"
+          >
+            <i class="fa-solid fa-circle-info"></i> Open Store Info
+          </button>
         </div>
       `
 
@@ -169,6 +229,7 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
       marker.on('click', () => {
         onSelectStore?.(store)
+        onOpenStoreDetail?.(store)
       })
 
       if (isSelected) {
@@ -179,10 +240,38 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       bounds.extend([lat, lng])
     })
 
-    if (stores.length > 0 && bounds.isValid()) {
+    // Fit bounds ONLY once on initial store dataset load
+    if (!hasFittedBoundsRef.current && stores.length > 0 && bounds.isValid()) {
       mapInstance.current.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 })
+      hasFittedBoundsRef.current = true
     }
-  }, [stores, selectedStoreId, onSelectStore])
+  }, [stores, selectedStoreId])
+
+  // Explicit Center Map trigger handling (runs whenever centerTrigger is updated)
+  useEffect(() => {
+    if (!mapInstance.current || !centerTrigger || !stores) return
+    const targetStore = stores.find((s) => s.id === centerTrigger.storeId)
+    if (targetStore) {
+      const lat = Number(targetStore.latitude)
+      const lng = Number(targetStore.longitude)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        mapInstance.current.invalidateSize()
+
+        // Calculate offset so pin centers in the visible area to the right of the 390px sidebar overlay!
+        // Moving map center left by 195px shifts the marker 195px to the right into clear view!
+        const zoom = 16
+        const targetPoint = mapInstance.current.project([lat, lng], zoom)
+        const offsetPoint = L.point(targetPoint.x - 195, targetPoint.y)
+        const adjustedCenter = mapInstance.current.unproject(offsetPoint, zoom)
+
+        mapInstance.current.setView(adjustedCenter, zoom, { animate: true })
+        const marker = storeMarkersRef.current.get(targetStore.id)
+        if (marker) {
+          marker.openPopup()
+        }
+      }
+    }
+  }, [centerTrigger, stores])
 
   // Single location marker mode (for onboarding or coordinate selection)
   useEffect(() => {
@@ -232,6 +321,14 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       }
     }
   }, [selectedStoreId, stores])
+
+  if (fullCanvas) {
+    return (
+      <div style={{ width: '100%', height, position: 'relative' }}>
+        <div ref={mapRef} className="leaflet-map-frame" style={{ width: '100%', height: '100%', borderRadius: '12px' }} />
+      </div>
+    )
+  }
 
   return (
     <div className="map-container-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>

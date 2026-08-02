@@ -73,6 +73,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/emergency-prices/resolve', [EmergencyAdminController::class, 'resolve']);
         Route::post('/legal/dispatch', [LegalDraftController::class, 'dispatch']);
         Route::post('/legal/draft-preview', [LegalDraftController::class, 'preview']);
+
+        Route::get('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'index']);
+        Route::put('/settings/profile', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateProfile']);
+        Route::put('/settings/preferences', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updatePreferences']);
+        Route::put('/settings/system', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateSystem']);
     });
 
     Route::post('/logout', [AuthController::class, 'logout']);

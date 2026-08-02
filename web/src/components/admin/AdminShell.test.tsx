@@ -23,7 +23,7 @@ describe('AdminShell', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
     expect(screen.getByRole('navigation', { name: /DTI Admin modules/i })).toBeInTheDocument()
-    for (const label of ['Dashboard Overview', 'GIS Store Registry', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
+    for (const label of ['Dashboard Overview', 'Store Management', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
       expect(screen.getByRole('button', { name: new RegExp(label, 'i') })).toBeInTheDocument()
     }
   })
@@ -72,14 +72,22 @@ describe('AdminShell', () => {
     expect(new URLSearchParams(window.location.search).get('module')).toBe('overview')
   })
 
-  it('uses a real account menu instead of unsupported message and online controls', async () => {
+  it('uses a red logout menu item and confirms logout via modal', async () => {
+    const onLogoutMock = vi.fn()
     const user = userEvent.setup()
-    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} onLogout={vi.fn()} />)
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} onLogout={onLogoutMock} />)
 
     expect(screen.queryByRole('button', { name: /Messages/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
-    expect(screen.getByRole('button', { name: /Lock session/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Lock session/i })).not.toBeInTheDocument()
+    
+    const logoutBtn = screen.getByRole('button', { name: /Logout/i })
+    expect(logoutBtn).toBeInTheDocument()
+    await user.click(logoutBtn)
+
+    expect(screen.getByText(/You will be signed out of your current session/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Log Out/i }))
+    expect(onLogoutMock).toHaveBeenCalledTimes(1)
   })
 
   it('does not label an unavailable emergency status as normal market protocol', async () => {
@@ -91,19 +99,19 @@ describe('AdminShell', () => {
     expect(screen.queryByText('Normal Market Protocol')).not.toBeInTheDocument()
   })
 
-  it('renders active session status indicator and role badge initial in header account button', () => {
+  it('renders DTI Admin title and user email with role badge initial in sidebar account showcase', () => {
     const { rerender } = render(<AdminShell user={{ id: 1, name: 'Officer Juan', email: 'juan@dti.test', role: 'dti_evaluator' }} />)
 
-    expect(screen.getByText('Session Active')).toBeInTheDocument()
-    expect(screen.getByText('dti evaluator')).toBeInTheDocument()
+    expect(screen.getByText('DTI Admin')).toBeInTheDocument()
+    expect(screen.getByText('juan@dti.test')).toBeInTheDocument()
     expect(screen.getByText('E')).toBeInTheDocument()
 
     rerender(<AdminShell user={{ id: 2, name: 'Admin Boss', email: 'admin@dti.test', role: 'super_admin' }} />)
-    expect(screen.getByText('super admin')).toBeInTheDocument()
+    expect(screen.getByText('admin@dti.test')).toBeInTheDocument()
     expect(screen.getByText('A')).toBeInTheDocument()
 
     rerender(<AdminShell user={{ id: 3, name: 'Field Inspector', email: 'field@dti.test', role: 'field_officer' }} />)
-    expect(screen.getByText('field officer')).toBeInTheDocument()
+    expect(screen.getByText('field@dti.test')).toBeInTheDocument()
     expect(screen.getByText('F')).toBeInTheDocument()
   })
 })

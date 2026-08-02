@@ -99,6 +99,22 @@ export const adminApi = {
   async getAnalytics(storeId: number, commodityKey?: string) {
     return data(await api.get(`/admin/analytics/stores/${storeId}`, { params: { commodity_key: commodityKey } }))
   },
+  async getSettings() {
+    const response = await api.get('/admin/settings')
+    return response.data
+  },
+  async updateProfile(payload: { name: string; email: string; current_password?: string; new_password?: string }) {
+    const response = await api.put('/admin/settings/profile', payload)
+    return response.data
+  },
+  async updatePreferences(payload: Record<string, any>) {
+    const response = await api.put('/admin/settings/preferences', payload)
+    return response.data
+  },
+  async updateSystemSettings(payload: Record<string, any>) {
+    const response = await api.put('/admin/settings/system', payload)
+    return response.data
+  },
   async getAnalyticsOptions(): Promise<{
     stores: Array<{ id: number; store_name: string; address: string }>
     commodities: Array<{ commodity_key: string; commodity_name: string }>

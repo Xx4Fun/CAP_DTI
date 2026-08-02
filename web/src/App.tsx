@@ -206,41 +206,97 @@ function App() {
       <div className="admin-app-wrapper">
         <AdminShell user={user as AdminUser} onLogout={() => void handleLogout('manual')} />
         {sessionWarning && (
-          <div className='session-warning-dialog' role='alertdialog' aria-modal='true' aria-labelledby='session-warning-title'>
-            <div>
-              <h2 id='session-warning-title'>Session locking soon</h2>
-              <p>Your DTI Admin session will lock after 15 minutes of inactivity.</p>
-              <button type='button' onClick={() => {
-                touchAdminActivity();
-                setSessionWarning(false);
-                void api.get('/admin/session');
-              }}>Stay signed in</button>
-              <button type='button' onClick={() => void handleLogout('manual')}>Lock now</button>
+          <div className="session-warning-dialog" role="alertdialog" aria-modal="true" aria-labelledby="session-warning-title">
+            <div className="session-warning-card">
+              <div className="session-warning-header">
+                <div className="session-warning-icon">
+                  <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 id="session-warning-title">Session Locking Soon</h2>
+                  <p className="session-warning-subtitle">Inactivity Timeout Warning</p>
+                </div>
+              </div>
+              <p className="session-warning-body">
+                Your DTI Admin session will lock automatically after 15 minutes of inactivity to protect regulatory data.
+              </p>
+              <div className="session-warning-status">
+                <span className="warning-status-dot" />
+                <span>Locking soon due to inactivity</span>
+              </div>
+              <div className="session-warning-actions">
+                <button
+                  type="button"
+                  className="session-btn-primary"
+                  onClick={() => {
+                    touchAdminActivity();
+                    setSessionWarning(false);
+                    void api.get('/admin/session');
+                  }}
+                >
+                  <i className="fa-solid fa-shield-halved" aria-hidden="true" /> Stay signed in
+                </button>
+                <button
+                  type="button"
+                  className="session-btn-secondary"
+                  onClick={() => void handleLogout('manual')}
+                >
+                  <i className="fa-solid fa-lock" aria-hidden="true" /> Lock now
+                </button>
+              </div>
             </div>
           </div>
         )}
         {reauthenticationOpen && (
-          <div className='session-warning-dialog' role='dialog' aria-modal='true' aria-labelledby='reauthentication-title'>
-            <form onSubmit={async (event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              try {
-                await api.post('/admin/reauthenticate', { password: String(form.get('password')) });
-                setReauthenticationOpen(false);
-                setReauthenticationError('');
-                touchAdminActivity();
-              } catch (error: any) {
-                setReauthenticationError(error.response?.data?.message || 'Password confirmation failed.');
-              }
-            }}>
-              <h2 id='reauthentication-title'>Confirm sensitive action</h2>
-              <p>Enter your password, then repeat the protected action. Confirmation remains valid briefly.</p>
-              <label htmlFor='admin-reauthentication-password'>Password</label>
-              <input id='admin-reauthentication-password' name='password' type='password' autoComplete='current-password' required autoFocus />
-              {reauthenticationError && <p role='alert'>{reauthenticationError}</p>}
-              <div className='admin-actions'>
-                <button type='submit'>Confirm identity</button>
-                <button type='button' onClick={() => setReauthenticationOpen(false)}>Cancel</button>
+          <div className="session-warning-dialog" role="dialog" aria-modal="true" aria-labelledby="reauthentication-title">
+            <form
+              className="session-warning-card"
+              style={{ borderTopColor: '#1d4ed8' }}
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                try {
+                  await api.post('/admin/reauthenticate', { password: String(form.get('password')) });
+                  setReauthenticationOpen(false);
+                  setReauthenticationError('');
+                  touchAdminActivity();
+                } catch (error: any) {
+                  setReauthenticationError(error.response?.data?.message || 'Password confirmation failed.');
+                }
+              }}
+            >
+              <div className="session-warning-header">
+                <div className="session-warning-icon reauth">
+                  <i className="fa-solid fa-user-shield" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 id="reauthentication-title">Confirm sensitive action</h2>
+                  <p className="session-warning-subtitle">Security Verification Required</p>
+                </div>
+              </div>
+              <p className="session-warning-body">
+                Enter your DTI Officer password to authorize this action. Confirmation remains valid briefly.
+              </p>
+              <div className="session-form-group">
+                <label htmlFor="admin-reauthentication-password">Password</label>
+                <input
+                  id="admin-reauthentication-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  autoFocus
+                  placeholder="Enter your password..."
+                />
+              </div>
+              {reauthenticationError && <p className="session-error-alert" role="alert">{reauthenticationError}</p>}
+              <div className="session-warning-actions">
+                <button type="submit" className="session-btn-primary">
+                  <i className="fa-solid fa-check" aria-hidden="true" /> Confirm identity
+                </button>
+                <button type="button" className="session-btn-secondary" onClick={() => setReauthenticationOpen(false)}>
+                  Cancel
+                </button>
               </div>
             </form>
           </div>

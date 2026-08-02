@@ -2,11 +2,18 @@ import { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
 import { StoreManager } from './StoreManager'
+import { StoreOnboarding } from '../StoreOnboarding'
 import { TemporalVolatility } from './TemporalVolatility'
 import { CitizenTipReview } from './CitizenTipReview'
 import { LegalNoticeManager } from './LegalNoticeManager'
 import { EmergencyToggle } from './EmergencyToggle'
 import { SrpManagementPanel } from './SrpManagementPanel'
+import { SettingsPanel } from './SettingsPanel'
+import type { AdminUser } from '../../types/admin'
+
+export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (user: Partial<AdminUser>) => void }) {
+  return <SettingsPanel user={props.user} onUserUpdate={props.onUserUpdate} />
+}
 
 import type { ModuleId } from './AdminShell'
 
@@ -342,6 +349,30 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
       </div>
     </div>
   )
+}
+
+export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+  return (
+    <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
+      <div style={{ marginBottom: '1.25rem' }}>
+        <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>Establishment Registration</h3>
+        <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+          Onboard a new commercial establishment by providing SEC/DTI registration details and pinning its precise GIS location.
+        </p>
+      </div>
+      <StoreOnboarding
+        onCreated={() => {
+          if (props.onNavigate) {
+            props.onNavigate('store_monitoring')
+          }
+        }}
+      />
+    </div>
+  )
+}
+
+export function StoreMonitoringPanel() {
+  return <StoreManager />
 }
 
 export function StoreManagementPanel() {
