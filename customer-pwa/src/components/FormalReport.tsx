@@ -930,26 +930,39 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-          {/* Receipt Bounding Box Guide */}
-          <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '70px 20px 110px 20px', pointerEvents: 'none' }}>
-            <div style={{ width: '85%', maxWidth: '340px', height: '70%', maxHeight: '480px', border: '2px dashed #f59e0b', borderRadius: '16px', boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.55)', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '16px' }}>
+          {/* Receipt Bounding Box & Floating Status Guide */}
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 16px 105px 16px', pointerEvents: 'none' }}>
+            
+            {/* Status Pills Container ABOVE Capture Frame */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginBottom: '10px' }}>
+              <span style={{ background: 'rgba(15,23,42,0.85)', color: '#fbbf24', fontSize: '0.75rem', fontWeight: 700, padding: '5px 14px', borderRadius: '20px', border: '1px solid rgba(245,158,11,0.4)', backdropFilter: 'blur(6px)', letterSpacing: '0.02em', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+                Targeting Receipt · Include Store & Total
+              </span>
+              <span style={{ background: 'rgba(15,23,42,0.7)', color: '#94a3b8', fontSize: '0.7rem', fontWeight: 600, padding: '3px 10px', borderRadius: '14px', backdropFilter: 'blur(4px)' }}>
+                {stream ? '🟢 Camera Feed Active' : '⏳ Initializing...'}
+              </span>
+            </div>
+
+            {/* Elongated Tall Rectangular Bounding Box for Receipts */}
+            <div style={{ width: '88%', maxWidth: '360px', height: '82%', maxHeight: '560px', border: '2px dashed #f59e0b', borderRadius: '16px', boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.6)', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '12px' }}>
+              {/* Top Corners */}
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                <div style={{ borderTop: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '4px 0 0 0' }} />
-                <div style={{ borderTop: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 4px 0 0' }} />
+                <div style={{ borderTop: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '32px', height: '32px', borderRadius: '6px 0 0 0' }} />
+                <div style={{ borderTop: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '32px', height: '32px', borderRadius: '0 6px 0 0' }} />
               </div>
 
-              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                <span style={{ background: 'rgba(15,23,42,0.85)', color: '#fbbf24', fontSize: '0.75rem', fontWeight: 700, padding: '5px 12px', borderRadius: '20px', border: '1px solid rgba(245,158,11,0.4)', backdropFilter: 'blur(6px)', letterSpacing: '0.02em' }}>
-                  Targeting Receipt · Include Store & Total
-                </span>
-                <span style={{ background: 'rgba(15,23,42,0.7)', color: '#94a3b8', fontSize: '0.7rem', padding: '3px 10px', borderRadius: '14px' }}>
-                  {stream ? '🟢 Camera Feed Active' : '⏳ Initializing...'}
+              {/* Center Receipt Watermark Guide */}
+              <div style={{ textAlign: 'center', opacity: 0.35, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                <FileText size={36} style={{ color: '#f59e0b' }} />
+                <span style={{ fontSize: '0.7rem', color: '#ffffff', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  Position Full Length Receipt
                 </span>
               </div>
 
+              {/* Bottom Corners */}
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                <div style={{ borderBottom: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 0 0 4px' }} />
-                <div style={{ borderBottom: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '28px', height: '28px', borderRadius: '0 0 4px 0' }} />
+                <div style={{ borderBottom: '4px solid #f59e0b', borderLeft: '4px solid #f59e0b', width: '32px', height: '32px', borderRadius: '0 0 0 6px' }} />
+                <div style={{ borderBottom: '4px solid #f59e0b', borderRight: '4px solid #f59e0b', width: '32px', height: '32px', borderRadius: '0 0 6px 0' }} />
               </div>
             </div>
           </div>
