@@ -19,18 +19,17 @@ class ShelfTagFieldParser
      *   'block_num' => int
      * ]
      */
-    public function parseFromTsvWords(array $words): array
+    public function parseFromTsvWords(array $words, int $minimumConfidence = 60): array
     {
-        return $this->parse($words);
+        return $this->parse($words, $minimumConfidence);
     }
 
-    public function parse(array $words): array
+    public function parse(array $words, int $minimumConfidence = 60): array
     {
-        // 1. Reject tokens with confidence < 60
-        $filteredWords = array_values(array_filter($words, function ($w) {
+        $filteredWords = array_values(array_filter($words, function ($w) use ($minimumConfidence) {
             $text = isset($w['text']) ? trim($w['text']) : '';
             $conf = isset($w['confidence']) ? (int) $w['confidence'] : 0;
-            return $text !== '' && $conf >= 60;
+            return $text !== '' && $conf >= $minimumConfidence;
         }));
 
         if (empty($filteredWords)) {

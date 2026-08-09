@@ -90,21 +90,39 @@ class ShelfTagImagePreprocessor
         $finalWidth = imagesx($gdImage);
         $finalHeight = imagesy($gdImage);
 
-        // Grayscale & contrast enhancement
+        // Primary OCR variant: grayscale, stronger contrast, and light sharpening.
         imagefilter($gdImage, IMG_FILTER_GRAYSCALE);
         imagefilter($gdImage, IMG_FILTER_CONTRAST, -20);
+        if (function_exists('imageconvolution')) {
+            imageconvolution($gdImage, [[0, -1, 0], [-1, 5, -1], [0, -1, 0]], 1, 0);
+        }
+
+        $fallbackImage = imagecreatetruecolor($finalWidth, $finalHeight);
+        imagecopy($fallbackImage, $gdImage, 0, 0, 0, 0, $finalWidth, $finalHeight);
+        imagefilter($fallbackImage, IMG_FILTER_CONTRAST, -60);
+        imagetruecolortopalette($fallbackImage, false, 2);
 
         ob_start();
         imagepng($gdImage);
         $binary = ob_get_clean();
         imagedestroy($gdImage);
 
-        $filename = 'scan_' . Str::uuid() . '.png';
+        ob_start();
+        imagepng($fallbackImage);
+        $fallbackBinary = ob_get_clean();
+        imagedestroy($fallbackImage);
+
+        $scanUuid = Str::uuid();
+        $filename = 'scan_' . $scanUuid . '_primary.png';
+        $fallbackFilename = 'scan_' . $scanUuid . '_threshold.png';
         $relativePath = self::VAULT_DIRECTORY . '/' . $filename;
+        $fallbackRelativePath = self::VAULT_DIRECTORY . '/' . $fallbackFilename;
 
         Storage::disk('local')->put($relativePath, $binary);
+        Storage::disk('local')->put($fallbackRelativePath, $fallbackBinary);
 
         $fullPath = Storage::disk('local')->path($relativePath);
+        $fallbackFullPath = Storage::disk('local')->path($fallbackRelativePath);
         $sizeBytes = strlen($binary);
 
         return [
@@ -114,6 +132,8 @@ class ShelfTagImagePreprocessor
             'width' => $finalWidth,
             'height' => $finalHeight,
             'size_bytes' => $sizeBytes,
+            'fallback_path' => $fallbackRelativePath,
+            'fallback_full_path' => $fallbackFullPath,
         ];
     }
 

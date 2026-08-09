@@ -12,12 +12,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Services\Ocr\HistoricalPriceResolver;
-use App\Services\Ocr\RegulatoryPriceResolver;
 use App\Services\Ocr\ScanSessionRepository;
 use App\Services\Ocr\ShelfTagFieldParser;
+use App\Services\Ocr\ShelfTagAutoResolver;
+use App\Services\Ocr\ShelfTagComparisonService;
 use App\Services\Ocr\ShelfTagImagePreprocessor;
 use App\Services\Ocr\ShelfTagOcrService;
 use App\Services\Ocr\ShelfTagProductMatcher;
@@ -225,8 +226,11 @@ class PublicPwaController extends Controller
         ShelfTagOcrService $ocrService,
         ShelfTagFieldParser $fieldParser,
         ShelfTagProductMatcher $productMatcher,
-        ScanSessionRepository $scanSessionRepository
+        ScanSessionRepository $scanSessionRepository,
+        ShelfTagAutoResolver $autoResolver,
+        ShelfTagComparisonService $comparisonService,
     ) {
+        $analysisStartedAt = microtime(true);
         $request->validate([
             'store_id' => 'required|numeric',
             'image' => 'required|file',
@@ -248,10 +252,31 @@ class PublicPwaController extends Controller
 
         $processedPath = $preprocessed['path'];
         $fullPath = $preprocessed['full_path'];
+        $fallbackPath = $preprocessed['fallback_path'] ?? null;
+        $fallbackFullPath = $preprocessed['fallback_full_path'] ?? null;
+        $passTimeoutSeconds = (int) config('services.tesseract.shelf_tag_pass_timeout_seconds', 3);
+        $primaryPsm = (int) config('services.tesseract.shelf_tag_primary_psm', 6);
+        $fallbackPsm = (int) config('services.tesseract.shelf_tag_fallback_psm', 11);
+        $minimumConfidence = (int) config('services.tesseract.shelf_tag_minimum_confidence', 30);
 
         try {
-            $ocrResult = $ocrService->extractText($fullPath);
+            $ocrPassCount = 1;
+            $ocrResult = $ocrService->extractText($fullPath, [
+                'psm' => $primaryPsm,
+                'timeout_seconds' => $passTimeoutSeconds,
+                'minimum_confidence' => $minimumConfidence,
+            ]);
             $rawStatus = $ocrResult['status'] ?? 'OCR_FAILED';
+
+            if ($rawStatus === 'OCR_NO_TEXT' && $fallbackFullPath) {
+                $ocrPassCount = 2;
+                $ocrResult = $ocrService->extractText($fallbackFullPath, [
+                    'psm' => $fallbackPsm,
+                    'timeout_seconds' => $passTimeoutSeconds,
+                    'minimum_confidence' => $minimumConfidence,
+                ]);
+                $rawStatus = $ocrResult['status'] ?? 'OCR_FAILED';
+            }
 
             if ($rawStatus === 'OCR_UNAVAILABLE') {
                 return response()->json([
@@ -277,40 +302,47 @@ class PublicPwaController extends Controller
                 ], 500);
             }
 
-            $candidates = [];
-            $detectedPriceString = null;
-            $detectedPriceCentavos = null;
-            $businessOcrStatus = 'OCR_NO_TEXT';
+            $analysis = $this->interpretShelfTagOcrResult($ocrResult, $fieldParser, $productMatcher);
+            $decision = $autoResolver->decide(
+                $analysis['candidates'],
+                $analysis['detected_price_string'],
+                $analysis['price_confidence'],
+            );
 
-            if ($rawStatus === 'OCR_NO_TEXT') {
-                $businessOcrStatus = 'OCR_NO_TEXT';
-            } elseif ($rawStatus === 'OCR_SUCCESS') {
-                $words = $ocrResult['words'] ?? [];
-                $parsed = $fieldParser->parseFromTsvWords($words);
+            if (!$decision['auto_resolved'] && $ocrPassCount === 1 && $fallbackFullPath) {
+                $ocrPassCount = 2;
+                $fallbackOcrResult = $ocrService->extractText($fallbackFullPath, [
+                    'psm' => $fallbackPsm,
+                    'timeout_seconds' => $passTimeoutSeconds,
+                    'minimum_confidence' => $minimumConfidence,
+                ]);
 
-                $detectedPriceString = $parsed['detected_price_string'] ?? null;
-                $detectedPriceCentavos = $parsed['detected_price_centavos'] ?? null;
+                if (in_array($fallbackOcrResult['status'] ?? null, ['OCR_SUCCESS', 'OCR_NO_TEXT'], true)) {
+                    $fallbackAnalysis = $this->interpretShelfTagOcrResult($fallbackOcrResult, $fieldParser, $productMatcher);
+                    $fallbackDecision = $autoResolver->decide(
+                        $fallbackAnalysis['candidates'],
+                        $fallbackAnalysis['detected_price_string'],
+                        $fallbackAnalysis['price_confidence'],
+                    );
 
-                $productRawTokens = $parsed['product_raw_tokens'] ?? [];
-                $packageSizeNormalized = $parsed['package_size_normalized'] ?? null;
-
-                $candidates = $productMatcher->matchCandidates($productRawTokens, $packageSizeNormalized);
-
-                $hasProduct = !empty($candidates);
-                $hasPrice = $detectedPriceString !== null;
-
-                if ($hasProduct && $hasPrice) {
-                    $businessOcrStatus = 'OCR_PRODUCT_AND_PRICE_DETECTED';
-                } elseif ($hasProduct && !$hasPrice) {
-                    $businessOcrStatus = 'PRODUCT_DETECTED_PRICE_MISSING';
-                } elseif (!$hasProduct && $hasPrice) {
-                    $businessOcrStatus = 'PRICE_DETECTED_PRODUCT_MISSING';
-                } else {
-                    $businessOcrStatus = 'NO_RELIABLE_PRODUCT_MATCH';
+                    if (
+                        $fallbackDecision['auto_resolved']
+                        || $this->shelfTagAnalysisQuality($fallbackAnalysis) > $this->shelfTagAnalysisQuality($analysis)
+                    ) {
+                        $analysis = $fallbackAnalysis;
+                        $decision = $fallbackDecision;
+                    }
                 }
             }
 
+            $candidates = $analysis['candidates'];
+            $detectedPriceString = $analysis['detected_price_string'];
+            $detectedPriceCentavos = $analysis['detected_price_centavos'];
+            $priceConfidence = $analysis['price_confidence'];
+            $businessOcrStatus = $analysis['ocr_status'];
+
             $scanId = 'scan_' . Str::uuid();
+            $productSource = $decision['auto_resolved'] ? 'OCR_AUTO' : 'OCR';
 
             $allowedCandidateProductIds = array_values(array_map(fn($c) => (int) $c['id'], $candidates));
 
@@ -323,9 +355,41 @@ class PublicPwaController extends Controller
                 'manual_product_ids' => [],
                 'detected_price_centavos' => $detectedPriceCentavos,
                 'detected_price_string' => $detectedPriceString,
+                'price_confidence' => $priceConfidence,
                 'detected_price_source' => 'OCR',
-                'product_source' => 'OCR',
+                'product_source' => $productSource,
                 'consumed_state' => false,
+            ]);
+
+            $comparison = null;
+            if ($decision['auto_resolved']) {
+                $product = SrpBulletin::where('id', $decision['product_id'])
+                    ->where('is_active', true)
+                    ->first();
+                if ($product) {
+                    $comparison = array_merge(
+                        [
+                            'scan_id' => $scanId,
+                            'store' => self::formatPublicStore($store),
+                        ],
+                        $comparisonService->compare(
+                            $store,
+                            $product,
+                            (string) $detectedPriceString,
+                            'OCR_AUTO',
+                            'OCR_DETECTED',
+                        ),
+                    );
+                }
+            }
+
+            Log::info('shelf_tag_scan_analyzed', [
+                'duration_ms' => (int) round((microtime(true) - $analysisStartedAt) * 1000),
+                'ocr_pass_count' => $ocrPassCount,
+                'ocr_status' => $businessOcrStatus,
+                'match_level' => $candidates[0]['match_level'] ?? null,
+                'recovery_reason' => $comparison === null ? $decision['recovery_reason'] : null,
+                'auto_resolved' => $comparison !== null,
             ]);
 
             return response()->json([
@@ -337,14 +401,69 @@ class PublicPwaController extends Controller
                     'store' => self::formatPublicStore($store),
                     'candidates' => $candidates,
                     'detected_price_string' => $detectedPriceString,
+                    'price_confidence' => $priceConfidence,
                     'detected_price_source' => 'OCR',
-                    'product_source' => 'OCR',
+                    'product_source' => $productSource,
+                    'auto_resolved' => $comparison !== null,
+                    'recovery_reason' => $comparison === null ? $decision['recovery_reason'] : null,
+                    'comparison' => $comparison,
+                    'ocr_pass_count' => $ocrPassCount,
                 ]
             ], 200);
 
         } finally {
             $preprocessor->cleanup($processedPath);
+            if ($fallbackPath) {
+                $preprocessor->cleanup($fallbackPath);
+            }
         }
+    }
+
+    private function interpretShelfTagOcrResult(
+        array $ocrResult,
+        ShelfTagFieldParser $fieldParser,
+        ShelfTagProductMatcher $productMatcher,
+    ): array {
+        if (($ocrResult['status'] ?? 'OCR_NO_TEXT') !== 'OCR_SUCCESS') {
+            return [
+                'ocr_status' => 'OCR_NO_TEXT',
+                'candidates' => [],
+                'detected_price_string' => null,
+                'detected_price_centavos' => null,
+                'price_confidence' => 0,
+            ];
+        }
+
+        $parsed = $fieldParser->parseFromTsvWords($ocrResult['words'] ?? [], 30);
+        $candidates = $productMatcher->matchCandidates(
+            $parsed['product_raw_tokens'] ?? [],
+            $parsed['package_size_normalized'] ?? null,
+        );
+        $detectedPriceString = $parsed['detected_price_string'] ?? null;
+        $hasProduct = !empty($candidates);
+        $hasPrice = $detectedPriceString !== null;
+
+        $ocrStatus = match (true) {
+            $hasProduct && $hasPrice => 'OCR_PRODUCT_AND_PRICE_DETECTED',
+            $hasProduct => 'PRODUCT_DETECTED_PRICE_MISSING',
+            $hasPrice => 'PRICE_DETECTED_PRODUCT_MISSING',
+            default => 'NO_RELIABLE_PRODUCT_MATCH',
+        };
+
+        return [
+            'ocr_status' => $ocrStatus,
+            'candidates' => $candidates,
+            'detected_price_string' => $detectedPriceString,
+            'detected_price_centavos' => $parsed['detected_price_centavos'] ?? null,
+            'price_confidence' => (int) ($parsed['price_confidence'] ?? 0),
+        ];
+    }
+
+    private function shelfTagAnalysisQuality(array $analysis): int
+    {
+        $topMatchScore = (int) ($analysis['candidates'][0]['match_score'] ?? 0);
+
+        return (int) ($analysis['price_confidence'] ?? 0) + $topMatchScore;
     }
 
     /**
@@ -405,16 +524,15 @@ class PublicPwaController extends Controller
     public function compareScanTag(
         Request $request,
         ScanSessionRepository $scanSessionRepository,
-        RegulatoryPriceResolver $regulatoryPriceResolver,
-        HistoricalPriceResolver $historicalPriceResolver
+        ShelfTagComparisonService $comparisonService,
     ) {
         $request->validate([
             'scan_id' => 'required|string',
             'store_id' => 'required|numeric',
             'product_id' => 'required|integer',
             'displayed_price' => 'required|numeric|min:0.01',
-            'product_source' => 'required|string|in:OCR,MANUAL_SEARCH',
-            'price_source' => 'required|string|in:USER_CONFIRMED,USER_CORRECTED,USER_ENTERED',
+            'product_source' => 'required|string|in:OCR,OCR_AUTO,OCR_CANDIDATE_SELECTED,MANUAL_SEARCH',
+            'price_source' => 'required|string|in:OCR_DETECTED,USER_CONFIRMED,USER_CORRECTED,USER_ENTERED',
         ]);
 
         $store = $this->getVerifiedStore($request->input('store_id'));
@@ -422,10 +540,10 @@ class PublicPwaController extends Controller
         $scanId = (string) $request->input('scan_id');
         $session = $scanSessionRepository->get($scanId);
 
-        if (!$session || !empty($session['consumed_state'])) {
+        if (!$session) {
             return response()->json([
                 'success' => false,
-                'message' => 'Scan session not found, expired, or already consumed.',
+                'message' => 'Scan session not found or expired.',
             ], 422);
         }
 
@@ -439,7 +557,7 @@ class PublicPwaController extends Controller
         $productId = (int) $request->input('product_id');
         $productSource = $request->input('product_source');
 
-        if ($productSource === 'OCR') {
+        if (in_array($productSource, ['OCR', 'OCR_AUTO', 'OCR_CANDIDATE_SELECTED'], true)) {
             $allowed = $session['allowed_candidate_product_ids'] ?? [];
             if (!in_array($productId, array_map('intval', $allowed), true)) {
                 return response()->json([
@@ -461,20 +579,20 @@ class PublicPwaController extends Controller
         $displayedPriceRaw = (string) $request->input('displayed_price');
         $detectedPriceStr = $session['detected_price_string'] ?? null;
 
-        $expectedPriceSource = null;
+        $allowedPriceSources = [];
         if ($detectedPriceStr !== null && trim((string) $detectedPriceStr) !== '') {
             $sessionPriceFormatted = number_format((float) $detectedPriceStr, 2, '.', '');
             $displayedPriceFormatted = number_format((float) $displayedPriceRaw, 2, '.', '');
             if ($sessionPriceFormatted === $displayedPriceFormatted) {
-                $expectedPriceSource = 'USER_CONFIRMED';
+                $allowedPriceSources = ['OCR_DETECTED', 'USER_CONFIRMED'];
             } else {
-                $expectedPriceSource = 'USER_CORRECTED';
+                $allowedPriceSources = ['USER_CORRECTED'];
             }
         } else {
-            $expectedPriceSource = 'USER_ENTERED';
+            $allowedPriceSources = ['USER_ENTERED'];
         }
 
-        if ($priceSource !== $expectedPriceSource) {
+        if (!in_array($priceSource, $allowedPriceSources, true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid price source for detected OCR price state.',
@@ -489,64 +607,20 @@ class PublicPwaController extends Controller
             ], 422);
         }
 
-        $stateOfCalamity = (bool) Cache::get('state_of_calamity', false);
-        $regulatoryResult = $regulatoryPriceResolver->resolve($product, $stateOfCalamity);
-        $historicalResult = $historicalPriceResolver->resolve($store, $product);
-
-        $displayedPriceFloat = (float) $displayedPriceRaw;
-        $displayedPriceFormatted = number_format($displayedPriceFloat, 2, '.', '');
-        $displayedPriceCentavos = (int) round($displayedPriceFloat * 100);
-
-        $regulatoryPriceCentavos = $regulatoryResult['value_centavos'] ?? null;
-        $referencePrice = $regulatoryResult['value_string'] ?? null;
-
-        $differenceCentavos = null;
-        $pesoDifference = null;
-        $percentDifference = null;
-        $isAboveReference = false;
-
-        if ($regulatoryPriceCentavos !== null) {
-            $differenceCentavos = $displayedPriceCentavos - $regulatoryPriceCentavos;
-            $pesoDifference = number_format($differenceCentavos / 100, 2, '.', '');
-
-            if ($regulatoryPriceCentavos > 0) {
-                $percentDiffFloat = ($differenceCentavos / $regulatoryPriceCentavos) * 100;
-                $percentDifference = number_format($percentDiffFloat, 1, '.', '');
-            }
-
-            $isAboveReference = $differenceCentavos > 0;
-        }
-
-        $disclaimer = 'This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.';
-
-        $scanSessionRepository->consume($scanId);
-
-        $packageSize = ShelfTagTextNormalizer::normalizePackageSize($product->unit ?? '') 
-            ?? ShelfTagTextNormalizer::normalizePackageSize($product->commodity_name) 
-            ?? (string) ($product->unit ?? '');
-
-        $unit = (string) ($product->unit ?? '');
+        $comparison = $comparisonService->compare(
+            $store,
+            $product,
+            $displayedPriceRaw,
+            $productSource,
+            $priceSource,
+        );
 
         return response()->json([
             'success' => true,
-            'data' => [
+            'data' => array_merge([
                 'scan_id' => $scanId,
                 'store' => self::formatPublicStore($store),
-                'commodity_name' => (string) $product->commodity_name,
-                'package_size' => (string) $packageSize,
-                'unit' => (string) $unit,
-                'displayed_price' => $displayedPriceFormatted,
-                'reference_price' => $referencePrice,
-                'regulatory_label' => $regulatoryResult['label'] ?? 'Current SRP',
-                'regulatory_mode' => $regulatoryResult['regulatory_mode'] ?? 'NORMAL_SRP',
-                'peso_difference' => $pesoDifference,
-                'percent_difference' => $percentDifference,
-                'is_above_reference' => $isAboveReference,
-                'product_source' => $productSource,
-                'price_source' => $priceSource,
-                'historical_pricing' => $historicalResult,
-                'disclaimer' => $disclaimer,
-            ]
+            ], $comparison),
         ], 200);
     }
 

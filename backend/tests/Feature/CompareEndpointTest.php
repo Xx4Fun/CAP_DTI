@@ -94,7 +94,7 @@ class CompareEndpointTest extends TestCase
         ]);
     }
 
-    public function test_session_is_marked_consumed_after_comparison(): void
+    public function test_scan_session_can_recompute_a_corrected_price_within_its_ttl(): void
     {
         $scanId = 'scan_' . Str::uuid();
 
@@ -125,13 +125,47 @@ class CompareEndpointTest extends TestCase
         $firstResponse = $this->postJson('/api/public/scan-tag/compare', $payload);
         $firstResponse->assertStatus(200);
 
-        // Second call fails with 422
-        $secondResponse = $this->postJson('/api/public/scan-tag/compare', $payload);
-        $secondResponse->assertStatus(422);
+        $secondResponse = $this->postJson('/api/public/scan-tag/compare', array_merge($payload, [
+            'displayed_price' => '24.00',
+            'price_source' => 'USER_CORRECTED',
+        ]));
+        $secondResponse->assertStatus(200);
         $secondResponse->assertJson([
-            'success' => false,
-            'message' => 'Scan session not found, expired, or already consumed.',
+            'success' => true,
+            'data' => [
+                'displayed_price' => '24.00',
+                'price_source' => 'USER_CORRECTED',
+            ],
         ]);
+
+        $this->assertFalse($this->repository->get($scanId)['consumed_state']);
+    }
+
+    public function test_new_provenance_values_are_accepted_for_an_ocr_candidate_and_price(): void
+    {
+        $scanId = 'scan_' . Str::uuid();
+        $this->repository->put($scanId, [
+            'scan_id' => $scanId,
+            'store_id' => $this->store->id,
+            'ocr_status' => 'OCR_PRODUCT_AND_PRICE_DETECTED',
+            'allowed_candidate_product_ids' => [$this->product->id],
+            'manual_product_ids' => [],
+            'detected_price_string' => '23.50',
+            'consumed_state' => false,
+        ]);
+
+        $response = $this->postJson('/api/public/scan-tag/compare', [
+            'scan_id' => $scanId,
+            'store_id' => $this->store->id,
+            'product_id' => $this->product->id,
+            'displayed_price' => '23.50',
+            'product_source' => 'OCR_CANDIDATE_SELECTED',
+            'price_source' => 'OCR_DETECTED',
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.product_source', 'OCR_CANDIDATE_SELECTED');
+        $response->assertJsonPath('data.price_source', 'OCR_DETECTED');
     }
 
     public function test_unauthorized_product_not_in_candidate_list_returns_422(): void

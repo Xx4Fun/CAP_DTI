@@ -131,4 +131,19 @@ class ShelfTagFieldParserTest extends TestCase
         $this->assertNull($payload['detected_price_string']);
         $this->assertNull($payload['detected_price_centavos']);
     }
+
+    public function test_lower_analysis_floor_keeps_abbreviated_product_tokens_without_promoting_weak_price(): void
+    {
+        $words = [
+            ['text' => 'NESC', 'confidence' => 45, 'left' => 10, 'top' => 10, 'width' => 80, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => 'CLSSIC', 'confidence' => 48, 'left' => 100, 'top' => 10, 'width' => 100, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => '23.50', 'confidence' => 45, 'left' => 10, 'top' => 60, 'width' => 100, 'height' => 35, 'line_num' => 2, 'block_num' => 1],
+        ];
+
+        $parsed = $this->parser->parseFromTsvWords($words, 30);
+
+        $this->assertSame(['NESC', 'CLSSIC'], $parsed['product_raw_tokens']);
+        $this->assertSame('23.50', $parsed['detected_price_string']);
+        $this->assertLessThan(80, $parsed['price_confidence']);
+    }
 }

@@ -70,6 +70,7 @@ class ShelfTagProductMatcher
     {
         $bulletins = SrpBulletin::query()
             ->where('is_active', true)
+            ->with('aliases')
             ->get();
 
         if ($bulletins->isEmpty()) {
@@ -140,6 +141,47 @@ class ShelfTagProductMatcher
         $candidateMeaningfulTokens = $this->filterMeaningfulTokens($candidateTokens);
 
         $score = 0;
+        $matchBasis = 'TOKEN_SIMILARITY';
+        $hasExactCatalogMatch = false;
+        $hasAbbreviationMatch = false;
+
+        $normalizedQuery = $this->cleanPhraseForComparison($queryRawText);
+        $normalizedName = $this->cleanPhraseForComparison($commodityName);
+        if ($normalizedQuery !== '' && $normalizedQuery === $normalizedName) {
+            $score += 100;
+            $matchBasis = 'NAME_EXACT';
+            $hasExactCatalogMatch = true;
+        } else {
+            foreach ($bulletin->aliases as $alias) {
+                $normalizedAlias = $this->cleanPhraseForComparison((string) $alias->alias_name);
+                if ($normalizedAlias !== '' && $normalizedQuery === $normalizedAlias) {
+                    $score += 100;
+                    $matchBasis = 'ALIAS_EXACT';
+                    $hasExactCatalogMatch = true;
+                    break;
+                }
+            }
+        }
+
+        if (!$hasExactCatalogMatch && count($queryMeaningfulTokens) >= 2) {
+            $bestAbbreviationScore = $this->abbreviationSimilarity($queryMeaningfulTokens, $candidateMeaningfulTokens);
+            $bestAbbreviationBasis = 'NAME_ABBREVIATION';
+
+            foreach ($bulletin->aliases as $alias) {
+                $aliasTokens = $this->filterMeaningfulTokens($this->extractTokens((string) $alias->alias_name));
+                $aliasScore = $this->abbreviationSimilarity($queryMeaningfulTokens, $aliasTokens);
+                if ($aliasScore > $bestAbbreviationScore) {
+                    $bestAbbreviationScore = $aliasScore;
+                    $bestAbbreviationBasis = 'ALIAS_ABBREVIATION';
+                }
+            }
+
+            if ($bestAbbreviationScore >= 0.75) {
+                $score += (int) round($bestAbbreviationScore * 100);
+                $matchBasis = $bestAbbreviationBasis;
+                $hasAbbreviationMatch = true;
+            }
+        }
 
         // 1. Brand Signal
         $hasBrandMatch = false;
@@ -233,7 +275,11 @@ class ShelfTagProductMatcher
 
         if ($hasSizeConflict && $score >= 40) {
             $matchLevel = 'SIZE_UNCERTAIN';
-        } elseif ($score >= 70 && $hasBrandMatch && $hasSizeMatch && !$isGenericBrandOnly) {
+        } elseif (
+            $hasExactCatalogMatch
+            || ($hasAbbreviationMatch && $score >= 80 && !$hasSizeConflict && !$hasUnitConflict)
+            || ($score >= 70 && $hasBrandMatch && $hasSizeMatch && !$isGenericBrandOnly)
+        ) {
             $matchLevel = 'STRONG';
         } elseif ($score >= 50 || ($score >= 35 && ($hasBrandMatch || $hasSizeMatch || $hasVariantMatch || $overlapCount >= 1))) {
             $matchLevel = 'POSSIBLE';
@@ -252,6 +298,7 @@ class ShelfTagProductMatcher
             'unit' => (string) ($bulletin->unit ?? ''),
             'match_score' => (int) $score,
             'match_level' => (string) $matchLevel,
+            'match_basis' => (string) $matchBasis,
         ];
     }
 
@@ -294,6 +341,42 @@ class ShelfTagProductMatcher
         }
 
         return array_values($filtered);
+    }
+
+    protected function abbreviationSimilarity(array $queryTokens, array $candidateTokens): float
+    {
+        if (empty($queryTokens) || empty($candidateTokens)) {
+            return 0.0;
+        }
+
+        $scores = [];
+        foreach ($queryTokens as $queryToken) {
+            $best = 0.0;
+            foreach ($candidateTokens as $candidateToken) {
+                if ($queryToken === $candidateToken) {
+                    $best = 1.0;
+                    break;
+                }
+
+                $shorter = min(strlen($queryToken), strlen($candidateToken));
+                if ($shorter >= 3 && (str_starts_with($queryToken, $candidateToken) || str_starts_with($candidateToken, $queryToken))) {
+                    $best = max($best, 1.0);
+                    continue;
+                }
+
+                $longer = max(strlen($queryToken), strlen($candidateToken));
+                if ($longer >= 4) {
+                    $similarity = 1 - (levenshtein($queryToken, $candidateToken) / $longer);
+                    $best = max($best, $similarity);
+                }
+            }
+            $scores[] = $best;
+        }
+
+        $minimum = min($scores);
+        $average = array_sum($scores) / count($scores);
+
+        return $minimum >= 0.6 ? $average : 0.0;
     }
 
     /**

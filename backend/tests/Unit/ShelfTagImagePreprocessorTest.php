@@ -49,9 +49,13 @@ class ShelfTagImagePreprocessorTest extends TestCase
         $this->assertArrayHasKey('height', $result);
         $this->assertArrayHasKey('mime_type', $result);
         $this->assertArrayHasKey('size_bytes', $result);
+        $this->assertArrayHasKey('fallback_path', $result);
+        $this->assertArrayHasKey('fallback_full_path', $result);
 
         $this->assertStringStartsWith('scan_vault/', $result['path']);
         Storage::disk('local')->assertExists($result['path']);
+        Storage::disk('local')->assertExists($result['fallback_path']);
+        $this->assertNotSame($result['path'], $result['fallback_path']);
         $this->assertEquals(400, $result['width']);
         $this->assertEquals(300, $result['height']);
         $this->assertEquals('image/png', $result['mime_type']);

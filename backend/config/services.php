@@ -40,6 +40,10 @@ return [
         'language' => env('TESSERACT_LANGUAGE', 'eng'),
         'timeout_seconds' => (int) env('TESSERACT_TIMEOUT_SECONDS', 15),
         'page_segmentation_mode' => (int) env('TESSERACT_PSM', 11),
+        'shelf_tag_pass_timeout_seconds' => (int) env('TESSERACT_SHELF_TAG_PASS_TIMEOUT_SECONDS', 3),
+        'shelf_tag_primary_psm' => (int) env('TESSERACT_SHELF_TAG_PRIMARY_PSM', 6),
+        'shelf_tag_fallback_psm' => (int) env('TESSERACT_SHELF_TAG_FALLBACK_PSM', 11),
+        'shelf_tag_minimum_confidence' => (int) env('TESSERACT_SHELF_TAG_MINIMUM_CONFIDENCE', 30),
         'temp_directory' => env('TESSERACT_TEMP_DIRECTORY', storage_path('app/private/scan_vault')),
     ],
 

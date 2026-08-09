@@ -141,4 +141,45 @@ class ShelfTagOcrServiceTest extends TestCase
 
         $this->assertEquals('OCR_UNAVAILABLE', $result['status']);
     }
+
+    public function test_configurable_confidence_floor_preserves_useful_matching_tokens(): void
+    {
+        $service = new ShelfTagOcrService();
+        $tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+            . "5\t1\t1\t1\t1\t1\t10\t10\t80\t20\t45\tNESC\n";
+
+        $result = $service->parseTsvOutput($tsv, 30);
+
+        $this->assertSame('OCR_SUCCESS', $result['status']);
+        $this->assertSame('NESC', $result['words'][0]['text']);
+        $this->assertSame(45, $result['words'][0]['confidence']);
+    }
+
+    public function test_per_pass_options_control_segmentation_timeout_and_confidence_floor(): void
+    {
+        config(['services.tesseract.path' => 'tesseract']);
+        $service = new class extends ShelfTagOcrService {
+            public array $capturedCommand = [];
+            public int $capturedTimeout = 0;
+
+            protected function runProcess(array $command, int $timeout): string
+            {
+                $this->capturedCommand = $command;
+                $this->capturedTimeout = $timeout;
+
+                return "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+                    . "5\t1\t1\t1\t1\t1\t10\t10\t80\t20\t45\tNESC\n";
+            }
+        };
+
+        $result = $service->extractText('tag.png', [
+            'psm' => 6,
+            'timeout_seconds' => 3,
+            'minimum_confidence' => 30,
+        ]);
+
+        $this->assertSame('OCR_SUCCESS', $result['status']);
+        $this->assertSame(3, $service->capturedTimeout);
+        $this->assertSame(['tesseract', 'tag.png', 'stdout', '--psm', '6', '-l', 'eng', 'tsv'], $service->capturedCommand);
+    }
 }

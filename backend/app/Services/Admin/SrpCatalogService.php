@@ -75,6 +75,7 @@ class SrpCatalogService
     public function currentRecords(string $search = '', string $category = ''): Collection
     {
         $records = SrpBulletin::query()
+            ->with('aliases')
             ->where('is_active', true)
             ->whereDate('effective_date', '<=', now()->toDateString())
             ->orderByDesc('effective_date')
@@ -92,6 +93,7 @@ class SrpCatalogService
                     $record->unit,
                     $record->regulatory_classification,
                     $record->source_reference,
+                    ...$record->aliases->pluck('alias_name')->all(),
                 ])->filter()->contains(
                     fn ($value) => Str::contains(Str::lower((string) $value), $needle)
                 );

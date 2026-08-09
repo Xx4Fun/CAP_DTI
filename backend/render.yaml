@@ -22,3 +22,11 @@ services:
         value: 15
       - key: TESSERACT_PSM
         value: 11
+      - key: TESSERACT_SHELF_TAG_PASS_TIMEOUT_SECONDS
+        value: 3
+      - key: TESSERACT_SHELF_TAG_PRIMARY_PSM
+        value: 6
+      - key: TESSERACT_SHELF_TAG_FALLBACK_PSM
+        value: 11
+      - key: TESSERACT_SHELF_TAG_MINIMUM_CONFIDENCE
+        value: 30

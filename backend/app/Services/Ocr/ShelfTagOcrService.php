@@ -11,23 +11,23 @@ class ShelfTagOcrService
     /**
      * Alias for scan() to process an image file for OCR.
      */
-    public function process(string $imagePath): array
+    public function process(string $imagePath, array $options = []): array
     {
-        return $this->scan($imagePath);
+        return $this->scan($imagePath, $options);
     }
 
     /**
      * Alias for scan() to extract text from an image file for OCR.
      */
-    public function extractText(string $imagePath): array
+    public function extractText(string $imagePath, array $options = []): array
     {
-        return $this->scan($imagePath);
+        return $this->scan($imagePath, $options);
     }
 
     /**
      * Perform Tesseract TSV OCR on the target image.
      */
-    public function scan(string $imagePath): array
+    public function scan(string $imagePath, array $options = []): array
     {
         $tesseractPath = config('services.tesseract.path');
 
@@ -40,15 +40,16 @@ class ShelfTagOcrService
             return $this->buildResponse('OCR_UNAVAILABLE');
         }
 
-        $timeout = (int) config('services.tesseract.timeout_seconds', 15);
-        $psm = (string) config('services.tesseract.page_segmentation_mode', 11);
-        $language = (string) config('services.tesseract.language', 'eng');
+        $timeout = (int) ($options['timeout_seconds'] ?? config('services.tesseract.timeout_seconds', 15));
+        $psm = (string) ($options['psm'] ?? config('services.tesseract.page_segmentation_mode', 11));
+        $language = (string) ($options['language'] ?? config('services.tesseract.language', 'eng'));
+        $minimumConfidence = (int) ($options['minimum_confidence'] ?? 60);
 
         $command = [$tesseractPath, $imagePath, 'stdout', '--psm', $psm, '-l', $language, 'tsv'];
 
         try {
             $output = $this->runProcess($command, $timeout);
-            return $this->parseTsvOutput($output);
+            return $this->parseTsvOutput($output, $minimumConfidence);
         } catch (ProcessTimedOutException $e) {
             return $this->buildResponse('OCR_TIMEOUT');
         } catch (\Symfony\Component\Process\Exception\InvalidArgumentException | \Symfony\Component\Process\Exception\LogicException | \Symfony\Component\Process\Exception\RuntimeException $e) {
@@ -81,7 +82,7 @@ class ShelfTagOcrService
     /**
      * Parse TSV format string into structured OCR output.
      */
-    public function parseTsvOutput(string $tsvOutput): array
+    public function parseTsvOutput(string $tsvOutput, int $minimumConfidence = 60): array
     {
         $rawLines = explode("\n", str_replace("\r\n", "\n", $tsvOutput));
         $words = [];
@@ -107,8 +108,7 @@ class ShelfTagOcrService
             $conf = (float) $cols[10];
             $text = isset($cols[11]) ? trim($cols[11]) : '';
 
-            // Filter out tokens with confidence < 60
-            if ($conf < 60 || $text === '') {
+            if ($conf < $minimumConfidence || $text === '') {
                 continue;
             }
 

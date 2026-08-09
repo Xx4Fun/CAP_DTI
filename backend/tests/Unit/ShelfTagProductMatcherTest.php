@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Models\ItemAlias;
 use App\Models\SrpBulletin;
 use App\Services\Ocr\ShelfTagProductMatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -72,7 +73,7 @@ class ShelfTagProductMatcherTest extends TestCase
         $this->assertArrayNotHasKey('srp', $topCandidate);
 
         // Verify exact expected keys
-        $expectedKeys = ['id', 'commodity_name', 'brand', 'category', 'package_size', 'unit', 'match_score', 'match_level'];
+        $expectedKeys = ['id', 'commodity_name', 'brand', 'category', 'package_size', 'unit', 'match_score', 'match_level', 'match_basis'];
         $this->assertEqualsCanonicalizing($expectedKeys, array_keys($topCandidate));
     }
 
@@ -124,5 +125,52 @@ class ShelfTagProductMatcherTest extends TestCase
                 $this->assertLessThan($topCandidate['match_score'], $candidate['match_score']);
             }
         }
+    }
+
+    public function test_exact_catalog_alias_resolves_abbreviated_shelf_label_as_strong_match(): void
+    {
+        $bulletin = SrpBulletin::create([
+            'commodity_name' => 'Nescafe Classic Instant Coffee 100 g',
+            'category' => 'Coffee',
+            'unit' => '100 g',
+            'regulatory_classification' => 'BASIC_NECESSITY',
+            'baseline_price' => 95.00,
+            'effective_date' => '2026-05-11',
+            'is_active' => true,
+        ]);
+
+        ItemAlias::create([
+            'alias_name' => 'NESC CLSSIC',
+            'srp_bulletin_id' => $bulletin->id,
+        ]);
+
+        $candidates = $this->matcher->match(['NESC', 'CLSSIC'], '100 g');
+
+        $this->assertNotEmpty($candidates);
+        $this->assertSame($bulletin->id, $candidates[0]['id']);
+        $this->assertSame('STRONG', $candidates[0]['match_level']);
+        $this->assertSame('ALIAS_EXACT', $candidates[0]['match_basis']);
+        $this->assertGreaterThanOrEqual(80, $candidates[0]['match_score']);
+    }
+
+    public function test_abbreviated_ocr_tokens_match_official_name_without_a_saved_alias(): void
+    {
+        $bulletin = SrpBulletin::create([
+            'commodity_name' => 'Alaska Evaporated Milk 370 mL',
+            'category' => 'Milk',
+            'unit' => '370 mL',
+            'regulatory_classification' => 'BASIC_NECESSITY',
+            'baseline_price' => 42.00,
+            'effective_date' => '2026-05-11',
+            'is_active' => true,
+        ]);
+
+        $candidates = $this->matcher->match(['ALSK', 'EVAP', 'MLK'], '370 mL');
+
+        $this->assertNotEmpty($candidates);
+        $this->assertSame($bulletin->id, $candidates[0]['id']);
+        $this->assertSame('STRONG', $candidates[0]['match_level']);
+        $this->assertSame('NAME_ABBREVIATION', $candidates[0]['match_basis']);
+        $this->assertGreaterThanOrEqual(80, $candidates[0]['match_score']);
     }
 }

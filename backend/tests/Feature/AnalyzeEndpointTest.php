@@ -101,14 +101,25 @@ class AnalyzeEndpointTest extends TestCase
                 'ocr_status' => 'OCR_PRODUCT_AND_PRICE_DETECTED',
                 'detected_price_string' => '23.50',
                 'detected_price_source' => 'OCR',
-                'product_source' => 'OCR',
+                'product_source' => 'OCR_AUTO',
+                'auto_resolved' => true,
+                'recovery_reason' => null,
+                'comparison' => [
+                    'commodity_name' => 'Saba Philippines Sardines in Tomato Sauce 155 g',
+                    'displayed_price' => '23.50',
+                    'reference_price' => '21.50',
+                    'product_source' => 'OCR_AUTO',
+                    'price_source' => 'OCR_DETECTED',
+                ],
             ]
         ]);
 
         $responseData = $response->json('data');
         $this->assertNotNull($responseData['scan_id']);
+        $this->assertGreaterThanOrEqual(80, $responseData['price_confidence']);
         $this->assertNotEmpty($responseData['candidates']);
         $this->assertEquals($this->product->id, $responseData['candidates'][0]['id']);
+        $this->assertEquals($this->product->id, $responseData['comparison']['product']['id']);
 
         // Assert ScanSessionRepository stores the session with allowed_candidate_product_ids containing matched product ID
         $repository = app(ScanSessionRepository::class);
@@ -228,7 +239,7 @@ class AnalyzeEndpointTest extends TestCase
     {
         $this->mock(ShelfTagOcrService::class, function ($mock) {
             $mock->shouldReceive('extractText')
-                ->once()
+                ->twice()
                 ->andReturn([
                     'status' => 'OCR_NO_TEXT',
                     'raw_text' => '',
@@ -252,7 +263,71 @@ class AnalyzeEndpointTest extends TestCase
                 'ocr_status' => 'OCR_NO_TEXT',
                 'candidates' => [],
                 'detected_price_string' => null,
+                'ocr_pass_count' => 2,
             ]
         ]);
+    }
+
+    public function test_fallback_ocr_pass_can_recover_a_primary_no_text_result(): void
+    {
+        $words = [
+            ['text' => 'Saba', 'confidence' => 95, 'left' => 10, 'top' => 10, 'width' => 50, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => 'Sardines', 'confidence' => 92, 'left' => 65, 'top' => 10, 'width' => 70, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => '155g', 'confidence' => 90, 'left' => 140, 'top' => 10, 'width' => 45, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => 'P23.50', 'confidence' => 96, 'left' => 10, 'top' => 40, 'width' => 80, 'height' => 25, 'line_num' => 2, 'block_num' => 1],
+        ];
+
+        $this->mock(ShelfTagOcrService::class, function ($mock) use ($words) {
+            $mock->shouldReceive('extractText')
+                ->twice()
+                ->andReturn(
+                    ['status' => 'OCR_NO_TEXT', 'raw_text' => '', 'lines' => [], 'words' => []],
+                    ['status' => 'OCR_SUCCESS', 'raw_text' => "Saba Sardines 155g\nP23.50", 'lines' => ['Saba Sardines 155g', 'P23.50'], 'words' => $words],
+                );
+        });
+
+        $response = $this->postJson('/api/public/scan-tag/analyze', [
+            'store_id' => $this->store->id,
+            'image' => $this->createFake800x600Image(),
+            'scan_uuid' => (string) Str::uuid(),
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.ocr_pass_count', 2);
+        $response->assertJsonPath('data.auto_resolved', true);
+        $response->assertJsonPath('data.comparison.price_source', 'OCR_DETECTED');
+    }
+
+    public function test_fallback_ocr_pass_runs_when_primary_result_has_price_but_no_product(): void
+    {
+        $priceOnly = [
+            ['text' => 'P23.50', 'confidence' => 96, 'left' => 10, 'top' => 40, 'width' => 80, 'height' => 25, 'line_num' => 2, 'block_num' => 1],
+        ];
+        $complete = [
+            ['text' => 'Saba', 'confidence' => 95, 'left' => 10, 'top' => 10, 'width' => 50, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => 'Sardines', 'confidence' => 92, 'left' => 65, 'top' => 10, 'width' => 70, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => '155g', 'confidence' => 90, 'left' => 140, 'top' => 10, 'width' => 45, 'height' => 20, 'line_num' => 1, 'block_num' => 1],
+            ['text' => 'P23.50', 'confidence' => 96, 'left' => 10, 'top' => 40, 'width' => 80, 'height' => 25, 'line_num' => 2, 'block_num' => 1],
+        ];
+
+        $this->mock(ShelfTagOcrService::class, function ($mock) use ($priceOnly, $complete) {
+            $mock->shouldReceive('extractText')
+                ->twice()
+                ->andReturn(
+                    ['status' => 'OCR_SUCCESS', 'raw_text' => 'P23.50', 'lines' => ['P23.50'], 'words' => $priceOnly],
+                    ['status' => 'OCR_SUCCESS', 'raw_text' => "Saba Sardines 155g\nP23.50", 'lines' => ['Saba Sardines 155g', 'P23.50'], 'words' => $complete],
+                );
+        });
+
+        $response = $this->postJson('/api/public/scan-tag/analyze', [
+            'store_id' => $this->store->id,
+            'image' => $this->createFake800x600Image(),
+            'scan_uuid' => (string) Str::uuid(),
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.ocr_pass_count', 2);
+        $response->assertJsonPath('data.auto_resolved', true);
+        $response->assertJsonPath('data.recovery_reason', null);
     }
 }
