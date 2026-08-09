@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AdminOverviewController;
 use App\Http\Controllers\Admin\AdminSessionController;
+use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AuditEventController;
 use App\Http\Controllers\Admin\EmergencyAdminController;
 use App\Http\Controllers\Admin\LegalDraftController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Admin\VendorInvitationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalamityController;
 use App\Http\Controllers\CitizenTipController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LegalNoticeController;
 use App\Http\Controllers\PublicCommodityController;
 use App\Http\Controllers\PublicPwaController;
@@ -22,6 +24,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/vendor-invitations/{token}/accept', [VendorInvitationController::class, 'accept']);
+Route::get('/health/ready', [HealthController::class, 'ready'])->middleware('throttle:30,1');
 
 Route::prefix('public')->group(function () {
     Route::get('/config', [PublicPwaController::class, 'config']);
@@ -74,10 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/legal/dispatch', [LegalDraftController::class, 'dispatch']);
         Route::post('/legal/draft-preview', [LegalDraftController::class, 'preview']);
 
-        Route::get('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'index']);
-        Route::put('/settings/profile', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateProfile']);
-        Route::put('/settings/preferences', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updatePreferences']);
-        Route::put('/settings/system', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateSystem']);
+        Route::get('/settings', [AdminSettingsController::class, 'index']);
+        Route::put('/settings/profile', [AdminSettingsController::class, 'updateProfile']);
+        Route::put('/settings/preferences', [AdminSettingsController::class, 'updatePreferences']);
+        Route::put('/settings/system', [AdminSettingsController::class, 'updateSystem']);
     });
 
     Route::post('/logout', [AuthController::class, 'logout']);

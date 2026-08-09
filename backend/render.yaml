@@ -6,6 +6,7 @@ services:
     context: .
     plan: free
     region: singapore
+    healthCheckPath: /up
     envVars:
       - key: APP_ENV
         value: production
