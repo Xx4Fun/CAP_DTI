@@ -4,12 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\SrpBulletin;
 use App\Services\Admin\SrpCatalogService;
+use App\Services\CommodityImageStorage;
 use Illuminate\Http\Request;
 
 class PublicCommodityController extends Controller
 {
-    public function index(Request $request, SrpCatalogService $catalog)
-    {
+    public function index(
+        Request $request,
+        SrpCatalogService $catalog,
+        CommodityImageStorage $imageStorage
+    ) {
         $search = trim((string) $request->input('query', ''));
         $currentRecords = $catalog->currentRecords($search);
 
@@ -32,19 +36,19 @@ class PublicCommodityController extends Controller
             ->filter()
             ->toArray();
 
-        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageMapByKey, $imageMapByName) {
+        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageMapByKey, $imageMapByName, $imageStorage) {
             $rawPath = $record->image_path;
-            if (!$rawPath && !empty($record->commodity_key) && isset($imageMapByKey[$record->commodity_key])) {
+            if (! $rawPath && ! empty($record->commodity_key) && isset($imageMapByKey[$record->commodity_key])) {
                 $rawPath = $imageMapByKey[$record->commodity_key];
             }
-            if (!$rawPath && !empty($record->commodity_name) && isset($imageMapByName[$record->commodity_name])) {
+            if (! $rawPath && ! empty($record->commodity_name) && isset($imageMapByName[$record->commodity_name])) {
                 $rawPath = $imageMapByName[$record->commodity_name];
             }
 
             return [
                 'id' => (int) $record->id,
                 'commodity_name' => (string) $record->commodity_name,
-                'image_path' => $this->formatImageUrl($rawPath),
+                'image_path' => $this->formatImageUrl($rawPath, $imageStorage),
                 'category' => $record->category,
                 'unit' => $record->unit,
                 'regulatory_classification' => $record->regulatory_classification,
@@ -63,16 +67,17 @@ class PublicCommodityController extends Controller
         ]);
     }
 
-    private function formatImageUrl(?string $path): ?string
+    private function formatImageUrl(?string $path, CommodityImageStorage $imageStorage): ?string
     {
-        if (!$path) {
+        if (! $path) {
             return null;
         }
 
         if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             if (str_starts_with($path, 'http://') && (request()->isSecure() || request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production'))) {
-                return 'https://' . substr($path, 7);
+                return 'https://'.substr($path, 7);
             }
+
             return $path;
         }
 
@@ -81,9 +86,9 @@ class PublicCommodityController extends Controller
             $cleanPath = substr($cleanPath, 8);
         }
 
-        $url = asset('storage/' . $cleanPath);
+        $url = $imageStorage->url($cleanPath);
         if (str_starts_with($url, 'http://') && (request()->isSecure() || request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production'))) {
-            $url = 'https://' . substr($url, 7);
+            $url = 'https://'.substr($url, 7);
         }
 
         return $url;

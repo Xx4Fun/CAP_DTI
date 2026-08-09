@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\SrpBulletin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -266,10 +268,18 @@ final class AdminSrpManagementTest extends TestCase
         $this->assertSame(4, SrpBulletin::count());
     }
 
-    public function test_admin_can_upload_commodity_image(): void
+    public function test_admin_uploads_commodity_image_to_the_configured_disk_and_returns_its_url(): void
     {
-        \Illuminate\Support\Facades\Storage::fake('public');
-        $file = \Illuminate\Http\UploadedFile::fake()->image('coffee.png');
+        config()->set('filesystems.commodity_images_disk', 'commodity-images-test');
+        config()->set('filesystems.disks.commodity-images-test', [
+            'driver' => 'local',
+            'root' => storage_path('framework/testing/disks/commodity-images-test'),
+            'url' => 'https://assets.example.test',
+            'visibility' => 'public',
+            'throw' => true,
+        ]);
+        Storage::fake('commodity-images-test', ['url' => 'https://assets.example.test']);
+        $file = UploadedFile::fake()->image('coffee.png');
 
         $response = $this->postJson('/api/admin/srp/upload-image', [
             'image' => $file,
@@ -277,6 +287,105 @@ final class AdminSrpManagementTest extends TestCase
             ->assertCreated()
             ->assertJsonStructure(['data' => ['image_path', 'url']]);
 
-        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($response->json('data.image_path'));
+        $path = $response->json('data.image_path');
+        Storage::disk('commodity-images-test')->assertExists($path);
+        $this->assertSame('https://assets.example.test/'.$path, $response->json('data.url'));
+    }
+
+    public function test_admin_fails_closed_when_commodity_image_storage_is_unavailable(): void
+    {
+        config()->set('filesystems.commodity_images_disk', 'unavailable-commodity-images');
+        config()->set('filesystems.disks.unavailable-commodity-images', [
+            'driver' => 'unavailable',
+        ]);
+
+        $this->postJson('/api/admin/srp/upload-image', [
+            'image' => UploadedFile::fake()->image('coffee.png'),
+        ])
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'COMMODITY_IMAGE_STORAGE_UNAVAILABLE');
+    }
+
+    public function test_public_catalog_resolves_commodity_image_keys_through_the_configured_disk(): void
+    {
+        config()->set('filesystems.commodity_images_disk', 'commodity-images-test');
+        config()->set('filesystems.disks.commodity-images-test', [
+            'driver' => 'local',
+            'root' => storage_path('framework/testing/disks/commodity-images-test'),
+            'url' => 'https://assets.example.test',
+            'visibility' => 'public',
+            'throw' => true,
+        ]);
+        Storage::fake('commodity-images-test', ['url' => 'https://assets.example.test']);
+
+        SrpBulletin::create([
+            'commodity_name' => 'Roasted Coffee',
+            'commodity_key' => 'roasted-coffee-100g',
+            'image_path' => 'commodity_images/coffee.webp',
+            'baseline_price' => 25.50,
+            'effective_date' => now()->subDay()->toDateString(),
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/public/commodities?query=Roasted')
+            ->assertOk()
+            ->assertJsonPath(
+                'data.0.image_path',
+                'https://assets.example.test/commodity_images/coffee.webp'
+            );
+    }
+
+    public function test_public_catalog_preserves_legacy_absolute_commodity_image_urls(): void
+    {
+        SrpBulletin::create([
+            'commodity_name' => 'Legacy Coffee',
+            'commodity_key' => 'legacy-coffee-100g',
+            'image_path' => 'https://legacy.example.test/coffee.webp',
+            'baseline_price' => 24.50,
+            'effective_date' => now()->subDay()->toDateString(),
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/public/commodities?query=Legacy')
+            ->assertOk()
+            ->assertJsonPath('data.0.image_path', 'https://legacy.example.test/coffee.webp');
+    }
+
+    public function test_public_catalog_inherits_the_configured_image_url_across_commodity_revisions(): void
+    {
+        config()->set('filesystems.commodity_images_disk', 'commodity-images-test');
+        config()->set('filesystems.disks.commodity-images-test', [
+            'driver' => 'local',
+            'root' => storage_path('framework/testing/disks/commodity-images-test'),
+            'url' => 'https://assets.example.test',
+            'visibility' => 'public',
+            'throw' => true,
+        ]);
+        Storage::fake('commodity-images-test', ['url' => 'https://assets.example.test']);
+
+        SrpBulletin::create([
+            'commodity_name' => 'Revision Coffee',
+            'commodity_key' => 'revision-coffee-100g',
+            'image_path' => 'commodity_images/revision-coffee.webp',
+            'baseline_price' => 24.50,
+            'effective_date' => now()->subMonth()->toDateString(),
+            'is_active' => true,
+        ]);
+        SrpBulletin::create([
+            'commodity_name' => 'Revision Coffee',
+            'commodity_key' => 'revision-coffee-100g',
+            'image_path' => null,
+            'baseline_price' => 25.50,
+            'effective_date' => now()->subDay()->toDateString(),
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/public/commodities?query=Revision')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath(
+                'data.0.image_path',
+                'https://assets.example.test/commodity_images/revision-coffee.webp'
+            );
     }
 }

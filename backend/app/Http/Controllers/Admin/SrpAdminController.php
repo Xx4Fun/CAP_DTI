@@ -9,8 +9,10 @@ use App\Services\Admin\SensitiveActionGuard;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\Admin\SrpImportService;
 use App\Services\Admin\TemporalSrpResolver;
+use App\Services\CommodityImageStorage;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Throwable;
 
 class SrpAdminController extends Controller
 {
@@ -72,20 +74,33 @@ class SrpAdminController extends Controller
         ]);
     }
 
-    public function uploadImage(Request $request, AdminAuthorizationService $auth)
-    {
+    public function uploadImage(
+        Request $request,
+        AdminAuthorizationService $auth,
+        CommodityImageStorage $imageStorage
+    ) {
         $auth->requireManager($request->user());
 
         $request->validate([
             'image' => 'required|image|mimes:webp,jpeg,png,jpg|max:2048',
         ]);
 
-        $path = $request->file('image')->store('commodity_images', 'public');
+        try {
+            $path = $imageStorage->store($request->file('image'));
+            $url = $imageStorage->url($path);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'status' => 'COMMODITY_IMAGE_STORAGE_UNAVAILABLE',
+                'message' => 'Commodity image storage is temporarily unavailable. The item was not updated.',
+            ], 503);
+        }
 
         return response()->json([
             'data' => [
                 'image_path' => $path,
-                'url' => asset('storage/' . $path),
+                'url' => $url,
             ],
         ], 201);
     }
