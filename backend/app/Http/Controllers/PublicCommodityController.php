@@ -54,6 +54,7 @@ class PublicCommodityController extends Controller
                 'regulatory_classification' => $record->regulatory_classification,
                 'baseline_price' => (float) $record->baseline_price,
                 'effective_date' => $record->effective_date?->toDateString(),
+                'source_reference' => $record->source_reference,
                 'is_active' => (bool) $record->is_active,
                 'price_freeze_applicable' => (bool) $record->price_freeze_applicable,
                 'price_freeze_treatment' => $record->price_freeze_treatment,

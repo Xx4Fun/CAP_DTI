@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../api/client'
 import { SrpSearch } from './SrpSearch'
 
+vi.mock('../api/readiness', () => ({
+  ensureApiReady: vi.fn().mockResolvedValue(undefined),
+}))
+
 describe('SRP live bulletin revalidation', () => {
   afterEach(() => vi.restoreAllMocks())
 

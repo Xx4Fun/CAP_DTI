@@ -2,18 +2,23 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, ChevronDown, ChevronUp, Camera, Shield, UserCheck,
   Search, CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
-  SwitchCamera, AlertTriangle, Building2, ExternalLink, MapPin
+  SwitchCamera, AlertTriangle, ExternalLink, MapPin, Clock
 } from 'lucide-react';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
 import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
+import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
+import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
+import { StoreSelectionCard } from './StoreSelectionCard';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 interface FormalReportProps {
   setActiveTab?: (tab: string) => void;
   onTrackReport?: (reference: string, token: string) => void;
+  onReportSubmitted?: (report: FormalReportResponse, storeName: string) => void;
 }
 
-export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrackReport }) => {
+export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrackReport, onReportSubmitted }) => {
   // Navigation & Wizard Stage
   const [currentView, setCurrentView] = useState<'dashboard' | 'select-store' | 'camera-viewport' | 'review-submit' | 'confirmation'>('dashboard');
 
@@ -38,8 +43,13 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
   const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
+  const [openingStoreId, setOpeningStoreId] = useState<number | null>(null);
+  const openingStoreRef = useRef<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeChip, setActiveChip] = useState<string>('nearby');
+  const [activeChip, setActiveChip] = useState<string>('all');
+  const [userGeo, setUserGeo] = useState<GeoPosition | null>(null);
+  const [geoError, setGeoError] = useState<string>('');
+  const [geoLoading, setGeoLoading] = useState<boolean>(false);
 
   // Camera & Image State
   const [hasCamera, setHasCamera] = useState<boolean>(true);
@@ -71,11 +81,67 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
+  const reportGenerationRef = useRef(0);
+  const cameraRequestRef = useRef(0);
+  const currentViewRef = useRef(currentView);
+  currentViewRef.current = currentView;
+
+  const invalidateReportAsyncWork = () => {
+    reportGenerationRef.current += 1;
+    cameraRequestRef.current += 1;
+    openingStoreRef.current = null;
+    setOpeningStoreId(null);
+    setSubmitting(false);
+  };
+
+  const resetReportFlow = () => {
+    invalidateReportAsyncWork();
+    setCurrentView('dashboard');
+    setShowPrivacyModal(false);
+    setShowGuidelinesModal(false);
+    setShowFullNoticeModal(false);
+    setShowFullReceiptModal(false);
+    setPrivacyAccepted(false);
+    setSelectedStore(null);
+    setCapturedBlob(null);
+    setPreviewUrl(null);
+    setImageHash('');
+    setCaptureSession(null);
+    setAffirmationChecked(false);
+    setOcrItems([]);
+    setSubmissionResult(null);
+    setError('');
+    setCopiedRef(false);
+    setCopiedToken(false);
+  };
+
+  const handleReportStepBack = () => {
+    if (currentView === 'confirmation') {
+      resetReportFlow();
+    } else if (currentView === 'select-store') {
+      invalidateReportAsyncWork();
+      setCurrentView('dashboard');
+    } else {
+      invalidateReportAsyncWork();
+      setCurrentView('select-store');
+    }
+  };
+
+  useBackLayer('report-step', currentView !== 'dashboard', handleReportStepBack);
+  useBackLayer('report-privacy-modal', showPrivacyModal, () => setShowPrivacyModal(false));
+  useBackLayer('report-guidelines-modal', showGuidelinesModal, () => setShowGuidelinesModal(false));
+  useBackLayer('report-full-notice-modal', showFullNoticeModal, () => setShowFullNoticeModal(false));
+  useBackLayer('report-full-receipt-modal', showFullReceiptModal, () => setShowFullReceiptModal(false));
 
   useEffect(() => {
     setSubmissionUuid('sub-' + Math.random().toString(36).substring(2, 12) + '-' + Date.now());
     fetchStores();
     checkCapabilities();
+    return () => {
+      reportGenerationRef.current += 1;
+      cameraRequestRef.current += 1;
+      openingStoreRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -131,20 +197,33 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   };
 
   const startCaptureSession = async (store: Establishment) => {
+    if (openingStoreRef.current !== null) return;
+    const generation = reportGenerationRef.current;
+    openingStoreRef.current = store.id;
+    setOpeningStoreId(store.id);
     setSelectedStore(store);
     setError('');
     try {
       const res = await apiClient.post('/public/capture-session', { store_id: store.id });
+      if (generation !== reportGenerationRef.current) return;
       if (res.data && res.data.success) {
         setCaptureSession(res.data.data);
       }
       setShowGuidelinesModal(true);
     } catch (err) {
+      if (generation !== reportGenerationRef.current) return;
       setShowGuidelinesModal(true);
+    } finally {
+      if (generation === reportGenerationRef.current) {
+        openingStoreRef.current = null;
+        setOpeningStoreId(null);
+      }
     }
   };
 
   const startCamera = async () => {
+    const requestId = ++cameraRequestRef.current;
+    const generation = reportGenerationRef.current;
     setShowGuidelinesModal(false);
     setCurrentView('camera-viewport');
     setError('');
@@ -154,11 +233,16 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
         video: { facingMode: { ideal: facingMode } },
         audio: false,
       });
+      if (requestId !== cameraRequestRef.current || generation !== reportGenerationRef.current) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
     } catch (err) {
+      if (requestId !== cameraRequestRef.current || generation !== reportGenerationRef.current) return;
       setError('Camera access is unavailable or permission was denied. No receipt was captured.');
       setStream(null);
     }
@@ -187,6 +271,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   }, [previewUrl]);
 
   const stopCamera = () => {
+    cameraRequestRef.current += 1;
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
@@ -194,14 +279,20 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
   };
 
   const toggleCameraFlip = async () => {
+    const generation = reportGenerationRef.current;
     stopCamera();
     setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
     await new Promise(resolve => setTimeout(resolve, 100));
+    if (
+      generation !== reportGenerationRef.current
+      || currentViewRef.current !== 'camera-viewport'
+    ) return;
     await startCamera();
   };
 
   const captureLiveFrame = async () => {
     if (canvasRef.current) {
+      const generation = reportGenerationRef.current;
       const canvas = canvasRef.current;
       canvas.width = videoRef.current?.videoWidth || 640;
       canvas.height = videoRef.current?.videoHeight || 860;
@@ -215,6 +306,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
         canvas.toBlob(async (blob) => {
+          if (generation !== reportGenerationRef.current) return;
           if (blob) {
             setCapturedBlob(blob);
             if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -223,29 +315,27 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
             // Calculate SHA-256 Hash
             const arrayBuffer = await blob.arrayBuffer();
+            if (generation !== reportGenerationRef.current) return;
             const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+            if (generation !== reportGenerationRef.current) return;
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
             setImageHash(hashHex);
 
             setOcrMetadata({
               transactionDate: new Date().toISOString().split('T')[0],
-              receiptNumber: 'REC-' + Math.floor(Math.random() * 10000),
-              linesDetected: 1,
+              receiptNumber: 'Not specified',
+              linesDetected: handoffRef.current?.kind === 'scan-to-report' ? 1 : 0,
             });
 
             if (handoffRef.current?.kind === 'scan-to-report') {
               setOcrItems([{
-                commodity_name: String(handoffRef.current.commodityId || 'Unknown Item'),
-                receipt_price: (handoffRef.current.displayedPrice || 0).toString(),
+                commodity_name: `Commodity #${handoffRef.current.commodityId}`,
+                receipt_price: (handoffRef.current.displayedPrice || 0).toFixed(2),
                 baseline_price: handoffRef.current.baselinePrice || 0
               }]);
             } else {
-              setOcrItems([{
-                commodity_name: 'Detected Item',
-                receipt_price: '0.00',
-                baseline_price: 0.00
-              }]);
+              setOcrItems([]);
             }
 
             setCurrentView('review-submit');
@@ -257,6 +347,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
 
   const submitFormalReport = async () => {
     if (!affirmationChecked) return;
+    const generation = reportGenerationRef.current;
     setSubmitting(true);
     setError('');
 
@@ -274,26 +365,40 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       const res = await apiClient.post('/public/reports', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      if (generation !== reportGenerationRef.current) return;
 
       if (res.data && res.data.success) {
         setSubmissionResult(res.data.data);
+        onReportSubmitted?.(res.data.data, selectedStore?.store_name || 'Unspecified Store');
         setCurrentView('confirmation');
       } else {
         throw new Error('API return unsuccessful');
       }
     } catch (err: any) {
+      if (generation !== reportGenerationRef.current) return;
       setSubmissionResult(null);
       setError(err.response?.data?.message || err.message || 'Submission failed. No report was filed. Please try again.');
     } finally {
-      setSubmitting(false);
+      if (generation === reportGenerationRef.current) setSubmitting(false);
     }
   };
+
+  const copyRefTimerRef = useRef<number | null>(null);
+  const copyTokenTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyRefTimerRef.current) clearTimeout(copyRefTimerRef.current);
+      if (copyTokenTimerRef.current) clearTimeout(copyTokenTimerRef.current);
+    };
+  }, []);
 
   const handleCopyRef = () => {
     if (submissionResult) {
       navigator.clipboard.writeText(submissionResult.report_reference);
       setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 2000);
+      if (copyRefTimerRef.current) clearTimeout(copyRefTimerRef.current);
+      copyRefTimerRef.current = window.setTimeout(() => setCopiedRef(false), 2000);
     }
   };
 
@@ -301,24 +406,59 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     if (submissionResult) {
       navigator.clipboard.writeText(submissionResult.secret_tracking_token);
       setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), 2000);
+      if (copyTokenTimerRef.current) clearTimeout(copyTokenTimerRef.current);
+      copyTokenTimerRef.current = window.setTimeout(() => setCopiedToken(false), 2000);
+    }
+  };
+
+  const handleNearbyFilter = async () => {
+    if (activeChip === 'nearby') {
+      setActiveChip('all');
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError('');
+    try {
+      const pos = await getCurrentPosition();
+      setUserGeo(pos);
+      setActiveChip('nearby');
+    } catch (err: any) {
+      setGeoError(err.message || 'Location unavailable');
+      setActiveChip('all');
+    } finally {
+      setGeoLoading(false);
     }
   };
 
   const filteredStores = React.useMemo(() => {
     let result = stores;
-    if (activeChip === 'barangay') {
-      result = stores.filter(s => s.address.toLowerCase().includes('barangay'));
+    if (activeChip === 'nearby') {
+      if (userGeo) {
+        result = stores.filter(s => {
+          const dist = haversineKm(userGeo.latitude, userGeo.longitude, s.latitude, s.longitude);
+          return dist <= 2;
+        });
+      }
     } else if (activeChip === 'recent') {
-      result = stores.slice(0, 2); // Mock recent
+      const recentIds = getRecentStoreIds();
+      result = stores.filter(s => recentIds.includes(s.id));
     }
     
-    return result.filter(s =>
+    let filtered = result.filter(s =>
       s.store_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.dti_sec_number.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [stores, activeChip, searchQuery]);
+
+    if (activeChip === 'nearby' && userGeo) {
+      filtered = [...filtered].sort((a, b) =>
+        haversineKm(userGeo.latitude, userGeo.longitude, a.latitude, a.longitude) -
+        haversineKm(userGeo.latitude, userGeo.longitude, b.latitude, b.longitude)
+      );
+    }
+
+    return filtered;
+  }, [stores, activeChip, searchQuery, userGeo]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -671,10 +811,10 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
               Step 1 of 3 · Store
             </div>
             <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
-              Select the store
+              Choose a store
             </h1>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Choose the verified retail store where your purchase took place.
+              Tap the verified retail store where your purchase took place.
             </p>
           </div>
 
@@ -695,104 +835,49 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
             <button
               className={`chip ${activeChip === 'nearby' ? 'active' : ''}`}
-              onClick={() => setActiveChip('nearby')}
+              onClick={handleNearbyFilter}
             >
-              Nearby stores
+              <MapPin size={14} />
+              {geoLoading ? 'Finding location...' : 'Nearby stores'}
             </button>
             <button
               className={`chip ${activeChip === 'recent' ? 'active' : ''}`}
-              onClick={() => setActiveChip('recent')}
+              onClick={() => setActiveChip(activeChip === 'recent' ? 'all' : 'recent')}
             >
-              Recently selected
-            </button>
-            <button
-              className={`chip ${activeChip === 'barangay' ? 'active' : ''}`}
-              onClick={() => setActiveChip('barangay')}
-            >
-              Filter by barangay
+              <Clock size={14} />
+              Recent stores
             </button>
           </div>
+
+          {geoError && (
+            <div style={{ fontSize: '0.78rem', color: '#dc2626', padding: '4px 0' }}>
+              {geoError}
+            </div>
+          )}
 
           {/* Verified Store Cards List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredStores.map((s) => {
-              const isSelected = selectedStore?.id === s.id;
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => setSelectedStore(s)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setSelectedStore(s);
-                    }
-                  }}
-                  style={{
-                    background: '#ffffff',
-                    border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                    borderRadius: '14px',
-                    padding: '16px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    transition: 'all 0.15s ease',
-                    boxShadow: isSelected ? '0 0 0 3px rgba(29, 78, 216, 0.15)' : 'var(--shadow-sm)'
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <div style={{
-                      width: '38px',
-                      height: '38px',
-                      borderRadius: '10px',
-                      background: isSelected ? '#dbeafe' : '#f1f5f9',
-                      color: isSelected ? 'var(--primary)' : 'var(--text-muted)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      <Building2 size={20} />
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
-                        {s.store_name}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        {s.address}
-                      </div>
-                      <span className="badge badge-blue" style={{ marginTop: '6px', fontSize: '0.68rem', padding: '2px 8px' }}>
-                        {s.dti_sec_number}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    className={isSelected ? 'btn-primary' : 'btn-secondary'}
-                    style={{ width: 'auto', padding: '6px 14px', fontSize: '0.82rem' }}
-                  >
-                    {isSelected ? '✓ Selected' : 'Select'}
-                  </button>
-                </div>
-              );
-            })}
+            {filteredStores.map((store) => (
+              <StoreSelectionCard
+                key={store.id}
+                store={store}
+                distanceLabel={userGeo
+                  ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+                  : undefined}
+                busy={openingStoreId === store.id}
+                disabled={openingStoreId !== null}
+                onActivate={() => {
+                  addRecentStore(store.id);
+                  void startCaptureSession(store);
+                }}
+              />
+            ))}
           </div>
 
           {/* Bottom Action Bar */}
-          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-            <button className="btn-secondary" onClick={() => setCurrentView('dashboard')}>
+          <div style={{ display: 'flex', marginTop: '8px' }}>
+            <button className="btn-secondary" onClick={handleReportStepBack}>
               Back
-            </button>
-            <button
-              className="btn-primary"
-              disabled={!selectedStore}
-              onClick={() => {
-                if (selectedStore) startCaptureSession(selectedStore);
-              }}
-            >
-              Continue
             </button>
           </div>
         </div>
@@ -869,7 +954,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0) 100%)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={() => setCurrentView('select-store')}
+                onClick={handleReportStepBack}
                 style={{ background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: '50%', width: '38px', height: '38px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 aria-label="Back to store selection"
               >
@@ -1087,41 +1172,24 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
             {/* Highlighted Detected Line Item */}
             <div style={{ background: '#f8fafc', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary)', marginBottom: '6px' }}>
-                RELEVANT DETECTED COMMODITY LINE
+                EXTRACTED EVIDENCE (READ-ONLY)
               </div>
-              {ocrItems.map((item, idx) => (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <input
-                    type="text"
-                    className="input-field"
-                    style={{ fontSize: '0.88rem', fontWeight: 700 }}
-                    value={item.commodity_name}
-                    onChange={(e) => {
-                      const updated = [...ocrItems];
-                      updated[idx].commodity_name = e.target.value;
-                      setOcrItems(updated);
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Detected Price: ₱</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="input-field"
-                      style={{ width: '120px', padding: '6px 10px', fontSize: '0.88rem' }}
-                      value={item.receipt_price}
-                      onChange={(e) => {
-                        const updated = [...ocrItems];
-                        updated[idx].receipt_price = e.target.value;
-                        setOcrItems(updated);
-                      }}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      (SRP Baseline: ₱{item.baseline_price.toFixed(2)})
-                    </span>
+              {ocrItems.length > 0 ? (
+                ocrItems.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
+                      {item.commodity_name}
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      Receipt Price: <strong>₱{item.receipt_price}</strong> · SRP Baseline: <strong>₱{item.baseline_price.toFixed(2)}</strong>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center', padding: '8px' }}>
+                  <strong>Receipt captured successfully.</strong> DTI evaluators will review the original image directly. No manual data entry is required.
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -1134,8 +1202,9 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
           </div>
 
           {/* Affirmation Checkbox */}
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-main)' }}>
+          <label htmlFor="affirmation-checkbox" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-main)' }}>
             <input
+              id="affirmation-checkbox"
               type="checkbox"
               checked={affirmationChecked}
               onChange={(e) => setAffirmationChecked(e.target.checked)}
@@ -1165,7 +1234,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
               <button className="btn-secondary" onClick={startCamera}>
                 Retake receipt
               </button>
-              <button className="btn-secondary" onClick={() => setCurrentView('select-store')}>
+              <button className="btn-secondary" onClick={handleReportStepBack}>
                 Back
               </button>
             </div>
@@ -1309,14 +1378,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
               </button>
               <button
                 className="btn-secondary"
-                onClick={() => {
-                  setCurrentView('dashboard');
-                  setPrivacyAccepted(false);
-                  setSelectedStore(null);
-                  setCapturedBlob(null);
-                  setPreviewUrl(null);
-                  setSubmissionResult(null);
-                }}
+                onClick={resetReportFlow}
               >
                 Return to Reports
               </button>

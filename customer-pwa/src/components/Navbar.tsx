@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
+import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, UserRound, X } from 'lucide-react';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 interface NavbarProps {
   activeTab: string;
@@ -9,6 +10,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOfCalamity }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  useBackLayer('navbar-menu', isMenuOpen, () => setIsMenuOpen(false));
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setIsMenuOpen(false);
@@ -20,23 +22,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
 
   return (
     <>
-      <header className="navbar-top" style={{ height: '68px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
+      <header className="navbar-top">
         <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-          <img
-            className="brand-logo"
-            src="/price-logo.png"
-            alt="PRICE-Watch Logo"
-            style={{
-              height: '46px',
-              width: 'auto',
-              objectFit: 'contain',
-              flexShrink: 0
-            }}
-          />
+          <span className="brand-logo-frame">
+            <img
+              className="brand-logo"
+              src="/branding/dti-logo.png"
+              alt=""
+            />
+          </span>
           <div className="brand-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
             <div className="brand-name" style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: '1.1', whiteSpace: 'nowrap', letterSpacing: '-0.025em' }}>
-              <span style={{ color: '#0f172a' }}>PRICE-</span>
-              <span style={{ color: '#1d4ed8' }}>Watch</span>
+              <span className="brand-price">PRICE-</span>
+              <span className="brand-watch">Watch</span>
             </div>
           </div>
         </div>
@@ -56,7 +54,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             background: 'none',
             border: 'none',
             borderRadius: '10px',
-            color: '#0f172a',
             cursor: 'pointer',
             flexShrink: 0,
             transition: 'background-color 0.15s ease'
@@ -65,12 +62,14 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
           {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </header>
+      <div className="navbar-top-offset" aria-hidden="true" />
 
       {/* Exceptional Status Notices */}
       {stateOfCalamity && (
         <div
           role="status"
           aria-live="polite"
+          onClick={() => setActiveTab('prices')}
           style={{
             background: '#fef2f2',
             borderBottom: '1px solid #fca5a5',
@@ -82,7 +81,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             color: '#dc2626',
             fontWeight: 600,
             maxWidth: '600px',
-            margin: '0 auto'
+            margin: '0 auto',
+            cursor: 'pointer'
           }}
         >
           <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
@@ -179,7 +179,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </>
       )}
 
-      {/* Fixed 4-tab bottom navigation */}
+      {/* Fixed five-action bottom navigation */}
       <nav className="nav-bottom" aria-label="Primary navigation">
         <button
           className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
@@ -200,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </button>
 
         <button
-          className={`nav-item ${activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'active' : ''}`}
+          className={`nav-item nav-item-scan ${activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'active' : ''}`}
           onClick={() => setActiveTab('scan')}
           aria-current={activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'page' : undefined}
         >
@@ -215,6 +215,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         >
           <ClipboardList size={20} />
           <span>Reports</span>
+        </button>
+
+        <button
+          className={`nav-item ${isMenuOpen ? 'active' : ''}`}
+          onClick={() => setIsMenuOpen(true)}
+          aria-expanded={isMenuOpen}
+        >
+          <UserRound size={20} />
+          <span>Profile</span>
         </button>
       </nav>
     </>

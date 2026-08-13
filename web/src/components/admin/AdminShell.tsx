@@ -233,7 +233,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             title={isCollapsed ? 'Expand Sidebar' : undefined}
           >
             <div className="dti-seal-logo" title="Department of Trade and Industry">
-              <img src="/dti-logo.svg" alt="Department of Trade and Industry Logo" className="dti-official-logo" />
+              <img src="/branding/dti-logo.svg" alt="Department of Trade and Industry Logo" className="dti-official-logo" />
             </div>
             {!isCollapsed && (
               <div className="brand-text">

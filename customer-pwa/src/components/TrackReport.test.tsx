@@ -35,10 +35,21 @@ describe('TrackReport integrity', () => {
         { status: 'Resolved', public_message: 'Completed.', timestamp: '2026-07-25T02:00:00Z' },
       ],
     };
-    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: report } });
-    render(<TrackReport initialReference="REP-REAL" initialToken="trk_real" />);
+    const getReport = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: report } });
+    const onReportTracked = vi.fn();
+    render(
+      <TrackReport
+        initialReference="REP-REAL"
+        initialToken="trk_real"
+        onReportTracked={onReportTracked}
+      />,
+    );
 
     expect(await screen.findByText('Resolved', { selector: '[aria-current="step"]' })).toBeInTheDocument();
+    expect(getReport).toHaveBeenCalledWith('/public/reports/track', {
+      params: { reference: 'REP-REAL', token: 'trk_real' },
+    });
+    expect(onReportTracked).toHaveBeenCalledWith(report);
     expect(screen.getByText('Under Evaluation').closest('.stepper-item')).toHaveClass('completed');
   });
 });

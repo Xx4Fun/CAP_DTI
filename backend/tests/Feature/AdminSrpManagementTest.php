@@ -164,8 +164,8 @@ final class AdminSrpManagementTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.baseline_price', 48)
+            ->assertJsonPath('data.0.source_reference', 'DTI-SRP-2026-05')
             ->assertJsonMissingPath('data.0.created_by')
-            ->assertJsonMissingPath('data.0.source_reference')
             ->assertJsonMissingPath('data.0.commodity_key');
 
         Carbon::setTestNow('2026-08-02 12:00:00');
@@ -174,7 +174,8 @@ final class AdminSrpManagementTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.baseline_price', 50.25)
-            ->assertJsonPath('data.0.effective_date', '2026-08-01');
+            ->assertJsonPath('data.0.effective_date', '2026-08-01')
+            ->assertJsonPath('data.0.source_reference', 'DTI-SRP-2026-08');
     }
 
     public function test_admin_can_manually_create_srp_item(): void

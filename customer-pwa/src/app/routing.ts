@@ -46,11 +46,26 @@ export function pathFor(route: AppRoute): string {
   return paths[route.name];
 }
 
-export function navigate(route: AppRoute, replace = false): void {
-  if (replace) {
-    history.replaceState(null, '', pathFor(route));
+interface NavigateOptions {
+  replace?: boolean;
+  state?: Record<string, unknown> | null;
+}
+
+export function navigate(route: AppRoute, options: boolean | NavigateOptions = false): void {
+  const normalizedOptions = typeof options === 'boolean' ? { replace: options } : options;
+  const path = pathFor(route);
+  const shouldReplace = normalizedOptions.replace === true || isBackGuardState(history.state);
+  const state = normalizedOptions.state ?? null;
+
+  if (path === location.pathname && !location.search && !location.hash) {
+    if (normalizedOptions.state !== undefined) history.replaceState(state, '', path);
+    return;
+  }
+
+  if (shouldReplace) {
+    history.replaceState(state, '', path);
   } else {
-    history.pushState(null, '', pathFor(route));
+    history.pushState(state, '', path);
   }
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
@@ -59,3 +74,4 @@ export function subscribeToRouteChanges(listener: () => void): () => void {
   window.addEventListener('popstate', listener);
   return () => window.removeEventListener('popstate', listener);
 }
+import { isBackGuardState } from './backNavigationState';

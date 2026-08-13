@@ -6,316 +6,135 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
-  ShieldCheck,
-  Layers
+  ImageOff,
 } from 'lucide-react';
-import { type Commodity } from '../api/client';
+import { type Commodity, resolveImageUrl } from '../api/client';
+import { formatCommodityDisplay } from '../app/commodityFormatter';
+import { getPriceLabel, type PriceDataSource } from '../app/priceDataPresentation';
 
 export interface ProductDetailProps {
   commodity: Commodity;
+  dataSource: PriceDataSource;
+  dataFetchedAt: number | null;
   onBack: () => void;
   onSelectScan?: (commodity: Commodity) => void;
   onSelectReport?: (commodity: Commodity) => void;
   stateOfCalamity?: boolean;
 }
 
-// Product illustration component rendering realistic packaging graphics matching prototype designs
-const ProductIllustration: React.FC<{ commodity: Commodity; size?: number }> = ({ commodity, size = 90 }) => {
-  const name = (commodity.commodity_name || '').toLowerCase();
-  const category = (commodity.category || '').toLowerCase();
+const cardStyle: React.CSSProperties = {
+  background: '#ffffff',
+  borderRadius: '16px',
+  border: '1px solid #e2e8f0',
+  boxShadow: 'var(--shadow-sm)',
+};
 
-  const isSardines = name.includes('sardine') || category.includes('sardine');
+function formatDate(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number'
+    ? new Date(value)
+    : new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+08:00` : value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Manila',
+  }).format(parsed);
+}
 
-  if (commodity.image_path) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          overflow: 'hidden',
-          border: '1px solid #e2e8f0',
-          background: '#f8fafc',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0
-        }}
-      >
-        <img
-          src={commodity.image_path}
-          alt={commodity.commodity_name}
-          loading="lazy"
-          decoding="async"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none';
-          }}
-        />
-      </div>
-    );
+function formatRegulatoryState(value: string | undefined, stateOfCalamity: boolean): string {
+  if (value === 'CALAMITY_ACTIVE') return 'Calamity active';
+  if (value) {
+    return value
+      .toLocaleLowerCase()
+      .split('_')
+      .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
+      .join(' ');
   }
-  const isLuncheon = name.includes('luncheon') || name.includes('meat') || category.includes('meat');
-  const isMilk = name.includes('milk') || category.includes('milk');
-  const isCoffee = name.includes('coffee') || category.includes('coffee');
-  const isWater = name.includes('water') || category.includes('water');
+  if (stateOfCalamity) return 'Calamity notice active';
+  return 'Not provided';
+}
 
-  if (isSardines) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          background: 'linear-gradient(145deg, #dc2626 0%, #991b1b 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 6px',
-          color: '#ffffff',
-          boxShadow: '0 4px 10px rgba(153, 27, 27, 0.25)',
-          position: 'relative',
-          overflow: 'hidden',
-          flexShrink: 0
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '6px',
-            background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)',
-            borderRadius: '12px 12px 0 0'
-          }}
-        />
-        <div style={{ textAlign: 'center', marginTop: '6px' }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.05em', color: '#fef08a', textTransform: 'uppercase' }}>
-            SABA
-          </div>
-          <div style={{ fontSize: '0.55rem', fontWeight: 700, color: '#ffffff', opacity: 0.9 }}>
-            PHILIPPINES
-          </div>
-        </div>
+const ProductImage: React.FC<{ commodity: Commodity }> = ({ commodity }) => {
+  const [imageError, setImageError] = useState(false);
+  const resolvedUrl = resolveImageUrl(commodity.image_path);
 
-        {/* Fish Graphic */}
-        <div style={{ width: '80%', height: '32px', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="34" height="20" viewBox="0 0 34 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 10C8 4 20 4 28 10C20 16 8 16 2 10Z" fill="#fbbf24" stroke="#ffffff" strokeWidth="1.5" />
-            <path d="M28 10L33 5V15L28 10Z" fill="#fbbf24" />
-            <circle cx="8" cy="9" r="1.5" fill="#0f172a" />
-          </svg>
-        </div>
-
-        <div style={{ fontSize: '0.5rem', fontWeight: 600, background: '#f59e0b', color: '#78350f', padding: '1px 6px', borderRadius: '4px', textAlign: 'center', width: '90%' }}>
-          IN TOMATO SAUCE
-        </div>
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '6px',
-            background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)',
-            borderRadius: '0 0 12px 12px'
-          }}
-        />
-      </div>
-    );
-  }
-
-  if (isLuncheon) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          background: 'linear-gradient(145deg, #1e3a8a 0%, #1e40af 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 6px',
-          color: '#ffffff',
-          boxShadow: '0 4px 10px rgba(30, 58, 138, 0.25)',
-          position: 'relative',
-          overflow: 'hidden',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '6px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
-        <div style={{ textAlign: 'center', marginTop: '6px' }}>
-          <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#ffffff' }}>PUREFOODS</div>
-          <div style={{ fontSize: '0.5rem', color: '#fef08a' }}>LUNCHEON MEAT</div>
-        </div>
-        <div style={{ width: '80%', height: '28px', background: '#f43f5e', borderRadius: '6px', border: '1px solid #fda4af' }} />
-        <div style={{ fontSize: '0.5rem', color: '#cbd5e1' }}>CHINESE STYLE</div>
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '6px', background: 'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 50%, #64748b 100%)' }} />
-      </div>
-    );
-  }
-
-  if (isMilk) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          background: 'linear-gradient(145deg, #0284c7 0%, #0369a1 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          color: '#ffffff',
-          boxShadow: '0 4px 10px rgba(2, 132, 199, 0.2)',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ width: '32px', height: '38px', background: '#ffffff', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#38bdf8' }} />
-        </div>
-        <div style={{ fontSize: '0.65rem', fontWeight: 700 }}>MILK</div>
-      </div>
-    );
-  }
-
-  if (isCoffee) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          background: 'linear-gradient(145deg, #78350f 0%, #451a03 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          color: '#ffffff',
-          boxShadow: '0 4px 10px rgba(120, 53, 15, 0.2)',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ width: '30px', height: '34px', background: '#d97706', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: '0.7rem' }}>
-          NES
-        </div>
-        <div style={{ fontSize: '0.65rem', fontWeight: 700 }}>COFFEE</div>
-      </div>
-    );
-  }
-
-  if (isWater) {
-    return (
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size * 1.1}px`,
-          borderRadius: '12px',
-          background: 'linear-gradient(145deg, #0ea5e9 0%, #0369a1 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          color: '#ffffff',
-          boxShadow: '0 4px 10px rgba(14, 165, 233, 0.2)',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ width: '24px', height: '32px', border: '2px solid #ffffff', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffffff' }} />
-        </div>
-        <div style={{ fontSize: '0.65rem', fontWeight: 700 }}>WATER</div>
-      </div>
-    );
-  }
-
-  // Default generic container
   return (
     <div
       style={{
-        width: `${size}px`,
-        height: `${size * 1.1}px`,
+        width: '88px',
+        height: '100px',
         borderRadius: '12px',
-        background: 'linear-gradient(145deg, #3b82f6 0%, #1d4ed8 100%)',
+        overflow: 'hidden',
+        border: '1px solid #e2e8f0',
+        background: '#f8fafc',
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '6px',
-        color: '#ffffff',
-        boxShadow: '0 4px 10px rgba(29, 78, 216, 0.2)',
-        flexShrink: 0
+        flexShrink: 0,
       }}
     >
-      <Layers size={28} />
-      <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase' }}>DTI SRP</div>
+      {resolvedUrl && !imageError ? (
+        <img
+          src={resolvedUrl}
+          alt={commodity.commodity_name}
+          loading="lazy"
+          decoding="async"
+          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '4px' }}
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span className="price-product-fallback price-product-fallback--neutral">
+          <ImageOff size={24} aria-hidden="true" />
+          <span>No image</span>
+        </span>
+      )}
     </div>
   );
 };
 
+const MetadataRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '18px' }}>
+    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>{label}</span>
+    <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, textAlign: 'right' }}>{children}</span>
+  </div>
+);
+
 export const ProductDetail: React.FC<ProductDetailProps> = ({
   commodity,
+  dataSource,
+  dataFetchedAt,
   onBack,
   onSelectScan,
   onSelectReport,
-  stateOfCalamity = false
+  stateOfCalamity = false,
 }) => {
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
-
-  // Helper formatting for name, category, and dates
-  const formatInfo = () => {
-    let title = commodity.commodity_name;
-    let subtitle = commodity.category || 'Regulated commodity item';
-    let sizeStr = commodity.unit || commodity.package_size || '';
-
-    // If name is structured like "Category - Product (Size)"
-    if (title.includes(' - ')) {
-      const parts = title.split(' - ');
-      if (parts.length >= 2) {
-        if (!commodity.category) {
-          subtitle = parts[0].trim();
-        }
-        title = parts.slice(1).join(' - ').trim();
-      }
-    }
-
-    // Extract size in parenthesis if needed
-    const sizeMatch = title.match(/\(([^)]+)\)$/);
-    if (sizeMatch && !sizeStr) {
-      sizeStr = sizeMatch[1];
-      title = title.replace(/\s*\([^)]+\)$/, '');
-    }
-
-    // Format date string
-    let effDate = commodity.effective_date || '2026-05-11';
-    if (effDate.includes('T')) {
-      effDate = effDate.split('T')[0];
-    }
-    if (effDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      effDate = effDate.trim();
-    }
-
-
-    return { title, subtitle, sizeStr, effDate };
-  };
-
-  const { title, subtitle, sizeStr, effDate } = formatInfo();
-  const isBasic = commodity.regulatory_classification === 'BASIC_NECESSITY';
-  const isCalamity = stateOfCalamity || commodity.regulatory_state === 'CALAMITY_ACTIVE';
+  const parsed = formatCommodityDisplay(
+    commodity.commodity_name,
+    commodity.category || '',
+    commodity.unit || commodity.package_size || '',
+    commodity.effective_date || '',
+  );
+  const title = parsed.title || commodity.commodity_name;
+  const subtitle = parsed.categoryPath || commodity.category || 'Category not provided';
+  const size = parsed.unit || commodity.unit || commodity.package_size;
+  const effectiveDate = formatDate(commodity.effective_date);
+  const fetchedDate = formatDate(dataFetchedAt);
+  const priceLabel = getPriceLabel(dataSource);
+  const classification = commodity.regulatory_classification === 'BASIC_NECESSITY'
+    ? 'Basic Necessity'
+    : commodity.regulatory_classification === 'PRIME_COMMODITY'
+      ? 'Prime Commodity'
+      : 'Not provided';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
-      {/* 1. Top Back Button */}
       <div>
         <button
+          type="button"
+          aria-label="Back to Prices"
           onClick={onBack}
           style={{
             background: 'none',
@@ -330,275 +149,117 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             padding: '12px 16px',
             minHeight: '44px',
             borderRadius: '8px',
-            marginLeft: '-16px'
+            marginLeft: '-16px',
           }}
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={18} aria-hidden="true" />
           Back to Prices
         </button>
       </div>
 
-      {/* 2. Product Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '16px',
-          background: '#ffffff',
-          borderRadius: '16px',
-          padding: '16px',
-          border: '1px solid #e2e8f0',
-          boxShadow: 'var(--shadow-sm)'
-        }}
-      >
-        <ProductIllustration commodity={commodity} size={76} />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-          <h1
-            style={{
-              fontSize: '1.25rem',
-              fontWeight: 800,
-              color: '#0f172a',
-              lineHeight: 1.25
-            }}
-          >
+      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '16px', padding: '16px' }}>
+        <ProductImage commodity={commodity} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.25 }}>
             {title}
           </h1>
-          <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 500 }}>
-            {subtitle}
-          </div>
-          {sizeStr && (
-            <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>
-              {sizeStr}
-            </div>
-          )}
+          <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 500 }}>{subtitle}</div>
+          {size && <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>{size}</div>}
         </div>
       </div>
 
-      {/* 3. Large Current Reference Price Card */}
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '16px',
-          border: '1px solid #e2e8f0',
-          padding: '20px',
-          boxShadow: 'var(--shadow-sm)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px'
-        }}
-      >
+      <section style={{ ...cardStyle, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div>
           <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 600, marginBottom: '6px' }}>
-            Current reference price
+            {priceLabel}
           </div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#2563eb', lineHeight: 1.1 }}>
+          <div style={{ fontSize: '2.35rem', fontWeight: 800, color: '#2563eb', lineHeight: 1.1 }}>
             ₱{Number(commodity.baseline_price).toFixed(2)}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-            <span
-              className="badge badge-green"
-              style={{ padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700 }}
-            >
-              Current SRP
+            <span className={dataSource === 'live' ? 'badge badge-green' : 'badge badge-blue'}>
+              {priceLabel}
             </span>
             <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              · Effective {effDate}
+              {effectiveDate ? `Effective ${effectiveDate}` : 'Effective date not provided'}
             </span>
           </div>
         </div>
 
-        {/* Regulatory Specifications Table */}
         <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {/* Row 1: Classification */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Classification</span>
-            <span
-              className={`badge ${isBasic ? 'badge-green' : 'badge-blue'}`}
-              style={{ fontSize: '0.75rem', fontWeight: 700 }}
-            >
-              {isBasic ? 'Basic Necessity' : 'Prime Commodity'}
-            </span>
-          </div>
-
-          {/* Row 2: Geographic Scope */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Geographic scope</span>
-            <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600 }}>Nationwide</span>
-          </div>
-
-          {/* Row 3: Regulatory State */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Regulatory state</span>
-            <span
-              style={{
-                fontSize: '0.85rem',
-                fontWeight: 700,
-                color: isCalamity ? '#dc2626' : '#059669',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: isCalamity ? '#dc2626' : '#059669' }} />
-              {isCalamity ? 'Calamity active' : 'Normal monitoring'}
-            </span>
-          </div>
-
-          {/* Row 4: Last Updated */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Last updated</span>
-            <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 500 }}>24 Jul 2026, 3:21 PM</span>
-          </div>
+          <MetadataRow label="Classification">{classification}</MetadataRow>
+          <MetadataRow label="Regulatory state">
+            {formatRegulatoryState(commodity.regulatory_state, stateOfCalamity)}
+          </MetadataRow>
+          <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
+            {fetchedDate || 'Not provided'}
+          </MetadataRow>
         </div>
-      </div>
+      </section>
 
-      {/* 4. Price-freeze Information Accordion */}
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '14px',
-          border: '1px solid #e2e8f0',
-          overflow: 'hidden',
-          boxShadow: 'var(--shadow-sm)'
-        }}
-      >
-        <button
-          onClick={() => setIsAccordionOpen(!isAccordionOpen)}
-          style={{
-            width: '100%',
-            padding: '16px',
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            cursor: 'pointer',
-            textAlign: 'left'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Info size={20} color="#0f172a" />
-            <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
-              Price-freeze information
-            </span>
-          </div>
-          {isAccordionOpen ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
-        </button>
-
-        {isAccordionOpen && (
-          <div
+      {commodity.price_freeze_applicable && (
+        <section style={{ ...cardStyle, overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setIsAccordionOpen((open) => !open)}
+            aria-expanded={isAccordionOpen}
             style={{
-              padding: '16px',
-              background: '#f8fafc',
-              borderTop: '1px solid #e2e8f0',
-              fontSize: '0.85rem',
-              color: '#334155',
-              lineHeight: 1.5,
+              width: '100%',
+              minHeight: '52px',
+              padding: '14px 16px',
+              background: 'none',
+              border: 'none',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '10px'
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-              <ShieldCheck size={18} color="#2563eb" style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div>
-                <strong>Republic Act No. 7581 (Price Act):</strong> Mandates that prices of basic necessities are automatically frozen at prevailing rates upon declaration of a State of Calamity or Emergency.
-              </div>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, color: '#0f172a' }}>
+              <Info size={20} aria-hidden="true" />
+              Price-freeze information
+            </span>
+            {isAccordionOpen ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
+          </button>
+          {isAccordionOpen && (
+            <div style={{ padding: '16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '0.88rem', color: '#334155', lineHeight: 1.55 }}>
+              {commodity.price_freeze_treatment || 'A price-freeze treatment is marked for this item. Check the cited bulletin for the applicable terms.'}
             </div>
-            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              • Price freezes remain in effect for up to <strong>60 days</strong> unless lifted earlier by executive order or DTI bulletin.
-            </div>
-            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              • Illegal price manipulation, hoarding, or selling above the official SRP ceiling during active price freezes incurs strict administrative penalties and legal sanctions.
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </section>
+      )}
 
-      {/* 5. Action Buttons Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        {/* Scan Shelf Price */}
         <button
+          type="button"
           onClick={() => onSelectScan?.(commodity)}
-          style={{
-            background: '#2563eb',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '18px 16px',
-            cursor: 'pointer',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            textAlign: 'left',
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-            transition: 'all 0.15s ease'
-          }}
+          style={{ background: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '16px', padding: '18px 16px', minHeight: '132px', cursor: 'pointer', textAlign: 'left' }}
         >
-          <div>
-            <Scan size={28} style={{ marginBottom: '12px' }} />
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', lineHeight: 1.25 }}>
-              Scan shelf price
-            </div>
-            <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '4px' }}>
-              Compare a displayed shelf price.
-            </div>
-          </div>
+          <Scan size={28} aria-hidden="true" style={{ marginBottom: '12px' }} />
+          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Scan shelf price</div>
+          <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '4px' }}>Compare a displayed shelf price.</div>
         </button>
-
-        {/* Report a Concern */}
         <button
+          type="button"
           onClick={() => onSelectReport?.(commodity)}
-          style={{
-            background: '#ffffff',
-            color: '#2563eb',
-            border: '1px solid #bfdbfe',
-            borderRadius: '16px',
-            padding: '18px 16px',
-            cursor: 'pointer',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            textAlign: 'left',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
-            transition: 'all 0.15s ease'
-          }}
+          style={{ background: '#ffffff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '16px', padding: '18px 16px', minHeight: '132px', cursor: 'pointer', textAlign: 'left' }}
         >
-          <div>
-            <FileCheck size={28} color="#2563eb" style={{ marginBottom: '12px' }} />
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#2563eb', lineHeight: 1.25 }}>
-              Report a concern
-            </div>
-            <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-              Requires a checkout receipt.
-            </div>
-          </div>
+          <FileCheck size={28} aria-hidden="true" style={{ marginBottom: '12px' }} />
+          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Report a concern</div>
+          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>Requires a checkout receipt.</div>
         </button>
       </div>
 
-      {/* 6. Bulletin Source Info */}
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '14px',
-          border: '1px solid #e2e8f0',
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          boxShadow: 'var(--shadow-sm)'
-        }}
-      >
-        <div>
-          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>
-            Bulletin source
-          </div>
-          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-            DTI price bulletin · Effective {effDate}
-          </div>
+      <section style={{ ...cardStyle, padding: '16px' }} aria-label="Bulletin source">
+        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Bulletin source</div>
+        <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '6px', overflowWrap: 'anywhere' }}>
+          {commodity.source_reference || 'Not provided'}
         </div>
-      </div>
+        <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
+          {effectiveDate ? `Effective ${effectiveDate}` : 'Effective date not provided'}
+        </div>
+      </section>
     </div>
   );
 };

@@ -1,6 +1,9 @@
 import React, { useState } from 'react'
 import { Mail, Lock, Eye, EyeOff, LoaderCircle, ShieldCheck } from 'lucide-react'
 import api from '../services/api'
+import { ensureApiReady } from '../services/apiReadiness'
+
+export type ServerStatus = 'checking' | 'starting' | 'ready' | 'unavailable'
 
 interface LoginProps {
   onLoginSuccess: (result: {
@@ -13,9 +16,10 @@ interface LoginProps {
     }
   }) => void
   notice?: string
+  serverStatus?: ServerStatus
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice, serverStatus = 'checking' }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -28,6 +32,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
     setError('')
 
     try {
+      await ensureApiReady()
       const response = await api.post('/login', { email, password })
       onLoginSuccess(response.data)
     } catch (err: any) {
@@ -62,7 +67,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
         }}
       >
         <img
-          src="/login-left1.png"
+          src="/branding/login-artwork.png"
           alt="DTI fair trade and consumer protection illustration"
           style={{
             display: 'block',
@@ -101,7 +106,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
           {/* Header */}
           <div style={{ textAlign: 'center' }}>
             <img
-              src="/dti-logo.svg"
+              src="/branding/dti-logo.svg"
               alt="DTI Official Logo"
               style={{ width: '90px', height: 'auto', marginBottom: '1rem' }}
             />
@@ -151,6 +156,40 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice }) => {
               }}
             >
               {notice}
+            </div>
+          )}
+
+          {serverStatus === 'starting' && (
+            <div
+              role="status"
+              style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e40af',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+              }}
+            >
+              Connecting to secure server&hellip;
+            </div>
+          )}
+
+          {serverStatus === 'unavailable' && (
+            <div
+              role="alert"
+              style={{
+                background: '#fff7ed',
+                border: '1px solid #fed7aa',
+                color: '#9a3412',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+              }}
+            >
+              The secure server is taking longer than expected. You can retry sign-in.
             </div>
           )}
 

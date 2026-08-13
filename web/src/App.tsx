@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Login } from './components/Login';
+import { Login, type ServerStatus } from './components/Login';
 import { VendorPortal } from './components/VendorPortal';
 import { AdminShell } from './components/admin/AdminShell';
 import { VendorInvitationAccept } from './components/VendorInvitationAccept';
@@ -13,6 +13,7 @@ import {
   touchAdminActivity,
 } from './services/adminSession';
 import api from './services/api';
+import { ensureApiReady } from './services/apiReadiness';
 import 'leaflet/dist/leaflet.css';
 import './admin-preflight.css';
 
@@ -37,18 +38,44 @@ function App() {
   const [reauthenticationOpen, setReauthenticationOpen] = useState(false);
   const [reauthenticationError, setReauthenticationError] = useState('');
   const [loginNotice, setLoginNotice] = useState('');
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
   const logoutInProgress = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const startingTimer = window.setTimeout(() => {
+      if (active) setServerStatus('starting');
+    }, 2_000);
+
+    void ensureApiReady().then(() => {
+      window.clearTimeout(startingTimer);
+      if (active) setServerStatus('ready');
+    }).catch(() => {
+      window.clearTimeout(startingTimer);
+      if (active) setServerStatus('unavailable');
+    });
+
+    return () => {
+      active = false;
+      window.clearTimeout(startingTimer);
+    };
+  }, []);
 
   useEffect(() => {
     const adminToken = getAdminToken();
     if (adminToken) {
-      void api.get('/admin/session').then((response) => {
+      void ensureApiReady().then(() => api.get('/admin/session')).then((response) => {
         setUser(response.data.data.user);
         setSession(response.data.data.session);
         touchAdminActivity();
-      }).catch(() => {
-        clearAdminSession();
-        setLoginNotice('Your secure session expired. Sign in again to continue.');
+      }).catch((error) => {
+        if (error.response?.status === 401) {
+          clearAdminSession();
+          setLoginNotice('Your secure session expired. Sign in again to continue.');
+          return;
+        }
+
+        setLoginNotice('The secure server is temporarily unavailable. Your session was not changed.');
       }).finally(() => setBooting(false));
       return;
     }
@@ -195,7 +222,7 @@ function App() {
   }
 
   if (!user) {
-    return <Login onLoginSuccess={handleLoginSuccess} notice={loginNotice} />;
+    return <Login onLoginSuccess={handleLoginSuccess} notice={loginNotice} serverStatus={serverStatus} />;
   }
 
   // Determine view based on role

@@ -4,7 +4,6 @@ import {
   Search,
   MapPin,
   Clock,
-  CheckCircle2,
   Zap,
   ZapOff,
   RotateCw,
@@ -12,20 +11,23 @@ import {
   Scale,
   AlertTriangle,
   Tag,
-  Check,
-  RefreshCw,
   ArrowLeft
 } from 'lucide-react';
 import {
   apiClient,
   type Establishment,
   type Commodity,
+  type ScanCandidate,
   type ScanTagResponse,
-  type ComparisonResultResponse,
-  defaultStoresList
+  type ComparisonResultResponse
 } from '../api/client';
 import { consumeHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
-import { fallbackCommodities } from '../data/srpFallback';
+import { formatCommodityDisplay } from '../app/commodityFormatter';
+import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
+import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
+import { computeGuideSourceCrop, computeNormalizedCropSize } from '../app/shelfTagCrop';
+import { StoreSelectionCard } from './StoreSelectionCard';
+import { useBackLayer } from '../hooks/useBackLayer';
 
 interface ShelfScannerProps {
   setActiveTab?: (tab: string) => void;
@@ -38,27 +40,23 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
     return (
       <div
         style={{
-          width: '76px',
-          height: '76px',
-          borderRadius: '12px',
-          background: 'linear-gradient(180deg, #15803d 0%, #166534 40%, #f1f5f9 40%, #f8fafc 100%)',
+          width: '52px',
+          height: '52px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '6px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#ffffff',
+          fontWeight: 800,
+          fontSize: '0.65rem',
+          boxShadow: '0 2px 4px rgba(29, 78, 216, 0.2)',
           flexShrink: 0
         }}
       >
-        <div style={{ background: '#166534', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 900, color: '#ffffff', lineHeight: 1.1 }}>
-            Metro
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '16px', height: '24px', background: '#3b82f6', opacity: 0.8, borderRadius: '2px 2px 0 0' }} />
-          <div style={{ width: '18px', height: '24px', background: '#94a3b8', opacity: 0.6, borderRadius: '2px 2px 0 0' }} />
-        </div>
+        <span style={{ color: '#fef08a' }}>METRO</span>
+        <span style={{ fontSize: '0.55rem', opacity: 0.9 }}>SUPER</span>
       </div>
     );
   }
@@ -67,53 +65,23 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
     return (
       <div
         style={{
-          width: '76px',
-          height: '76px',
-          borderRadius: '12px',
-          background: 'linear-gradient(180deg, #1d4ed8 0%, #1e40af 40%, #cbd5e1 40%, #f8fafc 100%)',
+          width: '52px',
+          height: '52px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '6px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#ffffff',
+          fontWeight: 800,
+          fontSize: '0.62rem',
+          boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
           flexShrink: 0
         }}
       >
-        <div style={{ background: '#1e40af', padding: '2px 4px', borderRadius: '4px', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 900, color: '#ffffff', lineHeight: 1.1 }}>
-            GAISANO
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '22px', height: '24px', background: '#3b82f6', borderRadius: '2px 2px 0 0' }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (photoType === 'robinsons' || name.includes('robinson')) {
-    return (
-      <div
-        style={{
-          width: '76px',
-          height: '76px',
-          borderRadius: '12px',
-          background: 'linear-gradient(180deg, #dc2626 0%, #b91c1c 40%, #e2e8f0 40%, #f8fafc 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '6px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ background: '#b91c1c', padding: '2px 4px', borderRadius: '4px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ffffff', color: '#dc2626', fontWeight: 900, fontSize: '0.55rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>R</div>
-          <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#ffffff' }}>ROBINSONS</div>
-        </div>
-        <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginBottom: '2px' }}>
-          <div style={{ width: '24px', height: '24px', background: '#64748b', borderRadius: '2px 2px 0 0' }} />
-        </div>
+        <span>GAISANO</span>
+        <span style={{ fontSize: '0.55rem', color: '#fef08a' }}>GRAND</span>
       </div>
     );
   }
@@ -139,28 +107,40 @@ export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: strin
 
 export const StoreFacadeImage = CompactStoreFacade;
 
+type ProductChoice = Pick<Commodity, 'id' | 'commodity_name'> &
+  Partial<Commodity> &
+  Partial<Pick<ScanCandidate, 'match_score' | 'match_level' | 'match_basis'>>;
+type ProductSource = 'OCR' | 'OCR_CANDIDATE_SELECTED' | 'MANUAL_SEARCH';
+type PriceSource = 'OCR_DETECTED' | 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED';
+
+const isCatalogCommodity = (candidate: ProductChoice): candidate is Commodity =>
+  typeof candidate.baseline_price === 'number';
+
 export type ScannerStepState =
   | 'SELECT_STORE'
   | 'CAMERA_LIVE'
-  | 'CAPTURE_REVIEW'
   | 'UPLOADING'
+  | 'ANALYZING'
   | 'RECOVERY'
   | 'CANDIDATE_SELECTION'
+  | 'CANDIDATE_PICK'
   | 'ENTER_PRICE'
+  | 'PRICE_INPUT'
   | 'COMPARING'
   | 'RESULT'
   | 'ERROR';
 
 export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
-  const isDemoEnabled = import.meta.env.VITE_ENABLE_SCANNER_DEMO === 'true';
   const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
 
   // Store Selection State
   const [stores, setStores] = useState<Establishment[]>([]);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
-  const [recentlyUsedStore, setRecentlyUsedStore] = useState<Establishment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent' | 'barangay'>('all');
+  const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent'>('all');
+  const [userGeo, setUserGeo] = useState<GeoPosition | null>(null);
+  const [geoError, setGeoError] = useState('');
+  const [geoLoading, setGeoLoading] = useState(false);
 
   // Camera & Capture State
   const [flashOn, setFlashOn] = useState(false);
@@ -173,9 +153,9 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   // Dynamic Scan & Candidate Matching State
   const [processingStage, setProcessingStage] = useState<string>('Uploading shelf tag...');
   const [scanResponse, setScanResponse] = useState<ScanTagResponse | null>(null);
-  const [candidates, setCandidates] = useState<Commodity[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<Commodity | null>(null);
-  const [selectedProductSource, setSelectedProductSource] = useState<'OCR' | 'MANUAL_SEARCH'>('OCR');
+  const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<ProductChoice | null>(null);
+  const [selectedProductSource, setSelectedProductSource] = useState<ProductSource>('OCR');
   const [userPriceInput, setUserPriceInput] = useState<string>('');
   const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -184,16 +164,26 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [commoditySearchQuery, setCommoditySearchQuery] = useState('');
   const [commoditySearchResults, setCommoditySearchResults] = useState<Commodity[]>([]);
   const [isSearchingCommodities, setIsSearchingCommodities] = useState(false);
+  const [commoditySearchError, setCommoditySearchError] = useState('');
   const [showManualDirectorySearch, setShowManualDirectorySearch] = useState(false);
   const searchTimeoutRef = useRef<number | null>(null);
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const scanGenerationRef = useRef(0);
+  const cameraRequestRef = useRef(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const guideRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
 
   useEffect(() => {
     fetchStores();
+    return () => {
+      scanGenerationRef.current += 1;
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      analysisAbortRef.current?.abort();
+    };
   }, []);
 
   // Body Scroll Locking for Full-Screen Camera
@@ -224,6 +214,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   }, [capturedPreviewUrl]);
 
   const resetAllScanData = () => {
+    scanGenerationRef.current += 1;
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
     if (capturedPreviewUrl) {
       URL.revokeObjectURL(capturedPreviewUrl);
     }
@@ -239,6 +234,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setShowManualDirectorySearch(false);
     setCommoditySearchQuery('');
     setCommoditySearchResults([]);
+    setCommoditySearchError('');
   };
 
   const fetchStores = async () => {
@@ -251,35 +247,22 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           ? handoffRef.current.storeId
           : undefined;
         setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
-      } else if (isDemoEnabled) {
-        setStores(defaultStoresList);
-        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
-          ? handoffRef.current.storeId
-          : undefined;
-        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
       } else {
         setStores([]);
         setSelectedStore(null);
       }
     } catch (err) {
-      if (isDemoEnabled) {
-        console.warn('API connection offline. Demo mode enabled: using reference stores:', err);
-        setStores(defaultStoresList);
-        const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
-          ? handoffRef.current.storeId
-          : undefined;
-        setSelectedStore(defaultStoresList.find((store) => store.id === requestedStoreId) || null);
-      } else {
-        console.error('API connection offline when fetching stores:', err);
-        setStores([]);
-        setSelectedStore(null);
-        setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
-      }
+      console.error('API connection offline when fetching stores:', err);
+      setStores([]);
+      setSelectedStore(null);
+      setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
     }
   };
 
   const searchCommodities = async (query: string) => {
+    const generation = scanGenerationRef.current;
     setCommoditySearchQuery(query);
+    setCommoditySearchError('');
     if (!query.trim()) {
       setCommoditySearchResults([]);
       return;
@@ -293,28 +276,35 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       setIsSearchingCommodities(true);
       try {
         const res = await apiClient.get('/public/commodities', { params: { query } });
+        if (generation !== scanGenerationRef.current) return;
         if (res.data && res.data.success && Array.isArray(res.data.data)) {
           setCommoditySearchResults(res.data.data);
         } else {
-          const lower = query.toLowerCase();
-          setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+          setCommoditySearchResults([]);
+          setCommoditySearchError('The current product directory could not be loaded.');
         }
       } catch {
-        const lower = query.toLowerCase();
-        setCommoditySearchResults(fallbackCommodities.filter(c => c.commodity_name.toLowerCase().includes(lower)));
+        if (generation !== scanGenerationRef.current) return;
+        setCommoditySearchResults([]);
+        setCommoditySearchError('The current product directory is unavailable. Check your connection and try again.');
       } finally {
-        setIsSearchingCommodities(false);
+        if (generation === scanGenerationRef.current) setIsSearchingCommodities(false);
       }
     }, 300);
   };
 
   const startCamera = async () => {
+    const requestId = ++cameraRequestRef.current;
     setCameraError('');
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: facingMode } },
         audio: false,
       });
+      if (requestId !== cameraRequestRef.current) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = mediaStream;
       const videoTrack = mediaStream.getVideoTracks()[0];
       const capabilities = videoTrack?.getCapabilities?.() as
@@ -325,12 +315,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         videoRef.current.srcObject = mediaStream;
       }
     } catch (err) {
+      if (requestId !== cameraRequestRef.current) return;
       console.warn('Camera stream error:', err);
       setCameraError('Camera access is unavailable on this device or permission was denied.');
     }
   };
 
   const stopCamera = () => {
+    cameraRequestRef.current += 1;
     const activeStream = streamRef.current;
     if (activeStream) {
       activeStream.getTracks().forEach((track) => track.stop());
@@ -339,6 +331,37 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setTorchSupported(false);
     setFlashOn(false);
   };
+
+  const returnScannerToStart = () => {
+    analysisAbortRef.current?.abort();
+    stopCamera();
+    resetAllScanData();
+    setSelectedStore(null);
+    setScannerState('SELECT_STORE');
+  };
+
+  const returnScannerToCamera = () => {
+    analysisAbortRef.current?.abort();
+    resetAllScanData();
+    if (selectedStore) {
+      setScannerState('CAMERA_LIVE');
+    } else {
+      setScannerState('SELECT_STORE');
+    }
+  };
+
+  useBackLayer('scanner-step', scannerState !== 'SELECT_STORE', () => {
+    if (scannerState === 'CAMERA_LIVE' || scannerState === 'RESULT') {
+      returnScannerToStart();
+    } else {
+      returnScannerToCamera();
+    }
+  });
+  useBackLayer(
+    'scanner-manual-directory',
+    scannerState !== 'SELECT_STORE' && showManualDirectorySearch,
+    () => setShowManualDirectorySearch(false),
+  );
 
   const toggleTorch = async () => {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -359,162 +382,215 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const handleStartScanForStore = (store: Establishment) => {
     resetAllScanData();
     setSelectedStore(store);
-    setRecentlyUsedStore(store);
+    addRecentStore(store.id);
     setScannerState('CAMERA_LIVE');
   };
 
   const handleShutterCapture = () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !selectedStore) return;
+    const generation = scanGenerationRef.current;
 
     const video = videoRef.current;
     if (!canvasRef.current) {
       canvasRef.current = document.createElement('canvas');
     }
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    const videoWidth = video.videoWidth || 1280;
+    const videoHeight = video.videoHeight || 720;
+    const videoRect = video.getBoundingClientRect();
+    const guideRect = guideRef.current?.getBoundingClientRect();
+    const sourceCrop = guideRect && videoRect.width > 0 && videoRect.height > 0
+      ? computeGuideSourceCrop({ videoWidth, videoHeight, videoRect, guideRect })
+      : { x: 0, y: 0, width: videoWidth, height: videoHeight };
+    const normalizedSize = computeNormalizedCropSize(sourceCrop.width, sourceCrop.height);
+
+    canvas.width = normalizedSize.width;
+    canvas.height = normalizedSize.height;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      video,
+      sourceCrop.x,
+      sourceCrop.y,
+      sourceCrop.width,
+      sourceCrop.height,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
 
     canvas.toBlob(
       (blob) => {
+        if (generation !== scanGenerationRef.current) return;
         if (blob) {
           const previewUrl = URL.createObjectURL(blob);
           setCapturedBlob(blob);
           setCapturedPreviewUrl(previewUrl);
           stopCamera();
-          setScannerState('CAPTURE_REVIEW');
+          void handleUploadAndAnalyze(blob);
         }
       },
       'image/jpeg',
-      0.9
+      0.88
     );
   };
 
   const handleRetake = () => {
+    analysisAbortRef.current?.abort();
     resetAllScanData();
     setScannerState('CAMERA_LIVE');
   };
 
-  const handleUploadAndAnalyze = async () => {
-    if (!capturedBlob || !selectedStore) {
+  const handleUploadAndAnalyze = async (blobOverride?: Blob) => {
+    const generation = scanGenerationRef.current;
+    const imageBlob = blobOverride || capturedBlob;
+    if (!imageBlob || !selectedStore) {
       setErrorMessage('No captured frame or store selected. Please retake the image.');
       setScannerState('ERROR');
       return;
     }
 
-    setScannerState('UPLOADING');
+    setScannerState('ANALYZING');
     setProcessingStage('Uploading shelf tag image to DTI server...');
+    analysisAbortRef.current?.abort();
+    const abortController = new AbortController();
+    analysisAbortRef.current = abortController;
 
     try {
       const scanUuid = 'scan_uuid_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
       const formData = new FormData();
-      formData.append('image', capturedBlob, 'shelf_tag.jpg');
+      formData.append('image', imageBlob, 'shelf_tag.jpg');
       formData.append('store_id', String(selectedStore.id));
       formData.append('scan_uuid', scanUuid);
 
       setProcessingStage('Reading tag text & matching database records...');
 
       const res = await apiClient.post('/public/scan-tag/analyze', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        signal: abortController.signal,
+        timeout: 12000,
       });
+      if (generation !== scanGenerationRef.current) return;
 
       if (res.data && res.data.success && res.data.data) {
         const scanData: ScanTagResponse = res.data.data;
         setScanResponse(scanData);
 
-        const fetchedCandidates: Commodity[] = scanData.candidates || [];
+        const fetchedCandidates: ScanCandidate[] = scanData.candidates || [];
         setCandidates(fetchedCandidates);
 
         const priceStr = scanData.detected_price_string ?? (scanData.detected_price != null ? String(scanData.detected_price) : '');
         setUserPriceInput(priceStr);
         setSelectedProductSource(scanData.product_source === 'MANUAL_SEARCH' ? 'MANUAL_SEARCH' : 'OCR');
 
-        if (fetchedCandidates.length > 0) {
+        if (fetchedCandidates.length > 0 && scanData.recovery_reason !== 'AMBIGUOUS_PRODUCT') {
           setSelectedCandidate(fetchedCandidates[0]);
         } else {
           setSelectedCandidate(null);
         }
 
-        setScannerState('RECOVERY');
+        if (scanData.auto_resolved && scanData.comparison) {
+          setComparisonResult(scanData.comparison);
+          if (scanData.comparison.product) {
+            setSelectedCandidate(scanData.comparison.product);
+          }
+          setScannerState('RESULT');
+        } else {
+          setScannerState('RECOVERY');
+        }
       } else {
         throw new Error('The shelf tag could not be processed.');
       }
     } catch (err: any) {
-      if (isDemoEnabled) {
-        console.warn('Shelf scan API offline or remote. Demo mode active:', err);
-        const refScanResponse: ScanTagResponse = {
-          scan_id: 'SCAN-DEMO-' + Date.now(),
-          store: {
-            id: selectedStore.id,
-            store_name: selectedStore.store_name,
-            address: selectedStore.address,
-            dti_sec_number: selectedStore.dti_sec_number
-          },
-          detected_price: 23.5,
-          detected_price_string: '23.50',
-          ocr_status: 'OCR_PRODUCT_AND_PRICE_DETECTED',
-          candidates: fallbackCommodities.slice(0, 5),
-          timestamp: new Date().toISOString()
-        };
-        setScanResponse(refScanResponse);
-        setCandidates(fallbackCommodities.slice(0, 5));
-        setSelectedCandidate(fallbackCommodities[0]);
-        setUserPriceInput('23.50');
-        setSelectedProductSource('OCR');
-        setScannerState('RECOVERY');
-      } else {
-        console.error('Shelf scan API error:', err);
-        setErrorMessage(
-          err.response?.data?.message || 'Unable to analyze shelf tag. The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
-        );
-        setScannerState('ERROR');
+      if (generation !== scanGenerationRef.current || err?.code === 'ERR_CANCELED') {
+        return;
+      }
+      console.error('Shelf scan API error:', err);
+      setErrorMessage(
+        err.response?.data?.message || 'Unable to analyze shelf tag. The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
+      );
+      setScannerState('ERROR');
+    } finally {
+      if (analysisAbortRef.current === abortController) {
+        analysisAbortRef.current = null;
       }
     }
   };
 
   const handleManualSelectCommodity = async (commodity: Commodity) => {
+    const generation = scanGenerationRef.current;
     setSelectedCandidate(commodity);
     setSelectedProductSource('MANUAL_SEARCH');
 
-    if (scanResponse?.scan_id) {
-      try {
+    try {
+      if (scanResponse?.scan_id) {
+        analysisAbortRef.current?.abort();
+        const abortController = new AbortController();
+        analysisAbortRef.current = abortController;
         await apiClient.post('/public/scan-tag/manual-select', {
           scan_id: scanResponse.scan_id,
           product_id: commodity.id,
-        });
-      } catch (err) {
-        console.warn('Manual select API call warning:', err);
+        }, { signal: abortController.signal });
       }
+      if (generation !== scanGenerationRef.current) return;
+
+      const parsedPrice = Number(userPriceInput);
+      if (Number.isFinite(parsedPrice) && parsedPrice > 0) {
+        await executeComparison(
+          commodity,
+          parsedPrice,
+          'MANUAL_SEARCH',
+        );
+      }
+    } catch (err: any) {
+      if (generation !== scanGenerationRef.current || err?.code === 'ERR_CANCELED') return;
+      console.error('Manual product selection error:', err);
+      setErrorMessage(err.response?.data?.message || 'The selected product could not be applied to this scan. Please try again.');
+      setScannerState('ERROR');
+    }
+  };
+
+  const handleOcrCandidateSelect = (candidate: ScanCandidate) => {
+    setSelectedCandidate(candidate);
+    setSelectedProductSource('OCR_CANDIDATE_SELECTED');
+    const parsedPrice = Number(userPriceInput);
+    if (Number.isFinite(parsedPrice) && parsedPrice > 0) {
+      void executeComparison(candidate, parsedPrice, 'OCR_CANDIDATE_SELECTED');
     }
   };
 
   const executeComparison = async (
-    candidate: Commodity,
+    candidate: ProductChoice,
     price: number,
-    forcedProductSource?: 'OCR' | 'MANUAL_SEARCH',
-    forcedPriceSource?: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED'
+    forcedProductSource?: ProductSource,
+    forcedPriceSource?: PriceSource
   ) => {
     if (!selectedStore) return;
+    const generation = scanGenerationRef.current;
 
     setScannerState('COMPARING');
     setProcessingStage('Fetching active price bulletin & history...');
+    analysisAbortRef.current?.abort();
+    const abortController = new AbortController();
+    analysisAbortRef.current = abortController;
 
     const scanId = scanResponse?.scan_id;
     const detectedPriceStr = scanResponse?.detected_price_string ?? (scanResponse?.detected_price != null ? String(scanResponse.detected_price) : null);
     
-    const pSource: 'OCR' | 'MANUAL_SEARCH' = forcedProductSource || selectedProductSource;
-    let prSource: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED';
+    const pSource: ProductSource = forcedProductSource || selectedProductSource;
+    let prSource: PriceSource;
 
     if (forcedPriceSource) {
       prSource = forcedPriceSource;
     } else if (detectedPriceStr !== null && detectedPriceStr !== '') {
       const formattedUserPrice = Number(price).toFixed(2);
       const formattedDetectedPrice = Number(detectedPriceStr).toFixed(2);
-      prSource = formattedUserPrice === formattedDetectedPrice ? 'USER_CONFIRMED' : 'USER_CORRECTED';
+      prSource = formattedUserPrice === formattedDetectedPrice ? 'OCR_DETECTED' : 'USER_CORRECTED';
     } else {
       prSource = 'USER_ENTERED';
     }
@@ -529,14 +605,15 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           displayed_price: price,
           product_source: pSource,
           price_source: prSource,
-        });
+        }, { signal: abortController.signal });
       } else {
         res = await apiClient.post('/public/compare-price', {
           store_id: selectedStore.id,
           srp_bulletin_id: candidate.id,
           displayed_price: price,
-        });
+        }, { signal: abortController.signal });
       }
+      if (generation !== scanGenerationRef.current) return;
 
       if (res.data && res.data.success && res.data.data) {
         const data = res.data.data;
@@ -550,11 +627,16 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         throw new Error('Regulatory comparison service returned an invalid response.');
       }
     } catch (err: any) {
+      if (generation !== scanGenerationRef.current || err?.code === 'ERR_CANCELED') return;
       console.error('Comparison API error:', err);
       setErrorMessage(
         err.response?.data?.message || 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
       );
       setScannerState('ERROR');
+    } finally {
+      if (analysisAbortRef.current === abortController) {
+        analysisAbortRef.current = null;
+      }
     }
   };
 
@@ -573,12 +655,55 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     executeComparison(selectedCandidate, parsedPrice);
   };
 
+  const openManualRecovery = () => {
+    setErrorMessage('');
+    setShowManualDirectorySearch(true);
+    setScannerState('RECOVERY');
+  };
+
+  const handleCorrectResult = () => {
+    const displayedPrice = Number(comparisonResult?.displayed_price);
+    if (Number.isFinite(displayedPrice) && displayedPrice > 0) {
+      setUserPriceInput(displayedPrice.toFixed(2));
+    }
+    if (comparisonResult?.product) {
+      setSelectedCandidate(comparisonResult.product);
+    }
+    setShowManualDirectorySearch(true);
+    setScannerState('RECOVERY');
+  };
+
+  const handleNearbyFilter = async () => {
+    if (activeFilterChip === 'nearby') {
+      setActiveFilterChip('all');
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError('');
+    try {
+      const pos = await getCurrentPosition();
+      setUserGeo(pos);
+      setActiveFilterChip('nearby');
+    } catch (err: any) {
+      setGeoError(err.message || 'Location unavailable');
+      setActiveFilterChip('all');
+    } finally {
+      setGeoLoading(false);
+    }
+  };
+
   const filteredStores = stores.filter((s) => {
     let matchesFilter = true;
     if (activeFilterChip === 'nearby') {
-      matchesFilter = true;
+      if (userGeo) {
+        const dist = haversineKm(userGeo.latitude, userGeo.longitude, s.latitude, s.longitude);
+        matchesFilter = dist <= 2;
+      } else {
+        matchesFilter = true;
+      }
     } else if (activeFilterChip === 'recent') {
-      matchesFilter = s.id === recentlyUsedStore?.id;
+      const recentIds = getRecentStoreIds();
+      matchesFilter = recentIds.includes(s.id);
     }
 
     const q = searchTerm.toLowerCase().trim();
@@ -590,6 +715,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
        s.owner_name.toLowerCase().includes(q))
     );
   });
+
+  if (activeFilterChip === 'nearby' && userGeo) {
+    filteredStores.sort((a, b) =>
+      haversineKm(userGeo.latitude, userGeo.longitude, a.latitude, a.longitude) -
+      haversineKm(userGeo.latitude, userGeo.longitude, b.latitude, b.longitude)
+    );
+  }
 
   const handleReportWithReceipt = () => {
     if (comparisonResult) {
@@ -615,36 +747,35 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     }
   };
 
-  const ocrStatus = scanResponse?.ocr_status || (isDemoEnabled ? 'OCR_PRODUCT_AND_PRICE_DETECTED' : 'OCR_NO_TEXT');
+  const ocrStatus = scanResponse?.ocr_status || 'OCR_NO_TEXT';
+  const rawResultProductName = comparisonResult?.commodity_name
+    || comparisonResult?.product?.commodity_name
+    || '';
+  const resultProductName = formatCommodityDisplay(
+    rawResultProductName,
+    comparisonResult?.product?.category || '',
+    comparisonResult?.package_size || comparisonResult?.unit || comparisonResult?.product?.unit || '',
+  ).title;
+  const resultIsAboveReference = Boolean(
+    comparisonResult
+    && (comparisonResult.is_above_reference || comparisonResult.comparison_status === 'ABOVE_SRP'),
+  );
 
   return (
     <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
-      {isDemoEnabled && (
-        <div
-          style={{
-            background: '#fffbe6',
-            border: '1px solid #ffe58f',
-            color: '#d48806',
-            padding: '6px 12px',
-            borderRadius: '8px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            textAlign: 'center',
-            margin: '8px 16px 0 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px'
-          }}
-        >
-          <span>⚠️</span> Demo Data (Dev Mode Only)
-        </div>
-      )}
-
       {/* SCREEN 1: STORE SELECTION */}
       {scannerState === 'SELECT_STORE' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '90px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '24px' }}>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+            <div>
+              <h1 style={{ margin: 0, color: '#0f172a', fontSize: '1.4rem', fontWeight: 800, lineHeight: 1.2 }}>
+                Choose a store
+              </h1>
+              <p style={{ margin: '5px 0 0', color: '#64748b', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                Tap the verified store where you are checking a shelf price.
+              </p>
+            </div>
+
             {errorMessage && (
               <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
                 <AlertTriangle size={18} style={{ flexShrink: 0 }} /> {errorMessage}
@@ -685,7 +816,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             {/* Quick Filter Chips Bar */}
             <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none' }}>
               <button
-                onClick={() => setActiveFilterChip(activeFilterChip === 'nearby' ? 'all' : 'nearby')}
+                onClick={handleNearbyFilter}
                 style={{
                   padding: '8px 14px',
                   borderRadius: '9999px',
@@ -702,7 +833,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 }}
               >
                 <MapPin size={14} color="#2563eb" />
-                Nearby stores
+                {geoLoading ? 'Finding location...' : 'Nearby stores'}
               </button>
 
               <button
@@ -723,53 +854,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 }}
               >
                 <Clock size={14} color="#2563eb" />
-                Recently selected
+                Recent stores
               </button>
             </div>
 
-            {/* Recently Used Store Shortcut Card */}
-            {recentlyUsedStore && !searchTerm && (
-              <div
-                style={{
-                  background: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                  borderRadius: '14px',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px'
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase' }}>
-                    Recently Used
-                  </div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                    {recentlyUsedStore.store_name}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                    {recentlyUsedStore.address}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleStartScanForStore(recentlyUsedStore)}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    background: '#1d4ed8',
-                    color: '#ffffff',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    border: 'none',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0
-                  }}
-                >
-                  Use this store
-                </button>
+            {geoError && (
+              <div style={{ fontSize: '0.78rem', color: '#dc2626', padding: '4px 0' }}>
+                {geoError}
               </div>
             )}
 
@@ -782,97 +873,18 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                   <div>{errorMessage || 'Unable to load verified store directory. Please check your network connection.'}</div>
                 </div>
               ) : (
-                filteredStores.map((store) => {
-                  const isSelected = selectedStore?.id === store.id;
-                  return (
-                    <div
-                      key={store.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedStore(store)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedStore(store); }}
-                      style={{
-                        background: '#ffffff',
-                        border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                        borderRadius: '14px',
-                        padding: '12px 14px',
-                        display: 'flex',
-                        gap: '12px',
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                        boxShadow: isSelected ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <CompactStoreFacade photoType={(store as any).photoType} storeName={store.store_name} />
-
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-                          <CheckCircle2 size={14} color="#2563eb" />
-                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#2563eb' }}>
-                            Verified store
-                          </span>
-                        </div>
-
-                        <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: '0 0 2px 0', lineHeight: 1.25 }}>
-                          {store.store_name}
-                        </h3>
-
-                        <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0, lineHeight: 1.3 }}>
-                          {store.address}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartScanForStore(store);
-                        }}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          background: isSelected ? '#1d4ed8' : '#f1f5f9',
-                          color: isSelected ? '#ffffff' : '#0f172a',
-                          fontSize: '0.82rem',
-                          fontWeight: 700,
-                          border: isSelected ? 'none' : '1px solid #cbd5e1',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0
-                        }}
-                      >
-                        {isSelected ? 'Selected ✓' : 'Select'}
-                      </button>
-                    </div>
-                  );
-                })
+                filteredStores.map((store) => (
+                  <StoreSelectionCard
+                    key={store.id}
+                    store={store}
+                    distanceLabel={userGeo
+                      ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+                      : undefined}
+                    onActivate={() => handleStartScanForStore(store)}
+                  />
+                ))
               )}
             </div>
-          </div>
-
-          {/* Sticky Bottom Action Area */}
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              maxWidth: '600px',
-              margin: '0 auto',
-              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
-              background: '#ffffff',
-              borderTop: '1px solid #e2e8f0',
-              zIndex: 90
-            }}
-          >
-            <button
-              className="btn-primary"
-              disabled={!selectedStore}
-              onClick={() => selectedStore && handleStartScanForStore(selectedStore)}
-              style={{ width: '100%', height: '50px', fontSize: '1rem', fontWeight: 700, borderRadius: '12px' }}
-            >
-              Continue to Live Camera
-            </button>
           </div>
         </div>
       )}
@@ -898,10 +910,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ffffff' }}>
               <button
-                onClick={() => {
-                  stopCamera();
-                  setScannerState('SELECT_STORE');
-                }}
+                onClick={returnScannerToStart}
                 style={{
                   background: 'rgba(255,255,255,0.2)',
                   border: 'none',
@@ -986,6 +995,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
           {/* Horizontal Shelf-Tag Framing Guide */}
           <div
+            ref={guideRef}
             style={{
               position: 'absolute',
               top: '48%',
@@ -1048,79 +1058,16 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
-      {/* CAPTURE REVIEW */}
-      {scannerState === 'CAPTURE_REVIEW' && capturedPreviewUrl && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            Review Captured Shelf Tag
-          </h2>
-
-          <div
-            style={{
-              position: 'relative',
-              borderRadius: '14px',
-              overflow: 'hidden',
-              border: '2px solid #e2e8f0',
-              maxHeight: '340px',
-              background: '#09090b',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
+      {/* UPLOADING / COMPARING PROGRESS */}
+      {(scannerState === 'UPLOADING' || scannerState === 'ANALYZING' || scannerState === 'COMPARING') && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center', gap: '16px' }}>
+          {capturedPreviewUrl && (
             <img
               src={capturedPreviewUrl}
-              alt="Captured Shelf Tag"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '340px' }}
+              alt="Shelf tag being analyzed"
+              style={{ width: 'min(100%, 360px)', maxHeight: '180px', objectFit: 'contain', borderRadius: '14px', background: '#0f172a' }}
             />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <button
-              onClick={handleRetake}
-              style={{
-                height: '48px',
-                borderRadius: '12px',
-                border: '1px solid #cbd5e1',
-                background: '#ffffff',
-                color: '#0f172a',
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                cursor: 'pointer'
-              }}
-            >
-              <RefreshCw size={16} />
-              Retake
-            </button>
-
-            <button
-              onClick={handleUploadAndAnalyze}
-              className="btn-primary"
-              style={{
-                height: '48px',
-                borderRadius: '12px',
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Check size={18} />
-              Use capture
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* UPLOADING / COMPARING PROGRESS */}
-      {(scannerState === 'UPLOADING' || scannerState === 'COMPARING') && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', textAlign: 'center', gap: '16px' }}>
+          )}
           <div
             style={{
               width: '56px',
@@ -1152,20 +1099,38 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ background: '#dcfce7', color: '#14532d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    ✔ OCR-Detected Tag Price: ₱{userPriceInput || '0.00'}
+                  <span style={{ background: scanResponse?.recovery_reason === 'PRICE_UNCERTAIN' ? '#fef3c7' : '#dcfce7', color: scanResponse?.recovery_reason === 'PRICE_UNCERTAIN' ? '#92400e' : '#14532d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {scanResponse?.recovery_reason === 'PRICE_UNCERTAIN' ? 'Check OCR price' : '✔ OCR-Detected Tag Price'}: ₱{userPriceInput || '0.00'}
                   </span>
                   <span style={{ background: '#dbeafe', color: '#1e40af', padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>
                     OCR-Detected Product
                   </span>
                 </div>
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: '4px 0 0 0' }}>
-                  Select Product Match
+                  {scanResponse?.recovery_reason === 'PRICE_UNCERTAIN' ? 'Check the shelf price' : 'Select Product Match'}
                 </h2>
                 <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>
-                  We found detected candidate commodities on your shelf tag:
+                  {scanResponse?.recovery_reason === 'PRICE_UNCERTAIN'
+                    ? 'The product matched, but the price text was not clear enough to use automatically.'
+                    : 'We found detected candidate commodities on your shelf tag:'}
                 </p>
               </div>
+
+              {(showManualDirectorySearch || scanResponse?.recovery_reason === 'PRICE_UNCERTAIN') && (
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
+                    Displayed Shelf Price (₱)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="input-field"
+                    style={{ height: '50px', fontSize: '1.2rem', fontWeight: 800, borderRadius: '12px', padding: '0 16px', border: '1.5px solid #2563eb', background: '#ffffff' }}
+                    value={userPriceInput}
+                    onChange={(e) => setUserPriceInput(e.target.value)}
+                  />
+                </div>
+              )}
 
               {/* Candidates List */}
               {candidates.length > 0 && !showManualDirectorySearch && (
@@ -1177,14 +1142,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                         key={c.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {
-                          setSelectedCandidate(c);
-                          setSelectedProductSource('OCR');
-                        }}
+                        onClick={() => handleOcrCandidateSelect(c)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
-                            setSelectedCandidate(c);
-                            setSelectedProductSource('OCR');
+                            handleOcrCandidateSelect(c);
                           }
                         }}
                         style={{
@@ -1208,10 +1169,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
-                            ₱{Number(c.baseline_price).toFixed(2)}
+                          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1d4ed8' }}>
+                            {c.match_level === 'STRONG' ? 'Strong match' : 'Possible match'}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Baseline SRP</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>OCR text match</div>
                         </div>
                       </div>
                     );
@@ -1272,14 +1233,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                         key={c.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {
-                          setSelectedCandidate(c);
-                          setSelectedProductSource('OCR');
-                        }}
+                        onClick={() => handleOcrCandidateSelect(c)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
-                            setSelectedCandidate(c);
-                            setSelectedProductSource('OCR');
+                            handleOcrCandidateSelect(c);
                           }
                         }}
                         style={{
@@ -1303,10 +1260,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1d4ed8' }}>
-                            ₱{Number(c.baseline_price).toFixed(2)}
+                          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1d4ed8' }}>
+                            {c.match_level === 'STRONG' ? 'Strong match' : 'Possible match'}
                           </div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Baseline SRP</div>
+                          <div style={{ fontSize: '0.72rem', color: '#64748b' }}>OCR text match</div>
                         </div>
                       </div>
                     );
@@ -1431,6 +1388,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
               {isSearchingCommodities && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Searching commodities...</div>}
 
+              {commoditySearchError && (
+                <div role="alert" style={{ fontSize: '0.8rem', color: '#b91c1c' }}>{commoditySearchError}</div>
+              )}
+
+              {!isSearchingCommodities && !commoditySearchError && commoditySearchQuery.trim() && commoditySearchResults.length === 0 && (
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>No current product matched. Try the brand, product type, or package size.</div>
+              )}
+
               {commoditySearchResults.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
                   {commoditySearchResults.map((item) => {
@@ -1483,7 +1448,12 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 {selectedCandidate.commodity_name}
               </div>
               <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                {selectedCandidate.unit || selectedCandidate.package_size || 'Standard'} · Baseline SRP: ₱{Number(selectedCandidate.baseline_price).toFixed(2)}
+                {selectedCandidate.unit || selectedCandidate.package_size || 'Standard'}
+                {isCatalogCommodity(selectedCandidate)
+                  ? ` · Current catalog reference: ₱${Number(selectedCandidate.baseline_price).toFixed(2)}`
+                  : selectedCandidate.match_level
+                    ? ` · ${selectedCandidate.match_level === 'STRONG' ? 'Strong' : 'Possible'} OCR text match`
+                    : ''}
               </div>
             </div>
           )}
@@ -1538,7 +1508,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
 
       {/* SCREEN 3: DYNAMIC COMPARISON RESULT */}
       {scannerState === 'RESULT' && comparisonResult && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: '90px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
           
           <div style={{ textAlign: 'center', paddingTop: '4px' }}>
             <div
@@ -1604,7 +1574,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Product</span>
               <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                 <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                  {comparisonResult.commodity_name || comparisonResult.product?.commodity_name}
+                  {resultProductName}
                 </span>
                 <span style={{
                   background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
@@ -1753,30 +1723,42 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             })()}
           </div>
 
-          {/* Sticky Bottom Actions */}
+          {/* Result actions */}
           <div
+            data-testid="scan-result-actions"
             style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              maxWidth: '600px',
-              margin: '0 auto',
-              padding: '12px 16px calc(12px + env(safe-area-inset-bottom)) 16px',
-              background: '#ffffff',
-              borderTop: '1px solid #e2e8f0',
+              marginTop: '4px',
+              padding: '4px 0 8px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '8px',
-              zIndex: 90
+              gap: '10px'
             }}
           >
+            {resultIsAboveReference && (
+              <button
+                className="btn-primary"
+                onClick={handleReportWithReceipt}
+                style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
+              >
+                Report using receipt
+              </button>
+            )}
+
             <button
-              className="btn-primary"
-              onClick={handleReportWithReceipt}
-              style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
+              onClick={handleCorrectResult}
+              style={{
+                width: '100%',
+                height: '42px',
+                borderRadius: '8px',
+                border: '1px solid #93c5fd',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
             >
-              Report using receipt
+              Correct product or price
             </button>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -1832,16 +1814,18 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
-            <button
-              className="btn-primary"
-              onClick={handleRetake}
-              style={{ height: '46px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700 }}
-            >
-              Retake Image
-            </button>
+            {capturedBlob && (
+              <button
+                className="btn-primary"
+                onClick={() => void handleUploadAndAnalyze()}
+                style={{ height: '46px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700 }}
+              >
+                Retry analysis
+              </button>
+            )}
 
             <button
-              onClick={() => setActiveTab && setActiveTab('prices')}
+              onClick={handleRetake}
               style={{
                 height: '46px',
                 borderRadius: '10px',
@@ -1853,7 +1837,23 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                 cursor: 'pointer'
               }}
             >
-              Search Prices Manually
+              Retake Image
+            </button>
+
+            <button
+              onClick={openManualRecovery}
+              style={{
+                height: '46px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#0f172a',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Enter product and price manually
             </button>
           </div>
         </div>

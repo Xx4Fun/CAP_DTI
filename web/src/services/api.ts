@@ -3,6 +3,7 @@ import { getAdminToken, getAuthToken } from './adminSession';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || 'https://cap-dti.onrender.com/api',
+    timeout: 30_000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'

@@ -1,3 +1,5 @@
+import { safeSessionStorage } from './safeStorage';
+
 const HANDOFF_KEY = 'price-watch-flow-handoff';
 
 export type FlowHandoff =
@@ -13,11 +15,11 @@ export type FlowHandoff =
     };
 
 export function writeHandoff(value: FlowHandoff): void {
-  sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(value));
+  safeSessionStorage.setItem(HANDOFF_KEY, JSON.stringify(value));
 }
 
 export function peekHandoff(): FlowHandoff | null {
-  const rawValue = sessionStorage.getItem(HANDOFF_KEY);
+  const rawValue = safeSessionStorage.getItem(HANDOFF_KEY);
   if (!rawValue) return null;
 
   try {
@@ -25,7 +27,7 @@ export function peekHandoff(): FlowHandoff | null {
     if (!isFlowHandoff(value)) throw new Error('Invalid flow handoff');
     return value;
   } catch {
-    sessionStorage.removeItem(HANDOFF_KEY);
+    safeSessionStorage.removeItem(HANDOFF_KEY);
     return null;
   }
 }
@@ -59,7 +61,7 @@ function isFlowHandoff(value: unknown): value is FlowHandoff {
 }
 
 export function clearHandoff(): void {
-  sessionStorage.removeItem(HANDOFF_KEY);
+  safeSessionStorage.removeItem(HANDOFF_KEY);
 }
 
 export function consumeHandoff(): FlowHandoff | null {

@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ShieldCheck, CheckCircle2, ChevronRight, X, Scan } from 'lucide-react';
 import { apiClient, type Establishment, defaultStoresList } from '../api/client';
+import { ensureApiReady } from '../api/readiness';
+import {
+  PUBLIC_DIRECTORY_MAX_AGE_MS,
+  PUBLIC_ESTABLISHMENTS_CACHE_KEY,
+  readVerifiedCache,
+  writeVerifiedCache,
+} from '../app/verifiedCache';
 import { StoreFacadeImage } from './ShelfScanner';
 import { writeHandoff } from '../app/handoffs';
 
@@ -11,31 +18,51 @@ interface StoreDirectoryProps {
 
 
 export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) => {
+  const [initialCache] = useState(() => readVerifiedCache<Establishment[]>(
+    PUBLIC_ESTABLISHMENTS_CACHE_KEY,
+    PUBLIC_DIRECTORY_MAX_AGE_MS,
+  ));
   const [searchTerm, setSearchTerm] = useState('');
-  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
+  const [stores, setStores] = useState<Establishment[]>(initialCache?.data ?? defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [dataSource, setDataSource] = useState<'live' | 'cached' | 'bundled'>(initialCache ? 'cached' : 'bundled');
 
   useEffect(() => {
     fetchStores();
   }, []);
 
   const fetchStores = async (query = '') => {
-    setLoading(true);
     setError('');
     try {
+      await ensureApiReady();
       const res = await apiClient.get('/public/establishments', {
         params: { query }
       });
-      if (res.data && res.data.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-        setStores(res.data.data);
-      } else {
-        setStores(defaultStoresList);
+      if (!res.data?.success || !Array.isArray(res.data.data)) {
+        throw new Error('Invalid establishments response');
+      }
+      setStores(res.data.data);
+      setDataSource('live');
+      if (!query) {
+        writeVerifiedCache(PUBLIC_ESTABLISHMENTS_CACHE_KEY, res.data.data);
       }
     } catch (err) {
-      console.warn('API connection offline or remote. Using reference store directory:', err);
-      setStores(defaultStoresList);
+      console.warn('API connection unavailable. Using the safest available store directory:', err);
+      const cached = readVerifiedCache<Establishment[]>(
+        PUBLIC_ESTABLISHMENTS_CACHE_KEY,
+        PUBLIC_DIRECTORY_MAX_AGE_MS,
+      );
+      if (cached) {
+        setStores(cached.data);
+        setDataSource('cached');
+        setError('Live directory unavailable. Showing the last verified cached directory.');
+      } else {
+        setStores(defaultStoresList);
+        setDataSource('bundled');
+        setError('Unable to connect to store directory. Showing local reference data.');
+      }
     } finally {
       setLoading(false);
     }
@@ -114,6 +141,12 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
       {error && (
         <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
           {error}
+        </div>
+      )}
+
+      {dataSource === 'cached' && !error && (
+        <div role="status" className="banner-warning">
+          Showing verified cached directory while live data reconnects.
         </div>
       )}
 

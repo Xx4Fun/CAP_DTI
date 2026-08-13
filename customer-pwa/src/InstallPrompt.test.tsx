@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { apiClient } from './api/client';
 
+vi.mock('./app/pwaRegistration', () => ({
+  useRegisterSW: () => ({
+    needRefresh: [false, vi.fn()],
+    offlineReady: [false, vi.fn()],
+    updateServiceWorker: vi.fn(),
+  }),
+}));
+
 const createInstallEvent = (outcome: 'accepted' | 'dismissed') => {
   const prompt = vi.fn().mockResolvedValue(undefined);
   const event = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
@@ -52,6 +60,6 @@ describe('PWA install promotion', () => {
     await user.click(await screen.findByRole('button', { name: 'Not now' }));
 
     expect(screen.queryByRole('button', { name: 'Install app' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Popular categories/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Check prices with confidence/i })).toBeInTheDocument();
   });
 });

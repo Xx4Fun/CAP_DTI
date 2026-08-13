@@ -10,6 +10,10 @@ vi.mock('../services/api', () => ({
   default: { post: vi.fn() },
 }))
 
+vi.mock('../services/apiReadiness', () => ({
+  ensureApiReady: vi.fn().mockResolvedValue(undefined),
+}))
+
 describe('DTI Admin chrome and login feedback', () => {
   beforeEach(() => vi.clearAllMocks())
 

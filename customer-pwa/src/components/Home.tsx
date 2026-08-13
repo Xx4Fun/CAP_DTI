@@ -1,424 +1,261 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  Scan,
-  FileCheck,
-  ClipboardCheck,
-  FileText,
+  ArrowRight,
   ChevronRight,
-  Fish,
-  Milk,
-  Coffee,
-  Droplet,
-  Info
+  Clock3,
+  FileCheck2,
+  ScanLine,
 } from 'lucide-react';
+import { RecentReportTicket, type RecentReportTicketProps } from './RecentReportTicket';
+import './Home.css';
 
 interface HomeProps {
   setActiveTab: (tab: string) => void;
   stateOfCalamity?: boolean;
+  bulletinDate?: string;
+  totalCommodities?: number;
+  bulletinStatus?: 'loading' | 'available' | 'empty' | 'error';
+  lastSyncTime?: string;
+  dataSource?: 'checking' | 'cached' | 'live' | 'unavailable';
+  recentReports?: RecentReportTicketProps[];
 }
 
-export const Home: React.FC<HomeProps> = ({ setActiveTab, stateOfCalamity }) => {
-  const handleCategoryClick = (category: string) => {
-    sessionStorage.setItem('srp_search_term', category);
-    setActiveTab('prices');
-  };
+export const Home: React.FC<HomeProps> = ({
+  setActiveTab,
+  stateOfCalamity,
+  bulletinDate,
+  totalCommodities,
+  bulletinStatus,
+  lastSyncTime,
+  dataSource = 'checking',
+  recentReports = [],
+}) => {
+  const [rightsExpanded, setRightsExpanded] = useState(false);
+  const statusLabel = stateOfCalamity === undefined
+    ? 'Regulatory status unavailable'
+    : stateOfCalamity
+      ? 'Calamity active'
+      : 'Normal monitoring';
+  const statusTone = stateOfCalamity === undefined
+    ? 'unavailable'
+    : stateOfCalamity
+      ? 'calamity'
+      : 'normal';
+  const resolvedBulletinStatus = bulletinStatus
+    ?? (bulletinDate || totalCommodities != null ? 'available' : 'empty');
+  const unavailableLabel = resolvedBulletinStatus === 'loading'
+    ? 'Loading...'
+    : resolvedBulletinStatus === 'error'
+      ? 'Unable to load'
+      : 'Unavailable';
+  const hasRecentReports = recentReports.length > 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* 2. Primary Action Cards Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        {/* Scan Shelf Tag Card */}
-        <div
-          onClick={() => setActiveTab('scan')}
-          role="button"
-          tabIndex={0}
-          aria-label="Scan shelf tag"
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('scan'); }}
-          style={{
-            background: '#f0f7ff',
-            border: '1px solid #bfdbfe',
-            borderRadius: '16px',
-            padding: '18px 16px',
-            cursor: 'pointer',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            transition: 'all 0.15s ease',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div>
-            <div style={{ color: '#2563eb', marginBottom: '14px' }}>
-              <Scan size={36} strokeWidth={1.75} />
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
-              Scan shelf tag
-            </div>
+    <div className="home-page">
+      <section className="home-hero" aria-labelledby="home-welcome-title">
+        <div className="home-hero-inner">
+          <div className="home-hero-copy">
+            <h1 id="home-welcome-title" aria-label="Check prices with confidence">Check prices<br />with confidence</h1>
+            <p>Verify prices, report concerns, and stay informed.</p>
           </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-            <ChevronRight size={20} color="#2563eb" />
+          <div className="home-hero-art-frame">
+            <img
+              className="home-hero-art"
+              src="/home/1.webp"
+              alt="Grocery basket with essential goods"
+              fetchPriority="high"
+              decoding="async"
+            />
           </div>
         </div>
+      </section>
 
-        {/* Report Concern Card */}
-        <div
-          onClick={() => setActiveTab('reports')}
-          role="button"
-          tabIndex={0}
-          aria-label="Report concern"
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('reports'); }}
-          style={{
-            background: '#fffbeb',
-            border: '1px solid #fde68a',
-            borderRadius: '16px',
-            padding: '18px 16px',
-            cursor: 'pointer',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            transition: 'all 0.15s ease',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div>
-            <div style={{ color: '#d97706', marginBottom: '14px' }}>
-              <FileCheck size={36} strokeWidth={1.75} />
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
-              Report concern
-            </div>
+      <div className="home-content-shell">
+        <div className="home-main-content">
+          <div className="home-action-grid" aria-label="Quick actions">
+            <button
+              type="button"
+              className="home-action-card home-action-card-scan"
+              onClick={() => setActiveTab('scan')}
+              aria-label="Scan shelf tag"
+            >
+              <div className="home-action-top">
+                <span className="home-action-icon"><ScanLine size={22} aria-hidden="true" /></span>
+                <svg className="home-action-dots" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                  <circle cx="4" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="31" r="1.5" fill="currentColor" />
+                </svg>
+              </div>
+
+              <div className="home-action-copy">
+                <strong className="home-action-title">Scan shelf tag</strong>
+                <span className="home-action-subtitle">Compare any price instantly</span>
+              </div>
+
+              <span className="home-action-arrow"><ChevronRight size={18} aria-hidden="true" /></span>
+            </button>
+
+            <button
+              type="button"
+              className="home-action-card home-action-card-report"
+              onClick={() => setActiveTab('reports')}
+              aria-label="Report concern"
+            >
+              <div className="home-action-top">
+                <span className="home-action-icon"><FileCheck2 size={22} aria-hidden="true" /></span>
+                <svg className="home-action-dots" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                  <circle cx="4" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="4" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="13" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="22" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="13" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="22" cy="31" r="1.5" fill="currentColor" />
+                  <circle cx="31" cy="31" r="1.5" fill="currentColor" />
+                </svg>
+              </div>
+
+              <div className="home-action-copy">
+                <strong className="home-action-title">Report concern</strong>
+                <span className="home-action-subtitle">Submit receipt to DTI and help others</span>
+              </div>
+
+              <span className="home-action-arrow"><ChevronRight size={18} aria-hidden="true" /></span>
+            </button>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
-            <ChevronRight size={20} color="#d97706" />
-          </div>
+          <section className="home-bulletin" aria-labelledby="current-bulletin-title">
+            <div className="home-bulletin-copy">
+              <h2 id="current-bulletin-title">Current price bulletin</h2>
+              <span className={`home-monitoring-status home-monitoring-status-${statusTone}`}>
+                <span className="home-monitoring-dot" aria-hidden="true" />
+                {statusLabel}
+              </span>
+
+              <div className="home-bulletin-stats">
+                <div>
+                  <span>Effective date</span>
+                  <strong>{bulletinDate || unavailableLabel}</strong>
+                </div>
+                <div>
+                  <span>Reference prices</span>
+                  <strong>{totalCommodities != null ? `${totalCommodities} available` : unavailableLabel}</strong>
+                </div>
+              </div>
+
+              <div className="home-bulletin-updated">
+                <Clock3 size={17} aria-hidden="true" />
+                <span>{dataSource === 'cached' ? 'Cached copy' : 'Last updated'}</span>
+                <strong>{lastSyncTime || 'Not synced'}</strong>
+              </div>
+
+              <button
+                type="button"
+                className="home-bulletin-link"
+                onClick={() => setActiveTab('prices')}
+              >
+                View bulletin details <ArrowRight size={20} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="home-bulletin-art-frame">
+              <img
+                className="home-bulletin-art"
+                src="/home/2.webp"
+                alt="Current price bulletin illustration"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </section>
+
+          <section className="home-recent-reports" aria-labelledby="recent-reports-title">
+            <div className="home-section-heading">
+              <h2 id="recent-reports-title">Recently reported</h2>
+              {hasRecentReports && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('track')}
+                  aria-label="View all recent reports"
+                >
+                  View all
+                </button>
+              )}
+            </div>
+
+            {hasRecentReports ? (
+              <div className="recent-reports-carousel" aria-label="Recent reports">
+                {recentReports.map((report) => (
+                  <RecentReportTicket key={report.reportId} {...report} />
+                ))}
+              </div>
+            ) : (
+              <div className="home-reports-empty">
+                <h3>No reports yet</h3>
+                <p>Have a price concern? Submit a receipt for DTI review.</p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reports')}
+                  aria-label="Report a price concern"
+                >
+                  Report concern <ArrowRight size={18} aria-hidden="true" />
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className={`home-rights-card ${rightsExpanded ? 'home-rights-card-expanded' : ''}`}>
+            <div className="home-rights-art-frame">
+              <img
+                className="home-rights-art"
+                src="/home/3.webp"
+                alt="Consumer rights protection illustration"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <div className="home-rights-copy">
+              <h2>Know your rights as a customer</h2>
+              <p>Learn more about fair pricing and reporting violations.</p>
+              {rightsExpanded && (
+                <p className="home-rights-detail">
+                  Compare posted prices with current DTI references and keep your receipt when reporting a concern.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="home-rights-action"
+              onClick={() => setRightsExpanded((expanded) => !expanded)}
+              aria-label="Learn about consumer rights"
+              aria-expanded={rightsExpanded}
+            >
+              <ArrowRight size={22} aria-hidden="true" />
+            </button>
+          </section>
         </div>
-      </div>
-
-      {/* 3. Track Report Card */}
-      <div
-        onClick={() => setActiveTab('track')}
-        role="button"
-        tabIndex={0}
-        aria-label="Track an existing report"
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('track'); }}
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '14px',
-          padding: '14px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '10px',
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#0f172a'
-          }}>
-            <ClipboardCheck size={20} />
-          </div>
-          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
-            Track an existing report
-          </span>
-        </div>
-        <ChevronRight size={20} color="#2563eb" />
-      </div>
-
-      {/* 4. Current Price Bulletin Status Card */}
-      <div style={{
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '16px',
-        padding: '18px 16px',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
-      }}>
-        {/* Header line */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <FileText size={20} color="#0f172a" />
-            <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
-              Current price bulletin
-            </span>
-          </div>
-          {stateOfCalamity === undefined ? (
-            <span style={{
-              background: '#fef3c7',
-              color: '#b45309',
-              border: '1px solid #fde68a',
-              padding: '3px 10px',
-              borderRadius: '9999px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#b45309' }} />
-              Regulatory status unavailable
-            </span>
-          ) : stateOfCalamity ? (
-            <span style={{
-              background: '#fee2e2',
-              color: '#dc2626',
-              border: '1px solid #fca5a5',
-              padding: '3px 10px',
-              borderRadius: '9999px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc2626' }} />
-              Calamity active
-            </span>
-          ) : (
-            <span style={{
-              background: '#d1fae5',
-              color: '#059669',
-              border: '1px solid #6ee7b7',
-              padding: '3px 10px',
-              borderRadius: '9999px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#059669' }} />
-              Normal monitoring
-            </span>
-          )}
-        </div>
-
-        {/* Details Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          background: '#f8fafc',
-          borderRadius: '12px',
-          padding: '12px 14px',
-          marginBottom: '14px'
-        }}>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>
-              Effective date
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>
-              11 May 2026
-            </div>
-          </div>
-          <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '14px' }}>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>
-              Reference prices
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>
-              167 available
-            </div>
-          </div>
-        </div>
-
-        {/* Subtext */}
-        <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '14px' }}>
-          Last updated: <span style={{ color: '#334155', fontWeight: 500 }}>24 Jul 2026 · 3:21 PM</span>
-        </div>
-
-        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
-          <button
-            onClick={() => setActiveTab('prices')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              color: '#2563eb',
-              fontWeight: 600,
-              fontSize: '0.88rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            View bulletin details <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* 5. Popular Categories Grid */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-            Popular categories
-          </h2>
-          <span
-            onClick={() => setActiveTab('prices')}
-            role="button"
-            tabIndex={0}
-            aria-label="View all categories"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('prices'); }}
-            style={{ color: '#2563eb', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}
-          >
-            View all
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-          {/* Sardines */}
-          <div
-            onClick={() => handleCategoryClick('Sardines')}
-            role="button"
-            tabIndex={0}
-            aria-label="View Sardines category"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Sardines'); }}
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '14px 6px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-            }}
-          >
-            <div style={{ color: '#2563eb' }}>
-              <Fish size={24} />
-            </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a' }}>Sardines</span>
-          </div>
-
-          {/* Milk */}
-          <div
-            onClick={() => handleCategoryClick('Milk')}
-            role="button"
-            tabIndex={0}
-            aria-label="View Milk category"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Milk'); }}
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '14px 6px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-            }}
-          >
-            <div style={{ color: '#2563eb' }}>
-              <Milk size={24} />
-            </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a' }}>Milk</span>
-          </div>
-
-          {/* Coffee */}
-          <div
-            onClick={() => handleCategoryClick('Coffee')}
-            role="button"
-            tabIndex={0}
-            aria-label="View Coffee category"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Coffee'); }}
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '14px 6px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-            }}
-          >
-            <div style={{ color: '#2563eb' }}>
-              <Coffee size={24} />
-            </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a' }}>Coffee</span>
-          </div>
-
-          {/* Water */}
-          <div
-            onClick={() => handleCategoryClick('Water')}
-            role="button"
-            tabIndex={0}
-            aria-label="View Water category"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCategoryClick('Water'); }}
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '14px 6px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-            }}
-          >
-            <div style={{ color: '#2563eb' }}>
-              <Droplet size={24} />
-            </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a' }}>Water</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 6. Info Footer Card */}
-      <div
-        onClick={() => setActiveTab('prices')}
-        role="button"
-        tabIndex={0}
-        aria-label="How price checking and reporting work"
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('prices'); }}
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '14px',
-          padding: '14px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            background: '#eff6ff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#2563eb'
-          }}>
-            <Info size={18} />
-          </div>
-          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a' }}>
-            How price checking and reporting work
-          </span>
-        </div>
-        <ChevronRight size={18} color="#2563eb" />
       </div>
     </div>
   );

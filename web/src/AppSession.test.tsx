@@ -11,6 +11,10 @@ vi.mock('./services/api', () => ({
   },
 }))
 
+vi.mock('./services/apiReadiness', () => ({
+  ensureApiReady: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('./services/adminApi', () => ({
   adminApi: {
     getOverview: vi.fn().mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 0 }),

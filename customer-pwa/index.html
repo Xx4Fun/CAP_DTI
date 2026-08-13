@@ -2,12 +2,41 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="theme-color" content="#1d4ed8" />
+    <meta name="theme-color" content="#0649DA" />
     <meta name="description" content="Check DTI reference prices, compare shelf prices, and submit receipt concerns for evaluation." />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/dti-favicon-48x48.png" />
+    <link rel="apple-touch-icon" href="/icons/dti-apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>PRICE-Watch | DTI Consumer Price Guide</title>
+    <script>
+      (function () {
+        var recoveryKey = 'price-watch-asset-recovery-v1';
+        window.addEventListener('error', function (event) {
+          var target = event.target;
+          if (!target || (target.tagName !== 'SCRIPT' && target.tagName !== 'LINK')) return;
+
+          var alreadyRetried = false;
+          try {
+            alreadyRetried = sessionStorage.getItem(recoveryKey) === '1';
+          } catch (_) {
+            alreadyRetried = true;
+          }
+
+          if (!alreadyRetried) {
+            try { sessionStorage.setItem(recoveryKey, '1'); } catch (_) { /* use the safe fallback below */ }
+            window.location.reload();
+            return;
+          }
+
+          var root = document.getElementById('root');
+          if (!root) return;
+          root.innerHTML = '<main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#eff6ff;font-family:system-ui,sans-serif"><section style="max-width:360px;padding:24px;border:1px solid #bfdbfe;border-radius:18px;background:white;text-align:center"><h1 style="margin:0 0 10px;font-size:1.25rem;color:#0f172a">PRICE-Watch could not finish loading</h1><p style="margin:0 0 18px;color:#475569;line-height:1.5">A required app file is still unavailable. Check your connection, then try again.</p><button id="asset-recovery-reload" style="min-height:44px;padding:10px 16px;border:0;border-radius:10px;background:#2563eb;color:white;font-weight:700">Reload manually</button></section></main>';
+          document.getElementById('asset-recovery-reload')?.addEventListener('click', function () {
+            window.location.reload();
+          });
+        }, true);
+      }());
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
+import { formatCommodityDisplay } from '../../utils/commodityFormatter'
 import type { SrpRecord } from '../../types/admin'
 import type {
   ManagedSrpRecord,
@@ -671,10 +672,19 @@ function BatchUpdateSrpModal({
                         }}
                       >
                         <td style={{ padding: '0.6rem 0.85rem' }}>
-                          <strong style={{ display: 'block', color: '#0f172a' }}>
-                            {item.commodity_name}
-                          </strong>
-                          <small style={{ color: '#64748b' }}>{item.unit || item.category}</small>
+                          {(() => {
+                            const parsed = formatCommodityDisplay(item.commodity_name, item.category || '', item.unit || '')
+                            return (
+                              <>
+                                <strong style={{ display: 'block', color: '#0f172a' }}>
+                                  {parsed.title}
+                                </strong>
+                                <small style={{ color: '#64748b' }}>
+                                  {parsed.unit ? `${parsed.unit} • ${parsed.categoryPath}` : parsed.categoryPath}
+                                </small>
+                              </>
+                            )
+                          })()}
                         </td>
                         <td
                           style={{
@@ -1165,19 +1175,26 @@ export function SrpManagementPanel() {
                     style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}
                   >
                     <td data-label="Commodity" style={{ padding: '0.85rem 1.1rem' }}>
-                      <strong
-                        style={{
-                          display: 'block',
-                          fontSize: '0.9rem',
-                          color: '#0f172a',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {record.commodity_name}
-                      </strong>
-                      <small style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                        {record.unit || 'Unit not specified'}
-                      </small>
+                      {(() => {
+                        const parsed = formatCommodityDisplay(record.commodity_name, record.category || '', record.unit || '')
+                        return (
+                          <>
+                            <strong
+                              style={{
+                                display: 'block',
+                                fontSize: '0.9rem',
+                                color: '#0f172a',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {parsed.title}
+                            </strong>
+                            <small style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                              {parsed.unit || 'Unit not specified'}
+                            </small>
+                          </>
+                        )
+                      })()}
                     </td>
                     <td data-label="Category" style={{ padding: '0.85rem 1.1rem' }}>
                       <span

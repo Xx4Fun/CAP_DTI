@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
+import { safeLocalStorage } from '../app/safeStorage';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -19,10 +20,10 @@ export const InstallPrompt: React.FC<InstallPromptProps> = ({ visible }) => {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [isInstalled, setIsInstalled] = useState(
-    () => window.matchMedia?.('(display-mode: standalone)').matches ?? false,
+    () => typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches === true,
   );
   const [isDismissed, setIsDismissed] = useState(() => {
-    const dismissedUntil = localStorage.getItem(DISMISSED_KEY);
+    const dismissedUntil = safeLocalStorage.getItem(DISMISSED_KEY);
     if (!dismissedUntil) return false;
     return new Date().getTime() < parseInt(dismissedUntil, 10);
   });
@@ -67,12 +68,62 @@ export const InstallPrompt: React.FC<InstallPromptProps> = ({ visible }) => {
 
   const dismiss = () => {
     const expiration = new Date().getTime() + 7 * 24 * 60 * 60 * 1000;
-    localStorage.setItem(DISMISSED_KEY, expiration.toString());
+    safeLocalStorage.setItem(DISMISSED_KEY, expiration.toString());
     setIsDismissed(true);
     setPromptEvent(null);
   };
 
-  if (!visible || !promptEvent || isDismissed || isInstalled) return null;
+  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  if (!visible || isDismissed || isInstalled) return null;
+  if (!promptEvent && !isIOS) return null;
+
+  if (isIOS && !promptEvent) {
+    return (
+      <aside
+        aria-label="Install PRICE-Watch"
+        style={{
+          maxWidth: '600px',
+          margin: '0 auto',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          background: '#eff6ff',
+          borderBottom: '1px solid #bfdbfe',
+          color: '#1e3a8a',
+        }}
+      >
+        <Download size={22} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Install PRICE-Watch</div>
+          <div style={{ fontSize: '0.78rem', lineHeight: 1.35 }}>
+            Tap <strong>Share</strong> (□↑) then <strong>Add to Home Screen</strong>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="Not now"
+          style={{
+            width: '44px',
+            height: '44px',
+            flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 'none',
+            borderRadius: '10px',
+            background: 'transparent',
+            color: '#1e3a8a',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={20} aria-hidden="true" />
+        </button>
+      </aside>
+    );
+  }
 
   return (
     <aside

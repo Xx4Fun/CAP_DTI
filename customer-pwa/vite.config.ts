@@ -6,30 +6,36 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'price-logo.png', 'logo_icon.png'],
+      registerType: 'prompt',
+      includeAssets: [
+        'icons/dti-favicon-48x48.png',
+        'icons/dti-apple-touch-icon.png',
+        'branding/dti-logo.png',
+      ],
       manifest: {
         name: 'PRICE-Watch Consumer PWA',
         short_name: 'PRICE-Watch',
-        description: 'DTI Commodity Price Transparency & Tamper-Evident Evidence Reporting',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        description: 'Check DTI reference prices, compare shelf prices, and submit receipt concerns for evaluation.',
+        theme_color: '#0649DA',
+        background_color: '#F7FAFF',
         display: 'standalone',
         scope: '/',
         start_url: '/',
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: '/icons/dti-pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/icons/dti-pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any',
           },
           {
-            src: '/pwa-maskable-512x512.png',
+            src: '/icons/dti-pwa-maskable-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -38,38 +44,12 @@ export default defineConfig({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        skipWaiting: true,
-        clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        skipWaiting: false,
+        clientsClaim: false,
+        cleanupOutdatedCaches: true,
+        globPatterns: ['**/*.{js,css,ico,png,svg,webp,webmanifest}'],
         navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /\/api\/public\/(commodities|establishments|config)/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-public-data-cache',
-              networkTimeoutSeconds: 3,
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24, // 24 hours
-              },
-            },
-          },
-        ],
+        navigateFallbackDenylist: [/^\/api/],
       },
     }),
   ],

@@ -11,6 +11,13 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+if (typeof window !== 'undefined' && window.location.protocol === 'https:' && API_BASE_URL.startsWith('http://')) {
+  console.warn(
+    '[PRICE-Watch] API URL uses HTTP but page is served over HTTPS. ' +
+    'API requests will be blocked by the browser. Set VITE_API_BASE_URL to an HTTPS endpoint.'
+  );
+}
+
 export interface SystemConfig {
   app_name: string;
   state_of_calamity: boolean;
@@ -18,6 +25,8 @@ export interface SystemConfig {
   max_upload_size_mb: number;
   allowed_mime_types: string[];
   last_updated_at: string;
+  effective_date?: string;
+  total_commodities?: number;
 }
 
 export const defaultConfig: SystemConfig = {
@@ -73,11 +82,24 @@ export interface Commodity {
   unit?: string;
   regulatory_classification?: string;
   baseline_price: number;
-  effective_date: string;
+  effective_date: string | null;
+  source_reference?: string | null;
   regulatory_state?: string;
   is_active: boolean;
   price_freeze_applicable?: boolean;
   price_freeze_treatment?: string;
+}
+
+export interface ScanCandidate {
+  id: number;
+  commodity_name: string;
+  category?: string;
+  brand?: string;
+  package_size?: string;
+  unit?: string;
+  match_score: number;
+  match_level: 'STRONG' | 'POSSIBLE' | 'SIZE_UNCERTAIN' | string;
+  match_basis: 'NAME_EXACT' | 'ALIAS_EXACT' | 'NAME_ABBREVIATION' | 'ALIAS_ABBREVIATION' | 'TOKEN_SIMILARITY' | string;
 }
 
 export interface Establishment {
@@ -89,6 +111,8 @@ export interface Establishment {
   longitude: number;
   address: string;
   recidivism_index: number;
+  is_verified?: boolean;
+  image_path?: string | null;
   photoType?: string;
 }
 
@@ -104,9 +128,13 @@ export interface ScanTagResponse {
   detected_price?: number | null;
   detected_price_string?: string | null;
   detected_price_source?: string;
+  price_confidence?: number;
   product_source?: string;
   ocr_status: string;
-  candidates: Commodity[];
+  candidates: ScanCandidate[];
+  auto_resolved?: boolean;
+  recovery_reason?: 'AMBIGUOUS_PRODUCT' | 'PRODUCT_MISSING' | 'PRICE_MISSING' | 'PRICE_UNCERTAIN' | 'NO_TEXT' | null;
+  comparison?: ComparisonResultResponse | null;
   timestamp?: string;
 }
 
@@ -142,8 +170,8 @@ export interface ComparisonResultResponse {
   percentage_srp?: number | string;
   percent_difference?: number | string;
   is_above_reference?: boolean;
-  product_source?: 'OCR' | 'MANUAL_SEARCH' | string;
-  price_source?: 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED' | string;
+  product_source?: 'OCR' | 'OCR_AUTO' | 'OCR_CANDIDATE_SELECTED' | 'MANUAL_SEARCH' | string;
+  price_source?: 'OCR_DETECTED' | 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED' | string;
   previous_verified_price?: number | null;
   previous_recorded_date?: string | null;
   historical_pricing?: any;
@@ -183,3 +211,12 @@ export interface TrackReportResponse {
   submitted_at: string;
   status_history: StatusHistoryItem[];
 }
+
+export const resolveImageUrl = (imagePath: string | null | undefined): string | null => {
+  if (!imagePath) return null;
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
+  }
+  const origin = API_BASE_URL.replace(/\/api\/?$/, '');
+  return `${origin}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+};

@@ -7,12 +7,14 @@ interface TrackReportProps {
   initialReference?: string;
   initialToken?: string;
   setActiveTab?: (tab: string) => void;
+  onReportTracked?: (report: TrackReportResponse) => void;
 }
 
 export const TrackReport: React.FC<TrackReportProps> = ({
   initialReference = '',
   initialToken = '',
   setActiveTab,
+  onReportTracked,
 }) => {
   const [reference, setReference] = useState(initialReference);
   const [token, setToken] = useState(initialToken);
@@ -29,6 +31,14 @@ export const TrackReport: React.FC<TrackReportProps> = ({
     }
   }, [initialReference, initialToken]);
 
+  const copyTimerRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const executeTracking = async (refVal: string, tokVal: string) => {
     if (!refVal || !tokVal) {
       setError('Please provide both the Report Reference Code and Secret Tracking Token.');
@@ -41,11 +51,15 @@ export const TrackReport: React.FC<TrackReportProps> = ({
 
     try {
       const res = await apiClient.get('/public/reports/track', {
-        params: { reference: refVal.trim(), token: tokVal.trim() }
+        params: {
+          reference: refVal.trim(),
+          token: tokVal.trim(),
+        },
       });
 
       if (res.data && res.data.success) {
         setReport(res.data.data);
+        onReportTracked?.(res.data.data);
       } else {
         throw new Error('API returned unsuccesful tracking query');
       }
@@ -65,7 +79,8 @@ export const TrackReport: React.FC<TrackReportProps> = ({
     if (report) {
       navigator.clipboard.writeText(report.report_reference);
       setCopiedRef(true);
-      setTimeout(() => setCopiedRef(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopiedRef(false), 2000);
     }
   };
 
