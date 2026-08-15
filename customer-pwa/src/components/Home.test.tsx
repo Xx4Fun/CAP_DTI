@@ -46,6 +46,26 @@ describe('approved Home experience', () => {
     expect(screen.queryByText('167 available')).not.toBeInTheDocument();
   });
 
+  it('hides an unresolved regulatory status from the Home bulletin', () => {
+    const { container } = render(<Home setActiveTab={vi.fn()} />);
+
+    expect(screen.queryByText(/Regulatory status unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Normal monitoring')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calamity active')).not.toBeInTheDocument();
+    expect(container.querySelector('.home-monitoring-status')).not.toBeInTheDocument();
+  });
+
+  it('hides the shared unavailable alert while retaining the active Price Freeze alert', () => {
+    const { rerender } = render(
+      <Navbar activeTab="home" setActiveTab={vi.fn()} />,
+    );
+
+    expect(screen.queryByText(/Regulatory status unavailable/i)).not.toBeInTheDocument();
+
+    rerender(<Navbar activeTab="home" setActiveTab={vi.fn()} stateOfCalamity />);
+    expect(screen.getByText(/Price Freeze active/i)).toBeInTheDocument();
+  });
+
   it('keeps the established action keys for scan, report, prices, and tracking', async () => {
     const setActiveTab = vi.fn();
     const user = userEvent.setup();

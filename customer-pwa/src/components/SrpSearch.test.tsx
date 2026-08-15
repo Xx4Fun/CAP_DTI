@@ -57,6 +57,10 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function waitForInitialPricesReveal() {
+  await waitFor(() => expect(document.querySelector('.page-loader--blocking')).not.toBeInTheDocument());
+}
+
 describe('SrpSearch data source', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/prices');
@@ -67,14 +71,14 @@ describe('SrpSearch data source', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('labels bundled reference data instead of claiming it is cached', async () => {
+  it('keeps the Current SRP label while identifying bundled data separately', async () => {
     localStorage.clear();
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('offline'));
     render(<SrpSearch />);
     expect(await screen.findByText(/Bundled DTI reference list/i)).toBeInTheDocument();
     expect(screen.queryByText(/Saved SRP bulletin/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText('Reference price').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Current SRP')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Current SRP').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Reference price')).not.toBeInTheDocument();
   });
 
   it('shows a fresh verified bulletin cache without warning during an online refresh', () => {
@@ -92,8 +96,8 @@ describe('SrpSearch data source', () => {
 
     expect(screen.getByText('Verified Cached Rice')).toBeInTheDocument();
     expect(screen.queryByText(/Saved SRP bulletin/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Saved reference price')).toBeInTheDocument();
-    expect(screen.queryByText('Current SRP')).not.toBeInTheDocument();
+    expect(screen.getByText('Current SRP')).toBeInTheDocument();
+    expect(screen.queryByText('Saved reference price')).not.toBeInTheDocument();
     expect(getSpy).not.toHaveBeenCalled();
   });
 
@@ -133,14 +137,64 @@ describe('SrpSearch data source', () => {
     expect(screen.getAllByText('Current SRP')).toHaveLength(3);
   });
 
-  it('shows card-shaped loading placeholders while the first directory request is pending', async () => {
+  it('reveals the directory together after only its first four images settle', async () => {
+    const commodities = Array.from({ length: 5 }, (_, index) => ({
+      id: 700 + index,
+      commodity_name: `Coordinated item ${index + 1}`,
+      category: 'Test goods',
+      regulatory_classification: 'BASIC_NECESSITY',
+      baseline_price: 20 + index,
+      effective_date: '2026-08-01',
+      is_active: true,
+      image_path: `https://images.example.test/coordinated-${index + 1}.webp`,
+    })) as Commodity[];
+    vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse(commodities));
+
+    const { container } = render(<SrpSearch />);
+
+    expect(await screen.findByText(/Opening Prices/i)).toBeInTheDocument();
+    const directory = screen.getByTestId('price-directory');
+    const images = Array.from(container.querySelectorAll<HTMLImageElement>('.price-product-image'));
+    expect(directory).toHaveAttribute('aria-hidden', 'true');
+    expect(directory).toHaveAttribute('inert');
+    expect(images).toHaveLength(5);
+    images.slice(0, 4).forEach((image) => expect(image).toHaveAttribute('loading', 'eager'));
+    expect(images[4]).toHaveAttribute('loading', 'lazy');
+
+    images.slice(0, 3).forEach((image) => fireEvent.load(image));
+    expect(screen.getByText(/Opening Prices/i)).toBeInTheDocument();
+
+    fireEvent.error(images[3]);
+    await waitFor(() => expect(screen.queryByText(/Opening Prices/i)).not.toBeInTheDocument());
+    expect(directory).not.toHaveAttribute('aria-hidden');
+    expect(directory).not.toHaveAttribute('inert');
+    expect(screen.getByText('No image')).toBeInTheDocument();
+  });
+
+  it('releases a slow initial image cohort after the safety interval', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse([{
+      ...liveCommodities[0],
+      image_path: 'https://images.example.test/slow.webp',
+    }]));
+
+    const { container } = render(<SrpSearch initialImageWaitMs={25} />);
+
+    expect(await screen.findByText(/Opening Prices/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/Opening Prices/i)).not.toBeInTheDocument());
+    expect(screen.getByTestId('price-directory')).not.toHaveAttribute('aria-hidden');
+    expect(container.querySelector('.price-product-image')).toHaveClass('is-loading');
+  });
+
+  it('keeps the initial directory behind the centered loader while its first request is pending', async () => {
     const deferred = createDeferred<void>();
     ensureApiReadyMock.mockReturnValue(deferred.promise);
     vi.spyOn(apiClient, 'get');
 
     const { container } = render(<SrpSearch />);
 
-    expect(await screen.findByRole('status', { name: 'Loading reference prices' })).toBeInTheDocument();
+    expect(await screen.findByText(/Opening Prices/i)).toBeInTheDocument();
+    expect(screen.getByTestId('price-directory')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('price-directory')).toHaveAttribute('inert');
     expect(container.querySelectorAll('.price-product-skeleton')).toHaveLength(3);
     expect(container.querySelectorAll('.price-product-skeleton-price')).toHaveLength(3);
     expect(screen.queryByText('0 Reference Prices')).not.toBeInTheDocument();
@@ -165,6 +219,7 @@ describe('SrpSearch product showcase cards', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/prices');
     localStorage.clear();
+    sessionStorage.clear();
     ensureApiReadyMock.mockReset();
     ensureApiReadyMock.mockResolvedValue(undefined);
   });
@@ -174,8 +229,17 @@ describe('SrpSearch product showcase cards', () => {
   it('opens product details from an accessible flat price card', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse([showcaseCommodity]));
     const user = userEvent.setup();
+    const setActiveTab = vi.fn();
 
-    render(<SrpSearch />);
+    const { container } = render(<SrpSearch setActiveTab={setActiveTab} />);
+
+    const eagerImage = await waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('.price-product-image');
+      expect(image).not.toBeNull();
+      return image!;
+    });
+    fireEvent.load(eagerImage);
+    await waitForInitialPricesReveal();
 
     const card = await screen.findByRole('button', { name: 'View Absolute (1L) price details' });
     expect(card).toHaveClass('price-product-card');
@@ -192,13 +256,15 @@ describe('SrpSearch product showcase cards', () => {
     const image = card.querySelector('img');
     expect(image).not.toBeNull();
     expect(image).toHaveAttribute('src', showcaseCommodity.image_path);
-    expect(image).toHaveAttribute('loading', 'lazy');
+    expect(image).toHaveAttribute('loading', 'eager');
     expect(image).toHaveAttribute('decoding', 'async');
     expect(image).toHaveAttribute('alt', '');
     expect(image?.parentElement).toHaveClass('price-product-media');
 
     await user.click(card);
     expect(await screen.findByRole('button', { name: /Back to Prices/i })).toBeInTheDocument();
+    expect(setActiveTab).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('price-watch-flow-handoff')).toBeNull();
   });
 
   it('saves the exact list scroll position before opening a product', async () => {
@@ -206,7 +272,14 @@ describe('SrpSearch product showcase cards', () => {
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 280 });
     const user = userEvent.setup();
 
-    render(<SrpSearch />);
+    const { container } = render(<SrpSearch />);
+    const eagerImage = await waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('.price-product-image');
+      expect(image).not.toBeNull();
+      return image!;
+    });
+    fireEvent.load(eagerImage);
+    await waitForInitialPricesReveal();
     await user.click(await screen.findByRole('button', { name: 'View Absolute (1L) price details' }));
 
     expect(JSON.parse(sessionStorage.getItem(PRICE_DIRECTORY_VIEW_KEY) || '{}')).toMatchObject({ scrollY: 280 });
@@ -219,10 +292,16 @@ describe('SrpSearch product showcase cards', () => {
       category: 'Household Supplies',
     }]));
 
-    render(<SrpSearch />);
+    const { container } = render(<SrpSearch />);
 
+    const eagerImage = await waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('.price-product-image');
+      expect(image).not.toBeNull();
+      return image!;
+    });
+    fireEvent.error(eagerImage);
+    await waitForInitialPricesReveal();
     const card = await screen.findByRole('button', { name: 'View Household Supply Pack price details' });
-    fireEvent.error(card.querySelector('img')!);
 
     expect(card.querySelector('img')).not.toBeInTheDocument();
     expect(within(card).getByText('No image')).toBeInTheDocument();
@@ -232,7 +311,14 @@ describe('SrpSearch product showcase cards', () => {
   it('keeps the image, description, and compact price rail in separate responsive regions', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse([showcaseCommodity]));
 
-    render(<SrpSearch />);
+    const { container } = render(<SrpSearch />);
+    const eagerImage = await waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('.price-product-image');
+      expect(image).not.toBeNull();
+      return image!;
+    });
+    fireEvent.load(eagerImage);
+    await waitForInitialPricesReveal();
     const card = await screen.findByRole('button', { name: 'View Absolute (1L) price details' });
 
     expect(card.children).toHaveLength(3);
@@ -273,6 +359,7 @@ describe('SrpSearch price filters', () => {
     render(<SrpSearch />);
 
     expect(await screen.findByText('Ground Coffee')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
     expect(screen.queryByText('Saba Sardines')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Search products or brands' })).toHaveValue('coffee');
     expect(screen.getByRole('button', { name: 'Prime Commodities' })).toHaveAttribute('aria-pressed', 'true');
@@ -287,6 +374,7 @@ describe('SrpSearch price filters', () => {
     render(<SrpSearch />);
 
     expect(await screen.findByText('Saba Sardines')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
     expect(screen.getByText('Fresh Milk')).toBeInTheDocument();
     expect(screen.getByText('Ground Coffee')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'All classifications' })).toHaveTextContent('All');
@@ -333,6 +421,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Saba Sardines')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
 
     expect(screen.getByTestId('price-directory')).toHaveClass('price-directory');
     expect(screen.getByRole('heading', { name: 'Price directory' })).toHaveClass('visually-hidden');
@@ -365,6 +454,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Saba Sardines')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
 
     const sortButton = screen.getByRole('button', { name: 'Sort prices: Default order' });
     await user.click(sortButton);
@@ -386,6 +476,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Saba Sardines')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
 
     await user.click(screen.getByRole('button', { name: /Categories/i }));
     await user.click(screen.getByRole('checkbox', { name: 'Canned Goods' }));
@@ -421,6 +512,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Saba Sardines')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
 
     await user.type(screen.getByRole('textbox', { name: 'Search products or brands' }), 'coffee');
     await waitFor(() => expect(screen.queryByText('Saba Sardines')).not.toBeInTheDocument());
@@ -440,6 +532,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Fresh Milk')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
     await user.click(screen.getByRole('button', { name: /Categories/i }));
     await user.click(screen.getByRole('checkbox', { name: 'Milk' }));
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
@@ -478,6 +571,7 @@ describe('SrpSearch price filters', () => {
 
     render(<SrpSearch />);
     expect(await screen.findByText('Fresh Milk')).toBeInTheDocument();
+    await waitForInitialPricesReveal();
     await user.click(screen.getByRole('button', { name: /Categories/i }));
     await user.click(screen.getByRole('checkbox', { name: 'Milk' }));
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));

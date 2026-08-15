@@ -8,6 +8,7 @@ import {
   writeVerifiedCache,
 } from './app/verifiedCache';
 import App from './App';
+import { shouldShowServiceStartStatus } from './app/pageLoading';
 
 const { ensureApiReadyMock } = vi.hoisted(() => ({
   ensureApiReadyMock: vi.fn<() => Promise<void>>(),
@@ -35,6 +36,13 @@ describe('legacy App shell routing and status', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it('shows the service-start status only when no route loader is active', () => {
+    expect(shouldShowServiceStartStatus(true, 'checking', false)).toBe(true);
+    expect(shouldShowServiceStartStatus(true, 'checking', true)).toBe(false);
+    expect(shouldShowServiceStartStatus(true, 'cached', false)).toBe(false);
+    expect(shouldShowServiceStartStatus(false, 'checking', false)).toBe(false);
+  });
+
   it('uses stable paths while keeping the legacy navigation', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     const user = userEvent.setup();
@@ -54,11 +62,13 @@ describe('legacy App shell routing and status', () => {
     expect(await screen.findByText('You are offline.')).toBeInTheDocument();
   });
 
-  it('does not present an unverified default regulatory state when API is offline', async () => {
+  it('does not present an unresolved regulatory status in the app shell', () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     render(<App />);
-    await waitFor(() => expect(screen.getAllByText(/Regulatory status unavailable/i).length).toBeGreaterThan(0));
-    expect(await screen.findAllByText('Unable to load')).toHaveLength(2);
+
+    expect(screen.queryByText(/Regulatory status unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Normal monitoring')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calamity active')).not.toBeInTheDocument();
   });
 
   it('loads the current bulletin date and count from the existing commodities API', async () => {
@@ -96,7 +106,7 @@ describe('legacy App shell routing and status', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('11 May 2026')).toBeInTheDocument();
+    expect(await screen.findByText('11 May 2026', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByText('2 available')).toBeInTheDocument();
   });
 
@@ -204,7 +214,7 @@ describe('legacy App shell routing and status', () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Basic Necessities' }));
+    await user.click(await screen.findByRole('button', { name: 'Basic Necessities' }, { timeout: 4000 }));
     const search = screen.getByRole('textbox', { name: 'Search products or brands' });
     await user.type(search, 'Absolute');
     await user.click(await screen.findByRole('button', { name: 'View Absolute (1L) price details' }));

@@ -60,6 +60,6 @@ describe('PWA install promotion', () => {
     await user.click(await screen.findByRole('button', { name: 'Not now' }));
 
     expect(screen.queryByRole('button', { name: 'Install app' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Check prices with confidence/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Check prices with confidence/i }, { timeout: 4000 })).toBeInTheDocument();
   });
 });

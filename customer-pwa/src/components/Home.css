@@ -300,11 +300,6 @@
   background: #c81e2b;
 }
 
-.home-monitoring-status-unavailable {
-  color: #341b00;
-  background: #ffbd46;
-}
-
 .home-monitoring-dot {
   width: 8px;
   height: 8px;

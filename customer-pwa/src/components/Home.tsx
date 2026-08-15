@@ -31,16 +31,11 @@ export const Home: React.FC<HomeProps> = ({
   recentReports = [],
 }) => {
   const [rightsExpanded, setRightsExpanded] = useState(false);
-  const statusLabel = stateOfCalamity === undefined
-    ? 'Regulatory status unavailable'
+  const monitoringStatus = stateOfCalamity === undefined
+    ? null
     : stateOfCalamity
-      ? 'Calamity active'
-      : 'Normal monitoring';
-  const statusTone = stateOfCalamity === undefined
-    ? 'unavailable'
-    : stateOfCalamity
-      ? 'calamity'
-      : 'normal';
+      ? { label: 'Calamity active', tone: 'calamity' }
+      : { label: 'Normal monitoring', tone: 'normal' };
   const resolvedBulletinStatus = bulletinStatus
     ?? (bulletinDate || totalCommodities != null ? 'available' : 'empty');
   const unavailableLabel = resolvedBulletinStatus === 'loading'
@@ -149,10 +144,12 @@ export const Home: React.FC<HomeProps> = ({
           <section className="home-bulletin" aria-labelledby="current-bulletin-title">
             <div className="home-bulletin-copy">
               <h2 id="current-bulletin-title">Current price bulletin</h2>
-              <span className={`home-monitoring-status home-monitoring-status-${statusTone}`}>
-                <span className="home-monitoring-dot" aria-hidden="true" />
-                {statusLabel}
-              </span>
+              {monitoringStatus && (
+                <span className={`home-monitoring-status home-monitoring-status-${monitoringStatus.tone}`}>
+                  <span className="home-monitoring-dot" aria-hidden="true" />
+                  {monitoringStatus.label}
+                </span>
+              )}
 
               <div className="home-bulletin-stats">
                 <div>

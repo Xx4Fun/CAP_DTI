@@ -1,9 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  FilePlus, FileSearch, HelpCircle, ShieldCheck, FileText, ChevronRight, ChevronDown, ChevronUp, Camera, Shield, UserCheck,
+  ShieldCheck, FileText, ChevronRight, Camera, Shield, UserCheck,
   Search, CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
   SwitchCamera, AlertTriangle, ExternalLink, MapPin, Clock
 } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faCircleInfo,
+  faShieldHalved,
+  faComments,
+  faChevronDown,
+  faStore,
+  faCamera,
+  faScaleBalanced,
+  faLock,
+} from '@fortawesome/free-solid-svg-icons';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
 import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
@@ -470,82 +481,193 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       )}
 
       {/* ========================================================================= */}
-      {/* 1. DASHBOARD VIEW (cus_ui/Reports/1.png) */}
+      {/* 1. DASHBOARD VIEW (Home UI & rep.png Harmonization) */}
       {/* ========================================================================= */}
       {currentView === 'dashboard' && (
-        <>
+        <div className="report-hub-container">
+          {/* Header Title & Subtitle */}
+          <div className="report-hub-header">
+            <h1 className="report-hub-title">What would you like to do?</h1>
+            <p className="report-hub-subtitle">
+              File a consumer price report or track an existing submission.
+            </p>
+          </div>
 
-          {/* Action Card 1: Submit a new report */}
-          <div
-            className="action-card"
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowPrivacyModal(true)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                setShowPrivacyModal(true);
-              }
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div className="icon-wrapper-blue">
-                <FilePlus size={24} />
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                  Submit a new report
-                </div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          {/* 2 Full-Width Horizontal Action Rows (Stacked Vertically) */}
+          <div className="report-hero-cards">
+            {/* Row 1: Submit a new report (Warm Orange / Amber Motif) */}
+            <div
+              className="report-hero-card report-hero-card--submit"
+              role="button"
+              tabIndex={0}
+              aria-label="Submit a new report"
+              onClick={() => setShowPrivacyModal(true)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setShowPrivacyModal(true);
+                }
+              }}
+            >
+              <svg className="report-card-dots" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <circle cx="4" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="31" r="1.5" fill="currentColor" />
+              </svg>
+
+              <div className="report-hero-card-left">
+                <div className="report-hero-title">Submit a new report</div>
+                <div className="report-hero-desc">
                   Capture a checkout receipt for DTI evaluation.
                 </div>
+                <span className="report-card-cta report-card-cta--submit">
+                  Start report <ChevronRight size={16} className="report-card-cta-icon" />
+                </span>
               </div>
-            </div>
-            <div style={{ background: '#f1f5f9', borderRadius: '50%', padding: '8px', color: 'var(--primary)' }}>
-              <ChevronRight size={20} />
-            </div>
-          </div>
 
-          {/* Action Card 2: Track an existing report */}
-          <div
-            className="action-card"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (setActiveTab) setActiveTab('track');
-            }}
-            onKeyDown={(event) => {
-              if ((event.key === 'Enter' || event.key === ' ') && setActiveTab) {
-                event.preventDefault();
-                setActiveTab('track');
-              }
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div className="icon-wrapper-green">
-                <FileSearch size={24} />
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                  Track an existing report
+              {/* Right Media / Image Slot */}
+              <div className="report-hero-media-slot" aria-hidden="true">
+                <img
+                  src="/branding/report-submit-artwork.png"
+                  alt=""
+                  className="report-hero-artwork-img"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                    const placeholder = e.currentTarget.nextElementSibling as HTMLElement | null;
+                    if (placeholder) placeholder.style.display = 'flex';
+                  }}
+                />
+                <div className="report-vector-receipt-placeholder" style={{ display: 'none' }}>
+                  <div>
+                    <div className="report-vector-receipt-header">Super Metro</div>
+                    <div className="report-vector-receipt-subheader">San Jose Antique</div>
+                    <div className="report-vector-receipt-lines">
+                      <div className="report-vector-receipt-line" style={{ width: '85%' }} />
+                      <div className="report-vector-receipt-line" style={{ width: '60%' }} />
+                      <div className="report-vector-receipt-line" style={{ width: '90%' }} />
+                      <div className="report-vector-receipt-line" style={{ width: '70%' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="report-vector-receipt-total">
+                      <span>TOTAL</span>
+                      <span>₱345.50</span>
+                    </div>
+                    <div className="report-vector-receipt-barcode">
+                      <div className="report-vector-barcode-bar" style={{ width: '2px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '1px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '3px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '1.5px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '2px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '1px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '2.5px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '1px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '3px' }} />
+                      <div className="report-vector-barcode-bar" style={{ width: '2px' }} />
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              </div>
+            </div>
+
+            {/* Row 2: Track existing report (Electric Blue Motif) */}
+            <div
+              className="report-hero-card report-hero-card--track"
+              role="button"
+              tabIndex={0}
+              aria-label="Track an existing report"
+              onClick={() => {
+                if (setActiveTab) setActiveTab('track');
+              }}
+              onKeyDown={(event) => {
+                if ((event.key === 'Enter' || event.key === ' ') && setActiveTab) {
+                  event.preventDefault();
+                  setActiveTab('track');
+                }
+              }}
+            >
+              <svg className="report-card-dots" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <circle cx="4" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="4" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="13" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="22" r="1.5" fill="currentColor" />
+                <circle cx="4" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="13" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="22" cy="31" r="1.5" fill="currentColor" />
+                <circle cx="31" cy="31" r="1.5" fill="currentColor" />
+              </svg>
+
+              <div className="report-hero-card-left">
+                <div className="report-hero-title">Track an existing report</div>
+                <div className="report-hero-desc">
                   View the latest public status of a submitted report.
                 </div>
+                <span className="report-card-cta report-card-cta--track">
+                  Track status <ChevronRight size={16} className="report-card-cta-icon" />
+                </span>
               </div>
-            </div>
-            <div style={{ background: '#f1f5f9', borderRadius: '50%', padding: '8px', color: 'var(--accent-green)' }}>
-              <ChevronRight size={20} />
+
+              {/* Right Media / Image Slot */}
+              <div className="report-hero-media-slot" aria-hidden="true">
+                <img
+                  src="/branding/report-track-artwork.png"
+                  alt=""
+                  className="report-hero-artwork-img"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                    const placeholder = e.currentTarget.nextElementSibling as HTMLElement | null;
+                    if (placeholder) placeholder.style.display = 'flex';
+                  }}
+                />
+                <div className="report-vector-track-placeholder" style={{ display: 'none' }}>
+                  <div className="report-vector-track-badge">
+                    <FontAwesomeIcon icon={faShieldHalved} />
+                  </div>
+                  <div className="report-vector-track-info">
+                    <div style={{ fontSize: '0.60rem', fontWeight: 800, color: '#0369a1', letterSpacing: '0.04em' }}>DTI SECURE</div>
+                    <span className="report-vector-track-pill">
+                      <FontAwesomeIcon icon={faShieldHalved} style={{ fontSize: '0.55rem' }} />
+                      VERIFIED
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Info Section Cards (Collapsible Accordions) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
-            {/* Card: How reporting works */}
-            <div className="glass-panel" style={{ margin: 0 }}>
+          {/* Retained Info Section: 3 Collapsible Accordions (FontAwesome Icons) */}
+          <div className="report-accordion-group">
+            <div className="report-accordion-header-label">Information & Guidelines</div>
+
+            {/* Accordion 1: How reporting works (FontAwesome faCircleInfo) */}
+            <div className="report-accordion-item">
               <div
+                className="report-accordion-trigger"
                 role="button"
                 tabIndex={0}
+                aria-expanded={openAccordions['how-reporting-works']}
+                aria-label="How reporting works"
                 onClick={() => toggleAccordion('how-reporting-works')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -553,41 +675,65 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                     toggleAccordion('how-reporting-works');
                   }
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  marginBottom: openAccordions['how-reporting-works'] ? '10px' : '0px'
-                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-amber" style={{ width: '36px', height: '36px' }}>
-                    <HelpCircle size={20} />
+                    <FontAwesomeIcon icon={faCircleInfo} style={{ fontSize: '1.1rem' }} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     How reporting works
                   </div>
                 </div>
-                <div style={{ color: 'var(--text-muted)' }}>
-                  {openAccordions['how-reporting-works'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                <div>
+                  <FontAwesomeIcon
+                    icon={faChevronDown}
+                    className={`report-accordion-chevron ${openAccordions['how-reporting-works'] ? 'report-accordion-chevron--open' : ''}`}
+                  />
                 </div>
               </div>
               {openAccordions['how-reporting-works'] && (
-                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
-                  1. Select a verified store establishment in San Jose de Buenavista.<br />
-                  2. Capture a live photo of your physical checkout receipt using your camera.<br />
-                  3. DTI evaluators review extracted price data and cross-reference with official SRP bulletins.
+                <div className="report-accordion-body">
+                  <div className="report-steps-container">
+                    <div className="report-step-item">
+                      <div className="report-step-icon-badge">
+                        <FontAwesomeIcon icon={faStore} />
+                      </div>
+                      <div className="report-step-content">
+                        <div className="report-step-title">1. Select Establishment</div>
+                        <div className="report-step-desc">Choose a verified store in San Jose de Buenavista, Antique.</div>
+                      </div>
+                    </div>
+                    <div className="report-step-item">
+                      <div className="report-step-icon-badge">
+                        <FontAwesomeIcon icon={faCamera} />
+                      </div>
+                      <div className="report-step-content">
+                        <div className="report-step-title">2. Live Receipt Capture</div>
+                        <div className="report-step-desc">Take a clear photo of your official paper checkout receipt using the camera.</div>
+                      </div>
+                    </div>
+                    <div className="report-step-item">
+                      <div className="report-step-icon-badge">
+                        <FontAwesomeIcon icon={faScaleBalanced} />
+                      </div>
+                      <div className="report-step-content">
+                        <div className="report-step-title">3. DTI Evaluation</div>
+                        <div className="report-step-desc">Evaluators cross-examine extracted prices against active R.A. 7581 SRP bulletins.</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Card: Privacy notice */}
-            <div className="glass-panel" style={{ margin: 0 }}>
+            {/* Accordion 2: Privacy & Evidence Security (FontAwesome faShieldHalved) */}
+            <div className="report-accordion-item">
               <div
+                className="report-accordion-trigger"
                 role="button"
                 tabIndex={0}
+                aria-expanded={openAccordions['privacy-security']}
+                aria-label="Privacy & Evidence Security"
                 onClick={() => toggleAccordion('privacy-security')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -595,39 +741,54 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                     toggleAccordion('privacy-security');
                   }
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  marginBottom: openAccordions['privacy-security'] ? '10px' : '0px'
-                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
-                    <ShieldCheck size={20} />
+                    <FontAwesomeIcon icon={faShieldHalved} style={{ fontSize: '1.1rem' }} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     Privacy & Evidence Security
                   </div>
                 </div>
-                <div style={{ color: 'var(--text-muted)' }}>
-                  {openAccordions['privacy-security'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                <div>
+                  <FontAwesomeIcon
+                    icon={faChevronDown}
+                    className={`report-accordion-chevron ${openAccordions['privacy-security'] ? 'report-accordion-chevron--open' : ''}`}
+                  />
                 </div>
               </div>
               {openAccordions['privacy-security'] && (
-                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
-                  Camera access is used exclusively during live receipt capture. All submitted receipt photos are encrypted, cryptographically hashed (SHA-256), and vaulted in restricted DTI storage.
+                <div className="report-accordion-body">
+                  <div className="report-security-points">
+                    <div className="report-security-point">
+                      <div className="report-security-point-icon">
+                        <FontAwesomeIcon icon={faCamera} />
+                      </div>
+                      <div>
+                        <strong>Live Capture Only:</strong> Camera access is strictly active during receipt capture. Gallery uploads are disabled to maintain tamper-evident legal integrity.
+                      </div>
+                    </div>
+                    <div className="report-security-point">
+                      <div className="report-security-point-icon">
+                        <FontAwesomeIcon icon={faLock} />
+                      </div>
+                      <div>
+                        <strong>SHA-256 Vaulting:</strong> All submitted receipts are cryptographically hashed and vaulted in restricted DTI evidence storage.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Card: Frequently asked questions */}
-            <div className="glass-panel" style={{ margin: 0 }}>
+            {/* Accordion 3: Frequently Asked Questions (FontAwesome faComments) */}
+            <div className="report-accordion-item">
               <div
+                className="report-accordion-trigger"
                 role="button"
                 tabIndex={0}
+                aria-expanded={openAccordions['faq']}
+                aria-label="Frequently Asked Questions"
                 onClick={() => toggleAccordion('faq')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -635,38 +796,43 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                     toggleAccordion('faq');
                   }
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  marginBottom: openAccordions['faq'] ? '10px' : '0px'
-                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
-                    <FileText size={20} />
+                    <FontAwesomeIcon icon={faComments} style={{ fontSize: '1.1rem' }} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     Frequently Asked Questions
                   </div>
                 </div>
-                <div style={{ color: 'var(--text-muted)' }}>
-                  {openAccordions['faq'] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                <div>
+                  <FontAwesomeIcon
+                    icon={faChevronDown}
+                    className={`report-accordion-chevron ${openAccordions['faq'] ? 'report-accordion-chevron--open' : ''}`}
+                  />
                 </div>
               </div>
               {openAccordions['faq'] && (
-                <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: '4px' }}>
-                  <strong>Why are gallery uploads disabled?</strong><br />
-                  To maintain a tamper-evident evidence trail under DTI regulatory rules.<br />
-                  <strong>Does reporting auto-issue a violation?</strong><br />
-                  No. All submissions require human verification by authorized DTI officers.
+                <div className="report-accordion-body">
+                  <div className="report-faq-list">
+                    <div className="report-faq-item">
+                      <div className="report-faq-q">Why are gallery uploads disabled?</div>
+                      <div className="report-faq-a">To ensure a tamper-evident evidence trail and prevent manipulated photos under DTI regulatory guidelines.</div>
+                    </div>
+                    <div className="report-faq-item">
+                      <div className="report-faq-q">Does reporting auto-issue a violation?</div>
+                      <div className="report-faq-a">No. All submissions require human verification by authorized DTI officers before issuing legal notices (LOI or SCO).</div>
+                    </div>
+                    <div className="report-faq-item">
+                      <div className="report-faq-q">How long does DTI evaluation take?</div>
+                      <div className="report-faq-a">Reports are typically assessed within 24 to 48 hours during official business days.</div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}

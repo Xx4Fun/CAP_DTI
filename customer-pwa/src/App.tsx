@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
-import { Home } from './components/Home';
+import { PageLoader, type PageLoaderDestination } from './components/PageLoader';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { ServiceStartStatus } from './components/ServiceStartStatus';
 import {
@@ -14,6 +14,7 @@ import {
 } from './api/client';
 import { ensureApiReady } from './api/readiness';
 import { navigate, type AppRoute } from './app/routing';
+import { shouldShowServiceStartStatus, type PublicDataSource } from './app/pageLoading';
 import { useAppRoute } from './hooks/useAppRoute';
 import { BackNavigationProvider } from './app/backNavigation';
 import { useConnectivity } from './hooks/useConnectivity';
@@ -32,6 +33,7 @@ import {
   writeVerifiedCache,
 } from './app/verifiedCache';
 
+const Home = lazy(() => import('./components/Home').then((module) => ({ default: module.Home })));
 const SrpSearch = lazy(() => import('./components/SrpSearch').then((module) => ({ default: module.SrpSearch })));
 const ShelfScanner = lazy(() => import('./components/ShelfScanner').then((module) => ({ default: module.ShelfScanner })));
 const FormalReport = lazy(() => import('./components/FormalReport').then((module) => ({ default: module.FormalReport })));
@@ -61,7 +63,13 @@ interface BulletinState {
   totalCommodities?: number;
 }
 
-type PublicDataSource = 'checking' | 'cached' | 'live' | 'unavailable';
+const pageLoaderDestination = (activeTab: string): PageLoaderDestination => {
+  if (activeTab === 'prices') return 'prices';
+  if (activeTab === 'scan') return 'scan';
+  if (activeTab === 'reports') return 'reports';
+  if (activeTab === 'track') return 'track';
+  return 'home';
+};
 
 const formatBulletinDate = (value: string): string | undefined => {
   const parsed = new Date(`${value}T00:00:00Z`);
@@ -118,6 +126,7 @@ export const App: React.FC = () => {
     initialPublicCache.config || initialPublicCache.commodities ? 'cached' : 'checking',
   );
   const [publicRefreshPending, setPublicRefreshPending] = useState(false);
+  const [routeChunkPending, setRouteChunkPending] = useState(false);
   const [refreshAttempt, setRefreshAttempt] = useState(0);
   const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
   const [recentReports, setRecentReports] = useState<StoredRecentReport[]>(getRecentReports);
@@ -211,11 +220,16 @@ export const App: React.FC = () => {
       <main className={isScanTab ? 'app-scan-container' : isHomeTab ? 'app-container home-app-container' : 'app-container'}>
         <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />
         <ServiceStartStatus
-          active={publicRefreshPending && publicDataSource === 'checking'}
+          active={shouldShowServiceStartStatus(publicRefreshPending, publicDataSource, routeChunkPending)}
           onRetry={() => setRefreshAttempt((attempt) => attempt + 1)}
         />
 
-        <Suspense fallback={<div className="route-loading" role="status" aria-live="polite">Loading this screen…</div>}>
+        <Suspense fallback={(
+          <PageLoader
+            destination={pageLoaderDestination(activeTab)}
+            onPendingChange={setRouteChunkPending}
+          />
+        )}>
         {activeTab === 'home' && (
           <Home
             setActiveTab={setActiveTab}

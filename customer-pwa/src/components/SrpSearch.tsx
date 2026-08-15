@@ -9,7 +9,6 @@ import { apiClient, type Commodity } from '../api/client';
 import { ensureApiReady } from '../api/readiness';
 import { fallbackCommodities } from '../data/srpFallback';
 import { ProductDetail } from './ProductDetail';
-import { writeHandoff } from '../app/handoffs';
 import {
   commodityMatchesPriceFilters,
   countActivePriceFilters,
@@ -34,13 +33,17 @@ import {
 import { PriceFilterSheet } from './PriceFilterSheet';
 import { PriceSortMenu } from './PriceSortMenu';
 import { PriceProductCard } from './PriceProductCard';
+import { PageLoader } from './PageLoader';
 import { navigate } from '../app/routing';
 import { useAppRoute } from '../hooks/useAppRoute';
 
 interface SrpSearchProps {
   setActiveTab?: (tab: string) => void;
   stateOfCalamity?: boolean;
+  initialImageWaitMs?: number;
 }
+
+const INITIAL_IMAGE_COHORT_SIZE = 4;
 
 const PriceDirectorySkeleton: React.FC = () => (
   <div
@@ -64,7 +67,10 @@ const PriceDirectorySkeleton: React.FC = () => (
   </div>
 );
 
-export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalamity = false }) => {
+export const SrpSearch: React.FC<SrpSearchProps> = ({
+  stateOfCalamity = false,
+  initialImageWaitMs = 2_500,
+}) => {
   const route = useAppRoute();
   const [initialView] = useState(() => readPriceDirectoryView(sessionStorage));
   const [searchTerm, setSearchTerm] = useState(initialView.searchTerm);
@@ -89,6 +95,8 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
   const [dataSource, setDataSource] = useState<PriceDataSource>(initialCache ? 'cached' : 'bundled');
   const [dataFetchedAt, setDataFetchedAt] = useState<number | null>(initialCache?.fetchedAt ?? null);
   const [backendUnavailable, setBackendUnavailable] = useState(false);
+  const [initialRevealComplete, setInitialRevealComplete] = useState(route.name !== 'prices');
+  const [settledInitialImages, setSettledInitialImages] = useState<Set<string>>(() => new Set());
   const isCachedMode = dataSource !== 'live';
   const shouldShowDataNotice = isCachedMode
     && (commodities.length > 0 || initialLoadComplete)
@@ -209,22 +217,36 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
     }
     return 0;
   });
+  const initialImageCohort = sortedList.slice(0, INITIAL_IMAGE_COHORT_SIZE);
+  const initialImageKeys = initialImageCohort.map((item) => `${item.id}:${item.image_path || 'missing'}`);
+  const initialImagesSettled = initialImageKeys.every((key) => settledInitialImages.has(key));
+  const hasUsableDirectoryState = commodities.length > 0 || initialLoadComplete;
+  const shouldBlockDirectory = route.name === 'prices' && !initialRevealComplete;
+
+  useEffect(() => {
+    if (!shouldBlockDirectory || !hasUsableDirectoryState) return;
+    const timer = window.setTimeout(() => setInitialRevealComplete(true), initialImageWaitMs);
+    return () => window.clearTimeout(timer);
+  }, [hasUsableDirectoryState, initialImageWaitMs, shouldBlockDirectory]);
+
+  useEffect(() => {
+    if (!shouldBlockDirectory || !hasUsableDirectoryState) return;
+    if (initialImagesSettled) {
+      setInitialRevealComplete(true);
+    }
+  }, [hasUsableDirectoryState, initialImagesSettled, shouldBlockDirectory]);
+
+  const markInitialImageSettled = (imageKey: string) => {
+    if (!shouldBlockDirectory) return;
+    setSettledInitialImages((current) => {
+      if (current.has(imageKey)) return current;
+      const next = new Set(current);
+      next.add(imageKey);
+      return next;
+    });
+  };
   const resultCountLabel = `${sortedList.length} ${sortedList.length === 1 ? 'Reference Price' : 'Reference Prices'}`;
   const emptyState = getPriceDirectoryEmptyState(searchTerm, categoryFilter, appliedCategories);
-
-  const handleSelectScan = (item: Commodity) => {
-    writeHandoff({ kind: 'price-to-scan', commodityId: item.id });
-    if (setActiveTab) {
-      setActiveTab('scan');
-    }
-  };
-
-  const handleSelectReport = (item: Commodity) => {
-    writeHandoff({ kind: 'price-to-report', commodityId: item.id });
-    if (setActiveTab) {
-      setActiveTab('reports');
-    }
-  };
 
   const selectedCommodity = route.name === 'product'
     ? commodities.find((commodity) => commodity.id === route.commodityId)
@@ -283,8 +305,6 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
       <ProductDetail
         commodity={selectedCommodity}
         onBack={returnToPrices}
-        onSelectScan={handleSelectScan}
-        onSelectReport={handleSelectReport}
         stateOfCalamity={stateOfCalamity}
         dataSource={dataSource}
         dataFetchedAt={dataFetchedAt}
@@ -301,7 +321,21 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
   }
 
   return (
-    <div className="price-directory" data-testid="price-directory">
+    <>
+      {shouldBlockDirectory && (
+        <PageLoader
+          destination="prices"
+          delayMs={0}
+          blocking
+          onRetry={() => void fetchCommodities()}
+        />
+      )}
+      <div
+        className="price-directory"
+        data-testid="price-directory"
+        aria-hidden={shouldBlockDirectory ? 'true' : undefined}
+        inert={shouldBlockDirectory ? true : undefined}
+      >
       <h1 className="visually-hidden">Price directory</h1>
 
       {/* 2. Search Input Bar */}
@@ -482,14 +516,22 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
         </div>
       ) : (
         <div className="price-product-list">
-          {sortedList.map((item) => (
+          {sortedList.map((item, index) => {
+            const imageKey = `${item.id}:${item.image_path || 'missing'}`;
+            const prioritizeImage = index < INITIAL_IMAGE_COHORT_SIZE;
+            return (
             <PriceProductCard
               key={item.id}
               commodity={item}
               dataSource={dataSource}
               onSelect={() => openProduct(item)}
+              prioritizeImage={prioritizeImage}
+              onImageSettled={prioritizeImage && shouldBlockDirectory
+                ? () => markInitialImageSettled(imageKey)
+                : undefined}
             />
-          ))}
+            );
+          })}
         </div>
       )}
       <PriceFilterSheet
@@ -503,7 +545,8 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({ setActiveTab, stateOfCalam
           setIsFilterSheetOpen(false);
         }}
       />
-    </div>
+      </div>
+    </>
   );
 };
 

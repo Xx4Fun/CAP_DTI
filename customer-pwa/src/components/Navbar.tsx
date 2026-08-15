@@ -90,29 +90,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </div>
       )}
 
-      {stateOfCalamity === undefined && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            background: '#fffbeb',
-            borderBottom: '1px solid #fde68a',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.8rem',
-            color: '#b45309',
-            fontWeight: 600,
-            maxWidth: '600px',
-            margin: '0 auto'
-          }}
-        >
-          <AlertTriangle size={15} color="#b45309" style={{ flexShrink: 0 }} />
-          <span>Regulatory status unavailable</span>
-        </div>
-      )}
-
       {/* Compact Quick Menu Drawer */}
       {isMenuOpen && (
         <>

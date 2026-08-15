@@ -1,33 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  Scan,
-  FileCheck,
   ChevronDown,
   ChevronUp,
   Info,
-  ImageOff,
+  Maximize2,
 } from 'lucide-react';
 import { type Commodity, resolveImageUrl } from '../api/client';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
 import { getPriceLabel, type PriceDataSource } from '../app/priceDataPresentation';
+import { ProductImageLightbox } from './ProductImageLightbox';
+import { ProgressiveProductImage, type ProductImageSettlement } from './ProgressiveProductImage';
 
 export interface ProductDetailProps {
   commodity: Commodity;
   dataSource: PriceDataSource;
   dataFetchedAt: number | null;
   onBack: () => void;
-  onSelectScan?: (commodity: Commodity) => void;
-  onSelectReport?: (commodity: Commodity) => void;
   stateOfCalamity?: boolean;
 }
 
-const cardStyle: React.CSSProperties = {
-  background: '#ffffff',
-  borderRadius: '16px',
-  border: '1px solid #e2e8f0',
-  boxShadow: 'var(--shadow-sm)',
-};
+const CATEGORY_ACRONYMS = new Set(['DTI', 'LPG', 'NFA', 'PET', 'SRP']);
 
 function formatDate(value: string | number | null | undefined): string | null {
   if (value === null || value === undefined || value === '') return null;
@@ -43,61 +36,29 @@ function formatDate(value: string | number | null | undefined): string | null {
   }).format(parsed);
 }
 
-function formatRegulatoryState(value: string | undefined, stateOfCalamity: boolean): string {
-  if (value === 'CALAMITY_ACTIVE') return 'Calamity active';
-  if (value) {
-    return value
-      .toLocaleLowerCase()
-      .split('_')
-      .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
-      .join(' ');
-  }
-  if (stateOfCalamity) return 'Calamity notice active';
-  return 'Not provided';
+function formatCategoryDisplay(value: string): string {
+  return value
+    .split(/\s+-\s+/)
+    .map((segment) => {
+      let tokenIndex = 0;
+      return segment.replace(/[A-Za-z0-9]+/g, (token) => {
+        const upperToken = token.toLocaleUpperCase();
+        const isAcronym = CATEGORY_ACRONYMS.has(upperToken);
+        const normalized = isAcronym ? upperToken : token.toLocaleLowerCase();
+        const result = tokenIndex === 0 && !isAcronym
+          ? normalized.charAt(0).toLocaleUpperCase() + normalized.slice(1)
+          : normalized;
+        tokenIndex += 1;
+        return result;
+      });
+    })
+    .join(' - ');
 }
 
-const ProductImage: React.FC<{ commodity: Commodity }> = ({ commodity }) => {
-  const [imageError, setImageError] = useState(false);
-  const resolvedUrl = resolveImageUrl(commodity.image_path);
-
-  return (
-    <div
-      style={{
-        width: '88px',
-        height: '100px',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        border: '1px solid #e2e8f0',
-        background: '#f8fafc',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      {resolvedUrl && !imageError ? (
-        <img
-          src={resolvedUrl}
-          alt={commodity.commodity_name}
-          loading="lazy"
-          decoding="async"
-          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '4px' }}
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        <span className="price-product-fallback price-product-fallback--neutral">
-          <ImageOff size={24} aria-hidden="true" />
-          <span>No image</span>
-        </span>
-      )}
-    </div>
-  );
-};
-
 const MetadataRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '18px' }}>
-    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>{label}</span>
-    <span style={{ fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, textAlign: 'right' }}>{children}</span>
+  <div className="product-detail-fact">
+    <dt>{label}</dt>
+    <dd>{children}</dd>
   </div>
 );
 
@@ -106,11 +67,24 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   dataSource,
   dataFetchedAt,
   onBack,
-  onSelectScan,
-  onSelectReport,
-  stateOfCalamity = false,
+  stateOfCalamity,
 }) => {
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+  const [isReferenceOpen, setIsReferenceOpen] = useState(false);
+  const resolvedImageUrl = resolveImageUrl(commodity.image_path);
+  const [imageStatus, setImageStatus] = useState<ProductImageSettlement | 'loading'>(
+    resolvedImageUrl ? 'loading' : 'missing',
+  );
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const imageTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setImageStatus(resolvedImageUrl ? 'loading' : 'missing');
+    setIsLightboxOpen(false);
+    setIsAccordionOpen(false);
+    setIsReferenceOpen(false);
+  }, [commodity.id, resolvedImageUrl]);
+
   const parsed = formatCommodityDisplay(
     commodity.commodity_name,
     commodity.category || '',
@@ -118,8 +92,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
     commodity.effective_date || '',
   );
   const title = parsed.title || commodity.commodity_name;
-  const subtitle = parsed.categoryPath || commodity.category || 'Category not provided';
-  const size = parsed.unit || commodity.unit || commodity.package_size;
+  const subtitle = formatCategoryDisplay(
+    parsed.categoryPath || commodity.category || 'Category not provided',
+  );
   const effectiveDate = formatDate(commodity.effective_date);
   const fetchedDate = formatDate(dataFetchedAt);
   const priceLabel = getPriceLabel(dataSource);
@@ -128,138 +103,116 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
     : commodity.regulatory_classification === 'PRIME_COMMODITY'
       ? 'Prime Commodity'
       : 'Not provided';
+  const hasActivePriceFreezeCoverage = stateOfCalamity === true
+    && commodity.price_freeze_applicable === true;
+  const monitoringLabel = stateOfCalamity === false
+    ? 'Normal monitoring'
+    : hasActivePriceFreezeCoverage
+      ? 'Price freeze coverage'
+      : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
-      <div>
-        <button
-          type="button"
-          aria-label="Back to Prices"
-          onClick={onBack}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            color: '#2563eb',
-            fontWeight: 600,
-            fontSize: '0.92rem',
-            cursor: 'pointer',
-            padding: '12px 16px',
-            minHeight: '44px',
-            borderRadius: '8px',
-            marginLeft: '-16px',
-          }}
-        >
-          <ArrowLeft size={18} aria-hidden="true" />
-          Back to Prices
-        </button>
-      </div>
+    <div className="product-detail">
+      <button type="button" className="product-detail-back" aria-label="Back to Prices" onClick={onBack}>
+        <ArrowLeft size={18} aria-hidden="true" />
+        Back to Prices
+      </button>
 
-      <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: '16px', padding: '16px' }}>
-        <ProductImage commodity={commodity} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.25 }}>
-            {title}
-          </h1>
-          <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 500 }}>{subtitle}</div>
-          {size && <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 500 }}>{size}</div>}
-        </div>
-      </div>
-
-      <section style={{ ...cardStyle, padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div>
-          <div style={{ fontSize: '0.88rem', color: '#475569', fontWeight: 600, marginBottom: '6px' }}>
-            {priceLabel}
-          </div>
-          <div style={{ fontSize: '2.35rem', fontWeight: 800, color: '#2563eb', lineHeight: 1.1 }}>
-            ₱{Number(commodity.baseline_price).toFixed(2)}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-            <span className={dataSource === 'live' ? 'badge badge-green' : 'badge badge-blue'}>
-              {priceLabel}
-            </span>
-            <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-              {effectiveDate ? `Effective ${effectiveDate}` : 'Effective date not provided'}
-            </span>
-          </div>
+      <section className="product-detail-hero" aria-labelledby="product-detail-title">
+        <div className="product-detail-image-stage">
+          <ProgressiveProductImage
+            imageUrl={resolvedImageUrl}
+            altText={commodity.commodity_name}
+            variant="detail"
+            decorative={false}
+            onSettled={setImageStatus}
+          />
+          {imageStatus === 'loaded' && resolvedImageUrl && (
+            <button
+              ref={imageTriggerRef}
+              type="button"
+              className="product-detail-image-trigger"
+              aria-label={`View full image of ${commodity.commodity_name}`}
+              onClick={() => setIsLightboxOpen(true)}
+            >
+              <span className="product-detail-image-expand" aria-hidden="true">
+                <Maximize2 size={18} />
+              </span>
+            </button>
+          )}
         </div>
 
-        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <MetadataRow label="Classification">{classification}</MetadataRow>
-          <MetadataRow label="Regulatory state">
-            {formatRegulatoryState(commodity.regulatory_state, stateOfCalamity)}
-          </MetadataRow>
-          <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
-            {fetchedDate || 'Not provided'}
-          </MetadataRow>
+        <div className="product-detail-summary">
+          <div className="product-detail-category">{subtitle}</div>
+          <h1 id="product-detail-title">{title}</h1>
+          <div className="product-detail-price-block">
+            <div className="product-detail-price-label">{priceLabel}</div>
+            <div className="product-detail-price">₱{Number(commodity.baseline_price).toFixed(2)}</div>
+          </div>
         </div>
       </section>
 
-      {commodity.price_freeze_applicable && (
-        <section style={{ ...cardStyle, overflow: 'hidden' }}>
+      {hasActivePriceFreezeCoverage && (
+        <section className="product-detail-freeze">
           <button
             type="button"
             onClick={() => setIsAccordionOpen((open) => !open)}
             aria-expanded={isAccordionOpen}
-            style={{
-              width: '100%',
-              minHeight: '52px',
-              padding: '14px 16px',
-              background: 'none',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
+            aria-controls="product-detail-freeze-content"
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, color: '#0f172a' }}>
+            <span className="product-detail-freeze-label">
               <Info size={20} aria-hidden="true" />
               Price-freeze information
             </span>
             {isAccordionOpen ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
           </button>
           {isAccordionOpen && (
-            <div style={{ padding: '16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: '0.88rem', color: '#334155', lineHeight: 1.55 }}>
+            <div id="product-detail-freeze-content" className="product-detail-freeze-content">
               {commodity.price_freeze_treatment || 'A price-freeze treatment is marked for this item. Check the cited bulletin for the applicable terms.'}
             </div>
           )}
         </section>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+      <section className="product-detail-reference">
         <button
           type="button"
-          onClick={() => onSelectScan?.(commodity)}
-          style={{ background: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '16px', padding: '18px 16px', minHeight: '132px', cursor: 'pointer', textAlign: 'left' }}
+          onClick={() => setIsReferenceOpen((open) => !open)}
+          aria-expanded={isReferenceOpen}
+          aria-controls="product-detail-reference-content"
         >
-          <Scan size={28} aria-hidden="true" style={{ marginBottom: '12px' }} />
-          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Scan shelf price</div>
-          <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '4px' }}>Compare a displayed shelf price.</div>
+          <span className="product-detail-reference-label">
+            <Info size={18} aria-hidden="true" />
+            Reference details
+          </span>
+          {isReferenceOpen ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
         </button>
-        <button
-          type="button"
-          onClick={() => onSelectReport?.(commodity)}
-          style={{ background: '#ffffff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '16px', padding: '18px 16px', minHeight: '132px', cursor: 'pointer', textAlign: 'left' }}
-        >
-          <FileCheck size={28} aria-hidden="true" style={{ marginBottom: '12px' }} />
-          <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>Report a concern</div>
-          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>Requires a checkout receipt.</div>
-        </button>
-      </div>
-
-      <section style={{ ...cardStyle, padding: '16px' }} aria-label="Bulletin source">
-        <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Bulletin source</div>
-        <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '6px', overflowWrap: 'anywhere' }}>
-          {commodity.source_reference || 'Not provided'}
-        </div>
-        <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
-          {effectiveDate ? `Effective ${effectiveDate}` : 'Effective date not provided'}
-        </div>
+        {isReferenceOpen && (
+          <div id="product-detail-reference-content" className="product-detail-reference-content">
+            <dl className="product-detail-facts">
+              <MetadataRow label="Classification">{classification}</MetadataRow>
+              {monitoringLabel && (
+                <MetadataRow label="Monitoring status">{monitoringLabel}</MetadataRow>
+              )}
+              <MetadataRow label="Effective date">{effectiveDate || 'Not provided'}</MetadataRow>
+              <MetadataRow label="Bulletin source">{commodity.source_reference || 'Not provided'}</MetadataRow>
+              <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
+                {fetchedDate || 'Not provided'}
+              </MetadataRow>
+            </dl>
+          </div>
+        )}
       </section>
+
+      {resolvedImageUrl && (
+        <ProductImageLightbox
+          open={isLightboxOpen && imageStatus === 'loaded'}
+          imageUrl={resolvedImageUrl}
+          altText={commodity.commodity_name}
+          triggerRef={imageTriggerRef}
+          onDismiss={() => setIsLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 };
