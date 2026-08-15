@@ -11,6 +11,14 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+apiClient.interceptors.request.use((config) => {
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers.delete('Content-Type');
+  }
+
+  return config;
+});
+
 if (typeof window !== 'undefined' && window.location.protocol === 'https:' && API_BASE_URL.startsWith('http://')) {
   console.warn(
     '[PRICE-Watch] API URL uses HTTP but page is served over HTTPS. ' +
