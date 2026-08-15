@@ -17,6 +17,8 @@ return [
 
     'commodity_images_disk' => env('COMMODITY_IMAGE_DISK', 'public'),
 
+    'receipt_evidence_disk' => env('RECEIPT_EVIDENCE_DISK', 'receipt_evidence'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -60,6 +62,19 @@ return [
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
             'report' => false,
+        ],
+
+        'receipt_evidence' => [
+            'driver' => env('RECEIPT_EVIDENCE_DRIVER', 'local'),
+            'root' => storage_path('app/private/receipt-evidence'),
+            'key' => env('RECEIPT_EVIDENCE_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('RECEIPT_EVIDENCE_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('RECEIPT_EVIDENCE_REGION', env('AWS_DEFAULT_REGION')),
+            'bucket' => env('RECEIPT_EVIDENCE_BUCKET', 'receipt-evidence'),
+            'endpoint' => env('RECEIPT_EVIDENCE_ENDPOINT', env('AWS_ENDPOINT')),
+            'use_path_style_endpoint' => env('RECEIPT_EVIDENCE_USE_PATH_STYLE', true),
+            'visibility' => 'private',
+            'throw' => true,
         ],
 
     ],

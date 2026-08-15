@@ -53,8 +53,21 @@ export function saveRecentReport(report: StoredRecentReport): StoredRecentReport
   return reports;
 }
 
+export function persistRecentReports(reports: StoredRecentReport[]): StoredRecentReport[] {
+  const limited = reports.filter(isStoredRecentReport).slice(0, MAX_RECENT_REPORTS);
+  try {
+    localStorage.setItem(RECENT_REPORTS_KEY, JSON.stringify(limited));
+  } catch {
+    // Status refresh remains usable when local storage is unavailable.
+  }
+  return limited;
+}
+
 const toTicketStatus = (status: string): RecentReportStatus => {
   const normalized = status.trim().toLowerCase();
+  if (normalized.includes('ready for confirmation')) return 'Ready to review';
+  if (normalized.includes('needs recapture') || normalized.includes('processing failed')) return 'Needs recapture';
+  if (normalized.includes('processing receipt')) return 'Processing';
   if (normalized.includes('closed') || normalized.includes('resolved')) return 'Closed';
   if (normalized.includes('submitted')) return 'Submitted';
   return 'Under review';

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessReceiptEvidence;
 use App\Models\CaptureSession;
 use App\Models\CitizenTip;
 use App\Models\ConsumerReport;
@@ -38,6 +39,11 @@ class PublicPwaController extends Controller
                 'privacy_notice_version' => '1.0',
                 'max_upload_size_mb' => 10,
                 'allowed_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
+                'receipt_continuous_capture_enabled' => (bool) config('services.receipt_capture.enabled'),
+                'receipt_web_push_enabled' => (bool) config('services.receipt_push.enabled'),
+                'vapid_public_key' => config('services.receipt_push.enabled')
+                    ? config('services.receipt_push.public_key')
+                    : null,
                 'last_updated_at' => now()->toIso8601String(),
             ]
         ]);
@@ -707,7 +713,13 @@ class PublicPwaController extends Controller
     {
         $request->validate([
             'store_id' => 'nullable|exists:stores,id',
+            'capture_mode' => 'nullable|in:single_image_v1,continuous_video_v1,guided_photos_v1',
         ]);
+
+        $captureMode = $request->input('capture_mode', 'single_image_v1');
+        if ($captureMode !== 'single_image_v1' && !config('services.receipt_capture.enabled')) {
+            abort(404);
+        }
 
         $sessionUuid = 'cs_' . Str::uuid();
         $rawToken = 'ct_sec_' . Str::random(32);
@@ -717,6 +729,8 @@ class PublicPwaController extends Controller
         $session = CaptureSession::create([
             'session_uuid' => $sessionUuid,
             'store_id' => $request->store_id,
+            'capture_mode' => $captureMode,
+            'processing_status' => 'open',
             'token_hash' => $tokenHash,
             'expires_at' => $expiresAt,
             'is_used' => false,
@@ -731,8 +745,18 @@ class PublicPwaController extends Controller
                 'capture_token' => $rawToken,
                 'expires_at' => $expiresAt->toIso8601String(),
                 'store_id' => $request->store_id,
-                'max_file_size' => 10485760,
-                'accepted_types' => ['image/jpeg', 'image/png', 'image/webp'],
+                'capture_mode' => $captureMode,
+                'max_file_size' => $captureMode === 'single_image_v1' ? 10485760 : 25 * 1024 * 1024,
+                'accepted_types' => $captureMode === 'continuous_video_v1'
+                    ? ['video/webm', 'video/mp4']
+                    : ['image/jpeg', 'image/png', 'image/webp'],
+                'limits' => [
+                    'max_duration_seconds' => 30,
+                    'max_video_bytes' => 25 * 1024 * 1024,
+                    'max_frame_bytes' => 2 * 1024 * 1024,
+                    'min_frames' => 2,
+                    'max_frames' => 12,
+                ],
             ]
         ], 201);
     }
@@ -743,13 +767,23 @@ class PublicPwaController extends Controller
         if ($request->filled('submission_uuid')) {
             $existing = ConsumerReport::where('submission_uuid', $request->submission_uuid)->first();
             if ($existing) {
+                $replayToken = (string) $request->input('capture_token');
+                $captureSession = $existing->captureSession;
+                abort_unless(
+                    $captureSession
+                    && $replayToken !== ''
+                    && hash_equals($captureSession->token_hash, hash('sha256', $replayToken)),
+                    403,
+                    'Invalid capture credential for this submission.',
+                );
                 return response()->json([
                     'success' => true,
                     'message' => 'Report submission already received (Idempotent replay).',
                     'data' => [
                         'report_reference' => $existing->report_reference,
                         'status' => $existing->status,
-                        'submitted_at' => $existing->created_at->toIso8601String(),
+                        'submitted_at' => $existing->submitted_at?->toIso8601String(),
+                        'created_at' => $existing->created_at->toIso8601String(),
                     ]
                 ], 200);
             }
@@ -758,7 +792,6 @@ class PublicPwaController extends Controller
         $request->validate([
             'submission_uuid' => 'required|string',
             'capture_token' => 'required|string',
-            'image' => 'required|file|image|mimes:jpeg,png,webp|max:10240',
             'privacy_notice_version' => 'required|string',
             'store_id' => 'nullable|exists:stores,id',
         ]);
@@ -774,6 +807,14 @@ class PublicPwaController extends Controller
                 'errors' => ['capture_token' => ['The capture session token is invalid or expired.']]
             ], 422);
         }
+
+        if ($session->capture_mode !== 'single_image_v1') {
+            return $this->submitAsyncReceiptDraft($request, $session);
+        }
+
+        $request->validate([
+            'image' => 'required|file|image|mimes:jpeg,png,webp|max:10240',
+        ]);
 
         // 3. Process File & Calculate Server SHA-256
         $file = $request->file('image');
@@ -801,13 +842,14 @@ class PublicPwaController extends Controller
             $rep = ConsumerReport::create([
                 'report_reference' => $reportReference,
                 'tracking_token_hash' => $trackingTokenHash,
-                'store_id' => $request->store_id ?? $session->store_id,
+                'store_id' => $session->store_id,
                 'submission_uuid' => $request->submission_uuid,
                 'capture_session_id' => $session->id,
                 'image_hash' => $serverSha256,
                 'image_vault_path' => $vaultPath,
                 'raw_ocr_json' => $rawOcr,
                 'status' => 'Submitted',
+                'submitted_at' => now(),
                 'privacy_notice_version' => $request->privacy_notice_version,
                 'user_ip' => $request->ip(),
                 'user_agent' => $request->userAgent(),
@@ -845,6 +887,86 @@ class PublicPwaController extends Controller
                 'status' => $report->status,
                 'submitted_at' => $report->created_at->toIso8601String(),
             ]
+        ], 201);
+    }
+
+    private function submitAsyncReceiptDraft(Request $request, CaptureSession $session)
+    {
+        $bundle = $session->evidenceBundle()->with('assets')->first();
+        if (!$bundle) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Receipt evidence must be uploaded before creating a report.',
+            ], 422);
+        }
+
+        $hasRequiredEvidence = $session->capture_mode === 'continuous_video_v1'
+            ? $bundle->assets->contains('kind', 'original_video')
+            : $bundle->assets->where('kind', 'source_frame')->count() >= 2;
+        if (!$hasRequiredEvidence) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The receipt capture does not contain the required evidence.',
+            ], 422);
+        }
+
+        $reportReference = 'REP-' . date('Ymd') . '-' . strtoupper(Str::random(4));
+        $rawTrackingToken = 'trk_' . Str::random(32);
+        $rawResumeToken = 'rsm_' . Str::random(32);
+
+        $report = DB::transaction(function () use (
+            $request,
+            $session,
+            $bundle,
+            $reportReference,
+            $rawTrackingToken,
+            $rawResumeToken,
+        ) {
+            $rep = ConsumerReport::create([
+                'report_reference' => $reportReference,
+                'tracking_token_hash' => hash('sha256', $rawTrackingToken),
+                'resume_token_hash' => hash('sha256', $rawResumeToken),
+                'store_id' => $session->store_id,
+                'submission_uuid' => $request->submission_uuid,
+                'capture_session_id' => $session->id,
+                'receipt_evidence_bundle_id' => $bundle->id,
+                'capture_mode' => $session->capture_mode,
+                'processing_status' => 'queued',
+                'evidence_disk' => config('filesystems.receipt_evidence_disk'),
+                'evidence_version' => 1,
+                'status' => 'Processing receipt',
+                'privacy_notice_version' => $request->privacy_notice_version,
+                'user_ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            ReportStatusHistory::create([
+                'consumer_report_id' => $rep->id,
+                'previous_status' => null,
+                'new_status' => 'Processing receipt',
+                'public_message' => 'Receipt uploaded and queued for processing.',
+                'actor_type' => 'system',
+            ]);
+
+            $bundle->update(['processing_status' => 'queued']);
+            $session->update(['is_used' => true, 'processing_status' => 'finalized']);
+
+            return $rep;
+        });
+
+        ProcessReceiptEvidence::dispatch($report->report_reference)->afterCommit();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt uploaded and queued for processing.',
+            'data' => [
+                'report_reference' => $report->report_reference,
+                'secret_tracking_token' => $rawTrackingToken,
+                'device_resume_token' => $rawResumeToken,
+                'status' => $report->status,
+                'created_at' => $report->created_at->toIso8601String(),
+                'submitted_at' => null,
+            ],
         ], 201);
     }
 

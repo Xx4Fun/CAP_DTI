@@ -1,0 +1,115 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\CaptureSession;
+use App\Models\ReceiptEvidenceAsset;
+use App\Models\ReceiptEvidenceBundle;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class ReceiptEvidenceController extends Controller
+{
+    public function destroy(Request $request, CaptureSession $session)
+    {
+        $this->authorizeCaptureSession($request, $session);
+        $session->load('evidenceBundle.assets');
+        foreach ($session->evidenceBundle?->assets ?? [] as $asset) {
+            Storage::disk($asset->disk)->delete($asset->path);
+        }
+        $session->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Unsubmitted receipt capture deleted.',
+        ]);
+    }
+
+    public function storeAsset(Request $request, CaptureSession $session)
+    {
+        $this->authorizeCaptureSession($request, $session);
+
+        $validated = $request->validate([
+            'kind' => 'required|in:original_video,source_frame',
+            'sequence' => 'required|integer|min:0|max:12',
+            'asset' => 'required|file|max:25600|mimetypes:video/webm,video/mp4,image/jpeg,image/png,image/webp',
+        ]);
+
+        $file = $request->file('asset');
+        $mimeType = (string) $file->getMimeType();
+        $isVideo = $validated['kind'] === 'original_video';
+
+        if ($isVideo && ! in_array($mimeType, ['video/webm', 'video/mp4'], true)) {
+            abort(422, 'The original video must be WebM or MP4.');
+        }
+        if (! $isVideo && ! in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            abort(422, 'Receipt frames must be JPEG, PNG, or WebP.');
+        }
+        if ($isVideo && $session->capture_mode !== 'continuous_video_v1') {
+            abort(422, 'This capture session does not accept video evidence.');
+        }
+        if (! $isVideo && $file->getSize() > 2 * 1024 * 1024) {
+            abort(422, 'Receipt frames may not exceed 2 MiB.');
+        }
+
+        $bundle = ReceiptEvidenceBundle::firstOrCreate(
+            ['capture_session_id' => $session->id],
+            [
+                'evidence_uuid' => (string) Str::uuid(),
+                'store_id' => $session->store_id,
+                'capture_mode' => $session->capture_mode,
+                'processing_status' => 'collecting',
+            ],
+        );
+
+        $sha256 = hash_file('sha256', $file->getRealPath());
+        $extension = $file->guessExtension() ?: ($isVideo ? 'bin' : 'jpg');
+        $path = "receipt-evidence/{$bundle->evidence_uuid}/{$validated['kind']}-{$validated['sequence']}-{$sha256}.{$extension}";
+        Storage::disk('receipt_evidence')->put($path, $file->getContent(), ['visibility' => 'private']);
+
+        $asset = ReceiptEvidenceAsset::firstOrNew([
+            'receipt_evidence_bundle_id' => $bundle->id,
+            'kind' => $validated['kind'],
+            'sequence' => $validated['sequence'],
+        ]);
+        $wasCreated = ! $asset->exists;
+        $previousDisk = $asset->disk;
+        $previousPath = $asset->path;
+        $asset->fill([
+            'disk' => 'receipt_evidence',
+            'path' => $path,
+            'original_filename' => $file->getClientOriginalName(),
+            'mime_type' => $mimeType,
+            'size_bytes' => $file->getSize(),
+            'sha256' => $sha256,
+        ])->save();
+        if (! $wasCreated && $previousPath && $previousPath !== $path) {
+            Storage::disk($previousDisk ?: 'receipt_evidence')->delete($previousPath);
+        }
+
+        $session->update(['processing_status' => 'uploading']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt evidence asset uploaded.',
+            'data' => [
+                'asset_id' => $asset->id,
+                'kind' => $asset->kind,
+                'sequence' => $asset->sequence,
+                'sha256' => $asset->sha256,
+            ],
+        ], $wasCreated ? 201 : 200);
+    }
+
+    private function authorizeCaptureSession(Request $request, CaptureSession $session): void
+    {
+        $rawToken = (string) $request->header('X-Capture-Token');
+        if ($rawToken === '' || ! hash_equals($session->token_hash, hash('sha256', $rawToken))) {
+            abort(403, 'Invalid capture token.');
+        }
+        if ($session->is_used || $session->expires_at->isPast()) {
+            abort(410, 'Capture session is no longer active.');
+        }
+    }
+}

@@ -27,6 +27,9 @@ export interface SystemConfig {
   last_updated_at: string;
   effective_date?: string;
   total_commodities?: number;
+  receipt_continuous_capture_enabled?: boolean;
+  receipt_web_push_enabled?: boolean;
+  vapid_public_key?: string | null;
 }
 
 export const defaultConfig: SystemConfig = {
@@ -187,15 +190,25 @@ export interface CaptureSessionResponse {
   capture_token: string;
   expires_at: string;
   store_id?: number;
+  capture_mode?: 'single_image_v1' | 'continuous_video_v1' | 'guided_photos_v1';
   max_file_size: number;
   accepted_types: string[];
+  limits?: {
+    max_duration_seconds: number;
+    max_video_bytes: number;
+    max_frame_bytes: number;
+    min_frames: number;
+    max_frames: number;
+  };
 }
 
 export interface FormalReportResponse {
   report_reference: string;
   secret_tracking_token: string;
+  device_resume_token?: string;
   status: string;
-  submitted_at: string;
+  created_at?: string;
+  submitted_at: string | null;
 }
 
 export interface StatusHistoryItem {

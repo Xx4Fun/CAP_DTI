@@ -12,16 +12,24 @@ class ConsumerReport extends Model
     protected $fillable = [
         'report_reference',
         'tracking_token_hash',
+        'resume_token_hash',
         'store_id',
         'submission_uuid',
         'capture_session_id',
+        'receipt_evidence_bundle_id',
+        'capture_mode',
+        'processing_status',
         'image_hash',
         'image_vault_path',
+        'evidence_disk',
+        'evidence_version',
         'redacted_image_path',
         'raw_ocr_json',
         'consumer_confirmed_json',
         'evaluator_confirmed_json',
         'status',
+        'submitted_at',
+        'consumer_confirmed_at',
         'privacy_notice_version',
         'user_ip',
         'user_agent',
@@ -31,6 +39,8 @@ class ConsumerReport extends Model
         'raw_ocr_json' => 'array',
         'consumer_confirmed_json' => 'array',
         'evaluator_confirmed_json' => 'array',
+        'submitted_at' => 'datetime',
+        'consumer_confirmed_at' => 'datetime',
     ];
 
     public function store()
@@ -46,5 +56,20 @@ class ConsumerReport extends Model
     public function statusHistories()
     {
         return $this->hasMany(ReportStatusHistory::class)->orderBy('created_at', 'asc');
+    }
+
+    public function evidenceBundle()
+    {
+        return $this->belongsTo(ReceiptEvidenceBundle::class, 'receipt_evidence_bundle_id');
+    }
+
+    public function items()
+    {
+        return $this->hasMany(ConsumerReportItem::class)->orderBy('sequence');
+    }
+
+    public function pushSubscriptions()
+    {
+        return $this->belongsToMany(WebPushSubscription::class, 'consumer_report_push_subscriptions')->withTimestamps();
     }
 }

@@ -60,6 +60,9 @@ describe('recent report storage', () => {
   });
 
   it.each([
+    ['Processing receipt', 'Processing'],
+    ['Ready for confirmation', 'Ready to review'],
+    ['Needs recapture', 'Needs recapture'],
     ['Submitted', 'Submitted'],
     ['Under regulatory review', 'Under review'],
     ['Resolved', 'Closed'],

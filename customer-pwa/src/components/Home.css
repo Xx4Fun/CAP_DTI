@@ -460,6 +460,18 @@
   scroll-snap-align: start;
 }
 
+.recent-report-ticket-button {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-report-ticket-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ticket-accent) 45%, #ffffff);
+  outline-offset: 3px;
+}
+
 .home-reports-empty {
   padding: 20px;
   border: 1px solid #e5ebf8;
@@ -532,6 +544,21 @@
 .recent-report-ticket-green {
   --ticket-accent: #16a03a;
   --ticket-tint: #effaef;
+}
+
+.recent-report-ticket-processing {
+  --ticket-accent: #475569;
+  --ticket-tint: #f1f5f9;
+}
+
+.recent-report-ticket-ready {
+  --ticket-accent: #2563eb;
+  --ticket-tint: #eff6ff;
+}
+
+.recent-report-ticket-attention {
+  --ticket-accent: #b45309;
+  --ticket-tint: #fff7ed;
 }
 
 .recent-report-ticket-meta {

@@ -19,6 +19,8 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LegalNoticeController;
 use App\Http\Controllers\PublicCommodityController;
 use App\Http\Controllers\PublicPwaController;
+use App\Http\Controllers\ReceiptEvidenceController;
+use App\Http\Controllers\ReceiptReportController;
 use App\Http\Controllers\SyncController;
 use Illuminate\Support\Facades\Route;
 
@@ -37,9 +39,17 @@ Route::prefix('public')->group(function () {
         Route::post('/scan-tag/compare', [PublicPwaController::class, 'compareScanTag']);
         Route::post('/compare-price', [PublicPwaController::class, 'comparePrice']);
     });
-    Route::post('/capture-session', [PublicPwaController::class, 'createCaptureSession']);
-    Route::post('/reports', [PublicPwaController::class, 'submitReport']);
-    Route::post('/reports/{reference}/confirm-ocr', [PublicPwaController::class, 'confirmOcr']);
+    Route::middleware('throttle:30,1')->group(function () {
+        Route::post('/capture-session', [PublicPwaController::class, 'createCaptureSession']);
+        Route::post('/capture-sessions/{session}/assets', [ReceiptEvidenceController::class, 'storeAsset']);
+        Route::delete('/capture-sessions/{session}', [ReceiptEvidenceController::class, 'destroy']);
+        Route::post('/reports', [PublicPwaController::class, 'submitReport']);
+        Route::get('/reports/{reference}/processing', [ReceiptReportController::class, 'processing']);
+        Route::get('/reports/{reference}/review', [ReceiptReportController::class, 'review']);
+        Route::post('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'subscribe']);
+        Route::delete('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'unsubscribe']);
+        Route::post('/reports/{reference}/confirm-ocr', [ReceiptReportController::class, 'confirm']);
+    });
     Route::get('/reports/track', [PublicPwaController::class, 'trackReport']);
 });
 
@@ -67,6 +77,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports', [ReportReviewController::class, 'index']);
         Route::post('/reports/{report}/decision', [ReportReviewController::class, 'decision']);
         Route::get('/reports/{report}/evidence', [ReportReviewController::class, 'evidence']);
+        Route::get('/reports/{report}/evidence-manifest', [ReportReviewController::class, 'evidenceManifest']);
+        Route::get('/reports/{report}/evidence-assets/{asset}', [ReportReviewController::class, 'evidenceAsset']);
         Route::get('/analytics/options', [TemporalAnalyticsController::class, 'options']);
         Route::get('/analytics/stores/{store}', [TemporalAnalyticsController::class, 'show']);
         Route::get('/emergencies', [EmergencyAdminController::class, 'index']);

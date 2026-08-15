@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalendarDays, MapPin } from 'lucide-react';
 
-export type RecentReportStatus = 'Submitted' | 'Under review' | 'Closed';
+export type RecentReportStatus = 'Processing' | 'Ready to review' | 'Needs recapture' | 'Submitted' | 'Under review' | 'Closed';
 
 export interface RecentReportTicketProps {
   date: string;
@@ -9,10 +9,14 @@ export interface RecentReportTicketProps {
   reportId: string;
   store: string;
   status: RecentReportStatus;
+  onOpen?: () => void;
 }
 
 const statusClassName: Record<RecentReportStatus, string> = {
   Submitted: 'recent-report-ticket-blue',
+  Processing: 'recent-report-ticket-processing',
+  'Ready to review': 'recent-report-ticket-ready',
+  'Needs recapture': 'recent-report-ticket-attention',
   'Under review': 'recent-report-ticket-orange',
   Closed: 'recent-report-ticket-green',
 };
@@ -23,11 +27,9 @@ export const RecentReportTicket: React.FC<RecentReportTicketProps> = ({
   reportId,
   store,
   status,
-}) => (
-  <article
-    className={`recent-report-ticket ${statusClassName[status]}`}
-    aria-label={`Report ${reportId.replace(/^#/, '')}`}
-  >
+  onOpen,
+}) => {
+  const content = <>
     <div className="recent-report-ticket-meta">
       <CalendarDays size={18} aria-hidden="true" />
       <span>{date}</span>
@@ -49,7 +51,22 @@ export const RecentReportTicket: React.FC<RecentReportTicketProps> = ({
       </span>
       <span className="recent-report-ticket-barcode" aria-hidden="true" />
     </div>
-  </article>
-);
+  </>;
+
+  return onOpen ? (
+    <button
+      type="button"
+      className={`recent-report-ticket recent-report-ticket-button ${statusClassName[status]}`}
+      aria-label={`Open report ${reportId.replace(/^#/, '')}: ${status}`}
+      onClick={onOpen}
+    >
+      {content}
+    </button>
+  ) : (
+    <article className={`recent-report-ticket ${statusClassName[status]}`} aria-label={`Report ${reportId.replace(/^#/, '')}`}>
+      {content}
+    </article>
+  );
+};
 
 export default RecentReportTicket;

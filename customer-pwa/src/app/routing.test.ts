@@ -13,5 +13,11 @@ describe('routing', () => {
   it('generates stable report paths', () => {
     expect(pathFor({ name: 'new-report' })).toBe('/reports/new');
     expect(pathFor({ name: 'track-report' })).toBe('/reports/track');
+    expect(pathFor({ name: 'receipt-processing', reference: 'REP-20260816-ONE' }))
+      .toBe('/reports/REP-20260816-ONE/processing');
+    expect(pathFor({ name: 'receipt-review', reference: 'REP-20260816-ONE' }))
+      .toBe('/reports/REP-20260816-ONE/review');
+    expect(parseRoute('/reports/REP-20260816-ONE/review'))
+      .toEqual({ name: 'receipt-review', reference: 'REP-20260816-ONE' });
   });
 });

@@ -12,7 +12,16 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord } from '../../types/admin'
+import type { ConsumerReportRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest } from '../../types/admin'
+
+type ItemDecision = {
+  item_id: number
+  commodity_key: string
+  commodity_name: string
+  receipt_price: number
+  observed_at: string
+  regulatory_finding: string
+}
 
 export const CitizenTipReview: React.FC = () => {
   const [reports, setReports] = useState<ConsumerReportRecord[]>([])
@@ -30,6 +39,9 @@ export const CitizenTipReview: React.FC = () => {
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [evidenceUrl, setEvidenceUrl] = useState<string | null>(null)
   const [evidenceLoading, setEvidenceLoading] = useState(false)
+  const [evidenceManifest, setEvidenceManifest] = useState<ReceiptEvidenceManifest | null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<ReceiptEvidenceAssetRecord | null>(null)
+  const [itemDecisions, setItemDecisions] = useState<Record<number, ItemDecision>>({})
 
   useEffect(() => {
     setLoading(true)
@@ -55,13 +67,39 @@ export const CitizenTipReview: React.FC = () => {
     setError('')
     setZoom(1)
     setRotation(0)
+    setEvidenceManifest(null)
+    setSelectedAsset(null)
+    setItemDecisions(Object.fromEntries((report.items ?? []).map((item) => [item.id, {
+      item_id: item.id,
+      commodity_key: item.commodity_key || '',
+      commodity_name: item.commodity_name || item.item_name || '',
+      receipt_price: Number(item.observed_price || 0),
+      observed_at: report.submitted_at.slice(0, 10),
+      regulatory_finding: String(item.evaluator_decision_json?.regulatory_finding || ''),
+    }])))
 
     if (evidenceUrl) {
       URL.revokeObjectURL(evidenceUrl)
       setEvidenceUrl(null)
     }
 
-    if (report.evidence_available) {
+    if (report.evidence_available && report.evidence_summary) {
+      setEvidenceLoading(true)
+      void adminApi.getReportEvidenceManifest(report.id)
+        .then((manifest) => {
+          setEvidenceManifest(manifest)
+          const preferred = manifest.assets.find((asset) => asset.kind === 'stitched_preview')
+            || manifest.assets.find((asset) => asset.kind === 'original_video')
+            || manifest.assets[0]
+          if (!preferred) return
+          setSelectedAsset(preferred)
+          return adminApi.getReportEvidenceAsset(report.id, preferred.id).then((blob) => {
+            setEvidenceUrl(URL.createObjectURL(blob))
+          })
+        })
+        .catch(() => setEvidenceUrl(null))
+        .finally(() => setEvidenceLoading(false))
+    } else if (report.evidence_available) {
       setEvidenceLoading(true)
       try {
         const res = adminApi.getReportEvidence?.(report.id)
@@ -90,6 +128,18 @@ export const CitizenTipReview: React.FC = () => {
 
   const decide = async (action: string) => {
     if (!selected) return
+    if ((action === 'validate' || action === 'correct') && (selected.items?.length ?? 0) > 0) {
+      const decisions = selected.items!.map((item) => itemDecisions[item.id])
+      if (decisions.some((decision) => !decision?.commodity_key || !decision.regulatory_finding)) {
+        setError('Complete the commodity key and finding for every receipt item.')
+        return
+      }
+      const updated = await adminApi.decideReport(selected.id, { action, reason, item_decisions: decisions })
+      setSelected(updated)
+      setReports((current) => current.map((report) => (report.id === updated.id ? updated : report)))
+      setError('')
+      return
+    }
     let corrected: Record<string, unknown> = {}
     if (action === 'validate' || action === 'correct' || action === 'validate_loi') {
       try {
@@ -158,6 +208,27 @@ export const CitizenTipReview: React.FC = () => {
   }
 
   const ocrItems = parseOcrItems(selected?.raw_ocr_json ?? null)
+  const hasItemReview = (selected?.items?.length ?? 0) > 0
+  const itemReviewComplete = hasItemReview && selected!.items!.every((item) => {
+    const decision = itemDecisions[item.id]
+    return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
+  })
+
+  const showEvidenceAsset = async (asset: ReceiptEvidenceAssetRecord) => {
+    if (!selected) return
+    setEvidenceLoading(true)
+    if (evidenceUrl) URL.revokeObjectURL(evidenceUrl)
+    setEvidenceUrl(null)
+    setSelectedAsset(asset)
+    try {
+      const blob = await adminApi.getReportEvidenceAsset(selected.id, asset.id)
+      setEvidenceUrl(URL.createObjectURL(blob))
+    } catch {
+      setError('This evidence asset could not be opened.')
+    } finally {
+      setEvidenceLoading(false)
+    }
+  }
 
   return (
     <div className="citizen-tip-review-workspace" style={{ display: 'grid', gap: '1.25rem' }}>
@@ -181,7 +252,7 @@ export const CitizenTipReview: React.FC = () => {
             <Shield size={20} color="#1d4ed8" /> Formal Receipt OCR Review Queue
           </h2>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-            Executive Light dual-column inspection workspace for vaulted consumer evidence &amp; legal notices.
+            Review private receipt evidence and confirm each extracted item before regulatory action.
           </p>
         </div>
 
@@ -334,9 +405,38 @@ export const CitizenTipReview: React.FC = () => {
                   <Shield size={16} color="#1d4ed8" /> Vaulted Receipt Evidence
                 </h3>
                 <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                  🔒 Private Storage
+                  Private storage
                 </span>
               </div>
+
+              {evidenceManifest && (
+                <div style={{ display: 'grid', gap: '0.55rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {evidenceManifest.assets.map((asset) => (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        aria-label={`${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
+                        onClick={() => void showEvidenceAsset(asset)}
+                        style={{
+                          minHeight: '44px',
+                          padding: '0.4rem 0.65rem',
+                          borderRadius: '7px',
+                          border: selectedAsset?.id === asset.id ? '2px solid #1d4ed8' : '1px solid #cbd5e1',
+                          background: selectedAsset?.id === asset.id ? '#eff6ff' : '#fff',
+                          color: '#1e293b',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {asset.kind.replaceAll('_', ' ')} {asset.sequence + 1}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                    Continuity: {String(evidenceManifest.continuity?.status || 'not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'not available')}
+                  </span>
+                </div>
+              )}
 
               {/* Image Controls Bar */}
               <div
@@ -480,6 +580,13 @@ export const CitizenTipReview: React.FC = () => {
               >
                 {evidenceLoading ? (
                   <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Loading vaulted evidence image...</p>
+                ) : evidenceUrl && selectedAsset?.mime_type.startsWith('video/') ? (
+                  <video
+                    src={evidenceUrl}
+                    controls
+                    aria-label={`Evidence video for ${selected.report_reference}`}
+                    style={{ maxHeight: '100%', maxWidth: '100%' }}
+                  />
                 ) : evidenceUrl ? (
                   <img
                     src={evidenceUrl}
@@ -539,11 +646,13 @@ export const CitizenTipReview: React.FC = () => {
                   <button
                     type="button"
                     onClick={async () => {
-                      const blob = await adminApi.getReportEvidence(selected.id)
+                      const blob = selectedAsset
+                        ? await adminApi.getReportEvidenceAsset(selected.id, selectedAsset.id)
+                        : await adminApi.getReportEvidence(selected.id)
                       const url = URL.createObjectURL(blob)
                       const link = document.createElement('a')
                       link.href = url
-                      link.download = `${selected.report_reference}-evidence.jpg`
+                      link.download = `${selected.report_reference}-${selectedAsset?.kind || 'evidence'}`
                       link.click()
                       URL.revokeObjectURL(url)
                     }}
@@ -642,7 +751,7 @@ export const CitizenTipReview: React.FC = () => {
                             <td style={{ padding: '0.4rem 0.6rem', textAlign: 'right' }}>₱{String(item.price || '0.00')}</td>
                             <td style={{ padding: '0.4rem 0.6rem', textAlign: 'center' }}>
                               <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.4rem', borderRadius: '4px', background: '#fef2f2', color: '#dc2626' }}>
-                                FLAGGED OVER SRP
+                                OCR FLAG — REVIEW
                               </span>
                             </td>
                           </tr>
@@ -680,7 +789,44 @@ export const CitizenTipReview: React.FC = () => {
 
               {/* Decision Form Controls */}
               <div style={{ display: 'grid', gap: '0.75rem' }}>
-                <div>
+                {hasItemReview ? (
+                  <div style={{ display: 'grid', gap: '0.65rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a' }}>Item-by-item findings</h3>
+                    {selected.items!.map((item) => {
+                      const decision = itemDecisions[item.id]
+                      return (
+                        <fieldset key={item.id} style={{ display: 'grid', gap: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem' }}>
+                          <legend style={{ padding: '0 0.3rem', fontWeight: 700, fontSize: '0.85rem' }}>
+                            {item.item_name || `Receipt item ${item.sequence + 1}`} · ₱{Number(item.observed_price || 0).toFixed(2)}
+                          </legend>
+                          <label style={{ display: 'grid', gap: '0.25rem', fontSize: '0.78rem', fontWeight: 600 }}>
+                            Commodity key
+                            <input
+                              aria-label={`Commodity key for ${item.item_name || item.id}`}
+                              value={decision?.commodity_key || ''}
+                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], commodity_key: event.target.value } }))}
+                              style={{ minHeight: '44px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.4rem 0.55rem' }}
+                            />
+                          </label>
+                          <label style={{ display: 'grid', gap: '0.25rem', fontSize: '0.78rem', fontWeight: 600 }}>
+                            Finding
+                            <select
+                              aria-label={`Finding for ${item.item_name || item.id}`}
+                              value={decision?.regulatory_finding || ''}
+                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
+                              style={{ minHeight: '44px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#fff', padding: '0.4rem 0.55rem' }}
+                            >
+                              <option value="">Select a finding</option>
+                              <option value="confirmed_violation">Confirmed violation</option>
+                              <option value="no_violation">No violation</option>
+                              <option value="insufficient_evidence">Insufficient evidence</option>
+                            </select>
+                          </label>
+                        </fieldset>
+                      )
+                    })}
+                  </div>
+                ) : <div>
                   <label htmlFor="eval-confirmed-json" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
                     Evaluator-confirmed JSON
                   </label>
@@ -691,9 +837,9 @@ export const CitizenTipReview: React.FC = () => {
                     onChange={(event) => setCorrectedText(event.target.value)}
                     style={{ width: '100%', padding: '0.65rem', border: '1px solid #e2e8f0', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.82rem', background: '#ffffff', color: '#0f172a' }}
                   />
-                </div>
+                </div>}
 
-                <div>
+                {!hasItemReview && <div>
                   <label htmlFor="regulatory-finding-select" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
                     Regulatory finding
                   </label>
@@ -708,7 +854,7 @@ export const CitizenTipReview: React.FC = () => {
                     <option value="no_violation">No violation</option>
                     <option value="insufficient_evidence">Insufficient evidence</option>
                   </select>
-                </div>
+                </div>}
 
                 <div>
                   <label htmlFor="decision-reason-text" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
@@ -735,7 +881,7 @@ export const CitizenTipReview: React.FC = () => {
               <div className="admin-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  disabled={!reason || !finding}
+                  disabled={!reason || (hasItemReview ? !itemReviewComplete : !finding)}
                   onClick={() => void decide('validate')}
                   style={{
                     padding: '0.6rem 1.1rem',
@@ -746,13 +892,13 @@ export const CitizenTipReview: React.FC = () => {
                     fontWeight: 700,
                     fontSize: '0.85rem',
                     cursor: 'pointer',
-                    opacity: !reason || !finding ? 0.5 : 1,
+                    opacity: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 0.5 : 1,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.35rem',
                   }}
                 >
-                  <CheckCircle2 size={16} /> Validate &amp; Issue LOI
+                  <CheckCircle2 size={16} /> Validate findings
                 </button>
 
                 <button
@@ -777,32 +923,10 @@ export const CitizenTipReview: React.FC = () => {
                   <XCircle size={16} /> Dismiss Report
                 </button>
 
-                <button
-                  type="button"
-                  disabled={!reason}
-                  onClick={() => void decide('rescan')}
-                  style={{
-                    padding: '0.6rem 1.1rem',
-                    borderRadius: '8px',
-                    background: '#d97706',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    opacity: !reason ? 0.5 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                  }}
-                >
-                  <RefreshCw size={16} /> Request Re-scan
-                </button>
-
                 {/* Additional Buttons for Backward Compatibility */}
                 <button
                   type="button"
-                  disabled={!reason || !finding}
+                  disabled={!reason || (hasItemReview ? !itemReviewComplete : !finding)}
                   onClick={() => void decide('correct')}
                   style={{
                     padding: '0.6rem 0.9rem',
@@ -813,7 +937,7 @@ export const CitizenTipReview: React.FC = () => {
                     fontWeight: 600,
                     fontSize: '0.82rem',
                     cursor: 'pointer',
-                    opacity: !reason || !finding ? 0.5 : 1,
+                    opacity: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 0.5 : 1,
                   }}
                 >
                   Correct
@@ -821,7 +945,7 @@ export const CitizenTipReview: React.FC = () => {
 
                 <button
                   type="button"
-                  disabled={!reason || !finding}
+                  disabled={!reason || (hasItemReview ? !itemReviewComplete : !finding)}
                   onClick={() => void decide('validate')}
                   style={{
                     padding: '0.6rem 0.9rem',
@@ -832,7 +956,7 @@ export const CitizenTipReview: React.FC = () => {
                     fontWeight: 600,
                     fontSize: '0.82rem',
                     cursor: 'pointer',
-                    opacity: !reason || !finding ? 0.5 : 1,
+                    opacity: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 0.5 : 1,
                   }}
                 >
                   Validate

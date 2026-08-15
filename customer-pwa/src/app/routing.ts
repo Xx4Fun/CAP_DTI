@@ -5,16 +5,25 @@ export type AppRoute =
   | { name: 'scan' }
   | { name: 'reports' }
   | { name: 'new-report' }
-  | { name: 'track-report' };
+  | { name: 'track-report' }
+  | { name: 'receipt-processing'; reference: string }
+  | { name: 'receipt-review'; reference: string };
 
 export function parseRoute(pathname: string): AppRoute {
   const normalizedPath = pathname.length > 1
     ? pathname.replace(/\/+$/, '')
     : pathname;
   const productMatch = normalizedPath.match(/^\/prices\/(\d+)$/);
+  const receiptMatch = normalizedPath.match(/^\/reports\/([^/]+)\/(processing|review)$/);
 
   if (productMatch) {
     return { name: 'product', commodityId: Number(productMatch[1]) };
+  }
+  if (receiptMatch) {
+    return {
+      name: receiptMatch[2] === 'review' ? 'receipt-review' : 'receipt-processing',
+      reference: decodeURIComponent(receiptMatch[1]),
+    };
   }
 
   const routes: Partial<Record<string, AppRoute>> = {
@@ -33,8 +42,12 @@ export function pathFor(route: AppRoute): string {
   if (route.name === 'product') {
     return `/prices/${route.commodityId}`;
   }
+  if (route.name === 'receipt-processing' || route.name === 'receipt-review') {
+    const step = route.name === 'receipt-review' ? 'review' : 'processing';
+    return `/reports/${encodeURIComponent(route.reference)}/${step}`;
+  }
 
-  const paths: Record<Exclude<AppRoute['name'], 'product'>, string> = {
+  const paths: Record<Exclude<AppRoute['name'], 'product' | 'receipt-processing' | 'receipt-review'>, string> = {
     home: '/',
     prices: '/prices',
     scan: '/scan',

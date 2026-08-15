@@ -43,6 +43,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['/receipt-push-sw.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         skipWaiting: false,
         clientsClaim: false,

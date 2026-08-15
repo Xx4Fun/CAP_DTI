@@ -9,6 +9,8 @@ vi.mock('../../services/adminApi', () => ({
     getReports: vi.fn(),
     decideReport: vi.fn(),
     getReportEvidence: vi.fn(),
+    getReportEvidenceManifest: vi.fn(),
+    getReportEvidenceAsset: vi.fn(),
   },
 }))
 
@@ -126,12 +128,11 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getByText(/Formal receipt \| Consumer report/i)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Original OCR values' })).toBeInTheDocument()
     expect(screen.getAllByText(/Super Extra Rice 1kg/i).length).toBeGreaterThan(0)
-    expect(screen.getByText('FLAGGED OVER SRP')).toBeInTheDocument()
+    expect(screen.getByText('OCR FLAG — REVIEW')).toBeInTheDocument()
 
     // DTI Evaluator Single-Click Action Buttons
-    expect(screen.getByRole('button', { name: /Validate & Issue LOI/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Dismiss Report/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Request Re-scan/i })).toBeInTheDocument()
   })
 
   it('submits single-click DTI Evaluator action decision', async () => {
@@ -145,7 +146,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Overpriced shelf item detected.')
 
     // Click single-click Validate & Issue LOI
-    await user.click(screen.getByRole('button', { name: /Validate & Issue LOI/i }))
+    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(
       101,
@@ -155,5 +156,74 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         corrected: expect.objectContaining({ regulatory_finding: 'confirmed_violation' }),
       }),
     )
+  })
+
+  it('reviews continuous-capture evidence and submits one decision per receipt item', async () => {
+    const receiptReport = {
+      ...mockReports[0],
+      evidence_summary: {
+        capture_mode: 'continuous_video_v1',
+        processing_status: 'confirmed',
+        asset_count: 2,
+        continuity: 'ready',
+        merchant: 'matched',
+      },
+      items: [
+        {
+          id: 501,
+          sequence: 0,
+          item_name: 'Rice',
+          observed_price: '55.00',
+          commodity_key: 'rice-1kg',
+          commodity_name: 'Rice',
+          consumer_confirmed: true,
+        },
+        {
+          id: 502,
+          sequence: 1,
+          item_name: 'Sugar',
+          observed_price: '80.00',
+          commodity_key: 'sugar-1kg',
+          commodity_name: 'Sugar',
+          consumer_confirmed: true,
+        },
+      ],
+    }
+    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
+      capture_mode: 'continuous_video_v1',
+      processing_status: 'confirmed',
+      continuity: { status: 'ready' },
+      merchant: { status: 'matched' },
+      assets: [
+        { id: 701, kind: 'original_video', sequence: 0, mime_type: 'video/webm', size_bytes: 1000, sha256: 'video-hash', metadata: null },
+        { id: 702, kind: 'stitched_preview', sequence: 0, mime_type: 'image/jpeg', size_bytes: 500, sha256: 'preview-hash', metadata: null },
+      ],
+    })
+    vi.mocked(adminApi.getReportEvidenceAsset).mockResolvedValue(new Blob(['preview'], { type: 'image/jpeg' }))
+    vi.mocked(adminApi.decideReport).mockResolvedValue({ ...receiptReport, status: 'Under regulatory review' })
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(await screen.findByRole('button', { name: /Stitched preview/i })).toBeInTheDocument()
+    expect(adminApi.getReportEvidenceAsset).toHaveBeenCalledWith(101, 702)
+    expect(screen.getByText(/Continuity: ready/i)).toBeInTheDocument()
+
+    const findings = screen.getAllByRole('combobox', { name: /Finding for/i })
+    await user.selectOptions(findings[0], 'confirmed_violation')
+    await user.selectOptions(findings[1], 'no_violation')
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Reviewed each confirmed receipt line.')
+    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+
+    expect(adminApi.decideReport).toHaveBeenCalledWith(101, {
+      action: 'validate',
+      reason: 'Reviewed each confirmed receipt line.',
+      item_decisions: [
+        expect.objectContaining({ item_id: 501, commodity_key: 'rice-1kg', regulatory_finding: 'confirmed_violation' }),
+        expect.objectContaining({ item_id: 502, commodity_key: 'sugar-1kg', regulatory_finding: 'no_violation' }),
+      ],
+    })
   })
 })

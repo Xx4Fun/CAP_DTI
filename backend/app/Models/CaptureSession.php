@@ -12,6 +12,8 @@ class CaptureSession extends Model
     protected $fillable = [
         'session_uuid',
         'store_id',
+        'capture_mode',
+        'processing_status',
         'token_hash',
         'expires_at',
         'is_used',
@@ -25,5 +27,10 @@ class CaptureSession extends Model
     public function store()
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function evidenceBundle()
+    {
+        return $this->hasOne(ReceiptEvidenceBundle::class);
     }
 }

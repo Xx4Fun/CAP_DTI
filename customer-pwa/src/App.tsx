@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
@@ -21,9 +21,12 @@ import { useConnectivity } from './hooks/useConnectivity';
 import {
   getRecentReports,
   saveRecentReport,
+  persistRecentReports,
   toRecentReportTicket,
   type StoredRecentReport,
 } from './app/recentReports';
+import { getReceiptResumeToken } from './app/receiptResumeStore';
+import { refreshReceiptReportStatuses } from './app/receiptStatusRefresh';
 import {
   PUBLIC_COMMODITIES_CACHE_KEY,
   PUBLIC_CONFIG_CACHE_KEY,
@@ -38,6 +41,7 @@ const SrpSearch = lazy(() => import('./components/SrpSearch').then((module) => (
 const ShelfScanner = lazy(() => import('./components/ShelfScanner').then((module) => ({ default: module.ShelfScanner })));
 const FormalReport = lazy(() => import('./components/FormalReport').then((module) => ({ default: module.FormalReport })));
 const TrackReport = lazy(() => import('./components/TrackReport').then((module) => ({ default: module.TrackReport })));
+const ReceiptDraftView = lazy(() => import('./components/ReceiptDraftView').then((module) => ({ default: module.ReceiptDraftView })));
 
 const tabForRoute = (route: AppRoute): string => {
   if (route.name === 'home') return 'home';
@@ -192,9 +196,57 @@ export const App: React.FC = () => {
       reportReference: report.report_reference,
       storeName,
       status: report.status,
-      submittedAt: report.submitted_at,
+      submittedAt: report.submitted_at ?? report.created_at ?? new Date().toISOString(),
     }));
   };
+
+  const refreshRecentReports = useCallback(async () => {
+    const latest = await refreshReceiptReportStatuses(
+      getRecentReports(),
+      getReceiptResumeToken,
+      async (reference, token) => {
+        const response = await apiClient.get(`/public/reports/${encodeURIComponent(reference)}/processing`, {
+          headers: { 'X-Report-Resume-Token': token },
+        });
+        return response.data.data;
+      },
+    );
+    setRecentReports(persistRecentReports(latest));
+  }, []);
+
+  useEffect(() => {
+    if (isOnline) void refreshRecentReports();
+    const handleFocus = () => { if (navigator.onLine) void refreshRecentReports(); };
+    const handleOnline = () => void refreshRecentReports();
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isOnline, refreshRecentReports]);
+
+  const updateRecentReportStatus = (reference: string, status: string, submittedAt?: string) => {
+    const stored = getRecentReports().find((report) => report.reportReference === reference);
+    if (!stored) return;
+    setRecentReports(saveRecentReport({
+      ...stored,
+      status,
+      submittedAt: submittedAt ?? stored.submittedAt,
+    }));
+  };
+
+  const recentReportTickets = recentReports.map((report) => {
+    const ticket = toRecentReportTicket(report);
+    const normalized = report.status.toLowerCase();
+    if (normalized.includes('ready for confirmation')) {
+      return { ...ticket, onOpen: () => navigate({ name: 'receipt-review', reference: report.reportReference }) };
+    }
+    if (normalized.includes('processing') || normalized.includes('recapture')) {
+      return { ...ticket, onOpen: () => navigate({ name: 'receipt-processing', reference: report.reportReference }) };
+    }
+    return ticket;
+  });
 
   const recordTrackedReport = (report: TrackReportResponse) => {
     setRecentReports(saveRecentReport({
@@ -239,7 +291,7 @@ export const App: React.FC = () => {
             bulletinStatus={bulletin.status}
             lastSyncTime={lastSyncTime}
             dataSource={publicDataSource}
-            recentReports={recentReports.map(toRecentReportTicket)}
+            recentReports={recentReportTickets}
           />
         )}
 
@@ -254,7 +306,7 @@ export const App: React.FC = () => {
           <ShelfScanner setActiveTab={setActiveTab} />
         )}
 
-        {activeTab === 'reports' && (
+        {activeTab === 'reports' && route.name !== 'receipt-processing' && route.name !== 'receipt-review' && (
           <FormalReport
             setActiveTab={setActiveTab}
             onTrackReport={(ref, tok) => {
@@ -262,6 +314,8 @@ export const App: React.FC = () => {
               setActiveTab('track');
             }}
             onReportSubmitted={recordSubmittedReport}
+            continuousCaptureEnabled={config?.receipt_continuous_capture_enabled === true}
+            vapidPublicKey={config?.receipt_web_push_enabled ? config.vapid_public_key || '' : ''}
           />
         )}
 
@@ -271,6 +325,15 @@ export const App: React.FC = () => {
             initialToken={trackingParams?.token}
             setActiveTab={setActiveTab}
             onReportTracked={recordTrackedReport}
+          />
+        )}
+
+        {(route.name === 'receipt-processing' || route.name === 'receipt-review') && (
+          <ReceiptDraftView
+            reference={route.reference}
+            mode={route.name === 'receipt-review' ? 'review' : 'processing'}
+            onStatus={(status) => updateRecentReportStatus(route.reference, status)}
+            onSubmitted={(result) => updateRecentReportStatus(result.report_reference, result.status, result.submitted_at)}
           />
         )}
         </Suspense>

@@ -2,6 +2,26 @@
 
 return [
 
+    'receipt_capture' => [
+        'enabled' => env('RECEIPT_CONTINUOUS_CAPTURE_ENABLED', false),
+        'abandoned_retention_hours' => (int) env('RECEIPT_ABANDONED_CAPTURE_HOURS', 24),
+    ],
+
+    'ffmpeg' => [
+        'path' => env('FFMPEG_PATH', 'ffmpeg'),
+    ],
+
+    'ffprobe' => [
+        'path' => env('FFPROBE_PATH', 'ffprobe'),
+    ],
+
+    'receipt_push' => [
+        'enabled' => env('RECEIPT_WEB_PUSH_ENABLED', false),
+        'subject' => env('VAPID_SUBJECT'),
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

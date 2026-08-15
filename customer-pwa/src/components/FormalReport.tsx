@@ -22,14 +22,25 @@ import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } fro
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
 import { StoreSelectionCard } from './StoreSelectionCard';
 import { useBackLayer } from '../hooks/useBackLayer';
+import { receiptCaptureSupport } from '../app/receiptCapture';
+import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
+import { navigate } from '../app/routing';
 
 interface FormalReportProps {
   setActiveTab?: (tab: string) => void;
   onTrackReport?: (reference: string, token: string) => void;
   onReportSubmitted?: (report: FormalReportResponse, storeName: string) => void;
+  continuousCaptureEnabled?: boolean;
+  vapidPublicKey?: string;
 }
 
-export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrackReport, onReportSubmitted }) => {
+export const FormalReport: React.FC<FormalReportProps> = ({
+  setActiveTab,
+  onTrackReport,
+  onReportSubmitted,
+  continuousCaptureEnabled = false,
+  vapidPublicKey = '',
+}) => {
   // Navigation & Wizard Stage
   const [currentView, setCurrentView] = useState<'dashboard' | 'select-store' | 'camera-viewport' | 'review-submit' | 'confirmation'>('dashboard');
 
@@ -215,7 +226,19 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     setSelectedStore(store);
     setError('');
     try {
-      const res = await apiClient.post('/public/capture-session', { store_id: store.id });
+      const captureMode = continuousCaptureEnabled
+        ? receiptCaptureSupport({
+            camera: Boolean(navigator.mediaDevices?.getUserMedia),
+            mediaRecorder: typeof MediaRecorder !== 'undefined',
+          })
+        : 'unsupported';
+      if (continuousCaptureEnabled && captureMode === 'unsupported') {
+        throw new Error('This device does not provide a supported live camera for receipt reporting.');
+      }
+      const payload = continuousCaptureEnabled
+        ? { store_id: store.id, capture_mode: captureMode }
+        : { store_id: store.id };
+      const res = await apiClient.post('/public/capture-session', payload);
       if (generation !== reportGenerationRef.current) return;
       if (res.data && res.data.success) {
         setCaptureSession(res.data.data);
@@ -223,7 +246,11 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       setShowGuidelinesModal(true);
     } catch (err) {
       if (generation !== reportGenerationRef.current) return;
-      setShowGuidelinesModal(true);
+      if (continuousCaptureEnabled) {
+        setError(err instanceof Error ? err.message : 'Unable to start a secure receipt capture session.');
+      } else {
+        setShowGuidelinesModal(true);
+      }
     } finally {
       if (generation === reportGenerationRef.current) {
         openingStoreRef.current = null;
@@ -238,6 +265,10 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
     setShowGuidelinesModal(false);
     setCurrentView('camera-viewport');
     setError('');
+
+    if (continuousCaptureEnabled && captureSession?.capture_mode !== 'single_image_v1') {
+      return;
+    }
 
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -485,14 +516,6 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* ========================================================================= */}
       {currentView === 'dashboard' && (
         <div className="report-hub-container">
-          {/* Header Title & Subtitle */}
-          <div className="report-hub-header">
-            <h1 className="report-hub-title">What would you like to do?</h1>
-            <p className="report-hub-subtitle">
-              File a consumer price report or track an existing submission.
-            </p>
-          </div>
-
           {/* 2 Full-Width Horizontal Action Rows (Stacked Vertically) */}
           <div className="report-hero-cards">
             {/* Row 1: Submit a new report (Warm Orange / Amber Motif) */}
@@ -709,7 +732,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                       </div>
                       <div className="report-step-content">
                         <div className="report-step-title">2. Live Receipt Capture</div>
-                        <div className="report-step-desc">Take a clear photo of your official paper checkout receipt using the camera.</div>
+                        <div className="report-step-desc">Scan from the store name to the final total in one slow pass. If continuous capture is unavailable, take overlapping photos.</div>
                       </div>
                     </div>
                     <div className="report-step-item">
@@ -1073,7 +1096,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
                 <CheckCircle2 size={18} color="var(--accent-green)" /> Place the receipt on a flat surface.
               </li>
               <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Include the full receipt.
+                <CheckCircle2 size={18} color="var(--accent-green)" /> Start at the store name, move down slowly, and keep part of the previous section visible.
               </li>
               <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
                 <CheckCircle2 size={18} color="var(--accent-green)" /> Make the store name and transaction date visible.
@@ -1113,7 +1136,23 @@ export const FormalReport: React.FC<FormalReportProps> = ({ setActiveTab, onTrac
       {/* ========================================================================= */}
       {/* 5. STEP 2 OF 3: LIVE RECEIPT CAMERA VIEWPORT (Fixed Zero-Scroll Viewport) */}
       {/* ========================================================================= */}
-      {currentView === 'camera-viewport' && (
+      {currentView === 'camera-viewport' && continuousCaptureEnabled && captureSession && captureSession.capture_mode !== 'single_image_v1' && (
+        <ContinuousReceiptCapture
+          session={captureSession}
+          storeName={selectedStore?.store_name || 'Selected store'}
+          submissionUuid={submissionUuid}
+          vapidPublicKey={vapidPublicKey}
+          onCancel={handleReportStepBack}
+          onDraftCreated={(report) => {
+            setSubmissionResult(report);
+            onReportSubmitted?.(report, selectedStore?.store_name || 'Unspecified Store');
+          }}
+          onCheckStatus={(reference) => navigate({ name: 'receipt-processing', reference })}
+          onGoHome={() => setActiveTab?.('home')}
+        />
+      )}
+
+      {currentView === 'camera-viewport' && (!continuousCaptureEnabled || !captureSession || captureSession.capture_mode === 'single_image_v1') && (
         <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           
           {/* Top Control Bar */}

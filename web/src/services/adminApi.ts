@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -72,6 +72,13 @@ export const adminApi = {
   },
   async getReportEvidence(id: number): Promise<Blob> {
     const response = await api.get(`/admin/reports/${id}/evidence`, { responseType: 'blob' })
+    return response.data
+  },
+  async getReportEvidenceManifest(id: number): Promise<ReceiptEvidenceManifest> {
+    return data(await api.get(`/admin/reports/${id}/evidence-manifest`))
+  },
+  async getReportEvidenceAsset(reportId: number, assetId: number): Promise<Blob> {
+    const response = await api.get(`/admin/reports/${reportId}/evidence-assets/${assetId}`, { responseType: 'blob' })
     return response.data
   },
   async getEmergencies(): Promise<RegulatoryEmergencyRecord[]> {

@@ -83,6 +83,30 @@ class PublicPwaTest extends TestCase
         ]);
     }
 
+    public function test_can_create_store_locked_continuous_receipt_capture_session()
+    {
+        config()->set('services.receipt_capture.enabled', true);
+        $response = $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'continuous_video_v1',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.capture_mode', 'continuous_video_v1')
+            ->assertJsonPath('data.store_id', $this->store->id)
+            ->assertJsonPath('data.limits.max_duration_seconds', 30)
+            ->assertJsonPath('data.limits.max_video_bytes', 25 * 1024 * 1024)
+            ->assertJsonPath('data.limits.min_frames', 2)
+            ->assertJsonPath('data.limits.max_frames', 12);
+
+        $this->assertDatabaseHas('capture_sessions', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'continuous_video_v1',
+            'processing_status' => 'open',
+            'is_used' => false,
+        ]);
+    }
+
     public function test_can_submit_formal_report_and_enforce_idempotency()
     {
         // 1. Request Capture Session
@@ -122,6 +146,11 @@ class PublicPwaTest extends TestCase
 
         $replayRes->assertStatus(200)
                   ->assertJsonPath('data.report_reference', $ref);
+
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => $submissionUuid,
+            'capture_token' => 'wrong-capture-token',
+        ])->assertForbidden();
 
         // 4. Track report with reference and secret token
         $trackRes = $this->getJson("/api/public/reports/track?reference={$ref}&token={$trkToken}");
