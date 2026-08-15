@@ -66,7 +66,9 @@ return [
 
         'receipt_evidence' => [
             'driver' => env('RECEIPT_EVIDENCE_DRIVER', 'local'),
-            'root' => storage_path('app/private/receipt-evidence'),
+            'root' => env('RECEIPT_EVIDENCE_DRIVER', 'local') === 'local'
+                ? storage_path('app/private/receipt-evidence')
+                : null,
             'key' => env('RECEIPT_EVIDENCE_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
             'secret' => env('RECEIPT_EVIDENCE_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
             'region' => env('RECEIPT_EVIDENCE_REGION', env('AWS_DEFAULT_REGION')),
