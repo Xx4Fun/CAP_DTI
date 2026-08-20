@@ -57,3 +57,9 @@ export function readVerifiedCache<T>(
     return null;
   }
 }
+
+export function clearVerifiedCache(): void {
+  safeLocalStorage.removeItem(PUBLIC_CONFIG_CACHE_KEY);
+  safeLocalStorage.removeItem(PUBLIC_COMMODITIES_CACHE_KEY);
+  safeLocalStorage.removeItem(PUBLIC_ESTABLISHMENTS_CACHE_KEY);
+}

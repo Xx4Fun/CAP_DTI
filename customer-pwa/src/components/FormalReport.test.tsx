@@ -48,6 +48,28 @@ describe('FormalReport legacy accessibility', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it('uses an integrated receipt back control and accessible store filters', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
+    const user = userEvent.setup();
+
+    render(<FormalReport />);
+    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
+    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
+    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
+
+    expect(await screen.findByRole('heading', { name: 'Choose a store' })).toBeInTheDocument();
+    expect(screen.getByText('Where did you make this purchase?')).toBeInTheDocument();
+    expect(screen.queryByText(/verified retail store/i)).not.toBeInTheDocument();
+
+    const backButton = screen.getByRole('button', { name: 'Back to reports' });
+    expect(backButton).toHaveTextContent(/^$/);
+
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Nearby' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Recent' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('1 store')).toHaveAttribute('aria-live', 'polite');
+  });
+
   it('uses one store-card activation to open receipt guidelines without selection controls or SEC badge', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
     const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({

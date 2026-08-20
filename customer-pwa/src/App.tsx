@@ -42,12 +42,14 @@ const ShelfScanner = lazy(() => import('./components/ShelfScanner').then((module
 const FormalReport = lazy(() => import('./components/FormalReport').then((module) => ({ default: module.FormalReport })));
 const TrackReport = lazy(() => import('./components/TrackReport').then((module) => ({ default: module.TrackReport })));
 const ReceiptDraftView = lazy(() => import('./components/ReceiptDraftView').then((module) => ({ default: module.ReceiptDraftView })));
+const MoreView = lazy(() => import('./components/MoreView').then((module) => ({ default: module.MoreView })));
 
 const tabForRoute = (route: AppRoute): string => {
   if (route.name === 'home') return 'home';
   if (route.name === 'prices' || route.name === 'product') return 'prices';
   if (route.name === 'scan') return 'scan';
   if (route.name === 'track-report') return 'track';
+  if (route.name === 'more') return 'more';
   return 'reports';
 };
 
@@ -56,6 +58,7 @@ const routeForTab = (tab: string): AppRoute => {
   if (tab === 'scan') return { name: 'scan' };
   if (tab === 'track') return { name: 'track-report' };
   if (tab === 'reports') return { name: 'reports' };
+  if (tab === 'more') return { name: 'more' };
   return { name: 'home' };
 };
 
@@ -72,6 +75,7 @@ const pageLoaderDestination = (activeTab: string): PageLoaderDestination => {
   if (activeTab === 'scan') return 'scan';
   if (activeTab === 'reports') return 'reports';
   if (activeTab === 'track') return 'track';
+  if (activeTab === 'more') return 'more';
   return 'home';
 };
 
@@ -325,6 +329,19 @@ export const App: React.FC = () => {
             initialToken={trackingParams?.token}
             setActiveTab={setActiveTab}
             onReportTracked={recordTrackedReport}
+          />
+        )}
+
+        {activeTab === 'more' && (
+          <MoreView
+            setActiveTab={setActiveTab}
+            lastSyncTime={lastSyncTime}
+            stateOfCalamity={config?.state_of_calamity}
+            bulletinDate={bulletin.effectiveDate}
+            totalCommodities={bulletin.totalCommodities}
+            onRefreshData={async () => {
+              setRefreshAttempt((attempt) => attempt + 1);
+            }}
           />
         )}
 

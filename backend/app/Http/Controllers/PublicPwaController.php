@@ -86,6 +86,7 @@ class PublicPwaController extends Controller
             'address' => (string) $store->address,
             'latitude' => (float) $store->latitude,
             'longitude' => (float) $store->longitude,
+            'image_path' => $store->image_path ?? null,
             'is_verified' => $hasVerified ? (bool) $store->is_verified : true,
         ];
     }

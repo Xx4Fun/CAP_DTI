@@ -55,28 +55,52 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 5. Seed some sample stores
+        // 5. Seed verified stores for San Jose de Buenavista, Antique
         Store::updateOrCreate(
             ['dti_sec_number' => 'SEC-CS202612345'],
             [
-                'store_name' => 'San Jose Public Market - Stall 12',
-                'owner_name' => 'Maria Clara',
+                'store_name' => 'Super Metro San Jose',
+                'owner_name' => 'Metro Retail Stores Group Inc.',
                 'latitude' => 10.742400,
                 'longitude' => 121.940600,
-                'address' => 'Stall 12, Public Market, San Jose de Buenavista, Antique',
+                'address' => 'Tradetown, San Jose de Buenavista',
+                'image_path' => '/stores/store.webp',
                 'recidivism_index' => 0,
+                'is_active' => true,
+                'is_verified' => true,
+                'is_public' => true,
             ]
         );
 
         Store::updateOrCreate(
             ['dti_sec_number' => 'SEC-CS202654321'],
             [
-                'store_name' => 'Buenavista Grocery Mart',
-                'owner_name' => 'Jose Rizal',
-                'latitude' => 10.746500,
-                'longitude' => 121.943000,
-                'address' => 'Buenavista Street, San Jose de Buenavista, Antique',
-                'recidivism_index' => 1,
+                'store_name' => 'Gaisano Grand Antique',
+                'owner_name' => 'Gaisano Grand Malls Inc.',
+                'latitude' => 10.745000,
+                'longitude' => 121.942000,
+                'address' => 'San Jose de Buenavista',
+                'image_path' => '/stores/gaisano-grand.jpg',
+                'recidivism_index' => 0,
+                'is_active' => true,
+                'is_verified' => true,
+                'is_public' => true,
+            ]
+        );
+
+        Store::updateOrCreate(
+            ['dti_sec_number' => 'SEC-CS202699999'],
+            [
+                'store_name' => 'Robinsons Superstore Antique',
+                'owner_name' => 'Robinsons Retail Holdings Inc.',
+                'latitude' => 10.741000,
+                'longitude' => 121.938000,
+                'address' => 'Atabay, San Jose de Buenavista',
+                'image_path' => '/stores/robinsons.jpg',
+                'recidivism_index' => 0,
+                'is_active' => true,
+                'is_verified' => true,
+                'is_public' => true,
             ]
         );
 

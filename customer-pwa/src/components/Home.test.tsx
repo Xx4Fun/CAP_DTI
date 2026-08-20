@@ -156,15 +156,16 @@ describe('approved Home experience', () => {
     expect(offsetStyle.height).toBe(headerStyle.height);
   });
 
-  it('keeps five bottom navigation actions and uses Profile to open the existing menu', async () => {
+  it('keeps five bottom navigation actions including More', async () => {
+    const mockSetActiveTab = vi.fn();
     const user = userEvent.setup();
-    render(<Navbar activeTab="home" setActiveTab={vi.fn()} stateOfCalamity={false} />);
+    render(<Navbar activeTab="home" setActiveTab={mockSetActiveTab} stateOfCalamity={false} />);
 
-    for (const label of ['Home', 'Prices', 'Scan', 'Reports', 'Profile']) {
+    for (const label of ['Home', 'Prices', 'Scan', 'Reports', 'More']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
 
-    await user.click(screen.getByRole('button', { name: 'Profile' }));
-    expect(screen.getByRole('button', { name: 'Track Report' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('more');
   });
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 
-export type PageLoaderDestination = 'home' | 'prices' | 'scan' | 'reports' | 'track';
+export type PageLoaderDestination = 'home' | 'prices' | 'scan' | 'reports' | 'track' | 'more';
 
 interface PageLoaderProps {
   destination: PageLoaderDestination;
@@ -16,6 +16,7 @@ const destinationLabels: Record<PageLoaderDestination, string> = {
   scan: 'Scanner',
   reports: 'Reports',
   track: 'Report Status',
+  more: 'More & Help',
 };
 
 export const PageLoader: React.FC<PageLoaderProps> = ({

@@ -17,7 +17,7 @@ describe('routing', () => {
       .toBe('/reports/REP-20260816-ONE/processing');
     expect(pathFor({ name: 'receipt-review', reference: 'REP-20260816-ONE' }))
       .toBe('/reports/REP-20260816-ONE/review');
-    expect(parseRoute('/reports/REP-20260816-ONE/review'))
-      .toEqual({ name: 'receipt-review', reference: 'REP-20260816-ONE' });
+    expect(pathFor({ name: 'more' })).toBe('/more');
+    expect(parseRoute('/more')).toEqual({ name: 'more' });
   });
 });

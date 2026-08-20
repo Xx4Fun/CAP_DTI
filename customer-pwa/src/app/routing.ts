@@ -7,7 +7,8 @@ export type AppRoute =
   | { name: 'new-report' }
   | { name: 'track-report' }
   | { name: 'receipt-processing'; reference: string }
-  | { name: 'receipt-review'; reference: string };
+  | { name: 'receipt-review'; reference: string }
+  | { name: 'more' };
 
 export function parseRoute(pathname: string): AppRoute {
   const normalizedPath = pathname.length > 1
@@ -33,6 +34,7 @@ export function parseRoute(pathname: string): AppRoute {
     '/reports': { name: 'reports' },
     '/reports/new': { name: 'new-report' },
     '/reports/track': { name: 'track-report' },
+    '/more': { name: 'more' },
   };
 
   return routes[normalizedPath] ?? { name: 'home' };
@@ -54,6 +56,7 @@ export function pathFor(route: AppRoute): string {
     reports: '/reports',
     'new-report': '/reports/new',
     'track-report': '/reports/track',
+    more: '/more',
   };
 
   return paths[route.name];

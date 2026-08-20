@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  X,
   Search,
   MapPin,
-  Clock,
   Zap,
   ZapOff,
   RotateCw,
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react';
 import {
   apiClient,
+  defaultStoresList,
   type Establishment,
   type Commodity,
   type ScanCandidate,
@@ -27,6 +26,7 @@ import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } fro
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
 import { computeGuideSourceCrop, computeNormalizedCropSize } from '../app/shelfTagCrop';
 import { StoreSelectionCard } from './StoreSelectionCard';
+import { StoreSelectionView } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 interface ShelfScannerProps {
@@ -134,7 +134,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
 
   // Store Selection State
-  const [stores, setStores] = useState<Establishment[]>([]);
+  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent'>('all');
@@ -766,125 +766,45 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       {/* SCREEN 1: STORE SELECTION */}
       {scannerState === 'SELECT_STORE' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingBottom: '24px' }}>
-          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
-            <div>
-              <h1 style={{ margin: 0, color: '#0f172a', fontSize: '1.4rem', fontWeight: 800, lineHeight: 1.2 }}>
-                Choose a store
-              </h1>
-              <p style={{ margin: '5px 0 0', color: '#64748b', fontSize: '0.88rem', lineHeight: 1.45 }}>
-                Tap the verified store where you are checking a shelf price.
-              </p>
-            </div>
-
-            {errorMessage && (
-              <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
-                <AlertTriangle size={18} style={{ flexShrink: 0 }} /> {errorMessage}
-              </div>
-            )}
-            
-            {/* Search Input Bar */}
-            <div style={{ position: 'relative' }}>
-              <Search style={{ position: 'absolute', left: '14px', top: '17px', color: '#94a3b8' }} size={18} />
-              <input
-                aria-label="Search verified stores"
-                type="text"
-                className="input-field"
-                style={{
-                  paddingLeft: '42px',
-                  paddingRight: searchTerm ? '40px' : '16px',
-                  height: '52px',
-                  borderRadius: '12px',
-                  fontSize: '0.95rem',
-                  border: '1px solid #e2e8f0',
-                  background: '#ffffff'
-                }}
-                placeholder="Search store name, barangay, or address"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  aria-label="Clear store search"
-                  onClick={() => setSearchTerm('')}
-                  style={{ position: 'absolute', right: '12px', top: '15px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-                >
-                  <X size={18} />
-                </button>
-              )}
-            </div>
-
-            {/* Quick Filter Chips Bar */}
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px', scrollbarWidth: 'none' }}>
-              <button
-                onClick={handleNearbyFilter}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '9999px',
-                  border: activeFilterChip === 'nearby' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                  background: activeFilterChip === 'nearby' ? '#eff6ff' : '#ffffff',
-                  color: activeFilterChip === 'nearby' ? '#1d4ed8' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <MapPin size={14} color="#2563eb" />
-                {geoLoading ? 'Finding location...' : 'Nearby stores'}
-              </button>
-
-              <button
-                onClick={() => setActiveFilterChip(activeFilterChip === 'recent' ? 'all' : 'recent')}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '9999px',
-                  border: activeFilterChip === 'recent' ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
-                  background: activeFilterChip === 'recent' ? '#eff6ff' : '#ffffff',
-                  color: activeFilterChip === 'recent' ? '#1d4ed8' : '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <Clock size={14} color="#2563eb" />
-                Recent stores
-              </button>
-            </div>
-
-            {geoError && (
-              <div style={{ fontSize: '0.78rem', color: '#dc2626', padding: '4px 0' }}>
-                {geoError}
-              </div>
-            )}
-
-            {/* Compact Consumer Store Cards */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {filteredStores.length === 0 ? (
-                <div style={{ padding: '32px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.9rem', background: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
-                  <AlertTriangle size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
-                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>No Verified Stores Available</div>
-                  <div>{errorMessage || 'Unable to load verified store directory. Please check your network connection.'}</div>
-                </div>
-              ) : (
-                filteredStores.map((store) => (
-                  <StoreSelectionCard
-                    key={store.id}
-                    store={store}
-                    distanceLabel={userGeo
-                      ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
-                      : undefined}
-                    onActivate={() => handleStartScanForStore(store)}
-                  />
-                ))
-              )}
-            </div>
+          <div className="store-selection-screen">
+            <StoreSelectionView
+              subtitle="Where are you checking the shelf price?"
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              activeFilter={activeFilterChip}
+              onFilterChange={(filter) => {
+                if (filter === 'nearby') void handleNearbyFilter();
+                else setActiveFilterChip(filter);
+              }}
+              nearbyBusy={geoLoading}
+              resultCount={filteredStores.length}
+              sortedByProximity={Boolean(userGeo && activeFilterChip === 'nearby')}
+              geoError={geoError}
+              emptyTitle={errorMessage
+                ? 'Store directory unavailable'
+                : activeFilterChip === 'recent'
+                  ? 'No recent stores'
+                  : 'No matching stores found'}
+              emptyDescription={errorMessage || (activeFilterChip === 'recent'
+                ? 'Stores you scan will appear here for faster access.'
+                : 'Try another store name or view the full directory.')}
+              onReset={!errorMessage && (searchTerm || activeFilterChip !== 'all') ? () => {
+                setSearchTerm('');
+                setActiveFilterChip('all');
+              } : undefined}
+            >
+              {filteredStores.map((store, index) => (
+                <StoreSelectionCard
+                  key={store.id}
+                  store={store}
+                  distanceLabel={userGeo
+                    ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+                    : undefined}
+                  isClosest={index === 0 && Boolean(userGeo)}
+                  onActivate={() => handleStartScanForStore(store)}
+                />
+              ))}
+            </StoreSelectionView>
           </div>
         </div>
       )}

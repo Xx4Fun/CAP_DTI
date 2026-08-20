@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   ShieldCheck, FileText, ChevronRight, Camera, Shield, UserCheck,
-  Search, CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
-  SwitchCamera, AlertTriangle, ExternalLink, MapPin, Clock
+  CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
+  SwitchCamera, AlertTriangle, ExternalLink, MapPin
 } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -21,6 +21,7 @@ import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
 import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
 import { StoreSelectionCard } from './StoreSelectionCard';
+import { StoreSelectionView, type StoreDirectoryFilter } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { receiptCaptureSupport } from '../app/receiptCapture';
 import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
@@ -68,7 +69,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   const [openingStoreId, setOpeningStoreId] = useState<number | null>(null);
   const openingStoreRef = useRef<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeChip, setActiveChip] = useState<string>('all');
+  const [activeChip, setActiveChip] = useState<StoreDirectoryFilter>('all');
   const [userGeo, setUserGeo] = useState<GeoPosition | null>(null);
   const [geoError, setGeoError] = useState<string>('');
   const [geoLoading, setGeoLoading] = useState<boolean>(false);
@@ -990,86 +991,49 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 3. STEP 1 OF 3: SELECT STORE (cus_ui/Reports/3.png) */}
+      {/* 3. SELECT STORE VIEW */}
       {/* ========================================================================= */}
       {currentView === 'select-store' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Header Step Indicator */}
-          <div>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Step 1 of 3 · Store
-            </div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>
-              Choose a store
-            </h1>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Tap the verified retail store where your purchase took place.
-            </p>
-          </div>
-
-          {/* Search Bar */}
-          <div style={{ position: 'relative' }}>
-            <Search size={18} style={{ position: 'absolute', left: '14px', top: '14px', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="input-field"
-              placeholder="Search store name, barangay, or address"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ paddingLeft: '42px' }}
+        <StoreSelectionView
+          subtitle="Where did you make this purchase?"
+          backAction={{ label: 'Back to reports', onActivate: handleReportStepBack }}
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          activeFilter={activeChip}
+          onFilterChange={(filter) => {
+            if (filter === 'nearby') void handleNearbyFilter();
+            else setActiveChip(filter);
+          }}
+          nearbyBusy={geoLoading}
+          resultCount={filteredStores.length}
+          sortedByProximity={Boolean(userGeo && activeChip === 'nearby')}
+          geoError={geoError}
+          emptyTitle={activeChip === 'recent' ? 'No recent stores' : 'No matching stores found'}
+          emptyDescription={activeChip === 'recent'
+            ? 'Stores you report will appear here for faster access.'
+            : 'Try another store name or view the full directory.'}
+          onReset={(searchQuery || activeChip !== 'all') ? () => {
+            setSearchQuery('');
+            setActiveChip('all');
+          } : undefined}
+        >
+          {filteredStores.map((store, index) => (
+            <StoreSelectionCard
+              key={store.id}
+              store={store}
+              distanceLabel={userGeo
+                ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+                : undefined}
+              isClosest={index === 0 && Boolean(userGeo)}
+              busy={openingStoreId === store.id}
+              disabled={openingStoreId !== null}
+              onActivate={() => {
+                addRecentStore(store.id);
+                void startCaptureSession(store);
+              }}
             />
-          </div>
-
-          {/* Quick Filter Chips Bar */}
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-            <button
-              className={`chip ${activeChip === 'nearby' ? 'active' : ''}`}
-              onClick={handleNearbyFilter}
-            >
-              <MapPin size={14} />
-              {geoLoading ? 'Finding location...' : 'Nearby stores'}
-            </button>
-            <button
-              className={`chip ${activeChip === 'recent' ? 'active' : ''}`}
-              onClick={() => setActiveChip(activeChip === 'recent' ? 'all' : 'recent')}
-            >
-              <Clock size={14} />
-              Recent stores
-            </button>
-          </div>
-
-          {geoError && (
-            <div style={{ fontSize: '0.78rem', color: '#dc2626', padding: '4px 0' }}>
-              {geoError}
-            </div>
-          )}
-
-          {/* Verified Store Cards List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredStores.map((store) => (
-              <StoreSelectionCard
-                key={store.id}
-                store={store}
-                distanceLabel={userGeo
-                  ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
-                  : undefined}
-                busy={openingStoreId === store.id}
-                disabled={openingStoreId !== null}
-                onActivate={() => {
-                  addRecentStore(store.id);
-                  void startCaptureSession(store);
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Bottom Action Bar */}
-          <div style={{ display: 'flex', marginTop: '8px' }}>
-            <button className="btn-secondary" onClick={handleReportStepBack}>
-              Back
-            </button>
-          </div>
-        </div>
+          ))}
+        </StoreSelectionView>
       )}
 
       {/* ========================================================================= */}

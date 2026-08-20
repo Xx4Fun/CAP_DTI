@@ -14,6 +14,7 @@ class ShelfTagImagePreprocessorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        @ini_set('memory_limit', '512M');
         Storage::fake('local');
     }
 

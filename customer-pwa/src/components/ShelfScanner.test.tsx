@@ -42,6 +42,22 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     sessionStorage.clear();
   });
 
+  it('shares accessible store-directory controls without a receipt back action', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
+
+    render(<ShelfScanner />);
+
+    expect(await screen.findByRole('heading', { name: 'Choose a store' })).toBeInTheDocument();
+    expect(screen.getByText('Where are you checking the shelf price?')).toBeInTheDocument();
+    expect(screen.queryByText(/verified retail store/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Back to reports' })).not.toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Nearby' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Recent' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('1 store')).toHaveAttribute('aria-live', 'polite');
+  });
+
   it('opens the live camera with one store-card activation and no selection confirmation', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
     const getUserMedia = vi.fn().mockResolvedValue({
@@ -180,7 +196,7 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
   it('displays store network error state when API connection is offline in production mode', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('offline'));
     render(<ShelfScanner />);
-    expect(await screen.findByText('No Verified Stores Available')).toBeInTheDocument();
+    expect(await screen.findByText('Store directory unavailable')).toBeInTheDocument();
   });
 
   it('hides unsupported torch controls and stops the real media track on unmount', async () => {

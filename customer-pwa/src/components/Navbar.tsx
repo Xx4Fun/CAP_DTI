@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, UserRound, X } from 'lucide-react';
+import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 interface NavbarProps {
@@ -151,6 +151,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             >
               Track Report
             </button>
+            <button
+              onClick={() => { setActiveTab('more'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'more' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'more' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+            >
+              More & Help
+            </button>
           </div>
         </div>
         </>
@@ -195,12 +201,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </button>
 
         <button
-          className={`nav-item ${isMenuOpen ? 'active' : ''}`}
-          onClick={() => setIsMenuOpen(true)}
-          aria-expanded={isMenuOpen}
+          className={`nav-item ${activeTab === 'more' ? 'active' : ''}`}
+          onClick={() => setActiveTab('more')}
+          aria-current={activeTab === 'more' ? 'page' : undefined}
         >
-          <UserRound size={20} />
-          <span>Profile</span>
+          <Menu size={20} />
+          <span>More</span>
         </button>
       </nav>
     </>

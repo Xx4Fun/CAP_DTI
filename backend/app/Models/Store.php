@@ -17,6 +17,7 @@ class Store extends Model
         'latitude',
         'longitude',
         'address',
+        'image_path',
         'recidivism_index',
         'is_active',
         'is_verified',

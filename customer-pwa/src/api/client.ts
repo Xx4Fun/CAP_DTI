@@ -58,7 +58,8 @@ export const defaultStoresList: Establishment[] = [
     latitude: 10.7424,
     longitude: 121.9406,
     address: 'Tradetown, San Jose de Buenavista',
-    recidivism_index: 0
+    recidivism_index: 0,
+    image_path: '/stores/store.webp'
   },
   {
     id: 2,
@@ -68,7 +69,8 @@ export const defaultStoresList: Establishment[] = [
     latitude: 10.7450,
     longitude: 121.9420,
     address: 'San Jose de Buenavista',
-    recidivism_index: 0
+    recidivism_index: 0,
+    image_path: '/stores/gaisano-grand.jpg'
   },
   {
     id: 3,
@@ -78,7 +80,8 @@ export const defaultStoresList: Establishment[] = [
     latitude: 10.7410,
     longitude: 121.9380,
     address: 'Atabay, San Jose de Buenavista',
-    recidivism_index: 0
+    recidivism_index: 0,
+    image_path: '/stores/robinsons.jpg'
   }
 ];
 
@@ -236,6 +239,14 @@ export interface TrackReportResponse {
 export const resolveImageUrl = (imagePath: string | null | undefined): string | null => {
   if (!imagePath) return null;
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
+  }
+  if (
+    imagePath.startsWith('/stores/') ||
+    imagePath.startsWith('/branding/') ||
+    imagePath.startsWith('/icons/') ||
+    imagePath.startsWith('/home/')
+  ) {
     return imagePath;
   }
   const origin = API_BASE_URL.replace(/\/api\/?$/, '');
