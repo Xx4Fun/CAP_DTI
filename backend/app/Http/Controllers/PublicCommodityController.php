@@ -87,10 +87,6 @@ class PublicCommodityController extends Controller
             $cleanPath = substr($cleanPath, 8);
         }
 
-        if (str_starts_with($cleanPath, 'commodity_images/')) {
-            return '/storage/' . $cleanPath;
-        }
-
         $url = $imageStorage->url($cleanPath);
         if (str_starts_with($url, 'http://') && (request()->isSecure() || request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production'))) {
             $url = 'https://'.substr($url, 7);
