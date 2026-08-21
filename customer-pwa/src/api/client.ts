@@ -238,9 +238,15 @@ export interface TrackReportResponse {
 
 export const resolveImageUrl = (imagePath: string | null | undefined): string | null => {
   if (!imagePath) return null;
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath;
+
+  // 1. Route any commodity image path or URL (including Supabase, Render, or relative paths)
+  // directly to the local bundled asset for instant, offline, reliable display.
+  const commodityMatch = imagePath.match(/commodity_images\/([^/?#]+)/);
+  if (commodityMatch) {
+    return `/storage/commodity_images/${commodityMatch[1]}`;
   }
+
+  // 2. Direct static paths bundled in the PWA
   if (
     imagePath.startsWith('/stores/') ||
     imagePath.startsWith('/branding/') ||
@@ -254,9 +260,12 @@ export const resolveImageUrl = (imagePath: string | null | undefined): string | 
   if (imagePath.startsWith('storage/')) {
     return `/${imagePath}`;
   }
-  if (imagePath.startsWith('commodity_images/')) {
-    return `/storage/${imagePath}`;
+
+  // 3. Other full URLs (e.g. external links)
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath;
   }
+
   const origin = API_BASE_URL.replace(/\/api\/?$/, '');
   return `${origin}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
 };
