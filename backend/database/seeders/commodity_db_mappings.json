@@ -1,0 +1,954 @@
+[
+  {
+    "originalImage": "Battery/Energizer MaxAA (Blister Pack of 4).webp",
+    "dbPath": "commodity_images/battery_energizer_maxaa_blister_pack_of_4_.webp",
+    "commodityName": "Energizer Max - Blister Pack of 4 (AA)",
+    "matchedItemName": "Energizer Max - Blister Pack of 4",
+    "category": "Batteries",
+    "unit": "AA"
+  },
+  {
+    "originalImage": "Battery/Eveready Super Heavy Duty BlackD (Blister Pack of 2).webp",
+    "dbPath": "commodity_images/battery_eveready_super_heavy_duty_blackd_blister_pack_of_2_.webp",
+    "commodityName": "Eveready Super Heavy Duty Black - Blister Pack of 2",
+    "matchedItemName": "Eveready Super Heavy Duty Black - Blister Pack of 2",
+    "category": "Batteries",
+    "unit": "D"
+  },
+  {
+    "originalImage": "Beefloaf/555-150g.webp",
+    "dbPath": "commodity_images/beefloaf_555-150g.webp",
+    "commodityName": "555 (150g)",
+    "matchedItemName": "555",
+    "category": "Beef Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Beefloaf/Argentina 150g.webp",
+    "dbPath": "commodity_images/beefloaf_argentina_150g.webp",
+    "commodityName": "Argentina (150g)",
+    "matchedItemName": "Argentina",
+    "category": "Beef Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Beefloaf/Bingo150g.webp",
+    "dbPath": "commodity_images/beefloaf_bingo150g.webp",
+    "commodityName": "Bingo (150g)",
+    "matchedItemName": "Bingo",
+    "category": "Beef Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Beefloaf/CDO150g.webp",
+    "dbPath": "commodity_images/beefloaf_cdo150g.webp",
+    "commodityName": "CDO (150g)",
+    "matchedItemName": "CDO",
+    "category": "Beef Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Beefloaf/Purefoods150g.webp",
+    "dbPath": "commodity_images/beefloaf_purefoods150g.webp",
+    "commodityName": "Purefoods (150g)",
+    "matchedItemName": "Purefoods",
+    "category": "Beef Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Bread/Pinoy Pandesal 250g.webp",
+    "dbPath": "commodity_images/bread_pinoy_pandesal_250g.webp",
+    "commodityName": "Pinoy Pandesal (10pcs./pack) (250g)",
+    "matchedItemName": "Pinoy Pandesal (10pcs./pack)",
+    "category": "Bread",
+    "unit": "250g"
+  },
+  {
+    "originalImage": "Bread/Pinoy Tasty 450g.webp",
+    "dbPath": "commodity_images/bread_pinoy_tasty_450g.webp",
+    "commodityName": "Pinoy Tasty (450g)",
+    "matchedItemName": "Pinoy Tasty",
+    "category": "Bread",
+    "unit": "450g"
+  },
+  {
+    "originalImage": "Candles/5-Star Esperma White (25pcs.pack)#6.webp",
+    "dbPath": "commodity_images/candles_5-star_esperma_white_25pcs.pack_6.webp",
+    "commodityName": "5-Star Esperma White (25pcs./pack) (#06)",
+    "matchedItemName": "5-Star Esperma White (25pcs./pack)",
+    "category": "Candles",
+    "unit": "#06"
+  },
+  {
+    "originalImage": "Candles/5-Star Esperma White (4pcs.pack)#14.webp",
+    "dbPath": "commodity_images/candles_5-star_esperma_white_4pcs.pack_14.webp",
+    "commodityName": "5-Star Esperma White (4pcs./pack) (#14)",
+    "matchedItemName": "5-Star Esperma White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#14"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (10pcs.pack)#10.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_10pcs.pack_10.webp",
+    "commodityName": "Export Candles White (10pcs./pack) (#10)",
+    "matchedItemName": "Export Candles White (10pcs./pack)",
+    "category": "Candles",
+    "unit": "#10"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (10pcs.pack)#12.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_10pcs.pack_12.webp",
+    "commodityName": "Export Candles White (10pcs./pack) (#12)",
+    "matchedItemName": "Export Candles White (10pcs./pack)",
+    "category": "Candles",
+    "unit": "#12"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (12pcs.pack)#8.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_12pcs.pack_8.webp",
+    "commodityName": "Export Candles White (12pcs./pack) (#08)",
+    "matchedItemName": "Export Candles White (12pcs./pack)",
+    "category": "Candles",
+    "unit": "#08"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (20pcs.pack) #3.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp",
+    "commodityName": "Export Candles White (20pcs./pack) (#03)",
+    "matchedItemName": "Export Candles White (20pcs./pack)",
+    "category": "Candles",
+    "unit": "#03"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (20pcs.pack)#5.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_20pcs.pack_5.webp",
+    "commodityName": "Export Candles White (20pcs./pack) (#05)",
+    "matchedItemName": "Export Candles White (20pcs./pack)",
+    "category": "Candles",
+    "unit": "#05"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (20pcs.pack)#6.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_20pcs.pack_6.webp",
+    "commodityName": "Export Candles White (20pcs./pack) (#06)",
+    "matchedItemName": "Export Candles White (20pcs./pack)",
+    "category": "Candles",
+    "unit": "#06"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (4pcs.pack)#16.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp",
+    "commodityName": "Export Candles White (4pcs./pack) (#16)",
+    "matchedItemName": "Export Candles White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#16"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (4pcs.pack)#18.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_4pcs.pack_18.webp",
+    "commodityName": "Export Candles White (4pcs./pack) (#18)",
+    "matchedItemName": "Export Candles White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#18"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (4pcs.pack)#19.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_4pcs.pack_19.webp",
+    "commodityName": "Export Candles White (4pcs./pack) (#19)",
+    "matchedItemName": "Export Candles White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#19"
+  },
+  {
+    "originalImage": "Candles/Export Candles White (8pcs.pack)#14.webp",
+    "dbPath": "commodity_images/candles_export_candles_white_8pcs.pack_14.webp",
+    "commodityName": "Export Candles White (8pcs./pack) (#14)",
+    "matchedItemName": "Export Candles White (8pcs./pack)",
+    "category": "Candles",
+    "unit": "#14"
+  },
+  {
+    "originalImage": "Candles/Export Vigil Candles WhiteYellow (12pcs.pack)#1.webp",
+    "dbPath": "commodity_images/candles_export_vigil_candles_whiteyellow_12pcs.pack_1.webp",
+    "commodityName": "Export Vigil Candles White/Yellow (12pcs./pack) (#01)",
+    "matchedItemName": "Export Vigil Candles White/Yellow (12pcs./pack)",
+    "category": "Candles",
+    "unit": "#01"
+  },
+  {
+    "originalImage": "Candles/Liwanag Esperma Candle White (20pcs.pack)#5.webp",
+    "dbPath": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_5.webp",
+    "commodityName": "Liwanag Esperma Candle White (20pcs./pack) (#05)",
+    "matchedItemName": "Liwanag Esperma Candle White (20pcs./pack)",
+    "category": "Candles",
+    "unit": "#05"
+  },
+  {
+    "originalImage": "Candles/Liwanag Esperma Candle White (20pcs.pack).webp",
+    "dbPath": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_.webp",
+    "commodityName": "Liwanag Esperma Candle White (20pcs./pack) (#03)",
+    "matchedItemName": "Liwanag Esperma Candle White (20pcs./pack)",
+    "category": "Candles",
+    "unit": "#03"
+  },
+  {
+    "originalImage": "Candles/Liwanag Esperma Candle White (2pcs.pack)#24.webp",
+    "dbPath": "commodity_images/candles_liwanag_esperma_candle_white_2pcs.pack_24.webp",
+    "commodityName": "Liwanag Esperma Candle White (2pcs./pack) (#24)",
+    "matchedItemName": "Liwanag Esperma Candle White (2pcs./pack)",
+    "category": "Candles",
+    "unit": "#24"
+  },
+  {
+    "originalImage": "Candles/Liwanag Esperma Candle White (4pcs.pack)#18.webp",
+    "dbPath": "commodity_images/candles_liwanag_esperma_candle_white_4pcs.pack_18.webp",
+    "commodityName": "Liwanag Esperma Candle White (4pcs./pack) (#18)",
+    "matchedItemName": "Liwanag Esperma Candle White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#18"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Sperma White (10pcs.pack)#2.webp",
+    "dbPath": "commodity_images/candles_manila_wax_sperma_white_10pcs.pack_2.webp",
+    "commodityName": "Manila Wax Sperma White (10pcs./pack) (#02)",
+    "matchedItemName": "Manila Wax Sperma White (10pcs./pack)",
+    "category": "Candles",
+    "unit": "#02"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Sperma White (2pcs.pack)#16.webp",
+    "dbPath": "commodity_images/candles_manila_wax_sperma_white_2pcs.pack_16.webp",
+    "commodityName": "Manila Wax Sperma White (2pcs./pack) (#16)",
+    "matchedItemName": "Manila Wax Sperma White (2pcs./pack)",
+    "category": "Candles",
+    "unit": "#16"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Sperma White (4pcs.pack)#14.webp",
+    "dbPath": "commodity_images/candles_manila_wax_sperma_white_4pcs.pack_14.webp",
+    "commodityName": "Manila Wax Sperma White (4pcs./pack) (#14)",
+    "matchedItemName": "Manila Wax Sperma White (4pcs./pack)",
+    "category": "Candles",
+    "unit": "#14"
+  },
+  {
+    "originalImage": "Candles/MANILA WAX VOTIVE WHITE (6pcs.pack) #3.webp",
+    "dbPath": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp",
+    "commodityName": "Manila Wax Votive White/Yellow (6pcs./pack) (#03)",
+    "matchedItemName": "Manila Wax Votive White/Yellow (6pcs./pack)",
+    "category": "Candles",
+    "unit": "#03"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Votive White (6pcs.pack)#2.webp",
+    "dbPath": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_2.webp",
+    "commodityName": "Manila Wax Votive White/Yellow (6pcs./pack) (#02)",
+    "matchedItemName": "Manila Wax Votive White/Yellow (6pcs./pack)",
+    "category": "Candles",
+    "unit": "#02"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Votive WhiteYellow (6pcs.pack)#1.webp",
+    "dbPath": "commodity_images/candles_manila_wax_votive_whiteyellow_6pcs.pack_1.webp",
+    "commodityName": "Manila Wax Votive White/Yellow (6pcs./pack) (#01)",
+    "matchedItemName": "Manila Wax Votive White/Yellow (6pcs./pack)",
+    "category": "Candles",
+    "unit": "#01"
+  },
+  {
+    "originalImage": "Candles/Manila Wax Votive WhiteYellow (6pcs.pack)#2.webp",
+    "dbPath": "commodity_images/candles_manila_wax_votive_whiteyellow_6pcs.pack_2.webp",
+    "commodityName": "Manila Wax Votive White/Yellow (6pcs./pack) (#02)",
+    "matchedItemName": "Manila Wax Votive White/Yellow (6pcs./pack)",
+    "category": "Candles",
+    "unit": "#02"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/555 Bonus Pack 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_555_bonus_pack_155g.webp",
+    "commodityName": "555 Bonus Pack (155g)",
+    "matchedItemName": "555 Bonus Pack",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Atami EOC 155g(1).webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_atami_eoc_155g_1_.webp",
+    "commodityName": "Atami EOC (155g)",
+    "matchedItemName": "Atami EOC",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Atami EOC 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_atami_eoc_155g.webp",
+    "commodityName": "Atami EOC (155g)",
+    "matchedItemName": "Atami EOC",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Atami Regular Lid 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_atami_regular_lid_155g.webp",
+    "commodityName": "Atami Regular Lid (155g)",
+    "matchedItemName": "Atami Regular Lid",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/King Cup Regular Lid 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_king_cup_regular_lid_155g.webp",
+    "commodityName": "King Cup Regular Lid (155g)",
+    "matchedItemName": "King Cup Regular Lid",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Lucky 7 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_lucky_7_155g.webp",
+    "commodityName": "Lucky 7 (155g)",
+    "matchedItemName": "Lucky 7",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Mariko Regular Lid 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_mariko_regular_lid_155g.webp",
+    "commodityName": "Mariko Regular Lid (155g)",
+    "matchedItemName": "Mariko Regular Lid",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Mikado EOC 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_mikado_eoc_155g.webp",
+    "commodityName": "Mikado EOC (155g)",
+    "matchedItemName": "Mikado EOC",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Mikado Regular Lid 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_mikado_regular_lid_155g.webp",
+    "commodityName": "Mikado Regular Lid (155g)",
+    "matchedItemName": "Mikado Regular Lid",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Saba Philippines Sardines 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_saba_philippines_sardines_155g.webp",
+    "commodityName": "Saba Philippines Sardines (155g)",
+    "matchedItemName": "Saba Philippines Sardines",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Sllenas Regular Lid 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_sllenas_regular_lid_155g.webp",
+    "commodityName": "Sallenas Regular Lid (155g)",
+    "matchedItemName": "Sallenas Regular Lid",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Canned Sardines in Tomato Sauce/Toyo Bonus Green EOC 155g.webp",
+    "dbPath": "commodity_images/canned_sardines_in_tomato_sauce_toyo_bonus_green_eoc_155g.webp",
+    "commodityName": "Toyo Bonus Green EOC (155g)",
+    "matchedItemName": "Toyo Bonus Green EOC",
+    "category": "Canned Sardines in Tomato Sauce",
+    "unit": "155g"
+  },
+  {
+    "originalImage": "Coffee/Blend 45 3 in 1 original 18g.webp",
+    "dbPath": "commodity_images/coffee_blend_45_3_in_1_original_18g.webp",
+    "commodityName": "Blend 45 3-in-1 Original (18g)",
+    "matchedItemName": "Blend 45 3-in-1 Original",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "18g"
+  },
+  {
+    "originalImage": "Coffee/Cafe Puro 17g.webp",
+    "dbPath": "commodity_images/coffee_cafe_puro_17g.webp",
+    "commodityName": "Café Puro (17g)",
+    "matchedItemName": "Café Puro",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "17g"
+  },
+  {
+    "originalImage": "Coffee/Greatest Taste Original Twin Pack 33g.webp",
+    "dbPath": "commodity_images/coffee_greatest_taste_original_twin_pack_33g.webp",
+    "commodityName": "Great Taste Original Twin Pack (33g)",
+    "matchedItemName": "Great Taste Original Twin Pack",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "33g"
+  },
+  {
+    "originalImage": "Coffee/Kopiko Black 30g.webp",
+    "dbPath": "commodity_images/coffee_kopiko_black_30g.webp",
+    "commodityName": "Kopiko Black (30g)",
+    "matchedItemName": "Kopiko Black",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "30g"
+  },
+  {
+    "originalImage": "Coffee/Nescafe Original 20g.webp",
+    "dbPath": "commodity_images/coffee_nescafe_original_20g.webp",
+    "commodityName": "Nescafe Original (20g)",
+    "matchedItemName": "Nescafe Original",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "20g"
+  },
+  {
+    "originalImage": "Coffee/San Mig Coffee 3 in 1 Original 20g.webp",
+    "dbPath": "commodity_images/coffee_san_mig_coffee_3_in_1_original_20g.webp",
+    "commodityName": "San Mig Coffee 3-in-1 Original (20g)",
+    "matchedItemName": "San Mig Coffee 3-in-1 Original",
+    "category": "Coffee 3-in-1 Original",
+    "unit": "20g"
+  },
+  {
+    "originalImage": "CornedBeef/Argentina150g.webp",
+    "dbPath": "commodity_images/cornedbeef_argentina150g.webp",
+    "commodityName": "Argentina (150g)",
+    "matchedItemName": "Argentina",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "CornedBeef/Argentina175g.webp",
+    "dbPath": "commodity_images/cornedbeef_argentina175g.webp",
+    "commodityName": "Argentina (175g)",
+    "matchedItemName": "Argentina",
+    "category": "Corned Beef",
+    "unit": "175g"
+  },
+  {
+    "originalImage": "CornedBeef/Bingo150g.webp",
+    "dbPath": "commodity_images/cornedbeef_bingo150g.webp",
+    "commodityName": "Bingo (150g)",
+    "matchedItemName": "Bingo",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "CornedBeef/El Rancho - SMKT150g.webp",
+    "dbPath": "commodity_images/cornedbeef_el_rancho_-_smkt150g.webp",
+    "commodityName": "El Rancho - SMKT (150g)",
+    "matchedItemName": "El Rancho - SMKT",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "CornedBeef/Star Corned Beef150g.webp",
+    "dbPath": "commodity_images/cornedbeef_star_corned_beef150g.webp",
+    "commodityName": "Star Corned Beef (150g)",
+    "matchedItemName": "Star Corned Beef",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "CornedBeef/Winner - SMKT150g.webp",
+    "dbPath": "commodity_images/cornedbeef_winner_-_smkt150g.webp",
+    "commodityName": "Winner - SMKT (150g)",
+    "matchedItemName": "Winner - SMKT",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "CornedBeef/Young_s Town Premium150g.webp",
+    "dbPath": "commodity_images/cornedbeef_young_s_town_premium150g.webp",
+    "commodityName": "Young's Town Premium (150g)",
+    "matchedItemName": "Young's Town Premium",
+    "category": "Corned Beef",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Distilled Water/Absolute 1Lwebp.webp",
+    "dbPath": "commodity_images/distilled_water_absolute_1lwebp.webp",
+    "commodityName": "Absolute (1L)",
+    "matchedItemName": "Absolute",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "1L"
+  },
+  {
+    "originalImage": "Distilled Water/Absolute 350ml.webp",
+    "dbPath": "commodity_images/distilled_water_absolute_350ml.webp",
+    "commodityName": "Absolute (350mL)",
+    "matchedItemName": "Absolute",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Distilled Water/Absolute 500ml.webp",
+    "dbPath": "commodity_images/distilled_water_absolute_500ml.webp",
+    "commodityName": "Absolute (500mL)",
+    "matchedItemName": "Absolute",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Distilled Water/Absolute 6L.webp",
+    "dbPath": "commodity_images/distilled_water_absolute_6l.webp",
+    "commodityName": "Absolute (6L)",
+    "matchedItemName": "Absolute",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "6L"
+  },
+  {
+    "originalImage": "Distilled Water/SM Bonus 325 ml.webp",
+    "dbPath": "commodity_images/distilled_water_sm_bonus_325_ml.webp",
+    "commodityName": "SM Bonus (325mL)",
+    "matchedItemName": "SM Bonus",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "325mL"
+  },
+  {
+    "originalImage": "Distilled Water/SM Bonus 500ml.webp",
+    "dbPath": "commodity_images/distilled_water_sm_bonus_500ml.webp",
+    "commodityName": "SM Bonus (500mL)",
+    "matchedItemName": "SM Bonus",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Distilled Water/Wilkins 1L.webp",
+    "dbPath": "commodity_images/distilled_water_wilkins_1l.webp",
+    "commodityName": "Wilkins (1L)",
+    "matchedItemName": "Wilkins",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "1L"
+  },
+  {
+    "originalImage": "Distilled Water/Wilkins 330ml.webp",
+    "dbPath": "commodity_images/distilled_water_wilkins_330ml.webp",
+    "commodityName": "Wilkins (330mL)",
+    "matchedItemName": "Wilkins",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "330mL"
+  },
+  {
+    "originalImage": "Distilled Water/Wilkins 500ml.webp",
+    "dbPath": "commodity_images/distilled_water_wilkins_500ml.webp",
+    "commodityName": "Wilkins (500mL)",
+    "matchedItemName": "Wilkins",
+    "category": "Bottled Water - Distilled Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Luncheon Meat/CDO Chinese Style165g.webp",
+    "dbPath": "commodity_images/luncheon_meat_cdo_chinese_style165g.webp",
+    "commodityName": "CDO Chinese Style (165g)",
+    "matchedItemName": "CDO Chinese Style",
+    "category": "Luncheon Meat",
+    "unit": "165g"
+  },
+  {
+    "originalImage": "Luncheon Meat/Purefoods Chinese Style165g.webp",
+    "dbPath": "commodity_images/luncheon_meat_purefoods_chinese_style165g.webp",
+    "commodityName": "Purefoods Chinese Style (165g)",
+    "matchedItemName": "Purefoods Chinese Style",
+    "category": "Luncheon Meat",
+    "unit": "165g"
+  },
+  {
+    "originalImage": "MeatLoaf/555-150g.webp",
+    "dbPath": "commodity_images/meatloaf_555-150g.webp",
+    "commodityName": "555 (150g)",
+    "matchedItemName": "555",
+    "category": "Meat Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "MeatLoaf/Argentina150g.webp",
+    "dbPath": "commodity_images/meatloaf_argentina150g.webp",
+    "commodityName": "Argentina (150g)",
+    "matchedItemName": "Argentina",
+    "category": "Meat Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "MeatLoaf/Argentina170g.webp",
+    "dbPath": "commodity_images/meatloaf_argentina170g.webp",
+    "commodityName": "Argentina (170g)",
+    "matchedItemName": "Argentina",
+    "category": "Meat Loaf",
+    "unit": "170g"
+  },
+  {
+    "originalImage": "MeatLoaf/CDO150g.webp",
+    "dbPath": "commodity_images/meatloaf_cdo150g.webp",
+    "commodityName": "CDO (150g)",
+    "matchedItemName": "CDO",
+    "category": "Meat Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "MeatLoaf/Winner - Supermarket (SMKT)150g.webp",
+    "dbPath": "commodity_images/meatloaf_winner_-_supermarket_smkt_150g.webp",
+    "commodityName": "Winner - Supermarket (SMKT) (150g)",
+    "matchedItemName": "Winner - Supermarket (SMKT)",
+    "category": "Meat Loaf",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Milk/Angel Filled Milk 370ml.webp",
+    "dbPath": "commodity_images/milk_angel_filled_milk_370ml.webp",
+    "commodityName": "Angel Filled Milk (370mL)",
+    "matchedItemName": "Angel Filled Milk",
+    "category": "Processed Milk - Evaporated Milk",
+    "unit": "370mL"
+  },
+  {
+    "originalImage": "Milk/Bear Brand 135g.webp",
+    "dbPath": "commodity_images/milk_bear_brand_135g.webp",
+    "commodityName": "Bear Brand (135g)",
+    "matchedItemName": "Bear Brand",
+    "category": "Processed Milk - Powdered Milk",
+    "unit": "135g"
+  },
+  {
+    "originalImage": "Milk/Birch Tree Full Cream Milk 150g.webp",
+    "dbPath": "commodity_images/milk_birch_tree_full_cream_milk_150g.webp",
+    "commodityName": "Birch Tree Full Cream Milk (150g)",
+    "matchedItemName": "Birch Tree Full Cream Milk",
+    "category": "Processed Milk - Powdered Milk",
+    "unit": "150g"
+  },
+  {
+    "originalImage": "Milk/Jersey Fortified Instant Powdered Milk Drink 300g.webp",
+    "dbPath": "commodity_images/milk_jersey_fortified_instant_powdered_milk_drink_300g.webp",
+    "commodityName": "Jersey Fortified Instant Powdered Milk Drink (300g)",
+    "matchedItemName": "Jersey Fortified Instant Powdered Milk Drink",
+    "category": "Processed Milk - Powdered Milk",
+    "unit": "300g"
+  },
+  {
+    "originalImage": "Milk/Jersey Sweetened Condensed Creamer 390g.webp",
+    "dbPath": "commodity_images/milk_jersey_sweetened_condensed_creamer_390g.webp",
+    "commodityName": "Jersey Sweetened Condensed Creamer (390g)",
+    "matchedItemName": "Jersey Sweetened Condensed Creamer",
+    "category": "Processed Milk - Condensed Milk",
+    "unit": "390g"
+  },
+  {
+    "originalImage": "Mineralized Water/Hidden-Spring 330ml.webp",
+    "dbPath": "commodity_images/mineralized_water_hidden-spring_330ml.webp",
+    "commodityName": "Hidden Spring (330mL)",
+    "matchedItemName": "Hidden Spring",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "330mL"
+  },
+  {
+    "originalImage": "Mineralized Water/Refresh 350 ml.webp",
+    "dbPath": "commodity_images/mineralized_water_refresh_350_ml.webp",
+    "commodityName": "Refresh (350mL)",
+    "matchedItemName": "Refresh",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Mineralized Water/Refresh 500ml.webp",
+    "dbPath": "commodity_images/mineralized_water_refresh_500ml.webp",
+    "commodityName": "Refresh (500mL)",
+    "matchedItemName": "Refresh",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Mineralized Water/robinsons mall 500 ml.webp",
+    "dbPath": "commodity_images/mineralized_water_robinsons_mall_500_ml.webp",
+    "commodityName": "Robinsons Mall (500mL)",
+    "matchedItemName": "Robinsons Mall",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Mineralized Water/summit 1l.webp",
+    "dbPath": "commodity_images/mineralized_water_summit_1l.webp",
+    "commodityName": "Summit (1L)",
+    "matchedItemName": "Summit",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "1L"
+  },
+  {
+    "originalImage": "Mineralized Water/SUMMIT 350ML.webp",
+    "dbPath": "commodity_images/mineralized_water_summit_350ml.webp",
+    "commodityName": "Summit (350mL)",
+    "matchedItemName": "Summit",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Mineralized Water/SUMMIT 6L.webp",
+    "dbPath": "commodity_images/mineralized_water_summit_6l.webp",
+    "commodityName": "Summit (6L)",
+    "matchedItemName": "Summit",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "6L"
+  },
+  {
+    "originalImage": "Mineralized Water/supersavers natures pure 500 ml.webp",
+    "dbPath": "commodity_images/mineralized_water_supersavers_natures_pure_500_ml.webp",
+    "commodityName": "Supersavers Nature's Pure (500mL)",
+    "matchedItemName": "Supersavers Nature's Pure",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Mineralized Water/Supersavers Nature_s Pure 330ml.webp",
+    "dbPath": "commodity_images/mineralized_water_supersavers_nature_s_pure_330ml.webp",
+    "commodityName": "Supersavers Nature's Pure (330mL)",
+    "matchedItemName": "Supersavers Nature's Pure",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "330mL"
+  },
+  {
+    "originalImage": "Mineralized Water/Viva 330 mlpng.webp",
+    "dbPath": "commodity_images/mineralized_water_viva_330_mlpng.webp",
+    "commodityName": "Viva - Nationwide (330mL)",
+    "matchedItemName": "Viva - Nationwide",
+    "category": "Bottled Water - Mineralized Water",
+    "unit": "330mL"
+  },
+  {
+    "originalImage": "Noodles/Ho-Mi 55g.webp",
+    "dbPath": "commodity_images/noodles_ho-mi_55g.webp",
+    "commodityName": "Ho-Mi (Instant Mami Chicken & Garlic, Instant Mami Beef Brisket) (55g)",
+    "matchedItemName": "Ho-Mi (Instant Mami Chicken & Garlic, Instant Mami Beef Brisket)",
+    "category": "Instant Mami Noodles - Chicken & Beef Flavor",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "Noodles/Lucky Me 55g.webp",
+    "dbPath": "commodity_images/noodles_lucky_me_55g.webp",
+    "commodityName": "Lucky Me! (Instant Mami Chicken na Chicken and Instant Mami Beef na Beef) (55g)",
+    "matchedItemName": "Lucky Me! (Instant Mami Chicken na Chicken and Instant Mami Beef na Beef)",
+    "category": "Instant Mami Noodles - Chicken & Beef Flavor",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "Noodles/Payless 55g.webp",
+    "dbPath": "commodity_images/noodles_payless_55g.webp",
+    "commodityName": "Payless (Chicken Espesyal and Beef Paborito Flavor) (55g)",
+    "matchedItemName": "Payless (Chicken Espesyal and Beef Paborito Flavor)",
+    "category": "Instant Mami Noodles - Chicken & Beef Flavor",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "Noodles/Quick Chow 55g.webp",
+    "dbPath": "commodity_images/noodles_quick_chow_55g.webp",
+    "commodityName": "Quick Chow (Instant Mami Beef and Instant Mami Chicken) (55g)",
+    "matchedItemName": "Quick Chow (Instant Mami Beef and Instant Mami Chicken)",
+    "category": "Instant Mami Noodles - Chicken & Beef Flavor",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "Patis/Datu Puti350ml (GinPET Bottle).webp",
+    "dbPath": "commodity_images/patis_datu_puti350ml_ginpet_bottle_.webp",
+    "commodityName": "Datu Puti (350mL)",
+    "matchedItemName": "Datu Puti",
+    "category": "Condiments - Patis (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Patis/Lorins150ml (Pouch).webp",
+    "dbPath": "commodity_images/patis_lorins150ml_pouch_.webp",
+    "commodityName": "Lorins - Pouch (150mL)",
+    "matchedItemName": "Lorins - Pouch",
+    "category": "Condiments - Patis (Doy Pack / Budget Pack)",
+    "unit": "150mL"
+  },
+  {
+    "originalImage": "Patis/Lorins350ml (Budget Pouch).webp",
+    "dbPath": "commodity_images/patis_lorins350ml_budget_pouch_.webp",
+    "commodityName": "Lorins - Budget Pouch (350mL)",
+    "matchedItemName": "Lorins - Budget Pouch",
+    "category": "Condiments - Patis (Doy Pack / Budget Pack)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Patis/Lorins350ml (PET Bottle).webp",
+    "dbPath": "commodity_images/patis_lorins350ml_pet_bottle_.webp",
+    "commodityName": "Lorins PET Bottle (350mL)",
+    "matchedItemName": "Lorins PET Bottle",
+    "category": "Condiments - Patis (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Patis/Nelicom350ml (GinPET Bottle).webp",
+    "dbPath": "commodity_images/patis_nelicom350ml_ginpet_bottle_.webp",
+    "commodityName": "Nelicom Special (350mL)",
+    "matchedItemName": "Nelicom Special",
+    "category": "Condiments - Patis (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Patis/SilverSwanSpecial350mlBottle.webp",
+    "dbPath": "commodity_images/patis_silverswanspecial350mlbottle.webp",
+    "commodityName": "Silver Swan Special (350mL)",
+    "matchedItemName": "Silver Swan Special",
+    "category": "Condiments - Patis (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Purified Water/Magnolia Pure 355ml.webp",
+    "dbPath": "commodity_images/purified_water_magnolia_pure_355ml.webp",
+    "commodityName": "Magnolia Pure (355mL)",
+    "matchedItemName": "Magnolia Pure",
+    "category": "Bottled Water - Purified Water",
+    "unit": "355mL"
+  },
+  {
+    "originalImage": "Purified Water/NATURE SPRING 1L.webp",
+    "dbPath": "commodity_images/purified_water_nature_spring_1l.webp",
+    "commodityName": "Natures Spring (1L)",
+    "matchedItemName": "Natures Spring",
+    "category": "Bottled Water - Purified Water",
+    "unit": "1L"
+  },
+  {
+    "originalImage": "Purified Water/Nature Spring 500ml.webp",
+    "dbPath": "commodity_images/purified_water_nature_spring_500ml.webp",
+    "commodityName": "Natures Spring (500mL)",
+    "matchedItemName": "Natures Spring",
+    "category": "Bottled Water - Purified Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Purified Water/wilkins 1L.webp",
+    "dbPath": "commodity_images/purified_water_wilkins_1l.webp",
+    "commodityName": "Wilkins Pure (1L)",
+    "matchedItemName": "Wilkins Pure",
+    "category": "Bottled Water - Purified Water",
+    "unit": "1L"
+  },
+  {
+    "originalImage": "Purified Water/wilkins 500ml.webp",
+    "dbPath": "commodity_images/purified_water_wilkins_500ml.webp",
+    "commodityName": "Wilkins Pure (500mL)",
+    "matchedItemName": "Wilkins Pure",
+    "category": "Bottled Water - Purified Water",
+    "unit": "500mL"
+  },
+  {
+    "originalImage": "Salt/Fidel Coarse 250g.webp",
+    "dbPath": "commodity_images/salt_fidel_coarse_250g.webp",
+    "commodityName": "Fidel Coarse (Red) - Luzon (250g)",
+    "matchedItemName": "Fidel Coarse (Red) - Luzon",
+    "category": "Salt - Iodized Rock Salt",
+    "unit": "250g"
+  },
+  {
+    "originalImage": "Salt/Lasap Rock Salt 250g.webp",
+    "dbPath": "commodity_images/salt_lasap_rock_salt_250g.webp",
+    "commodityName": "Lasap Rock Salt (250g)",
+    "matchedItemName": "Lasap Rock Salt",
+    "category": "Salt - Iodized Rock Salt",
+    "unit": "250g"
+  },
+  {
+    "originalImage": "SoySouce/Datu Puti.350ml (GinPET Bottle).webp",
+    "dbPath": "commodity_images/soysouce_datu_puti.350ml_ginpet_bottle_.webp",
+    "commodityName": "Datu Puti (350mL)",
+    "matchedItemName": "Datu Puti",
+    "category": "Condiments - Soy Sauce (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "SoySouce/Silver Swan200ml (Doy  Refill Pack).webp",
+    "dbPath": "commodity_images/soysouce_silver_swan200ml_doy_refill_pack_.webp",
+    "commodityName": "Silver Swan Doy Pack (200mL)",
+    "matchedItemName": "Silver Swan Doy Pack",
+    "category": "Condiments - Soy Sauce (Doy Pack / Refill Pack)",
+    "unit": "200mL"
+  },
+  {
+    "originalImage": "SoySouce/SilverSwan350ml(GinPET Bottle).webp",
+    "dbPath": "commodity_images/soysouce_silverswan350ml_ginpet_bottle_.webp",
+    "commodityName": "Silver Swan (350mL)",
+    "matchedItemName": "Silver Swan",
+    "category": "Condiments - Soy Sauce (Gin / PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "ToiletSoap/Green Cross (Pure Care)125g.webp",
+    "dbPath": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp",
+    "commodityName": "Green Cross (Pure Care) (125g)",
+    "matchedItemName": "Green Cross (Pure Care)",
+    "category": "Toilet Soap",
+    "unit": "125g"
+  },
+  {
+    "originalImage": "ToiletSoap/Green Cross (Pure Care)55g.webp",
+    "dbPath": "commodity_images/toiletsoap_green_cross_pure_care_55g.webp",
+    "commodityName": "Green Cross (Pure Care) (55g)",
+    "matchedItemName": "Green Cross (Pure Care)",
+    "category": "Toilet Soap",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "ToiletSoap/Green Cross (Pure Care)85g.webp",
+    "dbPath": "commodity_images/toiletsoap_green_cross_pure_care_85g.webp",
+    "commodityName": "Green Cross (Pure Care) (85g)",
+    "matchedItemName": "Green Cross (Pure Care)",
+    "category": "Toilet Soap",
+    "unit": "85g"
+  },
+  {
+    "originalImage": "ToiletSoap/Palmolive Naturals (Pinkish Glow, Hydrating Glow, White w Papaya, White w Milk)55g.webp",
+    "dbPath": "commodity_images/toiletsoap_palmolive_naturals_pinkish_glow_hydrating_glow_white_w_papaya_white_w_milk_55g.webp",
+    "commodityName": "Palmolive Naturals - Pinkish Glow (pink), Hydrating Glow (green), White with Natural Papaya, and White with Natural Milk (55g)",
+    "matchedItemName": "Palmolive Naturals - Pinkish Glow (pink), Hydrating Glow (green), White with Natural Papaya, and White with Natural Milk",
+    "category": "Toilet Soap",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "ToiletSoap/Safeguard Pure White119g.webp",
+    "dbPath": "commodity_images/toiletsoap_safeguard_pure_white119g.webp",
+    "commodityName": "Safeguard Pure White (119g)",
+    "matchedItemName": "Safeguard Pure White",
+    "category": "Toilet Soap",
+    "unit": "119g"
+  },
+  {
+    "originalImage": "ToiletSoap/Safeguard Pure White55g.webp",
+    "dbPath": "commodity_images/toiletsoap_safeguard_pure_white55g.webp",
+    "commodityName": "Safeguard Pure White (55g)",
+    "matchedItemName": "Safeguard Pure White",
+    "category": "Toilet Soap",
+    "unit": "55g"
+  },
+  {
+    "originalImage": "ToiletSoap/Safeguard Pure White82g.webp",
+    "dbPath": "commodity_images/toiletsoap_safeguard_pure_white82g.webp",
+    "commodityName": "Safeguard Pure White (82g)",
+    "matchedItemName": "Safeguard Pure White",
+    "category": "Toilet Soap",
+    "unit": "82g"
+  },
+  {
+    "originalImage": "Vinegar/Datu Puti White Vinegar350mlGinPET Bottle.webp",
+    "dbPath": "commodity_images/vinegar_datu_puti_white_vinegar350mlginpet_bottle.webp",
+    "commodityName": "Datu Puti - White Vinegar (350mL)",
+    "matchedItemName": "Datu Puti - White Vinegar",
+    "category": "Condiments - Vinegar (Gin and PET Bottle)",
+    "unit": "350mL"
+  },
+  {
+    "originalImage": "Vinegar/Silver Swan Sukang Puti200ml (Doy  Refill Pack).webp",
+    "dbPath": "commodity_images/vinegar_silver_swan_sukang_puti200ml_doy_refill_pack_.webp",
+    "commodityName": "Silver Swan Sukang Puti Doy Pack (200mL)",
+    "matchedItemName": "Silver Swan Sukang Puti Doy Pack",
+    "category": "Condiments - Vinegar (Doy / Refill Pack)",
+    "unit": "200mL"
+  },
+  {
+    "originalImage": "Vinegar/Silver Swan Sukang Puti350ml (GinPET Bottle).webp",
+    "dbPath": "commodity_images/vinegar_silver_swan_sukang_puti350ml_ginpet_bottle_.webp",
+    "commodityName": "Silver Swan Sukang Puti (350mL)",
+    "matchedItemName": "Silver Swan Sukang Puti",
+    "category": "Condiments - Vinegar (Gin and PET Bottle)",
+    "unit": "350mL"
+  }
+]

@@ -245,9 +245,17 @@ export const resolveImageUrl = (imagePath: string | null | undefined): string | 
     imagePath.startsWith('/stores/') ||
     imagePath.startsWith('/branding/') ||
     imagePath.startsWith('/icons/') ||
-    imagePath.startsWith('/home/')
+    imagePath.startsWith('/home/') ||
+    imagePath.startsWith('/storage/') ||
+    imagePath.startsWith('/products/')
   ) {
     return imagePath;
+  }
+  if (imagePath.startsWith('storage/')) {
+    return `/${imagePath}`;
+  }
+  if (imagePath.startsWith('commodity_images/')) {
+    return `/storage/${imagePath}`;
   }
   const origin = API_BASE_URL.replace(/\/api\/?$/, '');
   return `${origin}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;

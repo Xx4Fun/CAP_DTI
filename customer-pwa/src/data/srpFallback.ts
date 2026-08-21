@@ -3,7 +3,8 @@ import type { Commodity } from '../api/client';
 export const fallbackCommodities: Commodity[] = [
     {
         "id": 1,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Saba Philippines Sardines (155g)",
+        "commodity_name": "Saba Philippines Sardines (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_saba_philippines_sardines_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -15,7 +16,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 2,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Atami Regular Lid (155g)",
+        "commodity_name": "Atami Regular Lid (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_atami_regular_lid_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -27,7 +29,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 3,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Mikado Regular Lid (155g)",
+        "commodity_name": "Mikado Regular Lid (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mikado_regular_lid_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -39,7 +42,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 4,
-        "commodity_name": "Canned Sardines in Tomato Sauce - King Cup Regular Lid (155g)",
+        "commodity_name": "King Cup Regular Lid (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_king_cup_regular_lid_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -51,7 +55,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 5,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Mariko Regular Lid (155g)",
+        "commodity_name": "Mariko Regular Lid (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mariko_regular_lid_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -63,7 +68,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 6,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Sallenas Regular Lid (155g)",
+        "commodity_name": "Sallenas Regular Lid (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_sllenas_regular_lid_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -75,7 +81,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 7,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Atami EOC (155g)",
+        "commodity_name": "Atami EOC (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_atami_eoc_155g_1_.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -87,7 +94,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 8,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Mikado EOC (155g)",
+        "commodity_name": "Mikado EOC (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mikado_eoc_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -99,7 +107,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 9,
-        "commodity_name": "Canned Sardines in Tomato Sauce - 555 Bonus Pack (155g)",
+        "commodity_name": "555 Bonus Pack (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_555_bonus_pack_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -111,7 +120,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 10,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Lucky 7 (155g)",
+        "commodity_name": "Lucky 7 (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_lucky_7_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -123,7 +133,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 11,
-        "commodity_name": "Canned Sardines in Tomato Sauce - Toyo Bonus Green EOC (155g)",
+        "commodity_name": "Toyo Bonus Green EOC (155g)",
+        "image_path": "commodity_images/canned_sardines_in_tomato_sauce_toyo_bonus_green_eoc_155g.webp",
         "category": "Canned Sardines in Tomato Sauce",
         "unit": "155g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -135,7 +146,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 12,
-        "commodity_name": "Processed Milk - Condensed Milk - Jersey Sweetened Condensed Creamer (390g)",
+        "commodity_name": "Jersey Sweetened Condensed Creamer (390g)",
+        "image_path": "commodity_images/milk_jersey_sweetened_condensed_creamer_390g.webp",
         "category": "Processed Milk - Condensed Milk",
         "unit": "390g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -147,7 +159,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 13,
-        "commodity_name": "Processed Milk - Evaporated Milk - Angel Filled Milk (370mL)",
+        "commodity_name": "Angel Filled Milk (370mL)",
+        "image_path": "commodity_images/milk_angel_filled_milk_370ml.webp",
         "category": "Processed Milk - Evaporated Milk",
         "unit": "370mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -159,7 +172,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 14,
-        "commodity_name": "Processed Milk - Powdered Milk - Bear Brand (135g)",
+        "commodity_name": "Bear Brand (135g)",
+        "image_path": "commodity_images/milk_bear_brand_135g.webp",
         "category": "Processed Milk - Powdered Milk",
         "unit": "135g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -171,7 +185,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 15,
-        "commodity_name": "Processed Milk - Powdered Milk - Birch Tree Full Cream Milk (150g)",
+        "commodity_name": "Birch Tree Full Cream Milk (150g)",
+        "image_path": "commodity_images/milk_birch_tree_full_cream_milk_150g.webp",
         "category": "Processed Milk - Powdered Milk",
         "unit": "150g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -183,7 +198,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 16,
-        "commodity_name": "Processed Milk - Powdered Milk - Jersey Fortified Instant Powdered Milk Drink (300g)",
+        "commodity_name": "Jersey Fortified Instant Powdered Milk Drink (300g)",
+        "image_path": "commodity_images/milk_jersey_fortified_instant_powdered_milk_drink_300g.webp",
         "category": "Processed Milk - Powdered Milk",
         "unit": "300g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -195,7 +211,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 17,
-        "commodity_name": "Coffee 3-in-1 Original - Caf\u00e9 Puro (17g)",
+        "commodity_name": "Café Puro (17g)",
+        "image_path": "commodity_images/coffee_cafe_puro_17g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "17g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -207,7 +224,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 18,
-        "commodity_name": "Coffee 3-in-1 Original - Blend 45 3-in-1 Original (18g)",
+        "commodity_name": "Blend 45 3-in-1 Original (18g)",
+        "image_path": "commodity_images/coffee_blend_45_3_in_1_original_18g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "18g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -219,7 +237,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 19,
-        "commodity_name": "Coffee 3-in-1 Original - San Mig Coffee 3-in-1 Original (20g)",
+        "commodity_name": "San Mig Coffee 3-in-1 Original (20g)",
+        "image_path": "commodity_images/coffee_san_mig_coffee_3_in_1_original_20g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "20g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -231,7 +250,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 20,
-        "commodity_name": "Coffee 3-in-1 Original - Nescafe Original (20g)",
+        "commodity_name": "Nescafe Original (20g)",
+        "image_path": "commodity_images/coffee_nescafe_original_20g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "20g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -243,7 +263,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 21,
-        "commodity_name": "Coffee 3-in-1 Original - Kopiko Black (30g)",
+        "commodity_name": "Kopiko Black (30g)",
+        "image_path": "commodity_images/coffee_kopiko_black_30g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "30g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -255,7 +276,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 22,
-        "commodity_name": "Coffee 3-in-1 Original - Great Taste Original Twin Pack (33g)",
+        "commodity_name": "Great Taste Original Twin Pack (33g)",
+        "image_path": "commodity_images/coffee_greatest_taste_original_twin_pack_33g.webp",
         "category": "Coffee 3-in-1 Original",
         "unit": "33g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -267,7 +289,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 23,
-        "commodity_name": "Bread - Pinoy Pandesal (10pcs.\/pack) (250g)",
+        "commodity_name": "Pinoy Pandesal (10pcs./pack) (250g)",
+        "image_path": "commodity_images/bread_pinoy_pandesal_250g.webp",
         "category": "Bread",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -279,7 +302,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 24,
-        "commodity_name": "Bread - Pinoy Tasty (450g)",
+        "commodity_name": "Pinoy Tasty (450g)",
+        "image_path": "commodity_images/bread_pinoy_tasty_450g.webp",
         "category": "Bread",
         "unit": "450g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -291,7 +315,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 25,
-        "commodity_name": "Instant Mami Noodles - Chicken & Beef Flavor - Payless (Chicken Espesyal and Beef Paborito Flavor) (55g)",
+        "commodity_name": "Payless (Chicken Espesyal and Beef Paborito Flavor) (55g)",
+        "image_path": "commodity_images/noodles_payless_55g.webp",
         "category": "Instant Mami Noodles - Chicken & Beef Flavor",
         "unit": "55g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -303,7 +328,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 26,
-        "commodity_name": "Instant Mami Noodles - Chicken & Beef Flavor - Quick Chow (Instant Mami Beef and Instant Mami Chicken) (55g)",
+        "commodity_name": "Quick Chow (Instant Mami Beef and Instant Mami Chicken) (55g)",
+        "image_path": "commodity_images/noodles_quick_chow_55g.webp",
         "category": "Instant Mami Noodles - Chicken & Beef Flavor",
         "unit": "55g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -315,7 +341,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 27,
-        "commodity_name": "Instant Mami Noodles - Chicken & Beef Flavor - Ho-Mi (Instant Mami Chicken & Garlic, Instant Mami Beef Brisket) (55g)",
+        "commodity_name": "Ho-Mi (Instant Mami Chicken & Garlic, Instant Mami Beef Brisket) (55g)",
+        "image_path": "commodity_images/noodles_ho-mi_55g.webp",
         "category": "Instant Mami Noodles - Chicken & Beef Flavor",
         "unit": "55g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -327,7 +354,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 28,
-        "commodity_name": "Instant Mami Noodles - Chicken & Beef Flavor - Lucky Me! (Instant Mami Chicken na Chicken and Instant Mami Beef na Beef) (55g)",
+        "commodity_name": "Lucky Me! (Instant Mami Chicken na Chicken and Instant Mami Beef na Beef) (55g)",
+        "image_path": "commodity_images/noodles_lucky_me_55g.webp",
         "category": "Instant Mami Noodles - Chicken & Beef Flavor",
         "unit": "55g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -339,7 +367,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 29,
-        "commodity_name": "Salt - Iodized Rock Salt - Lasap Rock Salt (250g)",
+        "commodity_name": "Lasap Rock Salt (250g)",
+        "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp",
         "category": "Salt - Iodized Rock Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -351,7 +380,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 30,
-        "commodity_name": "Salt - Iodized Rock Salt - Fidel Coarse (Red) - Luzon (250g)",
+        "commodity_name": "Fidel Coarse (Red) - Luzon (250g)",
+        "image_path": "commodity_images/salt_fidel_coarse_250g.webp",
         "category": "Salt - Iodized Rock Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -363,7 +393,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 31,
-        "commodity_name": "Salt - Iodized Rock Salt - Fidel Coarse (Red) - Visayas \/ Mindanao (250g)",
+        "commodity_name": "Fidel Coarse (Red) - Visayas / Mindanao (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Rock Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -375,7 +406,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 32,
-        "commodity_name": "Salt - Iodized Rock Salt - Lasap Rock Salt (500g)",
+        "commodity_name": "Lasap Rock Salt (500g)",
+        "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp",
         "category": "Salt - Iodized Rock Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -387,7 +419,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 33,
-        "commodity_name": "Salt - Iodized Rock Salt - Fidel Coarse (Red) - Luzon (500g)",
+        "commodity_name": "Fidel Coarse (Red) - Luzon (500g)",
+        "image_path": "commodity_images/salt_fidel_coarse_250g.webp",
         "category": "Salt - Iodized Rock Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -399,7 +432,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 34,
-        "commodity_name": "Salt - Iodized Rock Salt - Fidel Coarse (Red) - Visayas \/ Mindanao (500g)",
+        "commodity_name": "Fidel Coarse (Red) - Visayas / Mindanao (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Rock Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -411,7 +445,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 35,
-        "commodity_name": "Salt - Iodized Rock Salt - Lasap Rock Salt (1kg)",
+        "commodity_name": "Lasap Rock Salt (1kg)",
+        "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp",
         "category": "Salt - Iodized Rock Salt",
         "unit": "1kg",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -423,7 +458,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 36,
-        "commodity_name": "Salt - Iodized Salt - Lasap Iodized Salt (100g)",
+        "commodity_name": "Lasap Iodized Salt (100g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "100g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -435,7 +471,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 37,
-        "commodity_name": "Salt - Iodized Salt - Lasap Iodized Salt (250g)",
+        "commodity_name": "Lasap Iodized Salt (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -447,7 +484,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 38,
-        "commodity_name": "Salt - Iodized Salt - Fidel Refined (Blue) - Luzon (250g)",
+        "commodity_name": "Fidel Refined (Blue) - Luzon (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -459,7 +497,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 39,
-        "commodity_name": "Salt - Iodized Salt - Fidel Refined (Blue) - Visayas \/ Mindanao (250g)",
+        "commodity_name": "Fidel Refined (Blue) - Visayas / Mindanao (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -471,7 +510,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 40,
-        "commodity_name": "Salt - Iodized Salt - Fidel Free Flowing (Green) - Luzon (250g)",
+        "commodity_name": "Fidel Free Flowing (Green) - Luzon (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -483,7 +523,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 41,
-        "commodity_name": "Salt - Iodized Salt - Fidel Free Flowing (Green) - Visayas & Mindanao (250g)",
+        "commodity_name": "Fidel Free Flowing (Green) - Visayas & Mindanao (250g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "250g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -495,7 +536,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 42,
-        "commodity_name": "Salt - Iodized Salt - Lasap Iodized Salt (500g)",
+        "commodity_name": "Lasap Iodized Salt (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -507,7 +549,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 43,
-        "commodity_name": "Salt - Iodized Salt - Fidel Refined (Blue) - Luzon (500g)",
+        "commodity_name": "Fidel Refined (Blue) - Luzon (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -519,7 +562,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 44,
-        "commodity_name": "Salt - Iodized Salt - Fidel Refined (Blue) - Visayas & Mindanao (500g)",
+        "commodity_name": "Fidel Refined (Blue) - Visayas & Mindanao (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -531,7 +575,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 45,
-        "commodity_name": "Salt - Iodized Salt - Fidel Free Flowing (Green) - Luzon (500g)",
+        "commodity_name": "Fidel Free Flowing (Green) - Luzon (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -543,7 +588,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 46,
-        "commodity_name": "Salt - Iodized Salt - Fidel Free Flowing (Green) - Visayas & Mindanao (500g)",
+        "commodity_name": "Fidel Free Flowing (Green) - Visayas & Mindanao (500g)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "500g",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -555,7 +601,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 47,
-        "commodity_name": "Salt - Iodized Salt - Lasap Iodized Salt (1kg)",
+        "commodity_name": "Lasap Iodized Salt (1kg)",
+        "image_path": null,
         "category": "Salt - Iodized Salt",
         "unit": "1kg",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -567,7 +614,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 48,
-        "commodity_name": "Bottled Water - Distilled Water - SM Bonus (325mL)",
+        "commodity_name": "SM Bonus (325mL)",
+        "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "325mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -579,7 +627,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 49,
-        "commodity_name": "Bottled Water - Distilled Water - Wilkins (330mL)",
+        "commodity_name": "Wilkins (330mL)",
+        "image_path": "commodity_images/distilled_water_wilkins_1l.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "330mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -591,7 +640,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 50,
-        "commodity_name": "Bottled Water - Distilled Water - Absolute (350mL)",
+        "commodity_name": "Absolute (350mL)",
+        "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "350mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -603,7 +653,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 51,
-        "commodity_name": "Bottled Water - Distilled Water - SM Bonus (500mL)",
+        "commodity_name": "SM Bonus (500mL)",
+        "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -615,7 +666,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 52,
-        "commodity_name": "Bottled Water - Distilled Water - Absolute (500mL)",
+        "commodity_name": "Absolute (500mL)",
+        "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -627,7 +679,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 53,
-        "commodity_name": "Bottled Water - Distilled Water - Wilkins (500mL)",
+        "commodity_name": "Wilkins (500mL)",
+        "image_path": "commodity_images/distilled_water_wilkins_1l.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -639,7 +692,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 54,
-        "commodity_name": "Bottled Water - Distilled Water - Wilkins (1L)",
+        "commodity_name": "Wilkins (1L)",
+        "image_path": "commodity_images/distilled_water_wilkins_1l.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -651,7 +705,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 55,
-        "commodity_name": "Bottled Water - Distilled Water - Absolute (1L)",
+        "commodity_name": "Absolute (1L)",
+        "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -663,7 +718,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 56,
-        "commodity_name": "Bottled Water - Distilled Water - Absolute (6L)",
+        "commodity_name": "Absolute (6L)",
+        "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "6L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -675,7 +731,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 57,
-        "commodity_name": "Bottled Water - Distilled Water - SM Bonus (6.6L)",
+        "commodity_name": "SM Bonus (6.6L)",
+        "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "6.6L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -687,7 +744,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 58,
-        "commodity_name": "Bottled Water - Distilled Water - Wilkins (7L)",
+        "commodity_name": "Wilkins (7L)",
+        "image_path": "commodity_images/distilled_water_wilkins_1l.webp",
         "category": "Bottled Water - Distilled Water",
         "unit": "7L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -699,7 +757,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 59,
-        "commodity_name": "Bottled Water - Purified Water - SM Bonus (300mL)",
+        "commodity_name": "SM Bonus (300mL)",
+        "image_path": null,
         "category": "Bottled Water - Purified Water",
         "unit": "300mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -711,7 +770,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 60,
-        "commodity_name": "Bottled Water - Purified Water - Magnolia Pure (355mL)",
+        "commodity_name": "Magnolia Pure (355mL)",
+        "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "355mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -723,7 +783,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 61,
-        "commodity_name": "Bottled Water - Purified Water - Refresh (500mL)",
+        "commodity_name": "Refresh (500mL)",
+        "image_path": "commodity_images/mineralized_water_refresh_500ml.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -735,7 +796,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 62,
-        "commodity_name": "Bottled Water - Purified Water - Natures Spring (500mL)",
+        "commodity_name": "Natures Spring (500mL)",
+        "image_path": "commodity_images/purified_water_nature_spring_1l.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -747,7 +809,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 63,
-        "commodity_name": "Bottled Water - Purified Water - Magnolia Pure (500mL)",
+        "commodity_name": "Magnolia Pure (500mL)",
+        "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -759,7 +822,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 64,
-        "commodity_name": "Bottled Water - Purified Water - Wilkins Pure (500mL)",
+        "commodity_name": "Wilkins Pure (500mL)",
+        "image_path": "commodity_images/purified_water_wilkins_1l.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -771,7 +835,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 65,
-        "commodity_name": "Bottled Water - Purified Water - Natures Spring (1L)",
+        "commodity_name": "Natures Spring (1L)",
+        "image_path": "commodity_images/purified_water_nature_spring_1l.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -783,7 +848,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 66,
-        "commodity_name": "Bottled Water - Purified Water - Wilkins Pure (1L)",
+        "commodity_name": "Wilkins Pure (1L)",
+        "image_path": "commodity_images/purified_water_wilkins_1l.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -795,7 +861,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 67,
-        "commodity_name": "Bottled Water - Purified Water - Magnolia Pure (1L)",
+        "commodity_name": "Magnolia Pure (1L)",
+        "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp",
         "category": "Bottled Water - Purified Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -807,7 +874,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 68,
-        "commodity_name": "Bottled Water - Mineralized Water - Supersavers Nature's Pure (330mL)",
+        "commodity_name": "Supersavers Nature's Pure (330mL)",
+        "image_path": "commodity_images/mineralized_water_supersavers_natures_pure_500_ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "330mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -819,7 +887,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 69,
-        "commodity_name": "Bottled Water - Mineralized Water - Hidden Spring (330mL)",
+        "commodity_name": "Hidden Spring (330mL)",
+        "image_path": "commodity_images/mineralized_water_hidden-spring_330ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "330mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -831,7 +900,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 70,
-        "commodity_name": "Bottled Water - Mineralized Water - Viva - Nationwide (330mL)",
+        "commodity_name": "Viva - Nationwide (330mL)",
+        "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "330mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -843,7 +913,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 71,
-        "commodity_name": "Bottled Water - Mineralized Water - Refresh (350mL)",
+        "commodity_name": "Refresh (350mL)",
+        "image_path": "commodity_images/mineralized_water_refresh_350_ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "350mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -855,7 +926,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 72,
-        "commodity_name": "Bottled Water - Mineralized Water - Summit (350mL)",
+        "commodity_name": "Summit (350mL)",
+        "image_path": "commodity_images/mineralized_water_summit_1l.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "350mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -867,7 +939,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 73,
-        "commodity_name": "Bottled Water - Mineralized Water - Refresh (500mL)",
+        "commodity_name": "Refresh (500mL)",
+        "image_path": "commodity_images/mineralized_water_refresh_350_ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -879,7 +952,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 74,
-        "commodity_name": "Bottled Water - Mineralized Water - Supersavers Nature's Pure (500mL)",
+        "commodity_name": "Supersavers Nature's Pure (500mL)",
+        "image_path": "commodity_images/mineralized_water_supersavers_natures_pure_500_ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -891,7 +965,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 75,
-        "commodity_name": "Bottled Water - Mineralized Water - Robinsons Mall (500mL)",
+        "commodity_name": "Robinsons Mall (500mL)",
+        "image_path": "commodity_images/mineralized_water_robinsons_mall_500_ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -903,7 +978,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 76,
-        "commodity_name": "Bottled Water - Mineralized Water - Hidden Spring (500mL)",
+        "commodity_name": "Hidden Spring (500mL)",
+        "image_path": "commodity_images/mineralized_water_hidden-spring_330ml.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -915,7 +991,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 77,
-        "commodity_name": "Bottled Water - Mineralized Water - Viva - Nationwide (500mL)",
+        "commodity_name": "Viva - Nationwide (500mL)",
+        "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -927,7 +1004,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 78,
-        "commodity_name": "Bottled Water - Mineralized Water - Summit (500mL)",
+        "commodity_name": "Summit (500mL)",
+        "image_path": "commodity_images/mineralized_water_summit_1l.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "500mL",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -939,7 +1017,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 79,
-        "commodity_name": "Bottled Water - Mineralized Water - Viva - Nationwide (1L)",
+        "commodity_name": "Viva - Nationwide (1L)",
+        "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -951,7 +1030,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 80,
-        "commodity_name": "Bottled Water - Mineralized Water - Summit (1L)",
+        "commodity_name": "Summit (1L)",
+        "image_path": "commodity_images/mineralized_water_summit_1l.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "1L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -963,7 +1043,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 81,
-        "commodity_name": "Bottled Water - Mineralized Water - Summit (6L)",
+        "commodity_name": "Summit (6L)",
+        "image_path": "commodity_images/mineralized_water_summit_1l.webp",
         "category": "Bottled Water - Mineralized Water",
         "unit": "6L",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -975,8 +1056,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 82,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Sulit Bar (BLUE, WHITE, KALAMANSI, SPECKLED BLUE) - Visayas \/ Mindanao (330g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Sulit Bar (BLUE, WHITE, KALAMANSI, SPECKLED BLUE) - Visayas / Mindanao (330g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "330g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 21,
@@ -987,8 +1069,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 83,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Bareta Bar (BLUE, SPECKLED BLUE, WHITE, KALAMANSI) - Visayas \/ Mindanao (330g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Bareta Bar (BLUE, SPECKLED BLUE, WHITE, KALAMANSI) - Visayas / Mindanao (330g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "330g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 21.75,
@@ -999,8 +1082,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 84,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Budget Bar (WHITE ANTI BAC, FABCON, KALAMANSI, POWER BLUE, SPECKLED BLUE) - Luzon (330g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Budget Bar (WHITE ANTI BAC, FABCON, KALAMANSI, POWER BLUE, SPECKLED BLUE) - Luzon (330g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "330g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 21,
@@ -1011,8 +1095,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 85,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Bareta Bar FABCON - Visayas \/ Mindanao (330g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Bareta Bar FABCON - Visayas / Mindanao (330g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "330g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 23.25,
@@ -1023,8 +1108,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 86,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Speed Long Bar (WHITE, BLUE, SPECKLED BLUE, KALAMANSI) (370g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Speed Long Bar (WHITE, BLUE, SPECKLED BLUE, KALAMANSI) (370g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "370g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 25.75,
@@ -1035,8 +1121,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 87,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Surf Detergent Bar Active Clean Power Bula Power Puti - BLUE (360g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Surf Detergent Bar Active Clean Power Bula Power Puti - BLUE (360g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "360g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 23.25,
@@ -1047,8 +1134,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 88,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Surf Detergent Bar Active Clean Power Bula Power Puti (KALAMANSI, TAWAS) (360g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Surf Detergent Bar Active Clean Power Bula Power Puti (KALAMANSI, TAWAS) (360g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "360g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 24.5,
@@ -1059,8 +1147,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 89,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Champion Bar (SUPRA CLEAN, CITRUS FRESH) (370g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Champion Bar (SUPRA CLEAN, CITRUS FRESH) (370g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "370g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 25,
@@ -1071,8 +1160,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 90,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Bonux (FLOWER FIESTA, KALAMANSI ZEST) (380g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Bonux (FLOWER FIESTA, KALAMANSI ZEST) (380g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "380g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 21,
@@ -1083,8 +1173,9 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 91,
-        "commodity_name": "Detergent Soap \/ Laundry Soap - Tide Bar ORIGINAL SCENT (380g)",
-        "category": "Detergent Soap \/ Laundry Soap",
+        "commodity_name": "Tide Bar ORIGINAL SCENT (380g)",
+        "image_path": null,
+        "category": "Detergent Soap / Laundry Soap",
         "unit": "380g",
         "regulatory_classification": "BASIC_NECESSITY",
         "baseline_price": 24,
@@ -1095,7 +1186,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 92,
-        "commodity_name": "Candles - Export Vigil Candles White\/Yellow (12pcs.\/pack) (#01)",
+        "commodity_name": "Export Vigil Candles White/Yellow (12pcs./pack) (#01)",
+        "image_path": "commodity_images/candles_export_vigil_candles_whiteyellow_12pcs.pack_1.webp",
         "category": "Candles",
         "unit": "#01",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1107,7 +1199,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 93,
-        "commodity_name": "Candles - Manila Wax Votive White\/Yellow (6pcs.\/pack) (#01)",
+        "commodity_name": "Manila Wax Votive White/Yellow (6pcs./pack) (#01)",
+        "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#01",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1119,7 +1212,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 94,
-        "commodity_name": "Candles - Manila Wax Sperma White (10pcs.\/pack) (#02)",
+        "commodity_name": "Manila Wax Sperma White (10pcs./pack) (#02)",
+        "image_path": "commodity_images/candles_manila_wax_sperma_white_10pcs.pack_2.webp",
         "category": "Candles",
         "unit": "#02",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1131,7 +1225,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 95,
-        "commodity_name": "Candles - Manila Wax Votive White\/Yellow (6pcs.\/pack) (#02)",
+        "commodity_name": "Manila Wax Votive White/Yellow (6pcs./pack) (#02)",
+        "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#02",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1143,7 +1238,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 96,
-        "commodity_name": "Candles - Export Candles White (20pcs.\/pack) (#03)",
+        "commodity_name": "Export Candles White (20pcs./pack) (#03)",
+        "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#03",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1155,7 +1251,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 97,
-        "commodity_name": "Candles - 5-Star Esperma White (20pcs.\/pack) (#03)",
+        "commodity_name": "5-Star Esperma White (20pcs./pack) (#03)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#03",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1167,7 +1264,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 98,
-        "commodity_name": "Candles - Manila Wax Votive White\/Yellow (6pcs.\/pack) (#03)",
+        "commodity_name": "Manila Wax Votive White/Yellow (6pcs./pack) (#03)",
+        "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#03",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1179,7 +1277,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 99,
-        "commodity_name": "Candles - Manila Wax Sperma White (20pcs.\/pack) (#03)",
+        "commodity_name": "Manila Wax Sperma White (20pcs./pack) (#03)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#03",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1191,7 +1290,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 100,
-        "commodity_name": "Candles - Liwanag Esperma Candle White (20pcs.\/pack) (#03)",
+        "commodity_name": "Liwanag Esperma Candle White (20pcs./pack) (#03)",
+        "image_path": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_5.webp",
         "category": "Candles",
         "unit": "#03",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1203,7 +1303,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 101,
-        "commodity_name": "Candles - Manila Wax Sperma White (20pcs.\/pack) (#04)",
+        "commodity_name": "Manila Wax Sperma White (20pcs./pack) (#04)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#04",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1215,7 +1316,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 102,
-        "commodity_name": "Candles - Export Candles White (20pcs.\/pack) (#05)",
+        "commodity_name": "Export Candles White (20pcs./pack) (#05)",
+        "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#05",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1227,7 +1329,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 103,
-        "commodity_name": "Candles - Liwanag Esperma Candle White (20pcs.\/pack) (#05)",
+        "commodity_name": "Liwanag Esperma Candle White (20pcs./pack) (#05)",
+        "image_path": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_5.webp",
         "category": "Candles",
         "unit": "#05",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1239,7 +1342,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 104,
-        "commodity_name": "Candles - Export Candles White (20pcs.\/pack) (#06)",
+        "commodity_name": "Export Candles White (20pcs./pack) (#06)",
+        "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp",
         "category": "Candles",
         "unit": "#06",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1251,7 +1355,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 105,
-        "commodity_name": "Candles - 5-Star Esperma White (25pcs.\/pack) (#06)",
+        "commodity_name": "5-Star Esperma White (25pcs./pack) (#06)",
+        "image_path": "commodity_images/candles_5-star_esperma_white_25pcs.pack_6.webp",
         "category": "Candles",
         "unit": "#06",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1263,7 +1368,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 106,
-        "commodity_name": "Candles - Export Candles White (12pcs.\/pack) (#08)",
+        "commodity_name": "Export Candles White (12pcs./pack) (#08)",
+        "image_path": "commodity_images/candles_export_candles_white_12pcs.pack_8.webp",
         "category": "Candles",
         "unit": "#08",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1275,7 +1381,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 107,
-        "commodity_name": "Candles - 5-Star Esperma White (5pcs.\/pack) (#08)",
+        "commodity_name": "5-Star Esperma White (5pcs./pack) (#08)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#08",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1287,7 +1394,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 108,
-        "commodity_name": "Candles - Export Candles White (10pcs.\/pack) (#10)",
+        "commodity_name": "Export Candles White (10pcs./pack) (#10)",
+        "image_path": "commodity_images/candles_export_candles_white_10pcs.pack_10.webp",
         "category": "Candles",
         "unit": "#10",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1299,7 +1407,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 109,
-        "commodity_name": "Candles - Export Candles White (10pcs.\/pack) (#12)",
+        "commodity_name": "Export Candles White (10pcs./pack) (#12)",
+        "image_path": "commodity_images/candles_export_candles_white_10pcs.pack_10.webp",
         "category": "Candles",
         "unit": "#12",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1311,7 +1420,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 110,
-        "commodity_name": "Candles - 5-Star Esperma White (4pcs.\/pack) (#14)",
+        "commodity_name": "5-Star Esperma White (4pcs./pack) (#14)",
+        "image_path": "commodity_images/candles_5-star_esperma_white_4pcs.pack_14.webp",
         "category": "Candles",
         "unit": "#14",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1323,7 +1433,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 111,
-        "commodity_name": "Candles - Manila Wax Sperma White (4pcs.\/pack) (#14)",
+        "commodity_name": "Manila Wax Sperma White (4pcs./pack) (#14)",
+        "image_path": "commodity_images/candles_manila_wax_sperma_white_4pcs.pack_14.webp",
         "category": "Candles",
         "unit": "#14",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1335,7 +1446,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 112,
-        "commodity_name": "Candles - Export Candles White (8pcs.\/pack) (#14)",
+        "commodity_name": "Export Candles White (8pcs./pack) (#14)",
+        "image_path": "commodity_images/candles_export_candles_white_8pcs.pack_14.webp",
         "category": "Candles",
         "unit": "#14",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1347,7 +1459,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 113,
-        "commodity_name": "Candles - Export Candles White (4pcs.\/pack) (#16)",
+        "commodity_name": "Export Candles White (4pcs./pack) (#16)",
+        "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp",
         "category": "Candles",
         "unit": "#16",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1359,7 +1472,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 114,
-        "commodity_name": "Candles - Liwanag Esperma Candle White (4pcs.\/pack) (#16)",
+        "commodity_name": "Liwanag Esperma Candle White (4pcs./pack) (#16)",
+        "image_path": "commodity_images/candles_liwanag_esperma_candle_white_4pcs.pack_18.webp",
         "category": "Candles",
         "unit": "#16",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1371,7 +1485,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 115,
-        "commodity_name": "Candles - Manila Wax Sperma White (2pcs.\/pack) (#16)",
+        "commodity_name": "Manila Wax Sperma White (2pcs./pack) (#16)",
+        "image_path": "commodity_images/candles_manila_wax_sperma_white_2pcs.pack_16.webp",
         "category": "Candles",
         "unit": "#16",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1383,7 +1498,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 116,
-        "commodity_name": "Candles - Export Candles White (4pcs.\/pack) (#18)",
+        "commodity_name": "Export Candles White (4pcs./pack) (#18)",
+        "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp",
         "category": "Candles",
         "unit": "#18",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1395,7 +1511,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 117,
-        "commodity_name": "Candles - Liwanag Esperma Candle White (4pcs.\/pack) (#18)",
+        "commodity_name": "Liwanag Esperma Candle White (4pcs./pack) (#18)",
+        "image_path": "commodity_images/candles_liwanag_esperma_candle_white_4pcs.pack_18.webp",
         "category": "Candles",
         "unit": "#18",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1407,7 +1524,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 118,
-        "commodity_name": "Candles - Export Candles White (4pcs.\/pack) (#19)",
+        "commodity_name": "Export Candles White (4pcs./pack) (#19)",
+        "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp",
         "category": "Candles",
         "unit": "#19",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1419,7 +1537,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 119,
-        "commodity_name": "Candles - Export Candles White (2pcs.\/pack) (#20x2)",
+        "commodity_name": "Export Candles White (2pcs./pack) (#20x2)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#20x2",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1431,7 +1550,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 120,
-        "commodity_name": "Candles - Export Candles White (4pcs.\/pack) (#20x4)",
+        "commodity_name": "Export Candles White (4pcs./pack) (#20x4)",
+        "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp",
         "category": "Candles",
         "unit": "#20x4",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1443,7 +1563,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 121,
-        "commodity_name": "Candles - 5-Star Esperma White (2pcs.\/pack) (#22)",
+        "commodity_name": "5-Star Esperma White (2pcs./pack) (#22)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#22",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1455,7 +1576,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 122,
-        "commodity_name": "Candles - Liwanag Esperma Candle White (2pcs.\/pack) (#24)",
+        "commodity_name": "Liwanag Esperma Candle White (2pcs./pack) (#24)",
+        "image_path": "commodity_images/candles_liwanag_esperma_candle_white_2pcs.pack_24.webp",
         "category": "Candles",
         "unit": "#24",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1467,7 +1589,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 123,
-        "commodity_name": "Candles - Export Vigil Candles White\/Yellow (4pcs.\/pack) (#2x4)",
+        "commodity_name": "Export Vigil Candles White/Yellow (4pcs./pack) (#2x4)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#2x4",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1479,7 +1602,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 124,
-        "commodity_name": "Candles - Export Vigil Candles White\/Yellow (6pcs.\/pack) (#2x6)",
+        "commodity_name": "Export Vigil Candles White/Yellow (6pcs./pack) (#2x6)",
+        "image_path": null,
         "category": "Candles",
         "unit": "#2x6",
         "regulatory_classification": "BASIC_NECESSITY",
@@ -1491,7 +1615,8 @@ export const fallbackCommodities: Commodity[] = [
     },
     {
         "id": 125,
-        "commodity_name": "Luncheon Meat - Purefoods Chinese Style (165g)",
+        "commodity_name": "Purefoods Chinese Style (165g)",
+        "image_path": "commodity_images/luncheon_meat_purefoods_chinese_style165g.webp",
         "category": "Luncheon Meat",
         "unit": "165g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1499,11 +1624,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 126,
-        "commodity_name": "Luncheon Meat - CDO Chinese Style (165g)",
+        "commodity_name": "CDO Chinese Style (165g)",
+        "image_path": "commodity_images/luncheon_meat_cdo_chinese_style165g.webp",
         "category": "Luncheon Meat",
         "unit": "165g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1511,11 +1637,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 127,
-        "commodity_name": "Meat Loaf - Winner - Supermarket (SMKT) (150g)",
+        "commodity_name": "Winner - Supermarket (SMKT) (150g)",
+        "image_path": "commodity_images/meatloaf_winner_-_supermarket_smkt_150g.webp",
         "category": "Meat Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1523,11 +1650,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 128,
-        "commodity_name": "Meat Loaf - 555 (150g)",
+        "commodity_name": "555 (150g)",
+        "image_path": "commodity_images/beefloaf_555-150g.webp",
         "category": "Meat Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1535,11 +1663,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 129,
-        "commodity_name": "Meat Loaf - CDO (150g)",
+        "commodity_name": "CDO (150g)",
+        "image_path": "commodity_images/beefloaf_cdo150g.webp",
         "category": "Meat Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1547,11 +1676,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 130,
-        "commodity_name": "Meat Loaf - Argentina (150g)",
+        "commodity_name": "Argentina (150g)",
+        "image_path": "commodity_images/beefloaf_argentina_150g.webp",
         "category": "Meat Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1559,11 +1689,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 131,
-        "commodity_name": "Meat Loaf - Argentina (170g)",
+        "commodity_name": "Argentina (170g)",
+        "image_path": "commodity_images/meatloaf_argentina150g.webp",
         "category": "Meat Loaf",
         "unit": "170g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1571,11 +1702,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 132,
-        "commodity_name": "Corned Beef - Bingo (150g)",
+        "commodity_name": "Bingo (150g)",
+        "image_path": "commodity_images/beefloaf_bingo150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1583,11 +1715,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 133,
-        "commodity_name": "Corned Beef - El Rancho - SMKT (150g)",
+        "commodity_name": "El Rancho - SMKT (150g)",
+        "image_path": "commodity_images/cornedbeef_el_rancho_-_smkt150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1595,11 +1728,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 134,
-        "commodity_name": "Corned Beef - Winner - SMKT (150g)",
+        "commodity_name": "Winner - SMKT (150g)",
+        "image_path": "commodity_images/cornedbeef_winner_-_smkt150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1607,11 +1741,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 135,
-        "commodity_name": "Corned Beef - Star Corned Beef (150g)",
+        "commodity_name": "Star Corned Beef (150g)",
+        "image_path": "commodity_images/cornedbeef_star_corned_beef150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1619,11 +1754,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 136,
-        "commodity_name": "Corned Beef - Young's Town Premium (150g)",
+        "commodity_name": "Young's Town Premium (150g)",
+        "image_path": "commodity_images/cornedbeef_young_s_town_premium150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1631,11 +1767,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 137,
-        "commodity_name": "Corned Beef - Argentina (150g)",
+        "commodity_name": "Argentina (150g)",
+        "image_path": "commodity_images/beefloaf_argentina_150g.webp",
         "category": "Corned Beef",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1643,11 +1780,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 138,
-        "commodity_name": "Corned Beef - Argentina (175g)",
+        "commodity_name": "Argentina (175g)",
+        "image_path": "commodity_images/cornedbeef_argentina150g.webp",
         "category": "Corned Beef",
         "unit": "175g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1655,11 +1793,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 139,
-        "commodity_name": "Beef Loaf - Purefoods (150g)",
+        "commodity_name": "Purefoods (150g)",
+        "image_path": "commodity_images/beefloaf_purefoods150g.webp",
         "category": "Beef Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1667,11 +1806,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 140,
-        "commodity_name": "Beef Loaf - Bingo (150g)",
+        "commodity_name": "Bingo (150g)",
+        "image_path": "commodity_images/beefloaf_bingo150g.webp",
         "category": "Beef Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1679,11 +1819,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 141,
-        "commodity_name": "Beef Loaf - 555 (150g)",
+        "commodity_name": "555 (150g)",
+        "image_path": "commodity_images/beefloaf_555-150g.webp",
         "category": "Beef Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1691,11 +1832,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 142,
-        "commodity_name": "Beef Loaf - CDO (150g)",
+        "commodity_name": "CDO (150g)",
+        "image_path": "commodity_images/beefloaf_cdo150g.webp",
         "category": "Beef Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1703,11 +1845,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 143,
-        "commodity_name": "Beef Loaf - Argentina (150g)",
+        "commodity_name": "Argentina (150g)",
+        "image_path": "commodity_images/beefloaf_argentina_150g.webp",
         "category": "Beef Loaf",
         "unit": "150g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1715,11 +1858,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 144,
-        "commodity_name": "Beef Loaf - El Rancho - SMKT (155g)",
+        "commodity_name": "El Rancho - SMKT (155g)",
+        "image_path": null,
         "category": "Beef Loaf",
         "unit": "155g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1727,11 +1871,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 145,
-        "commodity_name": "Beef Loaf - Argentina (170g)",
+        "commodity_name": "Argentina (170g)",
+        "image_path": "commodity_images/beefloaf_argentina_150g.webp",
         "category": "Beef Loaf",
         "unit": "170g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1739,11 +1884,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 146,
-        "commodity_name": "Beef Loaf - Purefoods (200g)",
+        "commodity_name": "Purefoods (200g)",
+        "image_path": "commodity_images/beefloaf_purefoods150g.webp",
         "category": "Beef Loaf",
         "unit": "200g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1751,11 +1897,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 147,
-        "commodity_name": "Condiments - Vinegar (Gin and PET Bottle) - Datu Puti - White Vinegar (350mL)",
+        "commodity_name": "Datu Puti - White Vinegar (350mL)",
+        "image_path": "commodity_images/vinegar_datu_puti_white_vinegar350mlginpet_bottle.webp",
         "category": "Condiments - Vinegar (Gin and PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1763,11 +1910,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 148,
-        "commodity_name": "Condiments - Vinegar (Gin and PET Bottle) - Silver Swan Sukang Puti (350mL)",
+        "commodity_name": "Silver Swan Sukang Puti (350mL)",
+        "image_path": "commodity_images/vinegar_silver_swan_sukang_puti350ml_ginpet_bottle_.webp",
         "category": "Condiments - Vinegar (Gin and PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1775,131 +1923,142 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 149,
-        "commodity_name": "Condiments - Vinegar (Doy \/ Refill Pack) - Silver Swan Sukang Puti Doy Pack (200mL)",
-        "category": "Condiments - Vinegar (Doy \/ Refill Pack)",
+        "commodity_name": "Silver Swan Sukang Puti Doy Pack (200mL)",
+        "image_path": "commodity_images/vinegar_silver_swan_sukang_puti200ml_doy_refill_pack_.webp",
+        "category": "Condiments - Vinegar (Doy / Refill Pack)",
         "unit": "200mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 8.75,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 150,
-        "commodity_name": "Condiments - Patis (Gin \/ PET Bottle) - Lorins PET Bottle (350mL)",
-        "category": "Condiments - Patis (Gin \/ PET Bottle)",
+        "commodity_name": "Lorins PET Bottle (350mL)",
+        "image_path": "commodity_images/patis_lorins350ml_pet_bottle_.webp",
+        "category": "Condiments - Patis (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 27.5,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 151,
-        "commodity_name": "Condiments - Patis (Gin \/ PET Bottle) - Silver Swan Special (350mL)",
-        "category": "Condiments - Patis (Gin \/ PET Bottle)",
+        "commodity_name": "Silver Swan Special (350mL)",
+        "image_path": "commodity_images/patis_silverswanspecial350mlbottle.webp",
+        "category": "Condiments - Patis (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 26,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 152,
-        "commodity_name": "Condiments - Patis (Gin \/ PET Bottle) - Datu Puti (350mL)",
-        "category": "Condiments - Patis (Gin \/ PET Bottle)",
+        "commodity_name": "Datu Puti (350mL)",
+        "image_path": "commodity_images/patis_datu_puti350ml_ginpet_bottle_.webp",
+        "category": "Condiments - Patis (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 28.5,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 153,
-        "commodity_name": "Condiments - Patis (Gin \/ PET Bottle) - Nelicom Special (350mL)",
-        "category": "Condiments - Patis (Gin \/ PET Bottle)",
+        "commodity_name": "Nelicom Special (350mL)",
+        "image_path": "commodity_images/patis_nelicom350ml_ginpet_bottle_.webp",
+        "category": "Condiments - Patis (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 32.75,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 154,
-        "commodity_name": "Condiments - Patis (Doy Pack \/ Budget Pack) - Lorins - Pouch (150mL)",
-        "category": "Condiments - Patis (Doy Pack \/ Budget Pack)",
+        "commodity_name": "Lorins - Pouch (150mL)",
+        "image_path": "commodity_images/patis_lorins150ml_pouch_.webp",
+        "category": "Condiments - Patis (Doy Pack / Budget Pack)",
         "unit": "150mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 13.25,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 155,
-        "commodity_name": "Condiments - Patis (Doy Pack \/ Budget Pack) - Lorins - Budget Pouch (350mL)",
-        "category": "Condiments - Patis (Doy Pack \/ Budget Pack)",
+        "commodity_name": "Lorins - Budget Pouch (350mL)",
+        "image_path": "commodity_images/patis_lorins350ml_budget_pouch_.webp",
+        "category": "Condiments - Patis (Doy Pack / Budget Pack)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 23.75,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 156,
-        "commodity_name": "Condiments - Soy Sauce (Gin \/ PET Bottle) - Datu Puti (350mL)",
-        "category": "Condiments - Soy Sauce (Gin \/ PET Bottle)",
+        "commodity_name": "Datu Puti (350mL)",
+        "image_path": "commodity_images/patis_datu_puti350ml_ginpet_bottle_.webp",
+        "category": "Condiments - Soy Sauce (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 20.75,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 157,
-        "commodity_name": "Condiments - Soy Sauce (Gin \/ PET Bottle) - Silver Swan (350mL)",
-        "category": "Condiments - Soy Sauce (Gin \/ PET Bottle)",
+        "commodity_name": "Silver Swan (350mL)",
+        "image_path": "commodity_images/soysouce_silverswan350ml_ginpet_bottle_.webp",
+        "category": "Condiments - Soy Sauce (Gin / PET Bottle)",
         "unit": "350mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 22,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 158,
-        "commodity_name": "Condiments - Soy Sauce (Doy Pack \/ Refill Pack) - Silver Swan Doy Pack (200mL)",
-        "category": "Condiments - Soy Sauce (Doy Pack \/ Refill Pack)",
+        "commodity_name": "Silver Swan Doy Pack (200mL)",
+        "image_path": "commodity_images/soysouce_silver_swan200ml_doy_refill_pack_.webp",
+        "category": "Condiments - Soy Sauce (Doy Pack / Refill Pack)",
         "unit": "200mL",
         "regulatory_classification": "PRIME_COMMODITY",
         "baseline_price": 11.5,
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 159,
-        "commodity_name": "Toilet Soap - Green Cross (Pure Care) (55g)",
+        "commodity_name": "Green Cross (Pure Care) (55g)",
+        "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp",
         "category": "Toilet Soap",
         "unit": "55g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1907,11 +2066,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 160,
-        "commodity_name": "Toilet Soap - Palmolive Naturals - Pinkish Glow (pink), Hydrating Glow (green), White with Natural Papaya, and White with Natural Milk (55g)",
+        "commodity_name": "Palmolive Naturals - Pinkish Glow (pink), Hydrating Glow (green), White with Natural Papaya, and White with Natural Milk (55g)",
+        "image_path": "commodity_images/toiletsoap_palmolive_naturals_pinkish_glow_hydrating_glow_white_w_papaya_white_w_milk_55g.webp",
         "category": "Toilet Soap",
         "unit": "55g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1919,11 +2079,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 161,
-        "commodity_name": "Toilet Soap - Safeguard Pure White (55g)",
+        "commodity_name": "Safeguard Pure White (55g)",
+        "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp",
         "category": "Toilet Soap",
         "unit": "55g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1931,11 +2092,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 162,
-        "commodity_name": "Toilet Soap - Green Cross (Pure Care) (85g)",
+        "commodity_name": "Green Cross (Pure Care) (85g)",
+        "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp",
         "category": "Toilet Soap",
         "unit": "85g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1943,11 +2105,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 163,
-        "commodity_name": "Toilet Soap - Safeguard Pure White (82g)",
+        "commodity_name": "Safeguard Pure White (82g)",
+        "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp",
         "category": "Toilet Soap",
         "unit": "82g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1955,11 +2118,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 164,
-        "commodity_name": "Toilet Soap - Green Cross (Pure Care) (125g)",
+        "commodity_name": "Green Cross (Pure Care) (125g)",
+        "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp",
         "category": "Toilet Soap",
         "unit": "125g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1967,11 +2131,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 165,
-        "commodity_name": "Toilet Soap - Safeguard Pure White (119g)",
+        "commodity_name": "Safeguard Pure White (119g)",
+        "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp",
         "category": "Toilet Soap",
         "unit": "119g",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1979,11 +2144,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 166,
-        "commodity_name": "Batteries - Energizer Max - Blister Pack of 4 (AA)",
+        "commodity_name": "Energizer Max - Blister Pack of 4 (AA)",
+        "image_path": "commodity_images/battery_energizer_maxaa_blister_pack_of_4_.webp",
         "category": "Batteries",
         "unit": "AA",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -1991,11 +2157,12 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     },
     {
         "id": 167,
-        "commodity_name": "Batteries - Eveready Super Heavy Duty Black - Blister Pack of 2",
+        "commodity_name": "Eveready Super Heavy Duty Black - Blister Pack of 2",
+        "image_path": "commodity_images/battery_eveready_super_heavy_duty_blackd_blister_pack_of_2_.webp",
         "category": "Batteries",
         "unit": "D",
         "regulatory_classification": "PRIME_COMMODITY",
@@ -2003,6 +2170,6 @@ export const fallbackCommodities: Commodity[] = [
         "effective_date": "2026-05-11",
         "is_active": true,
         "price_freeze_applicable": false,
-        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal\/SRP\/APC rule"
+        "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule"
     }
 ];

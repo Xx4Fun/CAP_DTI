@@ -1,5 +1,5 @@
 import React from 'react';
-import { type Commodity } from '../api/client';
+import { resolveImageUrl, type Commodity } from '../api/client';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
 import { getPriceLabel, type PriceDataSource } from '../app/priceDataPresentation';
 import { ProgressiveProductImage } from './ProgressiveProductImage';
@@ -40,7 +40,7 @@ export const PriceProductCard: React.FC<PriceProductCardProps> = ({
       onClick={onSelect}
     >
       <ProgressiveProductImage
-        imageUrl={commodity.image_path}
+        imageUrl={resolveImageUrl(commodity.image_path)}
         altText={displayName}
         variant="card"
         decorative

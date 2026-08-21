@@ -17,7 +17,8 @@
       "srp": 21.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_saba_philippines_sardines_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -27,7 +28,8 @@
       "srp": 22.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_atami_regular_lid_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -37,17 +39,19 @@
       "srp": 22.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mikado_regular_lid_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Canned Sardines in Tomato Sauce",
       "item_name": "King Cup Regular Lid",
       "unit": "155g",
-      "srp": 18.0,
+      "srp": 18,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_king_cup_regular_lid_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -57,7 +61,8 @@
       "srp": 23.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mariko_regular_lid_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -67,7 +72,8 @@
       "srp": 24.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_sllenas_regular_lid_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -77,7 +83,8 @@
       "srp": 23.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_atami_eoc_155g_1_.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -87,7 +94,8 @@
       "srp": 23.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_mikado_eoc_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -97,7 +105,8 @@
       "srp": 20.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_555_bonus_pack_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -107,17 +116,19 @@
       "srp": 20.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_lucky_7_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Canned Sardines in Tomato Sauce",
       "item_name": "Toyo Bonus Green EOC",
       "unit": "155g",
-      "srp": 20.0,
+      "srp": 20,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/canned_sardines_in_tomato_sauce_toyo_bonus_green_eoc_155g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -127,27 +138,30 @@
       "srp": 44.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/milk_jersey_sweetened_condensed_creamer_390g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Processed Milk - Evaporated Milk",
       "item_name": "Angel Filled Milk",
       "unit": "370mL",
-      "srp": 48.0,
+      "srp": 48,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/milk_angel_filled_milk_370ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Processed Milk - Powdered Milk",
       "item_name": "Bear Brand",
       "unit": "135g",
-      "srp": 50.0,
+      "srp": 50,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/milk_bear_brand_135g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -157,7 +171,8 @@
       "srp": 70.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/milk_birch_tree_full_cream_milk_150g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -167,7 +182,8 @@
       "srp": 96.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/milk_jersey_fortified_instant_powdered_milk_drink_300g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -177,7 +193,8 @@
       "srp": 4.7,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_cafe_puro_17g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -187,7 +204,8 @@
       "srp": 5.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_blend_45_3_in_1_original_18g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -197,7 +215,8 @@
       "srp": 7.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_san_mig_coffee_3_in_1_original_20g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -207,7 +226,8 @@
       "srp": 7.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_nescafe_original_20g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -217,17 +237,19 @@
       "srp": 8.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_kopiko_black_30g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Coffee 3-in-1 Original",
       "item_name": "Great Taste Original Twin Pack",
       "unit": "33g",
-      "srp": 10.0,
+      "srp": 10,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/coffee_greatest_taste_original_twin_pack_33g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -237,17 +259,19 @@
       "srp": 27.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/bread_pinoy_pandesal_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bread",
       "item_name": "Pinoy Tasty",
       "unit": "450g",
-      "srp": 44.0,
+      "srp": 44,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/bread_pinoy_tasty_450g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -257,7 +281,8 @@
       "srp": 7.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/noodles_payless_55g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -267,27 +292,30 @@
       "srp": 7.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/noodles_quick_chow_55g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Instant Mami Noodles - Chicken & Beef Flavor",
       "item_name": "Ho-Mi (Instant Mami Chicken & Garlic, Instant Mami Beef Brisket)",
       "unit": "55g",
-      "srp": 9.0,
+      "srp": 9,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/noodles_ho-mi_55g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Instant Mami Noodles - Chicken & Beef Flavor",
       "item_name": "Lucky Me! (Instant Mami Chicken na Chicken and Instant Mami Beef na Beef)",
       "unit": "55g",
-      "srp": 9.0,
+      "srp": 9,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/noodles_lucky_me_55g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -297,17 +325,19 @@
       "srp": 7.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Salt - Iodized Rock Salt",
       "item_name": "Fidel Coarse (Red) - Luzon",
       "unit": "250g",
-      "srp": 11.0,
+      "srp": 11,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/salt_fidel_coarse_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -327,7 +357,8 @@
       "srp": 13.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -337,7 +368,8 @@
       "srp": 21.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/salt_fidel_coarse_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -354,10 +386,11 @@
       "category": "Salt - Iodized Rock Salt",
       "item_name": "Lasap Rock Salt",
       "unit": "1kg",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/salt_lasap_rock_salt_250g.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -434,7 +467,7 @@
       "category": "Salt - Iodized Salt",
       "item_name": "Fidel Refined (Blue) - Luzon",
       "unit": "500g",
-      "srp": 23.0,
+      "srp": 23,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -454,7 +487,7 @@
       "category": "Salt - Iodized Salt",
       "item_name": "Fidel Free Flowing (Green) - Luzon",
       "unit": "500g",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -487,27 +520,30 @@
       "srp": 6.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Wilkins",
       "unit": "330mL",
-      "srp": 12.0,
+      "srp": 12,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Absolute",
       "unit": "350mL",
-      "srp": 12.0,
+      "srp": 12,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -517,7 +553,8 @@
       "srp": 8.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -527,47 +564,52 @@
       "srp": 16.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Wilkins",
       "unit": "500mL",
-      "srp": 17.0,
+      "srp": 17,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Wilkins",
       "unit": "1L",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Absolute",
       "unit": "1L",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Absolute",
       "unit": "6L",
-      "srp": 83.0,
+      "srp": 83,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_absolute_1lwebp.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -577,24 +619,26 @@
       "srp": 54.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_sm_bonus_325_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Distilled Water",
       "item_name": "Wilkins",
       "unit": "7L",
-      "srp": 90.0,
+      "srp": 90,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/distilled_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Purified Water",
       "item_name": "SM Bonus",
       "unit": "300mL",
-      "srp": 5.0,
+      "srp": 5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -607,7 +651,8 @@
       "srp": 8.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -617,7 +662,8 @@
       "srp": 6.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_refresh_500ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -627,7 +673,8 @@
       "srp": 10.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_nature_spring_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -637,17 +684,19 @@
       "srp": 10.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Purified Water",
       "item_name": "Wilkins Pure",
       "unit": "500mL",
-      "srp": 11.0,
+      "srp": 11,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -657,17 +706,19 @@
       "srp": 16.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_nature_spring_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Purified Water",
       "item_name": "Wilkins Pure",
       "unit": "1L",
-      "srp": 18.0,
+      "srp": 18,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_wilkins_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -677,7 +728,8 @@
       "srp": 19.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/purified_water_magnolia_pure_355ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -687,7 +739,8 @@
       "srp": 7.15,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_supersavers_natures_pure_500_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -697,17 +750,19 @@
       "srp": 8.8,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_hidden-spring_330ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Viva - Nationwide",
       "unit": "330mL",
-      "srp": 10.0,
+      "srp": 10,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -717,17 +772,19 @@
       "srp": 6.6,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_refresh_350_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Summit",
       "unit": "350mL",
-      "srp": 10.0,
+      "srp": 10,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_summit_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -737,7 +794,8 @@
       "srp": 9.15,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_refresh_350_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -747,7 +805,8 @@
       "srp": 8.7,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_supersavers_natures_pure_500_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -757,7 +816,8 @@
       "srp": 10.45,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_robinsons_mall_500_ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -767,37 +827,41 @@
       "srp": 12.1,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_hidden-spring_330ml.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Viva - Nationwide",
       "unit": "500mL",
-      "srp": 13.0,
+      "srp": 13,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Summit",
       "unit": "500mL",
-      "srp": 12.0,
+      "srp": 12,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_summit_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Viva - Nationwide",
       "unit": "1L",
-      "srp": 19.0,
+      "srp": 19,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_viva_330_mlpng.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -807,24 +871,26 @@
       "srp": 19.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_summit_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Bottled Water - Mineralized Water",
       "item_name": "Summit",
       "unit": "6L",
-      "srp": 75.0,
+      "srp": 75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/mineralized_water_summit_1l.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Detergent Soap / Laundry Soap",
       "item_name": "Sulit Bar (BLUE, WHITE, KALAMANSI, SPECKLED BLUE) - Visayas / Mindanao",
       "unit": "330g",
-      "srp": 21.0,
+      "srp": 21,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -844,7 +910,7 @@
       "category": "Detergent Soap / Laundry Soap",
       "item_name": "Budget Bar (WHITE ANTI BAC, FABCON, KALAMANSI, POWER BLUE, SPECKLED BLUE) - Luzon",
       "unit": "330g",
-      "srp": 21.0,
+      "srp": 21,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -894,7 +960,7 @@
       "category": "Detergent Soap / Laundry Soap",
       "item_name": "Champion Bar (SUPRA CLEAN, CITRUS FRESH)",
       "unit": "370g",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -904,7 +970,7 @@
       "category": "Detergent Soap / Laundry Soap",
       "item_name": "Bonux (FLOWER FIESTA, KALAMANSI ZEST)",
       "unit": "380g",
-      "srp": 21.0,
+      "srp": 21,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -914,7 +980,7 @@
       "category": "Detergent Soap / Laundry Soap",
       "item_name": "Tide Bar ORIGINAL SCENT",
       "unit": "380g",
-      "srp": 24.0,
+      "srp": 24,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -927,7 +993,8 @@
       "srp": 60.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_vigil_candles_whiteyellow_12pcs.pack_1.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -937,7 +1004,8 @@
       "srp": 82.76,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -947,7 +1015,8 @@
       "srp": 54.11,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_sperma_white_10pcs.pack_2.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -957,17 +1026,19 @@
       "srp": 71.09,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Candles",
       "item_name": "Export Candles White (20pcs./pack)",
       "unit": "#03",
-      "srp": 39.0,
+      "srp": 39,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -987,7 +1058,8 @@
       "srp": 59.41,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_votive_white_6pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1004,10 +1076,11 @@
       "category": "Candles",
       "item_name": "Liwanag Esperma Candle White (20pcs./pack)",
       "unit": "#03",
-      "srp": 81.0,
+      "srp": 81,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_5.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1027,7 +1100,8 @@
       "srp": 60.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1037,17 +1111,19 @@
       "srp": 109.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_liwanag_esperma_candle_white_20pcs.pack_5.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Candles",
       "item_name": "Export Candles White (20pcs./pack)",
       "unit": "#06",
-      "srp": 85.0,
+      "srp": 85,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_20pcs.pack_3.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1057,7 +1133,8 @@
       "srp": 115.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_5-star_esperma_white_25pcs.pack_6.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1067,7 +1144,8 @@
       "srp": 60.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_12pcs.pack_8.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1087,7 +1165,8 @@
       "srp": 72.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_10pcs.pack_10.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1097,7 +1176,8 @@
       "srp": 72.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_10pcs.pack_10.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1107,7 +1187,8 @@
       "srp": 36.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_5-star_esperma_white_4pcs.pack_14.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1117,7 +1198,8 @@
       "srp": 54.1,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_sperma_white_4pcs.pack_14.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1127,7 +1209,8 @@
       "srp": 72.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_8pcs.pack_14.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1137,7 +1220,8 @@
       "srp": 36.25,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1147,7 +1231,8 @@
       "srp": 57.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_liwanag_esperma_candle_white_4pcs.pack_18.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1157,7 +1242,8 @@
       "srp": 59.41,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_manila_wax_sperma_white_2pcs.pack_16.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1167,7 +1253,8 @@
       "srp": 48.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1177,17 +1264,19 @@
       "srp": 94.75,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_liwanag_esperma_candle_white_4pcs.pack_18.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
       "category": "Candles",
       "item_name": "Export Candles White (4pcs./pack)",
       "unit": "#19",
-      "srp": 97.0,
+      "srp": 97,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1207,7 +1296,8 @@
       "srp": 121.5,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_export_candles_white_4pcs.pack_16.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1224,10 +1314,11 @@
       "category": "Candles",
       "item_name": "Liwanag Esperma Candle White (2pcs./pack)",
       "unit": "#24",
-      "srp": 220.0,
+      "srp": 220,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/candles_liwanag_esperma_candle_white_2pcs.pack_24.webp"
     },
     {
       "regulatory_classification": "BASIC_NECESSITY",
@@ -1244,7 +1335,7 @@
       "category": "Candles",
       "item_name": "Export Vigil Candles White/Yellow (6pcs./pack)",
       "unit": "#2x6",
-      "srp": 85.0,
+      "srp": 85,
       "price_freeze_applicable": true,
       "price_freeze_treatment": "Frozen at prevailing price during a declared State of Calamity",
       "effective_date": "46153"
@@ -1254,30 +1345,33 @@
       "category": "Luncheon Meat",
       "item_name": "Purefoods Chinese Style",
       "unit": "165g",
-      "srp": 40.0,
+      "srp": 40,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/luncheon_meat_purefoods_chinese_style165g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Luncheon Meat",
       "item_name": "CDO Chinese Style",
       "unit": "165g",
-      "srp": 41.0,
+      "srp": 41,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/luncheon_meat_cdo_chinese_style165g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Meat Loaf",
       "item_name": "Winner - Supermarket (SMKT)",
       "unit": "150g",
-      "srp": 18.0,
+      "srp": 18,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/meatloaf_winner_-_supermarket_smkt_150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1287,7 +1381,8 @@
       "srp": 19.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_555-150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1297,7 +1392,8 @@
       "srp": 21.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_cdo150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1307,7 +1403,8 @@
       "srp": 23.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_argentina_150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1317,17 +1414,19 @@
       "srp": 25.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/meatloaf_argentina150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Corned Beef",
       "item_name": "Bingo",
       "unit": "150g",
-      "srp": 23.0,
+      "srp": 23,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_bingo150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1337,7 +1436,8 @@
       "srp": 31.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/cornedbeef_el_rancho_-_smkt150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1347,17 +1447,19 @@
       "srp": 33.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/cornedbeef_winner_-_smkt150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Corned Beef",
       "item_name": "Star Corned Beef",
       "unit": "150g",
-      "srp": 34.0,
+      "srp": 34,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/cornedbeef_star_corned_beef150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1367,7 +1469,8 @@
       "srp": 34.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/cornedbeef_young_s_town_premium150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1377,7 +1480,8 @@
       "srp": 36.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_argentina_150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1387,7 +1491,8 @@
       "srp": 41.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/cornedbeef_argentina150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1397,7 +1502,8 @@
       "srp": 18.15,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_purefoods150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1407,7 +1513,8 @@
       "srp": 19.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_bingo150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1417,7 +1524,8 @@
       "srp": 19.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_555-150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1427,17 +1535,19 @@
       "srp": 21.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_cdo150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Beef Loaf",
       "item_name": "Argentina",
       "unit": "150g",
-      "srp": 22.0,
+      "srp": 22,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_argentina_150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1454,10 +1564,11 @@
       "category": "Beef Loaf",
       "item_name": "Argentina",
       "unit": "170g",
-      "srp": 25.0,
+      "srp": 25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_argentina_150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1467,7 +1578,8 @@
       "srp": 24.9,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/beefloaf_purefoods150g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1477,17 +1589,19 @@
       "srp": 19.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/vinegar_datu_puti_white_vinegar350mlginpet_bottle.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Condiments - Vinegar (Gin and PET Bottle)",
       "item_name": "Silver Swan Sukang Puti",
       "unit": "350mL",
-      "srp": 19.0,
+      "srp": 19,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/vinegar_silver_swan_sukang_puti350ml_ginpet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1497,7 +1611,8 @@
       "srp": 8.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/vinegar_silver_swan_sukang_puti200ml_doy_refill_pack_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1507,17 +1622,19 @@
       "srp": 27.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_lorins350ml_pet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Condiments - Patis (Gin / PET Bottle)",
       "item_name": "Silver Swan Special",
       "unit": "350mL",
-      "srp": 26.0,
+      "srp": 26,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_silverswanspecial350mlbottle.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1527,7 +1644,8 @@
       "srp": 28.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_datu_puti350ml_ginpet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1537,7 +1655,8 @@
       "srp": 32.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_nelicom350ml_ginpet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1547,7 +1666,8 @@
       "srp": 13.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_lorins150ml_pouch_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1557,7 +1677,8 @@
       "srp": 23.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_lorins350ml_budget_pouch_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1567,17 +1688,19 @@
       "srp": 20.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/patis_datu_puti350ml_ginpet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Condiments - Soy Sauce (Gin / PET Bottle)",
       "item_name": "Silver Swan",
       "unit": "350mL",
-      "srp": 22.0,
+      "srp": 22,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/soysouce_silverswan350ml_ginpet_bottle_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1587,37 +1710,41 @@
       "srp": 11.5,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/soysouce_silver_swan200ml_doy_refill_pack_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Toilet Soap",
       "item_name": "Green Cross (Pure Care)",
       "unit": "55g",
-      "srp": 15.0,
+      "srp": 15,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Toilet Soap",
       "item_name": "Palmolive Naturals - Pinkish Glow (pink), Hydrating Glow (green), White with Natural Papaya, and White with Natural Milk",
       "unit": "55g",
-      "srp": 17.0,
+      "srp": 17,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_palmolive_naturals_pinkish_glow_hydrating_glow_white_w_papaya_white_w_milk_55g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Toilet Soap",
       "item_name": "Safeguard Pure White",
       "unit": "55g",
-      "srp": 22.0,
+      "srp": 22,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1627,7 +1754,8 @@
       "srp": 25.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1637,7 +1765,8 @@
       "srp": 31.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1647,17 +1776,19 @@
       "srp": 37.25,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_green_cross_pure_care_125g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
       "category": "Toilet Soap",
       "item_name": "Safeguard Pure White",
       "unit": "119g",
-      "srp": 49.0,
+      "srp": 49,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/toiletsoap_safeguard_pure_white119g.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1667,7 +1798,8 @@
       "srp": 216.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/battery_energizer_maxaa_blister_pack_of_4_.webp"
     },
     {
       "regulatory_classification": "PRIME_COMMODITY",
@@ -1677,7 +1809,8 @@
       "srp": 81.75,
       "price_freeze_applicable": false,
       "price_freeze_treatment": "Not automatically covered by the basic-necessities price freeze; apply the active legal/SRP/APC rule",
-      "effective_date": "46153"
+      "effective_date": "46153",
+      "image_path": "commodity_images/battery_eveready_super_heavy_duty_blackd_blister_pack_of_2_.webp"
     }
   ]
 }

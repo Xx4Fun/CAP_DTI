@@ -104,7 +104,8 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 6. Seed official DTI SRP Master List
+        // 6. Seed official DTI SRP Master List & Image Mappings
         $this->call(SrpMasterListSeeder::class);
+        $this->call(CommodityImageSeeder::class);
     }
 }
