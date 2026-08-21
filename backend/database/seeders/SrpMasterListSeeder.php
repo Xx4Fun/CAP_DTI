@@ -35,9 +35,7 @@ class SrpMasterListSeeder extends Seeder
 
         $effectiveDate = $data['metadata']['effective_date'] ?? '2026-05-11';
 
-        // Clear previous entries to ensure clean, unique dataset
-        SrpBulletin::query()->delete();
-
+        // Non-destructive update: preserve existing images and records
         $count = 0;
 
         foreach ($data['items'] as $item) {
@@ -59,9 +57,10 @@ class SrpMasterListSeeder extends Seeder
                 $commodityName = "{$itemName} ({$unit})";
             }
 
-            // Create SrpBulletin record
-            $bulletin = SrpBulletin::create([
-                'commodity_name' => $commodityName,
+            // Check if record exists to preserve any attached image_path
+            $existing = SrpBulletin::where('commodity_name', $commodityName)->first();
+
+            $attributes = [
                 'category' => $category,
                 'unit' => $unit,
                 'regulatory_classification' => $classification,
@@ -70,7 +69,20 @@ class SrpMasterListSeeder extends Seeder
                 'is_active' => true,
                 'price_freeze_applicable' => $freezeApplicable,
                 'price_freeze_treatment' => $freezeTreatment,
-            ]);
+            ];
+
+            // Preserve existing image_path if no new one is provided in JSON
+            if (isset($item['image_path']) && !empty($item['image_path'])) {
+                $attributes['image_path'] = $item['image_path'];
+            } elseif ($existing && !empty($existing->image_path)) {
+                $attributes['image_path'] = $existing->image_path;
+            }
+
+            // Non-destructively create or update SrpBulletin record
+            $bulletin = SrpBulletin::updateOrCreate(
+                ['commodity_name' => $commodityName],
+                $attributes
+            );
 
             // Map plain item_name and full commodity_name as aliases for receipt OCR lookup
             ItemAlias::updateOrCreate(
