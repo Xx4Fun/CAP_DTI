@@ -12,7 +12,7 @@ export async function refreshReceiptReportStatuses(
   readResumeToken: (reference: string) => Promise<string | null>,
   fetchStatus: (reference: string, token: string) => Promise<{ status: string; submitted_at?: string | null }>,
 ): Promise<StoredRecentReport[]> {
-  return Promise.all(reports.slice(0, 5).map(async (report) => {
+  return Promise.all(reports.slice(0, 20).map(async (report) => {
     if (!isRecoverableDraft(report.status)) return report;
     try {
       const token = await readResumeToken(report.reportReference);

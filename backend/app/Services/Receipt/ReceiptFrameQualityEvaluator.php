@@ -74,12 +74,29 @@ class ReceiptFrameQualityEvaluator
         $evaluated = [];
         foreach ($paths as $sequence => $path) {
             $quality = $this->evaluate($path);
-            if ($quality['acceptable']) {
-                $evaluated[] = ['path' => $path, 'source_sequence' => $sequence, 'quality' => $quality];
-            }
+            $evaluated[] = ['path' => $path, 'source_sequence' => $sequence, 'quality' => $quality];
         }
-        usort($evaluated, fn ($left, $right) => $right['quality']['score'] <=> $left['quality']['score']);
-        $selected = array_slice($evaluated, 0, $maximum);
+
+        return $this->selectEvaluated($evaluated, $maximum);
+    }
+
+    /** @param array<int,array{path:string,source_sequence:int,quality:array{score:float|int}}> $evaluated */
+    public function selectEvaluated(array $evaluated, int $maximum): array
+    {
+        if ($maximum <= 0 || $evaluated === []) {
+            return [];
+        }
+
+        usort($evaluated, fn ($left, $right) => $left['source_sequence'] <=> $right['source_sequence']);
+        $windowCount = min($maximum, count($evaluated));
+        $selected = [];
+        for ($window = 0; $window < $windowCount; $window++) {
+            $start = (int) floor($window * count($evaluated) / $windowCount);
+            $end = (int) floor(($window + 1) * count($evaluated) / $windowCount);
+            $candidates = array_slice($evaluated, $start, max(1, $end - $start));
+            usort($candidates, fn ($left, $right) => $right['quality']['score'] <=> $left['quality']['score']);
+            $selected[] = $candidates[0];
+        }
         usort($selected, fn ($left, $right) => $left['source_sequence'] <=> $right['source_sequence']);
 
         return array_values($selected);

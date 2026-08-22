@@ -19,15 +19,26 @@ class ReceiptContinuityAnalyzerTest extends TestCase
         $this->assertGreaterThanOrEqual(0.5, $result['continuity_score']);
     }
 
-    public function test_rejects_frames_with_conflicting_merchants(): void
+    public function test_merchant_text_does_not_participate_in_continuity(): void
     {
         $result = (new ReceiptContinuityAnalyzer)->analyze([
             ['sequence' => 0, 'merchant' => 'Store One', 'lines' => ['STORE ONE', 'RICE 45.00']],
             ['sequence' => 1, 'merchant' => 'Store Two', 'lines' => ['STORE TWO', 'RICE 45.00']],
         ]);
 
-        $this->assertSame('needs_recapture', $result['status']);
-        $this->assertContains('merchant_mismatch', $result['reasons']);
+        $this->assertSame('ready', $result['status']);
+        $this->assertNotContains('merchant_mismatch', $result['reasons']);
+    }
+
+    public function test_accepts_minor_ocr_variations_in_adjacent_overlap(): void
+    {
+        $result = (new ReceiptContinuityAnalyzer)->analyze([
+            ['sequence' => 0, 'merchant' => null, 'lines' => ['BROWN SUGAR 1KG 70.50', 'PREMIUM RICE 45.00']],
+            ['sequence' => 1, 'merchant' => null, 'lines' => ['BROWN SUG4R 1KG 70.50', 'COFFEE 50.00']],
+        ]);
+
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame([], $result['reasons']);
     }
 
     public function test_rejects_adjacent_frames_without_receipt_overlap(): void

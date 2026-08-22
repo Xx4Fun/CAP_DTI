@@ -39,4 +39,20 @@ class ReceiptTextAggregatorTest extends TestCase
         $this->assertSame('Brown Sugar', $items[1]['item_name']);
         $this->assertSame(70.5, $items[1]['observed_price']);
     }
+
+    public function test_extracts_quantity_and_negative_discount_for_total_reconciliation(): void
+    {
+        $items = (new ReceiptItemExtractor)->extract([
+            'Premium Rice 2 x 45.00 90.00',
+            'LOYALTY DISCOUNT 5.00-',
+            'TOTAL 85.00',
+        ]);
+
+        $this->assertCount(2, $items);
+        $this->assertSame('Premium Rice', $items[0]['item_name']);
+        $this->assertSame(2.0, $items[0]['quantity']);
+        $this->assertSame(90.0, $items[0]['observed_price']);
+        $this->assertSame(-5.0, $items[1]['observed_price']);
+        $this->assertSame(85.0, array_sum(array_column($items, 'observed_price')));
+    }
 }

@@ -1,276 +1,481 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, Building2, Calendar, Check, CheckCircle, ChevronRight,
-  Clock, Copy, FileClock, KeyRound, LoaderCircle, Search, ShieldCheck,
+  Archive,
+  AlertTriangle,
+  ArrowLeft,
+  BadgeCheck,
+  CalendarDays,
+  Camera,
+  ChevronRight,
+  CircleCheck,
+  Clock3,
+  FileCheck,
+  FileClock,
+  MapPin,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  ShoppingBasket,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { apiClient, type TrackReportResponse } from '../api/client';
-import { getReportTrackingToken, saveReportTrackingToken } from '../app/reportTrackingStore';
-import type { StoredRecentReport } from '../app/recentReports';
-import { deriveTimelineItems } from '../app/status';
+import myReportsHero from '../assets/my-reports-hero.webp';
+import {
+  filterReportList,
+  getReportFilterCounts,
+  REPORT_LIST_FILTERS,
+  type ReportListFilter,
+} from '../app/reportListPresentation';
+import { toRecentReportTicket, type StoredRecentReport } from '../app/recentReports';
+import { reportStatusTone } from '../app/reportPresentation';
+import { getStoreLocation } from '../app/storeLocationLookup';
 import './TrackReport.css';
+
+export interface ReportListViewState {
+  query: string;
+  filter: ReportListFilter;
+}
 
 interface TrackReportProps {
   recentReports?: StoredRecentReport[];
-  initialReference?: string;
   setActiveTab?: (tab: string) => void;
-  onReportTracked?: (report: TrackReportResponse) => void;
+  showBackButton?: boolean;
+  onOpenReport?: (report: StoredRecentReport) => void;
+  onSetArchived?: (report: StoredRecentReport, archived: boolean) => void;
+  onDeleteReport?: (report: StoredRecentReport) => void;
+  onRestoreReport?: (report: StoredRecentReport) => void;
+  initialViewState?: ReportListViewState;
+  onViewStateChange?: (state: ReportListViewState) => void;
 }
 
-type CredentialAvailability = 'checking' | 'available' | 'missing';
+interface SwipeableReportRowProps {
+  report: StoredRecentReport;
+  onOpen?: (report: StoredRecentReport) => void;
+  onArchive: (report: StoredRecentReport) => void;
+  onDelete: (report: StoredRecentReport, trigger?: HTMLButtonElement) => void;
+}
 
-const formatDateTime = (value: string): string => (
-  Number.isNaN(Date.parse(value))
-    ? value
-    : new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
-);
+interface SwipeStart {
+  pointerId: number;
+  x: number;
+  y: number;
+  vertical: boolean;
+}
 
-const statusTone = (status: string): string => {
-  const normalized = status.toLowerCase();
-  if (normalized.includes('resolved') || normalized.includes('closed') || normalized.includes('validated')) return 'success';
-  if (normalized.includes('dispatched') || normalized.includes('inspection')) return 'info';
-  return 'pending';
+interface SnackbarState {
+  message: string;
+  actionLabel: string;
+  onUndo: () => void;
+}
+
+const pluralizeReports = (count: number): string => `${count} ${count === 1 ? 'report' : 'reports'}`;
+
+const ReportStatusIcon = ({ status, size = 18, leading = false }: { status: ReportListFilter; size?: number; leading?: boolean }) => {
+  switch (status) {
+    case 'Needs recapture': return <Camera size={size} aria-hidden="true" />;
+    case 'Processing failed': return <AlertTriangle size={size} aria-hidden="true" />;
+    case 'Processing': return <RefreshCw size={size} aria-hidden="true" />;
+    case 'Ready to review': return leading
+      ? <ShoppingBasket size={size} aria-hidden="true" />
+      : <CircleCheck size={size} aria-hidden="true" />;
+    case 'Submitted': return <FileCheck size={size} aria-hidden="true" />;
+    case 'Under review': return <Search size={size} aria-hidden="true" />;
+    case 'Closed': return <BadgeCheck size={size} aria-hidden="true" />;
+    case 'Archived': return <Archive size={size} aria-hidden="true" />;
+    default: return null;
+  }
 };
 
-export const TrackReport: React.FC<TrackReportProps> = ({
-  recentReports = [], initialReference = '', setActiveTab, onReportTracked,
-}) => {
-  const [selectedReference, setSelectedReference] = useState(initialReference || recentReports[0]?.reportReference || '');
-  const [reference, setReference] = useState(initialReference);
-  const [token, setToken] = useState('');
-  const [report, setReport] = useState<TrackReportResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [accessNeeded, setAccessNeeded] = useState('');
-  const [copiedRef, setCopiedRef] = useState(false);
-  const [credentialAvailability, setCredentialAvailability] = useState<Record<string, CredentialAvailability>>({});
-  const copyTimerRef = useRef<number | null>(null);
-  const requestIdRef = useRef(0);
-  const onReportTrackedRef = useRef(onReportTracked);
-  const recentReportsRef = useRef(recentReports);
-  onReportTrackedRef.current = onReportTracked;
-  recentReportsRef.current = recentReports;
+const SwipeableReportRow = ({ report, onOpen, onArchive, onDelete }: SwipeableReportRowProps) => {
+  const [offset, setOffset] = useState(0);
+  const [rowWidth, setRowWidth] = useState(1);
+  const startRef = useRef<SwipeStart | null>(null);
+  const offsetRef = useRef(0);
+  const suppressClickRef = useRef(false);
+  const archived = Boolean(report.archivedAt);
 
-  const reportReferencesKey = useMemo(
-    () => recentReports.map((item) => item.reportReference).join('|'),
-    [recentReports],
-  );
+  const reset = () => {
+    offsetRef.current = 0;
+    setOffset(0);
+    startRef.current = null;
+  };
 
-  const executeTracking = useCallback(async (refVal: string, tokVal: string, remember: boolean) => {
-    const normalizedReference = refVal.trim();
-    const normalizedToken = tokVal.trim();
-    if (!normalizedReference || !normalizedToken) {
-      setError('Please provide both the Report Reference Code and Secret Tracking Token.');
-      return false;
-    }
-
-    const requestId = ++requestIdRef.current;
-    setSelectedReference(normalizedReference);
-    setLoading(true);
-    setError('');
-    setAccessNeeded('');
-    setReport(null);
-
-    try {
-      const response = await apiClient.get('/public/reports/track', {
-        params: { reference: normalizedReference, token: normalizedToken },
-      });
-      if (!response.data?.success || !response.data.data) {
-        throw new Error('The report service returned an invalid response.');
-      }
-      if (requestId !== requestIdRef.current) return false;
-
-      if (remember) {
-        try {
-          await saveReportTrackingToken(normalizedReference, normalizedToken);
-          setCredentialAvailability((current) => ({ ...current, [normalizedReference]: 'available' }));
-        } catch {
-          // A valid lookup remains usable even when this browser cannot remember it.
-        }
-      }
-
-      setReport(response.data.data);
-      onReportTrackedRef.current?.(response.data.data);
-      return true;
-    } catch (caught: any) {
-      if (requestId !== requestIdRef.current) return false;
-      setError(caught.response?.data?.message || 'Report not found or the tracking credential is invalid.');
-      return false;
-    } finally {
-      if (requestId === requestIdRef.current) setLoading(false);
-    }
-  }, []);
-
-  const openDeviceReport = useCallback(async (reportReference: string) => {
-    setSelectedReference(reportReference);
-    setReport(null);
-    setError('');
-    setAccessNeeded('');
-    try {
-      const storedToken = await getReportTrackingToken(reportReference);
-      if (!storedToken) {
-        setCredentialAvailability((current) => ({ ...current, [reportReference]: 'missing' }));
-        setReference(reportReference);
-        setAccessNeeded(reportReference);
-        return;
-      }
-      setCredentialAvailability((current) => ({ ...current, [reportReference]: 'available' }));
-      await executeTracking(reportReference, storedToken, false);
-    } catch {
-      setReference(reportReference);
-      setAccessNeeded(reportReference);
-    }
-  }, [executeTracking]);
-
-  useEffect(() => {
-    let active = true;
-    const inspectReports = async () => {
-      const currentReports = recentReportsRef.current;
-      const availabilityEntries = await Promise.all(currentReports.map(async (item) => {
-        try {
-          return [item.reportReference, await getReportTrackingToken(item.reportReference) ? 'available' : 'missing'] as const;
-        } catch {
-          return [item.reportReference, 'missing'] as const;
-        }
-      }));
-      if (!active) return;
-      setCredentialAvailability(Object.fromEntries(availabilityEntries));
-
-      const requestedReference = initialReference.trim();
-      const target = currentReports.find((item) => item.reportReference === requestedReference) ?? currentReports[0];
-      if (target) await openDeviceReport(target.reportReference);
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    setRowWidth(Math.max(event.currentTarget.getBoundingClientRect().width, 1));
+    startRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      vertical: false,
     };
-    void inspectReports();
-    return () => { active = false; };
-  }, [initialReference, openDeviceReport, reportReferencesKey]);
+    suppressClickRef.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
 
-  useEffect(() => () => {
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    requestIdRef.current += 1;
-  }, []);
-
-  const handleRecoverySubmit = async (event: React.FormEvent) => {
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = startRef.current;
+    if (!start || start.pointerId !== event.pointerId || start.vertical) return;
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) return;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      startRef.current = null;
+      reset();
+      return;
+    }
+    if (deltaX >= 0) return;
     event.preventDefault();
-    const recovered = await executeTracking(reference, token, true);
-    if (recovered) setToken('');
+    const width = Math.max(event.currentTarget.getBoundingClientRect().width, 1);
+    const nextOffset = Math.max(deltaX, width * -0.7);
+    offsetRef.current = nextOffset;
+    setOffset(nextOffset);
   };
 
-  const handleCopyRef = () => {
-    if (!report) return;
-    void navigator.clipboard.writeText(report.report_reference);
-    setCopiedRef(true);
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = window.setTimeout(() => setCopiedRef(false), 2000);
+  const finishSwipe = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = startRef.current;
+    if (!start || start.pointerId !== event.pointerId) {
+      reset();
+      return;
+    }
+    const width = Math.max(event.currentTarget.getBoundingClientRect().width, 1);
+    const distance = -offsetRef.current;
+    reset();
+    if (distance >= width * 0.55) {
+      suppressClickRef.current = true;
+      onDelete(report);
+    } else if (distance >= width * 0.24) {
+      suppressClickRef.current = true;
+      onArchive(report);
+    }
   };
+
+  const canonicalStatus = toRecentReportTicket(report).status;
+  const ticket = toRecentReportTicket(report);
+  const statusTone = reportStatusTone(report.status);
+  const displayedTone = archived ? 'archived' : statusTone;
+  const displayedStatus: ReportListFilter = archived ? 'Archived' : canonicalStatus;
+  const deleteActive = -offset >= rowWidth * 0.55;
+  const location = getStoreLocation(report.storeName);
 
   return (
-    <div className="track-report-page">
-      {setActiveTab && (
-        <button className="btn-secondary track-report-back" onClick={() => setActiveTab('reports')}>
-          <ArrowLeft size={17} /> Back to Reports
-        </button>
-      )}
-
-      <section className="glass-panel track-report-library" aria-labelledby="my-reports-title">
-        <div className="track-report-heading">
-          <div className="icon-wrapper-green"><FileClock size={22} /></div>
-          <div><h1 id="my-reports-title">My Reports</h1><p>Reports saved on this device open without entering credentials.</p></div>
-        </div>
-
-        {recentReports.length > 0 ? (
-          <div className="track-report-list" aria-label="Reports saved on this device">
-            {recentReports.map((item) => {
-              const availability = credentialAvailability[item.reportReference] ?? 'checking';
-              return (
-                <button
-                  key={item.reportReference}
-                  type="button"
-                  className={`track-report-list-item ${selectedReference === item.reportReference ? 'selected' : ''}`}
-                  aria-label={`Open report ${item.reportReference}: ${item.status}`}
-                  aria-pressed={selectedReference === item.reportReference}
-                  onClick={() => void openDeviceReport(item.reportReference)}
-                >
-                  <span className="track-report-list-main">
-                    <strong>{item.reportReference}</strong>
-                    <span><Building2 size={14} /> {item.storeName}</span>
-                    <span><Calendar size={14} /> {formatDateTime(item.submittedAt)}</span>
-                  </span>
-                  <span className="track-report-list-state">
-                    <span className={`track-report-status track-report-status-${statusTone(item.status)}`}>{item.status}</span>
-                    {availability === 'missing' && <span className="track-report-access-needed">Access needed</span>}
-                    <ChevronRight size={18} aria-hidden="true" />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="track-report-empty">
-            <FileClock size={25} /><div><strong>No reports saved on this device</strong><p>Reports you submit or recover will appear here.</p></div>
-          </div>
-        )}
-      </section>
-
-      {loading && <div className="glass-panel track-report-state" role="status"><LoaderCircle className="track-report-spinner" size={22} /> Loading report updates...</div>}
-
-      {accessNeeded && !loading && (
-        <div className="glass-panel track-report-state track-report-state-warning" role="status">
-          <KeyRound size={22} /><div><strong>Access needed</strong><p>This older report was saved before automatic device access. Use the recovery section below once.</p></div>
-        </div>
-      )}
-
-      {error && !loading && <div role="alert" className="banner-warning track-report-error"><AlertTriangle size={18} /><div>{error}</div></div>}
-
-      {report && !loading && (
-        <section className="glass-panel track-report-result" aria-label={`Report ${report.report_reference} timeline`}>
-          <div className="track-report-summary">
-            <div>
-              <span className="track-report-eyebrow">PUBLIC REPORT REFERENCE</span>
-              <div className="track-report-reference">
-                <strong>{report.report_reference}</strong>
-                <button type="button" onClick={handleCopyRef} aria-label="Copy report reference">{copiedRef ? <Check size={17} /> : <Copy size={17} />}</button>
+    <div
+      className={`track-report-swipe-row track-report-row-tone-${displayedTone}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishSwipe}
+      onPointerCancel={reset}
+    >
+      <div className="track-report-swipe-actions" aria-hidden="true">
+        <span className="track-report-swipe-action track-report-swipe-archive">
+          {archived ? <RotateCcw size={22} /> : <Archive size={22} />}
+          {archived ? 'Unarchive' : 'Archive'}
+        </span>
+        <span className={`track-report-swipe-action track-report-swipe-delete ${deleteActive ? 'active' : ''}`}>
+          <Trash2 size={22} /> Delete
+        </span>
+      </div>
+      <div
+        className="track-report-row-surface"
+        style={{ transform: `translate3d(${offset}px, 0, 0)` }}
+      >
+        <button
+          type="button"
+          className="track-report-list-item"
+          aria-label={`Open report ${report.reportReference}: ${canonicalStatus}`}
+          onClick={() => {
+            if (suppressClickRef.current) {
+              suppressClickRef.current = false;
+              return;
+            }
+            onOpen?.(report);
+          }}
+        >
+          <div className="track-report-card-top-section">
+            <span className={`track-report-card-icon track-report-card-icon--${displayedTone}`} aria-hidden="true">
+              <ReportStatusIcon status={displayedStatus} size={24} leading />
+              {displayedStatus === 'Needs recapture' && <span className="track-report-icon-alert-dot" aria-hidden="true" />}
+            </span>
+            <div className="track-report-list-main">
+              <div className="track-report-card-top">
+                <strong className="track-report-id">{ticket.reportId}</strong>
               </div>
-            </div>
-            <span className={`track-report-status track-report-status-${statusTone(report.current_status)}`}>{report.current_status}</span>
-            <div className="track-report-summary-meta">
-              <span><Building2 size={15} /><span><small>ESTABLISHMENT</small><strong>{report.store_name}</strong></span></span>
-              <span><Calendar size={15} /><span><small>SUBMITTED ON</small><strong>{formatDateTime(report.submitted_at)}</strong></span></span>
+              <span className="track-report-store">{report.storeName}</span>
+              <span className="track-report-location">
+                <MapPin size={13} aria-hidden="true" />
+                <span>{location}</span>
+              </span>
             </div>
           </div>
-
-          <h2 className="track-report-timeline-title"><Clock size={18} /> Evaluation Progress &amp; Public Timeline</h2>
-          <div className="track-report-timeline">
-            {deriveTimelineItems(report.status_history, report.current_status).map((item, index) => {
-              const completed = item.state === 'completed';
-              const active = item.state === 'current';
-              return (
-                <div key={`${item.status}-${item.timestamp}`} className={`stepper-item ${completed ? 'completed' : ''} ${active ? 'active' : ''}`}>
-                  <div className="stepper-icon">{completed ? <CheckCircle size={18} /> : index + 1}</div>
-                  <div className="track-report-timeline-copy">
-                    <div><strong aria-current={active ? 'step' : undefined}>{item.status}</strong>{active && <span className="track-report-current">In Progress</span>}</div>
-                    <p>{item.public_message}</p><time>{formatDateTime(item.timestamp)}</time>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="track-report-card-meta">
+            <div className="track-report-meta-left">
+              <span className="track-report-meta-date">
+                <CalendarDays size={14} aria-hidden="true" /> {ticket.date}
+              </span>
+              {ticket.time && (
+                <>
+                  <span className="track-report-meta-divider" aria-hidden="true" />
+                  <span className="track-report-meta-time">
+                    <Clock3 size={13} className="track-report-time-clock" aria-hidden="true" />
+                    {ticket.time}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="track-report-meta-right">
+              <span className={`track-report-status track-report-status-${displayedTone}`}>
+                <ReportStatusIcon status={displayedStatus} size={13} />
+                <span>{displayedStatus}</span>
+              </span>
+              <ChevronRight size={17} aria-hidden="true" />
+            </div>
           </div>
+        </button>
+        <div className="track-report-inline-actions" onPointerDown={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            aria-label={`${archived ? 'Restore' : 'Archive'} report ${report.reportReference}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onArchive(report);
+            }}
+          >
+            {archived ? <RotateCcw size={17} aria-hidden="true" /> : <Archive size={17} aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="track-report-inline-delete"
+            aria-label={`Delete report ${report.reportReference}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(report, event.currentTarget);
+            }}
+          >
+            <Trash2 size={17} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          <div className="banner-info track-report-privacy">
-            <ShieldCheck size={18} /><div><strong>Privacy protected:</strong> Only public evaluation updates are shown. Receipt evidence and personal details remain restricted.</div>
+export const TrackReport = ({
+  recentReports = [],
+  setActiveTab,
+  showBackButton,
+  onOpenReport,
+  onSetArchived,
+  onDeleteReport,
+  onRestoreReport,
+  initialViewState,
+  onViewStateChange,
+}: TrackReportProps) => {
+  const [query, setQuery] = useState(initialViewState?.query ?? '');
+  const [filter, setFilter] = useState<ReportListFilter>(initialViewState?.filter ?? 'All');
+  const [pendingDelete, setPendingDelete] = useState<StoredRecentReport | null>(null);
+  const [snackbar, setSnackbar] = useState<SnackbarState | null>(null);
+  const snackbarTimerRef = useRef<number | null>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement | null>(null);
+  const deleteDialogRef = useRef<HTMLElement | null>(null);
+  const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => () => {
+    if (snackbarTimerRef.current) window.clearTimeout(snackbarTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingDelete) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cancelDeleteRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setPendingDelete(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = deleteDialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      const returnTarget = dialogReturnFocusRef.current;
+      if (returnTarget?.isConnected) returnTarget.focus();
+    };
+  }, [pendingDelete]);
+
+  const updateViewState = (nextQuery: string, nextFilter: ReportListFilter) => {
+    setQuery(nextQuery);
+    setFilter(nextFilter);
+    onViewStateChange?.({ query: nextQuery, filter: nextFilter });
+  };
+
+  const showUndo = (next: SnackbarState) => {
+    if (snackbarTimerRef.current) window.clearTimeout(snackbarTimerRef.current);
+    setSnackbar(next);
+    snackbarTimerRef.current = window.setTimeout(() => setSnackbar(null), 5000);
+  };
+
+  const handleArchive = (report: StoredRecentReport) => {
+    const shouldArchive = !report.archivedAt;
+    onSetArchived?.(report, shouldArchive);
+    showUndo({
+      message: shouldArchive ? 'Report archived' : 'Report restored',
+      actionLabel: shouldArchive ? 'Undo archive' : 'Undo unarchive',
+      onUndo: () => onSetArchived?.(report, !shouldArchive),
+    });
+  };
+
+  const handleDeleteRequest = (report: StoredRecentReport, trigger?: HTMLButtonElement) => {
+    dialogReturnFocusRef.current = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    setPendingDelete(report);
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    const deletedReport = pendingDelete;
+    setPendingDelete(null);
+    onDeleteReport?.(deletedReport);
+    showUndo({
+      message: 'Report removed',
+      actionLabel: 'Undo delete',
+      onUndo: () => onRestoreReport?.(deletedReport),
+    });
+  };
+
+  const counts = useMemo(() => getReportFilterCounts(recentReports), [recentReports]);
+  const visibleReports = useMemo(
+    () => filterReportList(recentReports, query, filter),
+    [filter, query, recentReports],
+  );
+  const hasBackButton = Boolean(setActiveTab && showBackButton !== false);
+  return (
+    <div className="track-report-page track-report-library-page">
+      <header className={`track-report-heading${hasBackButton ? ' track-report-heading--with-back' : ''}`}>
+        {hasBackButton && (
+          <button
+            type="button"
+            className="track-report-back"
+            aria-label="Back to Reports"
+            onClick={() => setActiveTab?.('reports')}
+          >
+            <ArrowLeft size={21} aria-hidden="true" />
+          </button>
+        )}
+        <div className="track-report-heading-copy">
+          <h1 id="my-reports-title">My Reports</h1>
+          <p>View and manage all your submitted reports.</p>
+        </div>
+        <img className="track-report-hero-illustration" src={myReportsHero} alt="" />
+      </header>
+
+      {recentReports.length > 0 && (
+        <section className="track-report-controls" aria-label="Report search and filters">
+          <div className="track-report-search">
+            <Search size={18} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search reports"
+              placeholder="Search by reference, store or date"
+              value={query}
+              onChange={(event) => updateViewState(event.target.value, filter)}
+            />
+            {query && (
+              <button type="button" aria-label="Clear report search" onClick={() => updateViewState('', filter)}>
+                <X size={18} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          <div className="track-report-filters" aria-label="Filter reports by status">
+            {REPORT_LIST_FILTERS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={`price-classification-pill${filter === item ? ' is-selected' : ''}`}
+                aria-pressed={filter === item}
+                aria-label={`${item}, ${pluralizeReports(counts[item])}`}
+                onClick={() => updateViewState(query, item)}
+              >
+                <ReportStatusIcon status={item} size={16} />
+                <span>{item}</span>
+              </button>
+            ))}
           </div>
         </section>
       )}
 
-      <details className="glass-panel track-report-recovery" open={Boolean(accessNeeded)}>
-        <summary><KeyRound size={19} /> Open a report from another device</summary>
-        <div className="track-report-recovery-body">
-          <p>Enter the credentials once. After a successful lookup, this browser will remember the report.</p>
-          <form onSubmit={handleRecoverySubmit}>
-            <div><label htmlFor="report-reference">PUBLIC REPORT REFERENCE CODE</label><input id="report-reference" type="text" className="input-field" value={reference} onChange={(event) => setReference(event.target.value)} required /></div>
-            <div><label htmlFor="tracking-token">SECRET TRACKING TOKEN</label><input id="tracking-token" type="password" className="input-field" value={token} onChange={(event) => setToken(event.target.value)} required /></div>
-            <button className="btn-primary" type="submit" disabled={loading}><Search size={18} /> {loading ? 'Checking report...' : 'Access report'}</button>
-          </form>
+      {recentReports.length === 0 ? (
+        <section className="track-report-empty" aria-labelledby="my-reports-title">
+          <span className="track-report-empty-icon"><FileClock size={26} aria-hidden="true" /></span>
+          <h2>No reports yet</h2>
+          <p>Reports you submit from this device will appear here automatically.</p>
+          {setActiveTab && (
+            <button type="button" className="btn-primary track-report-empty-action" onClick={() => setActiveTab('reports')}>
+              <Plus size={18} aria-hidden="true" /> Submit a report
+            </button>
+          )}
+        </section>
+      ) : visibleReports.length > 0 ? (
+        <section className="track-report-list" aria-labelledby="my-reports-title">
+          {visibleReports.map((report) => (
+            <SwipeableReportRow
+              key={report.reportReference}
+              report={report}
+              onOpen={onOpenReport}
+              onArchive={handleArchive}
+              onDelete={handleDeleteRequest}
+            />
+          ))}
+        </section>
+      ) : (
+        <section className="track-report-empty track-report-no-results" aria-live="polite">
+          <span className="track-report-empty-icon"><Search size={25} aria-hidden="true" /></span>
+          <h2>No matching reports</h2>
+          <p>Try another reference, store, or report status.</p>
+          <button type="button" className="track-report-clear-results" onClick={() => updateViewState('', 'All')}>
+            Clear search and filters
+          </button>
+        </section>
+      )}
+
+      {pendingDelete && (
+        <div className="track-report-dialog-scrim" role="presentation" onPointerDown={(event) => {
+          if (event.target === event.currentTarget) setPendingDelete(null);
+        }}>
+          <section ref={deleteDialogRef} className="track-report-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-report-title">
+            <span className="track-report-delete-icon"><Trash2 size={24} aria-hidden="true" /></span>
+            <h2 id="delete-report-title">Remove report from this device?</h2>
+            <p>This removes <strong>{pendingDelete.reportReference}</strong> from My Reports on this device. Your official report will remain submitted to DTI.</p>
+            <div className="track-report-dialog-actions">
+              <button ref={cancelDeleteRef} type="button" className="track-report-dialog-cancel" onClick={() => setPendingDelete(null)}>Cancel</button>
+              <button type="button" className="track-report-dialog-delete" onClick={confirmDelete}>Delete from My Reports</button>
+            </div>
+          </section>
         </div>
-      </details>
+      )}
+
+      {snackbar && (
+        <div className="track-report-snackbar" role="status" aria-live="polite">
+          <span>{snackbar.message}</span>
+          <button type="button" aria-label={snackbar.actionLabel} onClick={() => {
+            snackbar.onUndo();
+            setSnackbar(null);
+          }}>Undo</button>
+        </div>
+      )}
     </div>
   );
 };

@@ -63,6 +63,11 @@ class ConsumerReport extends Model
         return $this->belongsTo(ReceiptEvidenceBundle::class, 'receipt_evidence_bundle_id');
     }
 
+    public function evidenceAttempts()
+    {
+        return $this->hasMany(ReceiptEvidenceBundle::class)->orderBy('attempt_number');
+    }
+
     public function items()
     {
         return $this->hasMany(ConsumerReportItem::class)->orderBy('sequence');

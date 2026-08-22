@@ -18,17 +18,22 @@ describe('continuous receipt capture contracts', () => {
     expect(buildContinuousReportPayload({
       submissionUuid: 'sub-continuous-1',
       captureToken: 'ct_sec_capture',
+      trackingToken: 'trk_client_generated_12345678901234567890',
+      resumeToken: 'rsm_client_generated_12345678901234567890',
     })).toEqual({
       submission_uuid: 'sub-continuous-1',
       capture_token: 'ct_sec_capture',
       privacy_notice_version: '1.0',
+      tracking_token: 'trk_client_generated_12345678901234567890',
+      resume_token: 'rsm_client_generated_12345678901234567890',
     });
   });
 
   it('uses guided live photos when MediaRecorder is unavailable but the camera works', () => {
-    expect(receiptCaptureSupport({ camera: true, mediaRecorder: false })).toBe('guided_photos_v1');
-    expect(receiptCaptureSupport({ camera: true, mediaRecorder: true })).toBe('continuous_video_v1');
-    expect(receiptCaptureSupport({ camera: false, mediaRecorder: true })).toBe('unsupported');
+    expect(receiptCaptureSupport({ camera: true, mediaRecorder: false, supportedVideoMime: null })).toBe('guided_photos_v1');
+    expect(receiptCaptureSupport({ camera: true, mediaRecorder: true, supportedVideoMime: 'video/webm' })).toBe('continuous_video_v1');
+    expect(receiptCaptureSupport({ camera: true, mediaRecorder: true, supportedVideoMime: null })).toBe('guided_photos_v1');
+    expect(receiptCaptureSupport({ camera: false, mediaRecorder: true, supportedVideoMime: 'video/webm' })).toBe('unsupported');
   });
 
   it('keeps the sharpest sampled frames while preserving receipt order', () => {

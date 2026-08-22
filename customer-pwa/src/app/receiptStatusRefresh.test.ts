@@ -24,4 +24,23 @@ describe('receipt status refresh', () => {
     await expect(refreshReceiptReportStatuses(reports, readToken, fetchStatus)).resolves.toEqual(reports);
     expect(readToken).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves and refreshes the full twenty-report device history', async () => {
+    const reports = Array.from({ length: 20 }, (_, index) => ({
+      reportReference: `REP-${index + 1}`,
+      storeName: `Store ${index + 1}`,
+      status: 'Processing receipt',
+      submittedAt: '2026-08-16T01:00:00Z',
+    }));
+    const readToken = vi.fn().mockResolvedValue('rsm_device');
+    const fetchStatus = vi.fn().mockResolvedValue({ status: 'Ready for confirmation' });
+
+    const refreshed = await refreshReceiptReportStatuses(reports, readToken, fetchStatus);
+
+    expect(refreshed).toHaveLength(20);
+    expect(refreshed[19]).toMatchObject({
+      reportReference: 'REP-20',
+      status: 'Ready for confirmation',
+    });
+  });
 });

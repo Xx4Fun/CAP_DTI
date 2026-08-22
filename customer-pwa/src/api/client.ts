@@ -244,7 +244,8 @@ export interface TrackReportResponse {
   report_reference: string;
   store_name: string;
   current_status: string;
-  submitted_at: string;
+  created_at: string;
+  submitted_at: string | null;
   status_history: StatusHistoryItem[];
 }
 

@@ -12,8 +12,10 @@ class ReceiptEvidenceBundle extends Model
     protected $fillable = [
         'evidence_uuid',
         'capture_session_id',
+        'consumer_report_id',
         'store_id',
         'capture_mode',
+        'attempt_number',
         'processing_status',
         'processing_attempts',
         'processing_result_json',
@@ -31,6 +33,11 @@ class ReceiptEvidenceBundle extends Model
     public function captureSession()
     {
         return $this->belongsTo(CaptureSession::class);
+    }
+
+    public function report()
+    {
+        return $this->belongsTo(ConsumerReport::class, 'consumer_report_id');
     }
 
     public function store()

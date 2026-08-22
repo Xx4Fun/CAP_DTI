@@ -1,0 +1,53 @@
+.back-to-top {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(var(--nav-height) + max(16px, env(safe-area-inset-bottom)) + 16px);
+  z-index: 90;
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 22%);
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+  animation: back-to-top-enter 160ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.back-to-top:hover {
+  background: var(--primary-hover);
+}
+
+.back-to-top:active {
+  background: var(--primary-hover);
+  box-shadow: 0 4px 14px rgb(15 23 42 / 24%);
+}
+
+.back-to-top:focus-visible {
+  outline: 3px solid rgb(37 99 235 / 32%);
+  outline-offset: 3px;
+}
+
+@keyframes back-to-top-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top {
+    animation: none;
+  }
+}

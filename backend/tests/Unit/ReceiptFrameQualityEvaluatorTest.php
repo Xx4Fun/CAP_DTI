@@ -24,4 +24,19 @@ class ReceiptFrameQualityEvaluatorTest extends TestCase
         $this->assertFalse($dark['acceptable']);
         $this->assertGreaterThan($flat['score'], $sharp['score']);
     }
+
+    public function test_selects_the_best_frame_from_each_chronological_window_instead_of_only_global_best_frames(): void
+    {
+        $evaluated = [
+            ['path' => 'frame-000.jpg', 'source_sequence' => 0, 'quality' => ['score' => 2.0]],
+            ['path' => 'frame-001.jpg', 'source_sequence' => 1, 'quality' => ['score' => 9.0]],
+            ['path' => 'frame-002.jpg', 'source_sequence' => 2, 'quality' => ['score' => 20.0]],
+            ['path' => 'frame-003.jpg', 'source_sequence' => 3, 'quality' => ['score' => 19.0]],
+        ];
+
+        $selected = (new ReceiptFrameQualityEvaluator)->selectEvaluated($evaluated, 2);
+
+        $this->assertSame(['frame-001.jpg', 'frame-002.jpg'], array_column($selected, 'path'));
+        $this->assertSame([1, 2], array_column($selected, 'source_sequence'));
+    }
 }

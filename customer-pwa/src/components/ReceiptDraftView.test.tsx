@@ -21,7 +21,7 @@ describe('ReceiptDraftView', () => {
     history.replaceState(null, '', '/reports/REP-20260816-READY/review');
   });
 
-  it('loads reviewable items and submits customer corrections before DTI review', async () => {
+  it('shows OCR items read-only and submits only customer confirmation', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
         success: true,
@@ -45,18 +45,14 @@ describe('ReceiptDraftView', () => {
 
     render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" onSubmitted={onSubmitted} />);
 
-    const itemName = await screen.findByLabelText('Item 1 name');
-    await user.clear(itemName);
-    await user.type(itemName, 'Premium Rice');
+    expect(await screen.findByText('RICE')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: /items shown came from this receipt/i }));
     await user.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
 
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
       '/public/reports/REP-20260816-READY/confirm-ocr',
-      expect.objectContaining({
-        consumer_confirmed: true,
-        confirmed_items: [expect.objectContaining({ item_name: 'Premium Rice', observed_price: 45 })],
-      }),
+      { consumer_confirmed: true },
       { headers: { 'X-Report-Resume-Token': 'rsm_device' } },
     ));
     expect(deleteResumeTokenMock).toHaveBeenCalledWith('REP-20260816-READY');
@@ -73,12 +69,32 @@ describe('ReceiptDraftView', () => {
         processing_status: 'needs_recapture',
         message: 'The receipt could not be verified as one continuous receipt. Please capture it again.',
         ready_for_review: false,
+        can_recapture: true,
+        attempt_number: 1,
+        store: { id: 77, store_name: 'Receipt Test Mart' },
+        recapture_reason: { code: 'INCOMPLETE_SCAN', message: 'Move from the store header to the total.' },
       } },
     });
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { success: true, data: {
+      capture_session_id: 43,
+      session_uuid: 'capture-43',
+      capture_token: 'ct_sec_recapture',
+      expires_at: '2026-08-16T02:00:00Z',
+      store_id: 77,
+      capture_mode: 'continuous_video_v1',
+      max_file_size: 25 * 1024 * 1024,
+      accepted_types: ['video/webm', 'video/mp4'],
+      limits: { max_duration_seconds: 30, max_video_bytes: 25 * 1024 * 1024, max_frame_bytes: 2 * 1024 * 1024, min_frames: 2, max_frames: 12 },
+    } } });
     const user = userEvent.setup();
     render(<ReceiptDraftView reference="REP-20260816-RETRY" mode="processing" />);
 
     await user.click(await screen.findByRole('button', { name: 'Scan receipt again' }));
-    expect(location.pathname).toBe('/reports');
+    expect(postSpy).toHaveBeenCalledWith(
+      '/public/reports/REP-20260816-RETRY/recapture-session',
+      {},
+      { headers: { 'X-Report-Resume-Token': 'rsm_device' } },
+    );
+    expect(await screen.findByLabelText('Continuous receipt scanner')).toBeInTheDocument();
   });
 });

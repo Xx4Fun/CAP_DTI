@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 class ReceiptEvidencePipeline
 {
@@ -24,6 +23,10 @@ class ReceiptEvidencePipeline
         private readonly ReceiptItemExtractor $itemExtractor,
         private readonly ReceiptFrameQualityEvaluator $qualityEvaluator,
         private readonly ReceiptPreviewStitcher $previewStitcher,
+        private readonly ReceiptFrameSampler $frameSampler,
+        private readonly ReceiptOcrResultSelector $ocrResultSelector,
+        private readonly ReceiptMerchantMatcher $merchantMatcher,
+        private readonly ReceiptTotalExtractor $totalExtractor,
     ) {}
 
     public function process(ConsumerReport $report): array
@@ -38,79 +41,104 @@ class ReceiptEvidencePipeline
         File::ensureDirectoryExists($temporaryDirectory);
 
         try {
-            $framePaths = $report->capture_mode === 'continuous_video_v1'
+            $frameCandidates = $report->capture_mode === 'continuous_video_v1'
                 ? $this->prepareVideoFrames($report, $temporaryDirectory)
                 : $this->prepareUploadedFrames($report, $temporaryDirectory);
 
-            if (count($framePaths) < 2) {
-                return $this->recaptureResult('insufficient_clear_frames');
+            if (count($frameCandidates) < 2) {
+                return $this->recaptureResult('INSUFFICIENT_FRAMES');
             }
 
             $frames = [];
-            foreach ($framePaths as $sequence => $framePath) {
-                $preprocessed = $this->preprocessor->preprocess($framePath);
+            $ocrDiagnostics = [];
+            foreach ($frameCandidates as $frame) {
+                $preprocessed = $this->preprocessor->preprocess($frame['path']);
                 try {
-                    $ocr = $this->ocr->scan($preprocessed['full_path'], [
+                    $primary = $this->ocr->scan($preprocessed['full_path'], [
                         'psm' => 6,
                         'minimum_confidence' => 45,
                         'timeout_seconds' => 20,
                     ]);
+                    $fallback = $this->ocr->scan($preprocessed['fallback_full_path'], [
+                        'psm' => 11,
+                        'minimum_confidence' => 35,
+                        'timeout_seconds' => 20,
+                    ]);
+                    $ocr = $this->ocrResultSelector->select($primary, $fallback);
                 } finally {
                     $this->preprocessor->cleanup($preprocessed['path']);
                     $this->preprocessor->cleanup($preprocessed['fallback_path']);
                 }
 
+                $ocrDiagnostics[] = [
+                    'sequence' => $frame['source_sequence'],
+                    'timestamp_seconds' => $frame['timestamp_seconds'],
+                    'status' => $ocr['status'] ?? 'OCR_FAILED',
+                ];
                 $lines = array_values(array_filter($ocr['lines'] ?? [], 'is_string'));
                 if ($lines === []) {
                     continue;
                 }
 
                 $frames[] = [
-                    'sequence' => $sequence,
-                    'merchant' => $this->detectMerchantCandidate($lines),
+                    'sequence' => $frame['source_sequence'],
                     'lines' => $lines,
                     'ocr_status' => $ocr['status'] ?? 'OCR_FAILED',
                 ];
             }
 
             if (count($frames) < 2) {
-                return $this->recaptureResult('insufficient_ocr_frames');
+                $technicalStatuses = ['OCR_UNAVAILABLE', 'OCR_TIMEOUT', 'OCR_FAILED'];
+                $statuses = array_column($ocrDiagnostics, 'status');
+                if ($statuses !== [] && array_diff($statuses, $technicalStatuses) === []) {
+                    return $this->failureResult((string) ($statuses[0] ?? 'OCR_FAILED'), $ocrDiagnostics);
+                }
+
+                return $this->recaptureResult('TEXT_UNREADABLE', ['ocr' => $ocrDiagnostics]);
             }
 
             $continuity = $this->continuityAnalyzer->analyze($frames);
             if ($continuity['status'] !== 'ready') {
-                return [
-                    'status' => 'needs_recapture',
-                    'lines' => [],
-                    'items' => [],
-                    'continuity' => $continuity,
-                    'merchant' => ['status' => 'unverified'],
-                ];
+                return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
             }
 
-            $merchant = $this->assessMerchant($report->store?->store_name, $frames);
-            if ($merchant['status'] === 'mismatch') {
-                return [
-                    'status' => 'needs_recapture',
-                    'lines' => [],
-                    'items' => [],
-                    'continuity' => $continuity,
-                    'merchant' => $merchant,
-                ];
+            $headerLines = array_merge(...array_map(fn (array $frame) => $frame['lines'], array_slice($frames, 0, 2)));
+            $merchant = $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines);
+            if ($merchant['status'] !== 'matched') {
+                return $this->recaptureResult('STORE_NOT_CONFIRMED', [
+                    'continuity' => $continuity, 'merchant' => $merchant, 'ocr' => $ocrDiagnostics,
+                ]);
             }
 
-            $this->vaultStitchedPreview($report, $framePaths, $temporaryDirectory);
+            $this->vaultStitchedPreview($report, array_column($frameCandidates, 'path'), $temporaryDirectory);
 
             $lines = $this->textAggregator->merge(array_column($frames, 'lines'));
             $items = $this->itemExtractor->extract($lines);
+            $total = $this->totalExtractor->extract($lines);
+            if ($items === []) {
+                return $this->recaptureResult('ITEMS_NOT_FOUND', compact('continuity', 'merchant') + ['ocr' => $ocrDiagnostics]);
+            }
+            if ($total === null) {
+                return $this->recaptureResult('TOTAL_NOT_FOUND', compact('continuity', 'merchant') + ['ocr' => $ocrDiagnostics]);
+            }
+
+            $itemSum = round(array_sum(array_column($items, 'observed_price')), 2);
+            if (abs($itemSum - $total) > 0.05) {
+                return $this->recaptureResult('TOTAL_MISMATCH', compact('continuity', 'merchant') + [
+                    'ocr' => $ocrDiagnostics, 'detected_total' => $total, 'item_sum' => $itemSum,
+                ]);
+            }
 
             return [
-                'status' => $items === [] || $merchant['status'] !== 'matched' ? 'ready_manual_review' : 'ready',
+                'status' => 'ready',
+                'reason_code' => null,
                 'lines' => $lines,
                 'items' => $items,
+                'detected_total' => $total,
                 'continuity' => $continuity,
                 'merchant' => $merchant,
                 'frames_processed' => count($frames),
+                'ocr' => $ocrDiagnostics,
             ];
         } finally {
             File::deleteDirectory($temporaryDirectory);
@@ -133,25 +161,15 @@ class ReceiptEvidencePipeline
         }
 
         $framePattern = $temporaryDirectory.DIRECTORY_SEPARATOR.'frame-%03d.jpg';
-        $process = new Process([
-            (string) config('services.ffmpeg.path', 'ffmpeg'),
-            '-hide_banner', '-loglevel', 'error', '-i', $videoPath,
-            '-vf', 'fps=4', '-frames:v', '24', '-q:v', '2', $framePattern,
-        ]);
-        $process->setTimeout(60);
-        $process->run();
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException('Unable to extract receipt video frames.');
-        }
-
-        $paths = File::glob($temporaryDirectory.DIRECTORY_SEPARATOR.'frame-*.jpg');
-        sort($paths, SORT_NATURAL);
+        $paths = $this->frameSampler->extract($videoPath, $framePattern, (float) $probe['duration_seconds']);
         $selected = $this->qualityEvaluator->select($paths, 12);
         foreach ($selected as $sequence => $frame) {
-            $this->vaultExtractedFrame($report, $frame['path'], $sequence, $probe, $frame['quality']);
+            $timestamp = round($frame['source_sequence'] / 2, 3);
+            $this->vaultExtractedFrame($report, $frame['path'], $sequence, $probe, $frame['quality'], $frame['source_sequence'], $timestamp);
+            $selected[$sequence]['timestamp_seconds'] = $timestamp;
         }
 
-        return array_values(array_column($selected, 'path'));
+        return array_values($selected);
     }
 
     private function prepareUploadedFrames(ConsumerReport $report, string $temporaryDirectory): array
@@ -161,13 +179,26 @@ class ReceiptEvidencePipeline
         foreach ($assets as $asset) {
             $path = $temporaryDirectory.DIRECTORY_SEPARATOR.sprintf('frame-%03d', $asset->sequence);
             File::put($path, Storage::disk($asset->disk)->get($asset->path));
-            $paths[] = $path;
+            $paths[] = [
+                'path' => $path,
+                'source_sequence' => (int) $asset->sequence,
+                'timestamp_seconds' => null,
+                'quality' => $asset->metadata_json['quality'] ?? null,
+            ];
         }
 
         return $paths;
     }
 
-    private function vaultExtractedFrame(ConsumerReport $report, string $localPath, int $sequence, array $probe, array $quality): void
+    private function vaultExtractedFrame(
+        ConsumerReport $report,
+        string $localPath,
+        int $sequence,
+        array $probe,
+        array $quality,
+        int $sourceSequence,
+        float $timestampSeconds,
+    ): void
     {
         $bundle = $report->evidenceBundle;
         $sha256 = hash_file('sha256', $localPath);
@@ -188,7 +219,12 @@ class ReceiptEvidencePipeline
                 'mime_type' => 'image/jpeg',
                 'size_bytes' => File::size($localPath),
                 'sha256' => $sha256,
-                'metadata_json' => ['video' => $probe, 'quality' => $quality],
+                'metadata_json' => [
+                    'video' => $probe,
+                    'quality' => $quality,
+                    'source_sequence' => $sourceSequence,
+                    'timestamp_seconds' => $timestampSeconds,
+                ],
             ],
         );
     }
@@ -212,50 +248,31 @@ class ReceiptEvidencePipeline
         );
     }
 
-    private function detectMerchantCandidate(array $lines): ?string
-    {
-        foreach (array_slice($lines, 0, 3) as $line) {
-            if (! preg_match('/\d+[.,]\d{2}/', $line) && preg_match_all('/[a-z]{2,}/i', $line) >= 2) {
-                return trim($line);
-            }
-        }
-
-        return null;
-    }
-
-    private function assessMerchant(?string $expectedStore, array $frames): array
-    {
-        $candidates = array_values(array_unique(array_filter(array_column($frames, 'merchant'))));
-        if (! $expectedStore || $candidates === []) {
-            return ['status' => 'unverified', 'expected_store' => $expectedStore, 'observed' => $candidates];
-        }
-
-        $expectedTokens = $this->merchantTokens($expectedStore);
-        foreach ($candidates as $candidate) {
-            $candidateTokens = $this->merchantTokens($candidate);
-            if ($expectedTokens !== [] && count(array_intersect($expectedTokens, $candidateTokens)) / count($expectedTokens) >= 0.5) {
-                return ['status' => 'matched', 'expected_store' => $expectedStore, 'observed' => $candidates];
-            }
-        }
-
-        return ['status' => 'mismatch', 'expected_store' => $expectedStore, 'observed' => $candidates];
-    }
-
-    private function merchantTokens(string $value): array
-    {
-        $tokens = preg_split('/[^a-z0-9]+/i', strtolower($value), -1, PREG_SPLIT_NO_EMPTY) ?: [];
-
-        return array_values(array_filter(array_unique($tokens), fn (string $token) => strlen($token) >= 3));
-    }
-
-    private function recaptureResult(string $reason): array
+    private function recaptureResult(string $reasonCode, array $diagnostics = []): array
     {
         return [
             'status' => 'needs_recapture',
+            'reason_code' => $reasonCode,
             'lines' => [],
             'items' => [],
-            'continuity' => ['status' => 'needs_recapture', 'continuity_score' => 0.0, 'reasons' => [$reason]],
+            'continuity' => $diagnostics['continuity'] ?? [
+                'status' => 'needs_recapture', 'continuity_score' => 0.0, 'reasons' => [strtolower($reasonCode)],
+            ],
+            'merchant' => $diagnostics['merchant'] ?? ['status' => 'unverified'],
+            'diagnostics' => $diagnostics,
+        ];
+    }
+
+    private function failureResult(string $failureCode, array $ocrDiagnostics): array
+    {
+        return [
+            'status' => 'failed',
+            'reason_code' => $failureCode,
+            'lines' => [],
+            'items' => [],
+            'continuity' => null,
             'merchant' => ['status' => 'unverified'],
+            'diagnostics' => ['ocr' => $ocrDiagnostics],
         ];
     }
 }

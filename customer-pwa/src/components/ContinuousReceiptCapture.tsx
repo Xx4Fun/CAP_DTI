@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Bell, Camera, CheckCircle2, CircleStop, LoaderCircle, RotateCcw, Video } from 'lucide-react';
 import { apiClient, type CaptureSessionResponse, type FormalReportResponse } from '../api/client';
-import { buildContinuousReportPayload, preferredReceiptVideoMime, selectBestReceiptFrames } from '../app/receiptCapture';
+import {
+  buildContinuousReportPayload,
+  clearPendingReceiptSubmissionCredentials,
+  getOrCreateReceiptSubmissionCredentials,
+  preferredReceiptVideoMime,
+} from '../app/receiptCapture';
 import { enableReceiptNotifications, currentReceiptNotificationAvailability } from '../app/receiptNotifications';
 import { saveReceiptResumeToken } from '../app/receiptResumeStore';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
@@ -15,11 +20,13 @@ interface ContinuousReceiptCaptureProps {
   onDraftCreated: (report: FormalReportResponse) => void;
   onCheckStatus?: (reference: string) => void;
   onGoHome?: () => void;
+  recapture?: { reference: string; resumeToken: string };
 }
 
 type CaptureState = 'requesting' | 'ready' | 'recording' | 'uploading' | 'uploaded' | 'error';
 
 const MAX_DURATION_SECONDS = 30;
+const MIN_DURATION_SECONDS = 3;
 const MAX_SELECTED_FRAMES = 12;
 
 export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> = ({
@@ -31,6 +38,7 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
   onDraftCreated,
   onCheckStatus,
   onGoHome,
+  recapture,
 }) => {
   const [captureState, setCaptureState] = useState<CaptureState>('requesting');
   const [seconds, setSeconds] = useState(0);
@@ -41,23 +49,22 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
   const [notificationState, setNotificationState] = useState<string>(() => currentReceiptNotificationAvailability());
   const [guidedFrames, setGuidedFrames] = useState<Blob[]>([]);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const sampledFramesRef = useRef<Array<{ blob: Blob; score: number; index: number }>>([]);
   const timerRef = useRef<number | null>(null);
-  const samplerRef = useRef<number | null>(null);
   const recordingStartedAtRef = useRef(0);
+  const credentialsRef = useRef(getOrCreateReceiptSubmissionCredentials(submissionUuid));
+  const evidenceUploadedRef = useRef(false);
   const activeRef = useRef(true);
   const isGuided = session.capture_mode === 'guided_photos_v1';
 
   const stopTimers = useCallback(() => {
     if (timerRef.current) window.clearInterval(timerRef.current);
-    if (samplerRef.current) window.clearInterval(samplerRef.current);
     timerRef.current = null;
-    samplerRef.current = null;
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -136,31 +143,59 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
     formData.append('asset', blob, kind === 'original_video' ? `receipt.${videoExtension}` : `receipt-frame-${sequence}.jpg`);
     await apiClient.post(`/public/capture-sessions/${session.capture_session_id}/assets`, formData, {
       headers: { 'X-Capture-Token': session.capture_token },
+      timeout: 120_000,
+      onUploadProgress: (event) => {
+        if (event.total) setUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      },
     });
   };
 
-  const createDraft = async (videoBlob: Blob | null, frames: Blob[]) => {
+  const createDraft = async (videoBlob: Blob | null, frames: Blob[], reuseUploadedEvidence = false) => {
     setCaptureState('uploading');
     setError('');
     try {
-      if (videoBlob) await uploadAsset('original_video', 0, videoBlob);
-      for (let index = 0; index < Math.min(frames.length, MAX_SELECTED_FRAMES); index++) {
-        await uploadAsset('source_frame', index, frames[index]);
+      if (!reuseUploadedEvidence) {
+        if (videoBlob) {
+          await uploadAsset('original_video', 0, videoBlob);
+        } else {
+          for (let index = 0; index < Math.min(frames.length, MAX_SELECTED_FRAMES); index++) {
+            await uploadAsset('source_frame', index, frames[index]);
+          }
+        }
+        evidenceUploadedRef.current = true;
       }
 
-      const response = await apiClient.post('/public/reports', buildContinuousReportPayload({
-        submissionUuid,
-        captureToken: session.capture_token,
-      }));
-      const report = response.data?.data as FormalReportResponse;
+      const response = recapture
+        ? await apiClient.post(
+            `/public/reports/${encodeURIComponent(recapture.reference)}/recapture`,
+            { capture_token: session.capture_token },
+            { headers: { 'X-Report-Resume-Token': recapture.resumeToken }, timeout: 30_000 },
+          )
+        : await apiClient.post('/public/reports', buildContinuousReportPayload({
+            submissionUuid,
+            captureToken: session.capture_token,
+            trackingToken: credentialsRef.current.trackingToken,
+            resumeToken: credentialsRef.current.resumeToken,
+          }), { timeout: 30_000 });
+      const responseData = response.data?.data as Partial<FormalReportResponse>;
+      const report: FormalReportResponse = recapture ? {
+        report_reference: recapture.reference,
+        secret_tracking_token: '',
+        device_resume_token: recapture.resumeToken,
+        status: responseData.status || 'Processing receipt',
+        submitted_at: null,
+      } : responseData as FormalReportResponse;
       if (!response.data?.success || !report?.report_reference || !report.device_resume_token) {
         throw new Error('The server did not return a recoverable processing report.');
       }
 
-      const [resumeResult, trackingResult] = await Promise.allSettled([
-        saveReceiptResumeToken(report.report_reference, report.device_resume_token),
-        saveReportTrackingToken(report.report_reference, report.secret_tracking_token),
-      ]);
+      const [resumeResult, trackingResult] = recapture
+        ? [{ status: 'fulfilled' as const }, { status: 'fulfilled' as const }]
+        : await Promise.allSettled([
+            saveReceiptResumeToken(report.report_reference, report.device_resume_token),
+            saveReportTrackingToken(report.report_reference, report.secret_tracking_token),
+          ]);
+      clearPendingReceiptSubmissionCredentials(submissionUuid);
       setResumeStored(resumeResult.status === 'fulfilled');
       setTrackingStored(trackingResult.status === 'fulfilled');
       setDraft(report);
@@ -179,6 +214,10 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
   const finishRecording = useCallback(() => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state !== 'recording') return;
+    if ((Date.now() - recordingStartedAtRef.current) / 1000 < MIN_DURATION_SECONDS) {
+      setError('Keep scanning for at least 3 seconds so the store header, items, and total are captured.');
+      return;
+    }
     stopTimers();
     recorder.stop();
   }, [stopTimers]);
@@ -198,7 +237,6 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
     }
 
     chunksRef.current = [];
-    sampledFramesRef.current = [];
     const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
     recorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
@@ -212,8 +250,7 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
         setCaptureState('error');
         return;
       }
-      const bestFrames = selectBestReceiptFrames(sampledFramesRef.current, MAX_SELECTED_FRAMES).map((frame) => frame.blob);
-      void createDraft(videoBlob, bestFrames);
+      void createDraft(videoBlob, []);
     };
     recorder.start(500);
     recordingStartedAtRef.current = Date.now();
@@ -224,14 +261,6 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
       setSeconds(elapsed);
       if (elapsed >= MAX_DURATION_SECONDS) finishRecording();
     }, 250);
-    samplerRef.current = window.setInterval(() => {
-      if (sampledFramesRef.current.length >= MAX_SELECTED_FRAMES * 2) return;
-      void captureFrame().then((frame) => {
-        if (frame && frame.blob.size <= (session.limits?.max_frame_bytes ?? 2 * 1024 * 1024)) {
-          sampledFramesRef.current.push({ ...frame, index: sampledFramesRef.current.length });
-        }
-      });
-    }, 500);
   };
 
   const addGuidedFrame = async () => {
@@ -250,7 +279,6 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
       stopTimers();
       recorderRef.current.onstop = () => {
         chunksRef.current = [];
-        sampledFramesRef.current = [];
         setError('The scan stopped because PRICE-Watch left the foreground. Start the receipt scan again.');
         setCaptureState('ready');
       };
@@ -341,7 +369,7 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
       <div className="receipt-capture-shade receipt-capture-shade--bottom">
         {error && <div className="receipt-camera-error" role="alert">{error}</div>}
         {captureState === 'requesting' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Opening camera…</div>}
-        {captureState === 'uploading' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Uploading receipt securely…</div>}
+        {captureState === 'uploading' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Uploading receipt securely{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</div>}
         {captureState === 'ready' && !isGuided && (
           <button type="button" className="receipt-record-button" onClick={startRecording} aria-label="Start continuous scan">
             <Video size={24} aria-hidden="true" /> Start continuous scan
@@ -364,8 +392,11 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
           </>
         )}
         {captureState === 'error' && (
-          <button type="button" className="receipt-record-button" onClick={() => { setError(''); setCaptureState('ready'); }}>
-            <RotateCcw size={20} aria-hidden="true" /> Try again
+          <button type="button" className="receipt-record-button" onClick={() => {
+            if (evidenceUploadedRef.current) void createDraft(null, [], true);
+            else { setError(''); setCaptureState('ready'); }
+          }}>
+            <RotateCcw size={20} aria-hidden="true" /> {evidenceUploadedRef.current ? 'Retry report setup' : 'Try again'}
           </button>
         )}
       </div>

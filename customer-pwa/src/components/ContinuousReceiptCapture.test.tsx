@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
 import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
 
@@ -54,6 +54,8 @@ const session: CaptureSessionResponse = {
 };
 
 describe('ContinuousReceiptCapture', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(() => {
     saveResumeTokenMock.mockReset().mockResolvedValue(undefined);
     saveTrackingTokenMock.mockReset().mockResolvedValue(undefined);
@@ -73,18 +75,21 @@ describe('ContinuousReceiptCapture', () => {
     const onDraftCreated = vi.fn();
     const onCheckStatus = vi.fn();
     const onGoHome = vi.fn();
-    vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
+    let now = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const postSpy = vi.spyOn(apiClient, 'post').mockImplementation(async (url, data) => {
       if (url === '/public/capture-sessions/42/assets') {
         return { data: { success: true, data: { asset_id: 1 } } };
       }
       if (url === '/public/reports') {
+        const payload = data as { tracking_token: string; resume_token: string };
         return {
           data: {
             success: true,
             data: {
               report_reference: 'REP-20260816-ASYNC',
-              secret_tracking_token: 'trk_recovery',
-              device_resume_token: 'rsm_device',
+              secret_tracking_token: payload.tracking_token,
+              device_resume_token: payload.resume_token,
               status: 'Processing receipt',
               created_at: '2026-08-16T01:00:00Z',
               submitted_at: null,
@@ -111,14 +116,17 @@ describe('ContinuousReceiptCapture', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Start continuous scan' }));
     expect(screen.queryByText(/You can leave this page/i)).not.toBeInTheDocument();
+    now = 4_000;
     await user.click(screen.getByRole('button', { name: 'Finish receipt scan' }));
 
     expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
     expect(screen.getByText(/You can leave this page while we prepare your receipt/i)).toBeInTheDocument();
     expect(screen.getByText(/saved to this device/i)).toBeInTheDocument();
-    expect(screen.queryByText('trk_recovery')).not.toBeInTheDocument();
-    expect(saveResumeTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', 'rsm_device');
-    expect(saveTrackingTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', 'trk_recovery');
+    const assetCalls = postSpy.mock.calls.filter(([url]) => url === '/public/capture-sessions/42/assets');
+    expect(assetCalls).toHaveLength(1);
+    expect((assetCalls[0][1] as FormData).get('kind')).toBe('original_video');
+    expect(saveResumeTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', expect.stringMatching(/^rsm_/));
+    expect(saveTrackingTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', expect.stringMatching(/^trk_/));
     await user.click(screen.getByRole('button', { name: 'Check status' }));
     expect(onCheckStatus).toHaveBeenCalledWith('REP-20260816-ASYNC');
     await user.click(screen.getByRole('button', { name: 'Go Home' }));
@@ -145,5 +153,37 @@ describe('ContinuousReceiptCapture', () => {
       headers: { 'X-Capture-Token': 'ct_sec_capture' },
     });
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('queues recaptured video under the existing report reference', async () => {
+    let now = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const postSpy = vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
+      if (url === '/public/capture-sessions/42/assets') return { data: { success: true } };
+      if (url === '/public/reports/REP-EXISTING/recapture') {
+        return { data: { success: true, data: { report_reference: 'REP-EXISTING', status: 'Processing receipt' } } };
+      }
+      throw new Error(`Unexpected POST ${url}`);
+    });
+
+    const user = userEvent.setup();
+    render(<ContinuousReceiptCapture
+      session={session}
+      storeName="Receipt Test Mart"
+      submissionUuid="recapture-REP-EXISTING"
+      recapture={{ reference: 'REP-EXISTING', resumeToken: 'rsm_existing' }}
+      onCancel={vi.fn()}
+      onDraftCreated={vi.fn()}
+    />);
+
+    await user.click(await screen.findByRole('button', { name: 'Start continuous scan' }));
+    now = 4_000;
+    await user.click(screen.getByRole('button', { name: 'Finish receipt scan' }));
+    expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
+    expect(postSpy).toHaveBeenCalledWith(
+      '/public/reports/REP-EXISTING/recapture',
+      { capture_token: 'ct_sec_capture' },
+      { headers: { 'X-Report-Resume-Token': 'rsm_existing' }, timeout: 30_000 },
+    );
   });
 });

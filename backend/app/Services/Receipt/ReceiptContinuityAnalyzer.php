@@ -17,20 +17,11 @@ class ReceiptContinuityAnalyzer
         }
 
         $reasons = [];
-        $merchants = array_values(array_unique(array_filter(array_map(
-            fn (array $frame) => $this->normalize((string) ($frame['merchant'] ?? '')),
-            $frames,
-        ))));
-        if (count($merchants) > 1) {
-            $reasons[] = 'merchant_mismatch';
-        }
 
         $overlapPairs = 0;
         $pairCount = count($frames) - 1;
         for ($index = 0; $index < $pairCount; $index++) {
-            $currentLines = array_filter(array_map([$this, 'normalize'], $frames[$index]['lines']));
-            $nextLines = array_filter(array_map([$this, 'normalize'], $frames[$index + 1]['lines']));
-            if (array_intersect($currentLines, $nextLines) !== []) {
+            if ($this->hasFuzzyOverlap($frames[$index]['lines'], $frames[$index + 1]['lines'])) {
                 $overlapPairs++;
             } else {
                 $reasons[] = 'missing_adjacent_overlap';
@@ -45,6 +36,42 @@ class ReceiptContinuityAnalyzer
             'continuity_score' => $score,
             'reasons' => $reasons,
         ];
+    }
+
+    private function hasFuzzyOverlap(array $currentLines, array $nextLines): bool
+    {
+        foreach ($currentLines as $currentLine) {
+            $current = $this->normalize((string) $currentLine);
+            $currentTokens = $this->tokens($current);
+            if ($currentTokens === []) {
+                continue;
+            }
+
+            foreach ($nextLines as $nextLine) {
+                $next = $this->normalize((string) $nextLine);
+                if ($current === $next && $current !== '') {
+                    return true;
+                }
+
+                $nextTokens = $this->tokens($next);
+                $denominator = max(count($currentTokens), count($nextTokens));
+                if ($denominator > 0 && count(array_intersect($currentTokens, $nextTokens)) / $denominator >= 0.6) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function tokens(string $value): array
+    {
+        $tokens = preg_split('/\s+/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_values(array_unique(array_filter(
+            $tokens,
+            fn (string $token) => strlen($token) >= 2 && ! ctype_digit($token),
+        )));
     }
 
     private function normalize(string $value): string

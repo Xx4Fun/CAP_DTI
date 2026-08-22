@@ -45,13 +45,14 @@ class ProcessReceiptEvidence implements ShouldQueue
 
         $result = $pipeline->process($report);
         $internalStatus = $result['status'] ?? 'failed';
-        $publicStatus = in_array($internalStatus, ['ready', 'ready_manual_review'], true)
+        $publicStatus = $internalStatus === 'ready'
             ? 'Ready for confirmation'
             : ($internalStatus === 'needs_recapture' ? 'Needs recapture' : 'Processing failed');
+        $reasonCode = (string) ($result['reason_code'] ?? ($internalStatus === 'failed' ? 'PROCESSING_FAILED' : ''));
 
-        DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus) {
+        DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus, $reasonCode) {
             $report->items()->delete();
-            if (in_array($internalStatus, ['ready', 'ready_manual_review'], true)) {
+            if ($internalStatus === 'ready') {
                 foreach (($result['items'] ?? []) as $item) {
                     $report->items()->create($item);
                 }
@@ -64,13 +65,15 @@ class ProcessReceiptEvidence implements ShouldQueue
                     'lines' => $result['lines'] ?? [],
                     'continuity' => $result['continuity'] ?? null,
                     'merchant' => $result['merchant'] ?? null,
+                    'detected_total' => $result['detected_total'] ?? null,
+                    'reason_code' => $result['reason_code'] ?? null,
                 ],
             ]);
             $report->evidenceBundle?->update([
                 'processing_status' => $internalStatus,
                 'processing_result_json' => $result,
                 'processing_completed_at' => now(),
-                'failure_code' => $internalStatus === 'failed' ? 'PROCESSING_FAILED' : null,
+                'failure_code' => $internalStatus === 'ready' ? null : ($reasonCode ?: 'PROCESSING_FAILED'),
             ]);
 
             ReportStatusHistory::create([
@@ -79,7 +82,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'new_status' => $publicStatus,
                 'public_message' => match ($publicStatus) {
                     'Ready for confirmation' => 'Receipt processing is complete. Review and confirm the detected items.',
-                    'Needs recapture' => 'The receipt could not be verified as one continuous receipt. Please capture it again.',
+                    'Needs recapture' => $this->safeReasonMessage($reasonCode),
                     default => 'Receipt processing could not be completed. Please try again.',
                 },
                 'actor_type' => 'system',
@@ -87,6 +90,20 @@ class ProcessReceiptEvidence implements ShouldQueue
         });
 
         SendReceiptStatusNotification::dispatch($report->report_reference, $publicStatus)->afterCommit();
+    }
+
+    private function safeReasonMessage(string $reasonCode): string
+    {
+        return match ($reasonCode) {
+            'INSUFFICIENT_FRAMES' => 'The recording was too short or did not contain enough usable receipt views.',
+            'TEXT_UNREADABLE' => 'The receipt text was not clear enough to read. Keep it flat, well lit, and in focus.',
+            'INCOMPLETE_SCAN' => 'The recording did not show one continuous receipt from top to bottom.',
+            'STORE_NOT_CONFIRMED' => 'The store name could not be matched to the selected establishment.',
+            'ITEMS_NOT_FOUND' => 'No complete receipt item lines could be verified.',
+            'TOTAL_NOT_FOUND' => 'The receipt total was not visible or readable.',
+            'TOTAL_MISMATCH' => 'The detected item amounts did not match the receipt total.',
+            default => 'The receipt could not be verified. Please capture it again.',
+        };
     }
 
     public function failed(?Throwable $exception): void

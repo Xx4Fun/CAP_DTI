@@ -19,6 +19,10 @@ describe('routing', () => {
   it('generates stable report paths', () => {
     expect(pathFor({ name: 'new-report' })).toBe('/reports/new');
     expect(pathFor({ name: 'track-report' })).toBe('/reports/track');
+    expect(pathFor({ name: 'report-detail', reference: 'REP-20260822-ONE TWO' }))
+      .toBe('/reports/track/REP-20260822-ONE%20TWO');
+    expect(parseRoute('/reports/track/REP-20260822-ONE%20TWO'))
+      .toEqual({ name: 'report-detail', reference: 'REP-20260822-ONE TWO' });
     expect(pathFor({ name: 'receipt-processing', reference: 'REP-20260816-ONE' }))
       .toBe('/reports/REP-20260816-ONE/processing');
     expect(pathFor({ name: 'receipt-review', reference: 'REP-20260816-ONE' }))

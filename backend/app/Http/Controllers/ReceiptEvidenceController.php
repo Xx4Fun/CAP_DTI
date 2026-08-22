@@ -40,6 +40,13 @@ class ReceiptEvidenceController extends Controller
         $mimeType = (string) $file->getMimeType();
         $isVideo = $validated['kind'] === 'original_video';
 
+        if ($isVideo && (int) $validated['sequence'] !== 0) {
+            abort(422, 'The original video sequence must be zero.');
+        }
+        if (! $isVideo && (int) $validated['sequence'] > 11) {
+            abort(422, 'Receipt frame sequences must be between zero and eleven.');
+        }
+
         if ($isVideo && ! in_array($mimeType, ['video/webm', 'video/mp4'], true)) {
             abort(422, 'The original video must be WebM or MP4.');
         }

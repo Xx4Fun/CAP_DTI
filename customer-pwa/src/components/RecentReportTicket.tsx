@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalendarDays, MapPin } from 'lucide-react';
 
-export type RecentReportStatus = 'Processing' | 'Ready to review' | 'Needs recapture' | 'Submitted' | 'Under review' | 'Closed';
+export type RecentReportStatus = 'Processing' | 'Ready to review' | 'Needs recapture' | 'Processing failed' | 'Submitted' | 'Under review' | 'Closed';
 
 export interface RecentReportTicketProps {
   date: string;
@@ -17,6 +17,7 @@ const statusClassName: Record<RecentReportStatus, string> = {
   Processing: 'recent-report-ticket-processing',
   'Ready to review': 'recent-report-ticket-ready',
   'Needs recapture': 'recent-report-ticket-attention',
+  'Processing failed': 'recent-report-ticket-attention',
   'Under review': 'recent-report-ticket-orange',
   Closed: 'recent-report-ticket-green',
 };

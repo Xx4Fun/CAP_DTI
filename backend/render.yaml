@@ -30,3 +30,17 @@ services:
         value: 11
       - key: TESSERACT_SHELF_TAG_MINIMUM_CONFIDENCE
         value: 30
+      - key: RECEIPT_EVIDENCE_DRIVER
+        value: s3
+      - key: RECEIPT_EVIDENCE_BUCKET
+        sync: false
+      - key: RECEIPT_EVIDENCE_ENDPOINT
+        sync: false
+      - key: RECEIPT_EVIDENCE_ACCESS_KEY_ID
+        sync: false
+      - key: RECEIPT_EVIDENCE_SECRET_ACCESS_KEY
+        sync: false
+      - key: RECEIPT_EVIDENCE_REGION
+        sync: false
+      - key: RECEIPT_EVIDENCE_USE_PATH_STYLE
+        value: true

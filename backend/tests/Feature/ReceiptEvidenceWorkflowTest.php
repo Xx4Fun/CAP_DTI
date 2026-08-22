@@ -109,6 +109,26 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_continuous_capture_rejects_an_unverified_store_and_noncanonical_video_sequence(): void
+    {
+        $this->store->update(['is_verified' => false]);
+        $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'continuous_video_v1',
+        ])->assertUnprocessable();
+
+        $this->store->update(['is_verified' => true]);
+        $session = $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'continuous_video_v1',
+        ])->assertCreated();
+        $this->withHeader('X-Capture-Token', $session->json('data.capture_token'))
+            ->postJson('/api/public/capture-sessions/'.$session->json('data.capture_session_id').'/assets', [
+                'kind' => 'original_video', 'sequence' => 1,
+                'asset' => UploadedFile::fake()->create('receipt.webm', 1, 'video/webm'),
+            ])->assertUnprocessable();
+    }
+
     public function test_asset_upload_retry_is_idempotent_and_does_not_expose_private_storage_paths(): void
     {
         $session = $this->postJson('/api/public/capture-session', [
@@ -232,6 +252,38 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         Queue::assertPushed(ProcessReceiptEvidence::class, fn (ProcessReceiptEvidence $job) => $job->reportReference === $reference);
     }
 
+    public function test_client_generated_report_credentials_survive_an_idempotent_submission_replay(): void
+    {
+        Queue::fake();
+        $session = $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id, 'capture_mode' => 'continuous_video_v1',
+        ])->assertCreated();
+        $captureToken = $session->json('data.capture_token');
+        $this->withHeader('X-Capture-Token', $captureToken)
+            ->postJson('/api/public/capture-sessions/'.$session->json('data.capture_session_id').'/assets', [
+                'kind' => 'original_video', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->create('receipt.webm', 1, 'video/webm'),
+            ])->assertCreated();
+
+        $payload = [
+            'submission_uuid' => 'client-credential-replay-1',
+            'capture_token' => $captureToken,
+            'privacy_notice_version' => '1.0',
+            'tracking_token' => 'trk_client_generated_12345678901234567890',
+            'resume_token' => 'rsm_client_generated_12345678901234567890',
+        ];
+        $this->postJson('/api/public/reports', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.secret_tracking_token', $payload['tracking_token'])
+            ->assertJsonPath('data.device_resume_token', $payload['resume_token']);
+        $this->postJson('/api/public/reports', $payload)
+            ->assertOk()
+            ->assertJsonPath('data.secret_tracking_token', $payload['tracking_token'])
+            ->assertJsonPath('data.device_resume_token', $payload['resume_token']);
+
+        $this->assertDatabaseCount('consumer_reports', 1);
+    }
+
     public function test_processing_job_publishes_reviewable_items_without_submitting_the_report(): void
     {
         Queue::fake();
@@ -294,6 +346,30 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         );
     }
 
+    public function test_technical_ocr_failure_is_not_reported_as_a_bad_capture(): void
+    {
+        Queue::fake();
+        [$report, $resumeToken] = $this->createReadyReport('OCRFAIL');
+        $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+        $report->evidenceBundle->update(['processing_status' => 'queued']);
+        $pipeline = Mockery::mock(ReceiptEvidencePipeline::class);
+        $pipeline->shouldReceive('process')->once()->andReturn([
+            'status' => 'failed', 'reason_code' => 'OCR_UNAVAILABLE', 'lines' => [], 'items' => [],
+        ]);
+
+        (new ProcessReceiptEvidence($report->report_reference))->handle($pipeline);
+
+        $report->refresh();
+        $this->assertSame('Processing failed', $report->status);
+        $this->assertSame('failed', $report->processing_status);
+        $this->assertSame('OCR_UNAVAILABLE', $report->evidenceBundle->failure_code);
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertOk()
+            ->assertJsonPath('data.can_recapture', false)
+            ->assertJsonPath('data.recapture_reason', null);
+    }
+
     public function test_device_resume_token_reads_processing_status_but_an_invalid_token_is_rejected(): void
     {
         [$report, $resumeToken] = $this->createReadyReport('RESUME1');
@@ -310,7 +386,7 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_customer_confirmation_submits_ready_items_once_and_revokes_device_resume_token(): void
+    public function test_customer_confirmation_is_read_only_submits_ready_items_once_and_revokes_device_resume_token(): void
     {
         [$report, $resumeToken] = $this->createReadyReport('CONFIRM1');
         $report->items()->create([
@@ -327,16 +403,7 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->assertJsonPath('data.items.0.item_name', 'RICE')
             ->assertJsonMissingPath('data.evidence_path');
 
-        $payload = [
-            'consumer_confirmed' => true,
-            'confirmed_items' => [[
-                'sequence' => 0,
-                'item_name' => 'Premium Rice',
-                'quantity' => 1,
-                'unit' => 'kg',
-                'observed_price' => 45.00,
-            ]],
-        ];
+        $payload = ['consumer_confirmed' => true];
 
         $this->withHeader('X-Report-Resume-Token', $resumeToken)
             ->postJson("/api/public/reports/{$report->report_reference}/confirm-ocr", $payload)
@@ -350,7 +417,7 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         $this->assertDatabaseHas('consumer_report_items', [
             'consumer_report_id' => $report->id,
             'sequence' => 0,
-            'item_name' => 'Premium Rice',
+            'item_name' => 'RICE',
             'consumer_confirmed' => true,
         ]);
         $this->assertDatabaseCount('citizen_tips', 1);
@@ -359,6 +426,86 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->postJson("/api/public/reports/{$report->report_reference}/confirm-ocr", $payload)
             ->assertForbidden();
         $this->assertDatabaseCount('citizen_tips', 1);
+    }
+
+    public function test_customer_cannot_change_ocr_items_during_confirmation(): void
+    {
+        [$report, $resumeToken] = $this->createReadyReport('READONLY');
+        $report->items()->create([
+            'sequence' => 0, 'raw_text' => 'RICE 45.00', 'item_name' => 'RICE',
+            'observed_price' => 45.00, 'ocr_confidence' => 0.91,
+        ]);
+
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->postJson("/api/public/reports/{$report->report_reference}/confirm-ocr", [
+                'consumer_confirmed' => true,
+                'confirmed_items' => [[
+                    'sequence' => 0, 'item_name' => 'CHANGED RICE', 'observed_price' => 1.00,
+                ]],
+            ])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseHas('consumer_report_items', [
+            'consumer_report_id' => $report->id, 'item_name' => 'RICE', 'observed_price' => 45.00,
+        ]);
+    }
+
+    public function test_processing_status_exposes_a_safe_recapture_reason_and_retry_flag(): void
+    {
+        [$report, $resumeToken] = $this->createReadyReport('REASON1');
+        $report->update(['status' => 'Needs recapture', 'processing_status' => 'needs_recapture']);
+        $report->evidenceBundle->update([
+            'processing_status' => 'needs_recapture',
+            'failure_code' => 'TEXT_UNREADABLE',
+            'processing_result_json' => ['status' => 'needs_recapture', 'reason_code' => 'TEXT_UNREADABLE'],
+        ]);
+
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertOk()
+            ->assertJsonPath('data.recapture_reason.code', 'TEXT_UNREADABLE')
+            ->assertJsonPath('data.can_recapture', true)
+            ->assertJsonPath('data.submitted_at', null);
+    }
+
+    public function test_recapture_reuses_the_report_reference_and_preserves_attempt_history(): void
+    {
+        Queue::fake();
+        [$report, $resumeToken] = $this->createReadyReport('RECAP01');
+        $report->evidenceBundle->update(['consumer_report_id' => $report->id, 'attempt_number' => 1]);
+        $report->update(['status' => 'Needs recapture', 'processing_status' => 'needs_recapture']);
+
+        $session = $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->postJson("/api/public/reports/{$report->report_reference}/recapture-session")
+            ->assertCreated();
+        $sessionId = $session->json('data.capture_session_id');
+        $captureToken = $session->json('data.capture_token');
+
+        $this->withHeader('X-Capture-Token', $captureToken)
+            ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
+                'kind' => 'original_video', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->create('recapture.webm', 1, 'video/webm'),
+            ])->assertCreated();
+
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->postJson("/api/public/reports/{$report->report_reference}/recapture", [
+                'capture_token' => $captureToken,
+            ])->assertOk()
+            ->assertJsonPath('data.report_reference', $report->report_reference)
+            ->assertJsonPath('data.status', 'Processing receipt');
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->postJson("/api/public/reports/{$report->report_reference}/recapture", [
+                'capture_token' => $captureToken,
+            ])->assertOk()
+            ->assertJsonPath('data.report_reference', $report->report_reference);
+
+        $report->refresh();
+        $this->assertSame('Processing receipt', $report->status);
+        $this->assertSame(2, $report->evidenceBundle->attempt_number);
+        $this->assertDatabaseCount('consumer_reports', 1);
+        $this->assertDatabaseCount('receipt_evidence_bundles', 2);
+        Queue::assertPushed(ProcessReceiptEvidence::class, fn ($job) => $job->reportReference === $report->report_reference);
+        Queue::assertPushed(ProcessReceiptEvidence::class, 1);
     }
 
     public function test_customer_can_register_an_encrypted_push_subscription_for_their_draft(): void

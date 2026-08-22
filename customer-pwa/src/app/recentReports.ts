@@ -1,13 +1,15 @@
 import type { RecentReportStatus, RecentReportTicketProps } from '../components/RecentReportTicket';
 
 const RECENT_REPORTS_KEY = 'price-watch-recent-reports';
-const MAX_RECENT_REPORTS = 5;
+const MAX_RECENT_REPORTS = 20;
 
 export interface StoredRecentReport {
   reportReference: string;
   storeName: string;
   status: string;
-  submittedAt: string;
+  submittedAt: string | null;
+  createdAt?: string;
+  archivedAt?: string;
 }
 
 const isStoredRecentReport = (value: unknown): value is StoredRecentReport => {
@@ -20,9 +22,20 @@ const isStoredRecentReport = (value: unknown): value is StoredRecentReport => {
     && report.storeName.length > 0
     && typeof report.status === 'string'
     && report.status.length > 0
-    && typeof report.submittedAt === 'string'
-    && report.submittedAt.length > 0;
+    && (report.submittedAt === null || (typeof report.submittedAt === 'string' && report.submittedAt.length > 0))
+    && (report.submittedAt !== null || (typeof report.createdAt === 'string' && report.createdAt.length > 0))
+    && (report.archivedAt === undefined
+      || (typeof report.archivedAt === 'string' && report.archivedAt.length > 0));
 };
+
+const newestFirst = (reports: StoredRecentReport[]): StoredRecentReport[] => (
+  [...reports].sort((left, right) => {
+    const leftTime = Date.parse(left.submittedAt ?? left.createdAt ?? '');
+    const rightTime = Date.parse(right.submittedAt ?? right.createdAt ?? '');
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) return 0;
+    return rightTime - leftTime;
+  })
+);
 
 export function getRecentReports(): StoredRecentReport[] {
   try {
@@ -31,7 +44,7 @@ export function getRecentReports(): StoredRecentReport[] {
 
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
-      ? parsed.filter(isStoredRecentReport).slice(0, MAX_RECENT_REPORTS)
+      ? newestFirst(parsed.filter(isStoredRecentReport)).slice(0, MAX_RECENT_REPORTS)
       : [];
   } catch {
     return [];
@@ -39,10 +52,14 @@ export function getRecentReports(): StoredRecentReport[] {
 }
 
 export function saveRecentReport(report: StoredRecentReport): StoredRecentReport[] {
-  const reports = [
-    report,
+  const existing = getRecentReports().find((stored) => stored.reportReference === report.reportReference);
+  const nextReport = existing?.archivedAt && !report.archivedAt
+    ? { ...report, archivedAt: existing.archivedAt }
+    : report;
+  const reports = newestFirst([
+    nextReport,
     ...getRecentReports().filter((stored) => stored.reportReference !== report.reportReference),
-  ].slice(0, MAX_RECENT_REPORTS);
+  ]).slice(0, MAX_RECENT_REPORTS);
 
   try {
     localStorage.setItem(RECENT_REPORTS_KEY, JSON.stringify(reports));
@@ -53,8 +70,24 @@ export function saveRecentReport(report: StoredRecentReport): StoredRecentReport
   return reports;
 }
 
+export function setRecentReportArchived(reference: string, archivedAt: string | null): StoredRecentReport[] {
+  const reports = getRecentReports().map((report) => {
+    if (report.reportReference !== reference) return report;
+    if (archivedAt) return { ...report, archivedAt };
+    const { archivedAt: _archivedAt, ...activeReport } = report;
+    return activeReport;
+  });
+  return persistRecentReports(reports);
+}
+
+export function removeRecentReport(reference: string): StoredRecentReport[] {
+  return persistRecentReports(
+    getRecentReports().filter((report) => report.reportReference !== reference),
+  );
+}
+
 export function persistRecentReports(reports: StoredRecentReport[]): StoredRecentReport[] {
-  const limited = reports.filter(isStoredRecentReport).slice(0, MAX_RECENT_REPORTS);
+  const limited = newestFirst(reports.filter(isStoredRecentReport)).slice(0, MAX_RECENT_REPORTS);
   try {
     localStorage.setItem(RECENT_REPORTS_KEY, JSON.stringify(limited));
   } catch {
@@ -66,7 +99,8 @@ export function persistRecentReports(reports: StoredRecentReport[]): StoredRecen
 const toTicketStatus = (status: string): RecentReportStatus => {
   const normalized = status.trim().toLowerCase();
   if (normalized.includes('ready for confirmation')) return 'Ready to review';
-  if (normalized.includes('needs recapture') || normalized.includes('processing failed')) return 'Needs recapture';
+  if (normalized.includes('needs recapture')) return 'Needs recapture';
+  if (normalized.includes('processing failed')) return 'Processing failed';
   if (normalized.includes('processing receipt')) return 'Processing';
   if (normalized.includes('closed') || normalized.includes('resolved')) return 'Closed';
   if (normalized.includes('submitted')) return 'Submitted';
@@ -74,13 +108,14 @@ const toTicketStatus = (status: string): RecentReportStatus => {
 };
 
 export function toRecentReportTicket(report: StoredRecentReport): RecentReportTicketProps {
-  const submittedAt = new Date(report.submittedAt);
+  const displayTimestamp = report.submittedAt ?? report.createdAt ?? '';
+  const submittedAt = new Date(displayTimestamp);
   const hasValidDate = !Number.isNaN(submittedAt.getTime());
 
   return {
     date: hasValidDate
       ? submittedAt.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
-      : report.submittedAt,
+      : displayTimestamp,
     time: hasValidDate
       ? submittedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : '',

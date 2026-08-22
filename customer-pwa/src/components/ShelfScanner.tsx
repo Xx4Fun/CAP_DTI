@@ -998,7 +998,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
       {/* SCREEN 2: TRUE FULL-SCREEN LIVE CAMERA PREVIEW */}
       {mode === 'ocr' && scannerState === 'CAMERA_LIVE' && (
-        <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden' }}>
+        <div data-app-fullscreen-layer style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden' }}>
           
           {/* Top Translucent Control Overlay */}
           <div

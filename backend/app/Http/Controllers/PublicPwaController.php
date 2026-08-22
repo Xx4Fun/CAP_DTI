@@ -721,6 +721,9 @@ class PublicPwaController extends Controller
         if ($captureMode !== 'single_image_v1' && !config('services.receipt_capture.enabled')) {
             abort(404);
         }
+        $store = $captureMode === 'single_image_v1' && ! $request->filled('store_id')
+            ? null
+            : $this->getVerifiedStore($request->input('store_id'));
 
         $sessionUuid = 'cs_' . Str::uuid();
         $rawToken = 'ct_sec_' . Str::random(32);
@@ -729,7 +732,7 @@ class PublicPwaController extends Controller
 
         $session = CaptureSession::create([
             'session_uuid' => $sessionUuid,
-            'store_id' => $request->store_id,
+            'store_id' => $store?->id,
             'capture_mode' => $captureMode,
             'processing_status' => 'open',
             'token_hash' => $tokenHash,
@@ -745,7 +748,7 @@ class PublicPwaController extends Controller
                 'session_uuid' => $sessionUuid,
                 'capture_token' => $rawToken,
                 'expires_at' => $expiresAt->toIso8601String(),
-                'store_id' => $request->store_id,
+                'store_id' => $store?->id,
                 'capture_mode' => $captureMode,
                 'max_file_size' => $captureMode === 'single_image_v1' ? 10485760 : 25 * 1024 * 1024,
                 'accepted_types' => $captureMode === 'continuous_video_v1'
@@ -777,6 +780,8 @@ class PublicPwaController extends Controller
                     403,
                     'Invalid capture credential for this submission.',
                 );
+                $replayTrackingToken = (string) $request->input('tracking_token');
+                $replayResumeToken = (string) $request->input('resume_token');
                 return response()->json([
                     'success' => true,
                     'message' => 'Report submission already received (Idempotent replay).',
@@ -785,6 +790,13 @@ class PublicPwaController extends Controller
                         'status' => $existing->status,
                         'submitted_at' => $existing->submitted_at?->toIso8601String(),
                         'created_at' => $existing->created_at->toIso8601String(),
+                        'secret_tracking_token' => $replayTrackingToken !== ''
+                            && hash_equals($existing->tracking_token_hash, hash('sha256', $replayTrackingToken))
+                                ? $replayTrackingToken : null,
+                        'device_resume_token' => $replayResumeToken !== ''
+                            && $existing->resume_token_hash
+                            && hash_equals($existing->resume_token_hash, hash('sha256', $replayResumeToken))
+                                ? $replayResumeToken : null,
                     ]
                 ], 200);
             }
@@ -795,6 +807,8 @@ class PublicPwaController extends Controller
             'capture_token' => 'required|string',
             'privacy_notice_version' => 'required|string',
             'store_id' => 'nullable|exists:stores,id',
+            'tracking_token' => 'nullable|string|min:32|max:128',
+            'resume_token' => 'nullable|string|min:32|max:128',
         ]);
 
         // 2. Validate Capture Session Token
@@ -828,7 +842,9 @@ class PublicPwaController extends Controller
 
         // 4. Generate Identifiers & Secret Tracking Token
         $reportReference = 'REP-' . date('Ymd') . '-' . strtoupper(Str::random(4));
-        $rawTrackingToken = 'trk_' . Str::random(32);
+        $rawTrackingToken = $request->filled('tracking_token')
+            ? (string) $request->input('tracking_token')
+            : 'trk_' . Str::random(32);
         $trackingTokenHash = hash('sha256', $rawTrackingToken);
 
         $report = DB::transaction(function () use (
@@ -886,7 +902,8 @@ class PublicPwaController extends Controller
                 'report_reference' => $report->report_reference,
                 'secret_tracking_token' => $rawTrackingToken,
                 'status' => $report->status,
-                'submitted_at' => $report->created_at->toIso8601String(),
+                'created_at' => $report->created_at->toIso8601String(),
+                'submitted_at' => $report->submitted_at?->toIso8601String(),
             ]
         ], 201);
     }
@@ -912,8 +929,12 @@ class PublicPwaController extends Controller
         }
 
         $reportReference = 'REP-' . date('Ymd') . '-' . strtoupper(Str::random(4));
-        $rawTrackingToken = 'trk_' . Str::random(32);
-        $rawResumeToken = 'rsm_' . Str::random(32);
+        $rawTrackingToken = $request->filled('tracking_token')
+            ? (string) $request->input('tracking_token')
+            : 'trk_' . Str::random(32);
+        $rawResumeToken = $request->filled('resume_token')
+            ? (string) $request->input('resume_token')
+            : 'rsm_' . Str::random(32);
 
         $report = DB::transaction(function () use (
             $request,
@@ -949,7 +970,11 @@ class PublicPwaController extends Controller
                 'actor_type' => 'system',
             ]);
 
-            $bundle->update(['processing_status' => 'queued']);
+            $bundle->update([
+                'consumer_report_id' => $rep->id,
+                'attempt_number' => 1,
+                'processing_status' => 'queued',
+            ]);
             $session->update(['is_used' => true, 'processing_status' => 'finalized']);
 
             return $rep;

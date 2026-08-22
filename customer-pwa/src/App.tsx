@@ -1,10 +1,11 @@
-import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { InstallPrompt } from './components/InstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { PageLoader, type PageLoaderDestination } from './components/PageLoader';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { ServiceStartStatus } from './components/ServiceStartStatus';
+import { BackToTop } from './components/BackToTop';
 import {
   apiClient,
   type Commodity,
@@ -20,11 +21,14 @@ import { BackNavigationProvider } from './app/backNavigation';
 import { useConnectivity } from './hooks/useConnectivity';
 import {
   getRecentReports,
+  removeRecentReport,
   saveRecentReport,
+  setRecentReportArchived,
   persistRecentReports,
   toRecentReportTicket,
   type StoredRecentReport,
 } from './app/recentReports';
+import type { ReportListViewState } from './components/TrackReport';
 import { getReceiptResumeToken } from './app/receiptResumeStore';
 import { refreshReceiptReportStatuses } from './app/receiptStatusRefresh';
 import { getCurrentPosition, type GeoPosition } from './app/geolocation';
@@ -42,6 +46,7 @@ const SrpSearch = lazy(() => import('./components/SrpSearch').then((module) => (
 const ShelfScanner = lazy(() => import('./components/ShelfScanner').then((module) => ({ default: module.ShelfScanner })));
 const FormalReport = lazy(() => import('./components/FormalReport').then((module) => ({ default: module.FormalReport })));
 const TrackReport = lazy(() => import('./components/TrackReport').then((module) => ({ default: module.TrackReport })));
+const ReportDetail = lazy(() => import('./components/ReportDetail').then((module) => ({ default: module.ReportDetail })));
 const ReceiptDraftView = lazy(() => import('./components/ReceiptDraftView').then((module) => ({ default: module.ReceiptDraftView })));
 const MoreView = lazy(() => import('./components/MoreView').then((module) => ({ default: module.MoreView })));
 
@@ -50,7 +55,7 @@ const tabForRoute = (route: AppRoute): string => {
   if (route.name === 'prices' || route.name === 'product') return 'prices';
   if (route.name === 'compare') return 'compare';
   if (route.name === 'scan') return 'scan';
-  if (route.name === 'track-report') return 'track';
+  if (route.name === 'track-report' || route.name === 'report-detail') return 'track';
   if (route.name === 'more') return 'more';
   return 'reports';
 };
@@ -140,21 +145,83 @@ export const App: React.FC = () => {
   const [publicRefreshPending, setPublicRefreshPending] = useState(false);
   const [routeChunkPending, setRouteChunkPending] = useState(false);
   const [refreshAttempt, setRefreshAttempt] = useState(0);
-  const [selectedTrackingReference, setSelectedTrackingReference] = useState<string | null>(null);
   const [recentReports, setRecentReports] = useState<StoredRecentReport[]>(getRecentReports);
   const [location, setLocation] = useState<GeoPosition | null>(null);
   const [locationError, setLocationError] = useState('');
+  const reportListScrollYRef = useRef(0);
+  const reportListViewStateRef = useRef<ReportListViewState>({ query: '', filter: 'All' });
+  const previousRouteNameRef = useRef(route.name);
   const setActiveTab = (tab: string) => {
-    if (tab === 'track') setSelectedTrackingReference(null);
     window.scrollTo(0, 0);
     navigate(routeForTab(tab));
   };
 
   const openTrackedReport = (reference?: string) => {
-    setSelectedTrackingReference(reference ?? null);
     window.scrollTo(0, 0);
-    navigate({ name: 'track-report' });
+    navigate(reference ? { name: 'report-detail', reference } : { name: 'track-report' });
   };
+
+  const openReportFromList = (report: StoredRecentReport) => {
+    reportListScrollYRef.current = window.scrollY;
+    const existingState = typeof history.state === 'object' && history.state !== null
+      ? history.state as Record<string, unknown>
+      : {};
+    history.replaceState({ ...existingState, reportListScrollY: reportListScrollYRef.current }, '', window.location.href);
+
+    const normalizedStatus = report.status.toLowerCase();
+    const destination: AppRoute = normalizedStatus.includes('ready for confirmation')
+      ? { name: 'receipt-review', reference: report.reportReference }
+      : normalizedStatus.includes('processing') || normalizedStatus.includes('recapture')
+        ? { name: 'receipt-processing', reference: report.reportReference }
+        : { name: 'report-detail', reference: report.reportReference };
+
+    navigate(destination, { state: { fromReportList: true } });
+    window.scrollTo(0, 0);
+  };
+
+  const updateReportListViewState = (viewState: ReportListViewState) => {
+    reportListViewStateRef.current = viewState;
+    const existingState = typeof history.state === 'object' && history.state !== null
+      ? history.state as Record<string, unknown>
+      : {};
+    history.replaceState({ ...existingState, reportListViewState: viewState }, '', window.location.href);
+  };
+
+  const setReportArchived = (report: StoredRecentReport, archived: boolean) => {
+    setRecentReports(setRecentReportArchived(
+      report.reportReference,
+      archived ? new Date().toISOString() : null,
+    ));
+  };
+
+  const deleteReportFromList = (report: StoredRecentReport) => {
+    setRecentReports(removeRecentReport(report.reportReference));
+  };
+
+  const restoreReportToList = (report: StoredRecentReport) => {
+    setRecentReports(saveRecentReport(report));
+  };
+
+  const returnToReportList = () => {
+    const state = history.state as { fromReportList?: unknown } | null;
+    if (state?.fromReportList === true) {
+      history.back();
+      return;
+    }
+    navigate({ name: 'track-report' }, { replace: true });
+  };
+
+  useLayoutEffect(() => {
+    const previousRouteName = previousRouteNameRef.current;
+    previousRouteNameRef.current = route.name;
+    if (route.name !== 'track-report' || !['report-detail', 'receipt-processing', 'receipt-review'].includes(previousRouteName)) return;
+
+    const state = history.state as { reportListScrollY?: unknown } | null;
+    const savedScrollY = typeof state?.reportListScrollY === 'number'
+      ? state.reportListScrollY
+      : reportListScrollYRef.current;
+    window.scrollTo(0, savedScrollY);
+  }, [route.name]);
 
   useEffect(() => {
     let active = true;
@@ -231,7 +298,8 @@ export const App: React.FC = () => {
       reportReference: report.report_reference,
       storeName,
       status: report.status,
-      submittedAt: report.submitted_at ?? report.created_at ?? new Date().toISOString(),
+      submittedAt: report.submitted_at,
+      createdAt: report.created_at ?? new Date().toISOString(),
     }));
   };
 
@@ -261,7 +329,7 @@ export const App: React.FC = () => {
     };
   }, [isOnline, refreshRecentReports]);
 
-  const updateRecentReportStatus = (reference: string, status: string, submittedAt?: string) => {
+  const updateRecentReportStatus = (reference: string, status: string, submittedAt?: string | null) => {
     const stored = getRecentReports().find((report) => report.reportReference === reference);
     if (!stored) return;
     setRecentReports(saveRecentReport({
@@ -289,6 +357,7 @@ export const App: React.FC = () => {
       storeName: report.store_name,
       status: report.current_status,
       submittedAt: report.submitted_at,
+      createdAt: report.created_at,
     }));
   };
 
@@ -369,11 +438,23 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'track' && (
+        {route.name === 'track-report' && (
           <TrackReport
             recentReports={recentReports}
-            initialReference={selectedTrackingReference ?? undefined}
             setActiveTab={setActiveTab}
+            onOpenReport={openReportFromList}
+            onSetArchived={setReportArchived}
+            onDeleteReport={deleteReportFromList}
+            onRestoreReport={restoreReportToList}
+            initialViewState={reportListViewStateRef.current}
+            onViewStateChange={updateReportListViewState}
+          />
+        )}
+
+        {route.name === 'report-detail' && (
+          <ReportDetail
+            reference={route.reference}
+            onBack={returnToReportList}
             onReportTracked={recordTrackedReport}
           />
         )}
@@ -401,6 +482,7 @@ export const App: React.FC = () => {
         )}
         </Suspense>
       </main>
+      <BackToTop hidden={routeChunkPending} />
     </div>
     </BackNavigationProvider>
   );

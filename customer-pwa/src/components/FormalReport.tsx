@@ -25,7 +25,7 @@ import { matchesPublicStoreSearch } from '../app/storeSearch';
 import { StoreSelectionCard } from './StoreSelectionCard';
 import { StoreSelectionView, type StoreDirectoryFilter } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
-import { receiptCaptureSupport } from '../app/receiptCapture';
+import { preferredReceiptVideoMime, receiptCaptureSupport } from '../app/receiptCapture';
 import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
 import { navigate } from '../app/routing';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
@@ -238,6 +238,9 @@ export const FormalReport: React.FC<FormalReportProps> = ({
         ? receiptCaptureSupport({
             camera: Boolean(navigator.mediaDevices?.getUserMedia),
             mediaRecorder: typeof MediaRecorder !== 'undefined',
+            supportedVideoMime: typeof MediaRecorder !== 'undefined'
+              ? preferredReceiptVideoMime(MediaRecorder.isTypeSupported.bind(MediaRecorder))
+              : null,
           })
         : 'unsupported';
       if (continuousCaptureEnabled && captureMode === 'unsupported') {
@@ -1110,7 +1113,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       )}
 
       {currentView === 'camera-viewport' && (!continuousCaptureEnabled || !captureSession || captureSession.capture_mode === 'single_image_v1') && (
-        <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div data-app-fullscreen-layer style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           
           {/* Top Control Bar */}
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0) 100%)' }}>
