@@ -1,288 +1,276 @@
-import React, { useState, useEffect } from 'react';
-import { Search, CheckCircle, Clock, ShieldCheck, ArrowLeft, Copy, Check, AlertTriangle, FileSearch, Building2, Calendar } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle, ArrowLeft, Building2, Calendar, Check, CheckCircle, ChevronRight,
+  Clock, Copy, FileClock, KeyRound, LoaderCircle, Search, ShieldCheck,
+} from 'lucide-react';
 import { apiClient, type TrackReportResponse } from '../api/client';
+import { getReportTrackingToken, saveReportTrackingToken } from '../app/reportTrackingStore';
+import type { StoredRecentReport } from '../app/recentReports';
 import { deriveTimelineItems } from '../app/status';
+import './TrackReport.css';
 
 interface TrackReportProps {
+  recentReports?: StoredRecentReport[];
   initialReference?: string;
-  initialToken?: string;
   setActiveTab?: (tab: string) => void;
   onReportTracked?: (report: TrackReportResponse) => void;
 }
 
+type CredentialAvailability = 'checking' | 'available' | 'missing';
+
+const formatDateTime = (value: string): string => (
+  Number.isNaN(Date.parse(value))
+    ? value
+    : new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+);
+
+const statusTone = (status: string): string => {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('resolved') || normalized.includes('closed') || normalized.includes('validated')) return 'success';
+  if (normalized.includes('dispatched') || normalized.includes('inspection')) return 'info';
+  return 'pending';
+};
+
 export const TrackReport: React.FC<TrackReportProps> = ({
-  initialReference = '',
-  initialToken = '',
-  setActiveTab,
-  onReportTracked,
+  recentReports = [], initialReference = '', setActiveTab, onReportTracked,
 }) => {
+  const [selectedReference, setSelectedReference] = useState(initialReference || recentReports[0]?.reportReference || '');
   const [reference, setReference] = useState(initialReference);
-  const [token, setToken] = useState(initialToken);
+  const [token, setToken] = useState('');
   const [report, setReport] = useState<TrackReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [accessNeeded, setAccessNeeded] = useState('');
   const [copiedRef, setCopiedRef] = useState(false);
+  const [credentialAvailability, setCredentialAvailability] = useState<Record<string, CredentialAvailability>>({});
+  const copyTimerRef = useRef<number | null>(null);
+  const requestIdRef = useRef(0);
+  const onReportTrackedRef = useRef(onReportTracked);
+  const recentReportsRef = useRef(recentReports);
+  onReportTrackedRef.current = onReportTracked;
+  recentReportsRef.current = recentReports;
 
-  useEffect(() => {
-    if (initialReference && initialToken) {
-      setReference(initialReference);
-      setToken(initialToken);
-      executeTracking(initialReference, initialToken);
-    }
-  }, [initialReference, initialToken]);
+  const reportReferencesKey = useMemo(
+    () => recentReports.map((item) => item.reportReference).join('|'),
+    [recentReports],
+  );
 
-  const copyTimerRef = React.useRef<number | null>(null);
-
-  React.useEffect(() => {
-    return () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    };
-  }, []);
-
-  const executeTracking = async (refVal: string, tokVal: string) => {
-    if (!refVal || !tokVal) {
+  const executeTracking = useCallback(async (refVal: string, tokVal: string, remember: boolean) => {
+    const normalizedReference = refVal.trim();
+    const normalizedToken = tokVal.trim();
+    if (!normalizedReference || !normalizedToken) {
       setError('Please provide both the Report Reference Code and Secret Tracking Token.');
-      return;
+      return false;
     }
 
+    const requestId = ++requestIdRef.current;
+    setSelectedReference(normalizedReference);
     setLoading(true);
     setError('');
+    setAccessNeeded('');
     setReport(null);
 
     try {
-      const res = await apiClient.get('/public/reports/track', {
-        params: {
-          reference: refVal.trim(),
-          token: tokVal.trim(),
-        },
+      const response = await apiClient.get('/public/reports/track', {
+        params: { reference: normalizedReference, token: normalizedToken },
       });
-
-      if (res.data && res.data.success) {
-        setReport(res.data.data);
-        onReportTracked?.(res.data.data);
-      } else {
-        throw new Error('API returned unsuccesful tracking query');
+      if (!response.data?.success || !response.data.data) {
+        throw new Error('The report service returned an invalid response.');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Report not found or invalid tracking token. Please verify your reference and secret code.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (requestId !== requestIdRef.current) return false;
 
-  const handleTrackSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    executeTracking(reference, token);
+      if (remember) {
+        try {
+          await saveReportTrackingToken(normalizedReference, normalizedToken);
+          setCredentialAvailability((current) => ({ ...current, [normalizedReference]: 'available' }));
+        } catch {
+          // A valid lookup remains usable even when this browser cannot remember it.
+        }
+      }
+
+      setReport(response.data.data);
+      onReportTrackedRef.current?.(response.data.data);
+      return true;
+    } catch (caught: any) {
+      if (requestId !== requestIdRef.current) return false;
+      setError(caught.response?.data?.message || 'Report not found or the tracking credential is invalid.');
+      return false;
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
+  }, []);
+
+  const openDeviceReport = useCallback(async (reportReference: string) => {
+    setSelectedReference(reportReference);
+    setReport(null);
+    setError('');
+    setAccessNeeded('');
+    try {
+      const storedToken = await getReportTrackingToken(reportReference);
+      if (!storedToken) {
+        setCredentialAvailability((current) => ({ ...current, [reportReference]: 'missing' }));
+        setReference(reportReference);
+        setAccessNeeded(reportReference);
+        return;
+      }
+      setCredentialAvailability((current) => ({ ...current, [reportReference]: 'available' }));
+      await executeTracking(reportReference, storedToken, false);
+    } catch {
+      setReference(reportReference);
+      setAccessNeeded(reportReference);
+    }
+  }, [executeTracking]);
+
+  useEffect(() => {
+    let active = true;
+    const inspectReports = async () => {
+      const currentReports = recentReportsRef.current;
+      const availabilityEntries = await Promise.all(currentReports.map(async (item) => {
+        try {
+          return [item.reportReference, await getReportTrackingToken(item.reportReference) ? 'available' : 'missing'] as const;
+        } catch {
+          return [item.reportReference, 'missing'] as const;
+        }
+      }));
+      if (!active) return;
+      setCredentialAvailability(Object.fromEntries(availabilityEntries));
+
+      const requestedReference = initialReference.trim();
+      const target = currentReports.find((item) => item.reportReference === requestedReference) ?? currentReports[0];
+      if (target) await openDeviceReport(target.reportReference);
+    };
+    void inspectReports();
+    return () => { active = false; };
+  }, [initialReference, openDeviceReport, reportReferencesKey]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    requestIdRef.current += 1;
+  }, []);
+
+  const handleRecoverySubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const recovered = await executeTracking(reference, token, true);
+    if (recovered) setToken('');
   };
 
   const handleCopyRef = () => {
-    if (report) {
-      navigator.clipboard.writeText(report.report_reference);
-      setCopiedRef(true);
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = window.setTimeout(() => setCopiedRef(false), 2000);
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const s = status.toLowerCase();
-    if (s.includes('resolved') || s.includes('complete') || s.includes('validated')) {
-      return <span className="badge badge-green">✓ {status}</span>;
-    }
-    if (s.includes('dispatched') || s.includes('inspection')) {
-      return <span className="badge badge-blue">🔍 {status}</span>;
-    }
-    return <span className="badge badge-amber">⏱ {status}</span>;
+    if (!report) return;
+    void navigator.clipboard.writeText(report.report_reference);
+    setCopiedRef(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopiedRef(false), 2000);
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '-4px' }}>
-        {setActiveTab && (
-          <button
-            className="btn-secondary"
-            style={{ width: 'auto', padding: '8px 14px', fontSize: '0.82rem' }}
-            onClick={() => setActiveTab('reports')}
-          >
-            <ArrowLeft size={16} /> Back to Reports
-          </button>
-        )}
-      </div>
+    <div className="track-report-page">
+      {setActiveTab && (
+        <button className="btn-secondary track-report-back" onClick={() => setActiveTab('reports')}>
+          <ArrowLeft size={17} /> Back to Reports
+        </button>
+      )}
 
-      {/* Tracking Search Card */}
-      <div className="glass-panel" style={{ margin: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-          <div className="icon-wrapper-green">
-            <FileSearch size={22} />
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-main)' }}>Enter Report Credentials</div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Required to access protected report tracking logs</div>
-          </div>
+      <section className="glass-panel track-report-library" aria-labelledby="my-reports-title">
+        <div className="track-report-heading">
+          <div className="icon-wrapper-green"><FileClock size={22} /></div>
+          <div><h1 id="my-reports-title">My Reports</h1><p>Reports saved on this device open without entering credentials.</p></div>
         </div>
 
-        <form onSubmit={handleTrackSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label htmlFor="report-reference" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-              PUBLIC REPORT REFERENCE CODE
-            </label>
-            <input
-              id="report-reference"
-              type="text"
-              className="input-field"
-              placeholder="e.g. PW-2026-00184 or REP-20260724-A8F2"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              required
-            />
-          </div>
-
-          <div>
-            <label htmlFor="tracking-token" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-              SECRET TRACKING TOKEN
-            </label>
-            <input
-              id="tracking-token"
-              type="password"
-              className="input-field"
-              placeholder="e.g. trk_9a8b7c6d5e4f3a2b..."
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              required
-            />
-          </div>
-
-          {error && (
-            <div role="alert" className="banner-warning" style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}>
-              <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div>{error}</div>
-            </div>
-          )}
-
-          <button className="btn-primary" type="submit" disabled={loading}>
-            <Search size={18} />
-            {loading ? 'Checking Status...' : 'Track Report Status'}
-          </button>
-        </form>
-      </div>
-
-      {/* Report Result Timeline */}
-      {report && (
-        <div className="glass-panel" style={{ margin: 0 }}>
-          {/* Header Summary Box */}
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '20px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                  PUBLIC REPORT REFERENCE
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    {report.report_reference}
-                  </span>
-                  <button
-                    onClick={handleCopyRef}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
-                    title="Copy Reference"
-                  >
-                    {copiedRef ? <Check size={16} color="var(--accent-green)" /> : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              {getStatusBadge(report.current_status)}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Building2 size={13} /> ESTABLISHMENT
-                </div>
-                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)', marginTop: '2px' }}>
-                  {report.store_name}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Calendar size={13} /> SUBMITTED ON
-                </div>
-                <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-main)', marginTop: '2px' }}>
-                  {isNaN(Date.parse(report.submitted_at))
-                    ? report.submitted_at
-                    : new Date(report.submitted_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Stepper Title */}
-          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Clock size={18} color="var(--primary)" /> Evaluation Progress & Public Timeline
-          </div>
-
-          {/* Timeline Items */}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {deriveTimelineItems(report.status_history, report.current_status).map((item, idx: number) => {
-              const isCompleted = item.state === 'completed';
-              const isActive = item.state === 'current';
-
+        {recentReports.length > 0 ? (
+          <div className="track-report-list" aria-label="Reports saved on this device">
+            {recentReports.map((item) => {
+              const availability = credentialAvailability[item.reportReference] ?? 'checking';
               return (
-                <div
-                  key={idx}
-                  className={`stepper-item ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}
+                <button
+                  key={item.reportReference}
+                  type="button"
+                  className={`track-report-list-item ${selectedReference === item.reportReference ? 'selected' : ''}`}
+                  aria-label={`Open report ${item.reportReference}: ${item.status}`}
+                  aria-pressed={selectedReference === item.reportReference}
+                  onClick={() => void openDeviceReport(item.reportReference)}
                 >
-                  <div className="stepper-icon">
-                    {isCompleted ? <CheckCircle size={18} /> : (idx + 1)}
-                  </div>
-                  <div style={{ flex: 1, paddingTop: '2px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span aria-current={isActive ? 'step' : undefined} style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>
-                        {item.status}
-                      </span>
-                      {isActive && <span className="badge badge-amber" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>In Progress</span>}
-                    </div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
-                      {item.public_message}
-                    </p>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px', fontWeight: 500 }}>
-                      {isNaN(Date.parse(item.timestamp))
-                        ? item.timestamp
-                        : new Date(item.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                    </div>
+                  <span className="track-report-list-main">
+                    <strong>{item.reportReference}</strong>
+                    <span><Building2 size={14} /> {item.storeName}</span>
+                    <span><Calendar size={14} /> {formatDateTime(item.submittedAt)}</span>
+                  </span>
+                  <span className="track-report-list-state">
+                    <span className={`track-report-status track-report-status-${statusTone(item.status)}`}>{item.status}</span>
+                    {availability === 'missing' && <span className="track-report-access-needed">Access needed</span>}
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="track-report-empty">
+            <FileClock size={25} /><div><strong>No reports saved on this device</strong><p>Reports you submit or recover will appear here.</p></div>
+          </div>
+        )}
+      </section>
+
+      {loading && <div className="glass-panel track-report-state" role="status"><LoaderCircle className="track-report-spinner" size={22} /> Loading report updates...</div>}
+
+      {accessNeeded && !loading && (
+        <div className="glass-panel track-report-state track-report-state-warning" role="status">
+          <KeyRound size={22} /><div><strong>Access needed</strong><p>This older report was saved before automatic device access. Use the recovery section below once.</p></div>
+        </div>
+      )}
+
+      {error && !loading && <div role="alert" className="banner-warning track-report-error"><AlertTriangle size={18} /><div>{error}</div></div>}
+
+      {report && !loading && (
+        <section className="glass-panel track-report-result" aria-label={`Report ${report.report_reference} timeline`}>
+          <div className="track-report-summary">
+            <div>
+              <span className="track-report-eyebrow">PUBLIC REPORT REFERENCE</span>
+              <div className="track-report-reference">
+                <strong>{report.report_reference}</strong>
+                <button type="button" onClick={handleCopyRef} aria-label="Copy report reference">{copiedRef ? <Check size={17} /> : <Copy size={17} />}</button>
+              </div>
+            </div>
+            <span className={`track-report-status track-report-status-${statusTone(report.current_status)}`}>{report.current_status}</span>
+            <div className="track-report-summary-meta">
+              <span><Building2 size={15} /><span><small>ESTABLISHMENT</small><strong>{report.store_name}</strong></span></span>
+              <span><Calendar size={15} /><span><small>SUBMITTED ON</small><strong>{formatDateTime(report.submitted_at)}</strong></span></span>
+            </div>
+          </div>
+
+          <h2 className="track-report-timeline-title"><Clock size={18} /> Evaluation Progress &amp; Public Timeline</h2>
+          <div className="track-report-timeline">
+            {deriveTimelineItems(report.status_history, report.current_status).map((item, index) => {
+              const completed = item.state === 'completed';
+              const active = item.state === 'current';
+              return (
+                <div key={`${item.status}-${item.timestamp}`} className={`stepper-item ${completed ? 'completed' : ''} ${active ? 'active' : ''}`}>
+                  <div className="stepper-icon">{completed ? <CheckCircle size={18} /> : index + 1}</div>
+                  <div className="track-report-timeline-copy">
+                    <div><strong aria-current={active ? 'step' : undefined}>{item.status}</strong>{active && <span className="track-report-current">In Progress</span>}</div>
+                    <p>{item.public_message}</p><time>{formatDateTime(item.timestamp)}</time>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Security Note */}
-          <div className="banner-info" style={{ marginTop: '16px' }}>
-            <ShieldCheck size={18} style={{ flexShrink: 0 }} />
-            <div>
-              <strong>Privacy & Anonymity Protected:</strong> Specific internal investigative notes and store-owner rebuttal uploads are restricted to authorized DTI legal evaluators.
-            </div>
+          <div className="banner-info track-report-privacy">
+            <ShieldCheck size={18} /><div><strong>Privacy protected:</strong> Only public evaluation updates are shown. Receipt evidence and personal details remain restricted.</div>
           </div>
-
-          <button
-            onClick={() => {
-              setReport(null);
-              setReference('');
-              setToken('');
-            }}
-            className="btn-primary"
-            style={{ marginTop: '20px', width: '100%' }}
-          >
-            Track Another Report
-          </button>
-        </div>
+        </section>
       )}
+
+      <details className="glass-panel track-report-recovery" open={Boolean(accessNeeded)}>
+        <summary><KeyRound size={19} /> Open a report from another device</summary>
+        <div className="track-report-recovery-body">
+          <p>Enter the credentials once. After a successful lookup, this browser will remember the report.</p>
+          <form onSubmit={handleRecoverySubmit}>
+            <div><label htmlFor="report-reference">PUBLIC REPORT REFERENCE CODE</label><input id="report-reference" type="text" className="input-field" value={reference} onChange={(event) => setReference(event.target.value)} required /></div>
+            <div><label htmlFor="tracking-token">SECRET TRACKING TOKEN</label><input id="tracking-token" type="password" className="input-field" value={token} onChange={(event) => setToken(event.target.value)} required /></div>
+            <button className="btn-primary" type="submit" disabled={loading}><Search size={18} /> {loading ? 'Checking report...' : 'Access report'}</button>
+          </form>
+        </div>
+      </details>
     </div>
   );
 };

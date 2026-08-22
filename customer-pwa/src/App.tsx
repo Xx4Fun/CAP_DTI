@@ -140,13 +140,20 @@ export const App: React.FC = () => {
   const [publicRefreshPending, setPublicRefreshPending] = useState(false);
   const [routeChunkPending, setRouteChunkPending] = useState(false);
   const [refreshAttempt, setRefreshAttempt] = useState(0);
-  const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
+  const [selectedTrackingReference, setSelectedTrackingReference] = useState<string | null>(null);
   const [recentReports, setRecentReports] = useState<StoredRecentReport[]>(getRecentReports);
   const [location, setLocation] = useState<GeoPosition | null>(null);
   const [locationError, setLocationError] = useState('');
   const setActiveTab = (tab: string) => {
+    if (tab === 'track') setSelectedTrackingReference(null);
     window.scrollTo(0, 0);
     navigate(routeForTab(tab));
+  };
+
+  const openTrackedReport = (reference?: string) => {
+    setSelectedTrackingReference(reference ?? null);
+    window.scrollTo(0, 0);
+    navigate({ name: 'track-report' });
   };
 
   useEffect(() => {
@@ -273,7 +280,7 @@ export const App: React.FC = () => {
     if (normalized.includes('processing') || normalized.includes('recapture')) {
       return { ...ticket, onOpen: () => navigate({ name: 'receipt-processing', reference: report.reportReference }) };
     }
-    return ticket;
+    return { ...ticket, onOpen: () => openTrackedReport(report.reportReference) };
   });
 
   const recordTrackedReport = (report: TrackReportResponse) => {
@@ -353,10 +360,7 @@ export const App: React.FC = () => {
         {activeTab === 'reports' && route.name !== 'receipt-processing' && route.name !== 'receipt-review' && (
           <FormalReport
             setActiveTab={setActiveTab}
-            onTrackReport={(ref, tok) => {
-              setTrackingParams({ reference: ref, token: tok });
-              setActiveTab('track');
-            }}
+            onTrackReport={(reference) => openTrackedReport(reference)}
             onReportSubmitted={recordSubmittedReport}
             continuousCaptureEnabled={config?.receipt_continuous_capture_enabled === true}
             vapidPublicKey={config?.receipt_web_push_enabled ? config.vapid_public_key || '' : ''}
@@ -367,8 +371,8 @@ export const App: React.FC = () => {
 
         {activeTab === 'track' && (
           <TrackReport
-            initialReference={trackingParams?.reference}
-            initialToken={trackingParams?.token}
+            recentReports={recentReports}
+            initialReference={selectedTrackingReference ?? undefined}
             setActiveTab={setActiveTab}
             onReportTracked={recordTrackedReport}
           />

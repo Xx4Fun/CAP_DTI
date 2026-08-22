@@ -4,6 +4,7 @@ import { apiClient, type CaptureSessionResponse, type FormalReportResponse } fro
 import { buildContinuousReportPayload, preferredReceiptVideoMime, selectBestReceiptFrames } from '../app/receiptCapture';
 import { enableReceiptNotifications, currentReceiptNotificationAvailability } from '../app/receiptNotifications';
 import { saveReceiptResumeToken } from '../app/receiptResumeStore';
+import { saveReportTrackingToken } from '../app/reportTrackingStore';
 
 interface ContinuousReceiptCaptureProps {
   session: CaptureSessionResponse;
@@ -36,6 +37,7 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<FormalReportResponse | null>(null);
   const [resumeStored, setResumeStored] = useState(false);
+  const [trackingStored, setTrackingStored] = useState(false);
   const [notificationState, setNotificationState] = useState<string>(() => currentReceiptNotificationAvailability());
   const [guidedFrames, setGuidedFrames] = useState<Blob[]>([]);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
@@ -155,14 +157,14 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
         throw new Error('The server did not return a recoverable processing report.');
       }
 
+      const [resumeResult, trackingResult] = await Promise.allSettled([
+        saveReceiptResumeToken(report.report_reference, report.device_resume_token),
+        saveReportTrackingToken(report.report_reference, report.secret_tracking_token),
+      ]);
+      setResumeStored(resumeResult.status === 'fulfilled');
+      setTrackingStored(trackingResult.status === 'fulfilled');
       setDraft(report);
       onDraftCreated(report);
-      try {
-        await saveReceiptResumeToken(report.report_reference, report.device_resume_token);
-        setResumeStored(true);
-      } catch {
-        setResumeStored(false);
-      }
       stopCamera();
       setCaptureState('uploaded');
     } catch (caught: unknown) {
@@ -293,12 +295,12 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
       <section className="receipt-uploaded" aria-live="polite">
         <CheckCircle2 size={40} aria-hidden="true" />
         <h1>Receipt uploaded</h1>
-        {resumeStored ? (
-          <p>You can leave this page while we prepare your receipt. We’ll send a notification when it’s ready if notifications are enabled. You can also check Recent Reports.</p>
+        {resumeStored && trackingStored ? (
+          <p>Saved to this device. You can leave this page while we prepare your receipt, then return through My Reports.</p>
         ) : (
-          <p>Keep this recovery information before leaving. Secure device storage was unavailable, so this report cannot reopen automatically.</p>
+          <p>Keep this recovery information before leaving. Device access could not be saved completely, so this report may not reopen automatically.</p>
         )}
-        <div className="receipt-recovery-card">
+        {(!resumeStored || !trackingStored) && <div className="receipt-recovery-card">
           <span>Report reference</span><strong>{draft.report_reference}</strong>
           <span>Recovery token</span><strong>{draft.secret_tracking_token}</strong>
           <button
@@ -308,7 +310,7 @@ export const ContinuousReceiptCapture: React.FC<ContinuousReceiptCaptureProps> =
           >
             {recoveryCopied ? 'Recovery token copied' : 'Copy recovery token'}
           </button>
-        </div>
+        </div>}
         {resumeStored && notificationState === 'available' && vapidPublicKey && (
           <button type="button" className="btn-primary" onClick={enableNotifications}>
             <Bell size={18} aria-hidden="true" /> Notify me when ready

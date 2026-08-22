@@ -4,12 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
 import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
 
-const { saveResumeTokenMock } = vi.hoisted(() => ({
+const { saveResumeTokenMock, saveTrackingTokenMock } = vi.hoisted(() => ({
   saveResumeTokenMock: vi.fn(),
+  saveTrackingTokenMock: vi.fn(),
 }));
 
 vi.mock('../app/receiptResumeStore', () => ({
   saveReceiptResumeToken: saveResumeTokenMock,
+}));
+
+vi.mock('../app/reportTrackingStore', () => ({
+  saveReportTrackingToken: saveTrackingTokenMock,
 }));
 
 class FakeMediaRecorder {
@@ -51,6 +56,7 @@ const session: CaptureSessionResponse = {
 describe('ContinuousReceiptCapture', () => {
   beforeEach(() => {
     saveResumeTokenMock.mockReset().mockResolvedValue(undefined);
+    saveTrackingTokenMock.mockReset().mockResolvedValue(undefined);
     Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder });
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
@@ -109,8 +115,10 @@ describe('ContinuousReceiptCapture', () => {
 
     expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
     expect(screen.getByText(/You can leave this page while we prepare your receipt/i)).toBeInTheDocument();
-    expect(screen.getByText('trk_recovery')).toBeInTheDocument();
+    expect(screen.getByText(/saved to this device/i)).toBeInTheDocument();
+    expect(screen.queryByText('trk_recovery')).not.toBeInTheDocument();
     expect(saveResumeTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', 'rsm_device');
+    expect(saveTrackingTokenMock).toHaveBeenCalledWith('REP-20260816-ASYNC', 'trk_recovery');
     await user.click(screen.getByRole('button', { name: 'Check status' }));
     expect(onCheckStatus).toHaveBeenCalledWith('REP-20260816-ASYNC');
     await user.click(screen.getByRole('button', { name: 'Go Home' }));

@@ -28,10 +28,11 @@ import { useBackLayer } from '../hooks/useBackLayer';
 import { receiptCaptureSupport } from '../app/receiptCapture';
 import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
 import { navigate } from '../app/routing';
+import { saveReportTrackingToken } from '../app/reportTrackingStore';
 
 interface FormalReportProps {
   setActiveTab?: (tab: string) => void;
-  onTrackReport?: (reference: string, token: string) => void;
+  onTrackReport?: (reference: string) => void;
   onReportSubmitted?: (report: FormalReportResponse, storeName: string) => void;
   continuousCaptureEnabled?: boolean;
   vapidPublicKey?: string;
@@ -102,6 +103,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [submissionResult, setSubmissionResult] = useState<FormalReportResponse | null>(null);
+  const [trackingAccessStored, setTrackingAccessStored] = useState<boolean | null>(null);
   const [copiedRef, setCopiedRef] = useState<boolean>(false);
   const [copiedToken, setCopiedToken] = useState<boolean>(false);
 
@@ -119,6 +121,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
     openingStoreRef.current = null;
     setOpeningStoreId(null);
     setSubmitting(false);
+    setTrackingAccessStored(null);
   };
 
   const resetReportFlow = () => {
@@ -415,8 +418,18 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       if (generation !== reportGenerationRef.current) return;
 
       if (res.data && res.data.success) {
-        setSubmissionResult(res.data.data);
-        onReportSubmitted?.(res.data.data, selectedStore?.store_name || 'Unspecified Store');
+        const submittedReport = res.data.data as FormalReportResponse;
+        let accessStored = false;
+        try {
+          await saveReportTrackingToken(submittedReport.report_reference, submittedReport.secret_tracking_token);
+          accessStored = true;
+        } catch {
+          accessStored = false;
+        }
+        if (generation !== reportGenerationRef.current) return;
+        setTrackingAccessStored(accessStored);
+        setSubmissionResult(submittedReport);
+        onReportSubmitted?.(submittedReport, selectedStore?.store_name || 'Unspecified Store');
         setCurrentView('confirmation');
       } else {
         throw new Error('API return unsuccessful');
@@ -1478,11 +1491,16 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
                 <div>1. DTI reviews the submitted information.</div>
                 <div>2. Additional validation may be requested.</div>
-                <div>3. Return using your private tracking link.</div>
+                <div>3. Open My Reports on this device to see progress.</div>
               </div>
             </div>
 
-            {/* Secret Tracking Code Notice */}
+            {trackingAccessStored ? (
+              <div className="banner-info" style={{ marginBottom: '20px', textAlign: 'left' }}>
+                <ShieldCheck size={18} style={{ flexShrink: 0 }} />
+                <div><strong>Saved to this device.</strong> You can open this report from My Reports without entering codes.</div>
+              </div>
+            ) : (
             <div style={{
               background: '#fffbeb',
               border: '1px dashed #f59e0b',
@@ -1492,10 +1510,10 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               marginBottom: '20px'
             }}>
               <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <Lock size={16} /> Keep your private tracking code secure.
+                <Lock size={16} /> Automatic report access could not be saved.
               </div>
               <p style={{ fontSize: '0.8rem', color: '#92400e', marginBottom: '10px' }}>
-                You will need both your Reference Code and Secret Token to track evaluation progress updates.
+                Keep this one-time recovery credential before leaving. You can enter it later from My Reports.
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <code style={{ flex: 1, background: '#ffffff', border: '1px solid #fde68a', padding: '8px 10px', borderRadius: '8px', fontSize: '0.82rem', color: '#78350f', fontWeight: 700, wordBreak: 'break-all' }}>
@@ -1510,6 +1528,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 </button>
               </div>
             </div>
+            )}
 
             {/* Buttons */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1517,13 +1536,13 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 className="btn-primary"
                 onClick={() => {
                   if (onTrackReport) {
-                    onTrackReport(submissionResult.report_reference, submissionResult.secret_tracking_token);
+                    onTrackReport(submissionResult.report_reference);
                   } else if (setActiveTab) {
                     setActiveTab('track');
                   }
                 }}
               >
-                Track this report
+                View report
               </button>
               <button
                 className="btn-secondary"

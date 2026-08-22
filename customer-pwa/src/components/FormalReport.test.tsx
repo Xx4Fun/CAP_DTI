@@ -6,6 +6,12 @@ import css from '../index.css?raw';
 import { FormalReport } from './FormalReport';
 import { BackNavigationProvider } from '../app/backNavigation';
 
+const { saveTrackingTokenMock } = vi.hoisted(() => ({ saveTrackingTokenMock: vi.fn() }));
+
+vi.mock('../app/reportTrackingStore', () => ({
+  saveReportTrackingToken: saveTrackingTokenMock,
+}));
+
 const store: Establishment = {
   id: 77,
   dti_sec_number: 'SEC-REAL-77',
@@ -28,6 +34,7 @@ const publicStore = {
 
 describe('FormalReport legacy accessibility', () => {
   beforeEach(() => {
+    saveTrackingTokenMock.mockReset().mockResolvedValue(undefined);
     history.replaceState(null, '', '/reports');
     localStorage.clear();
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
@@ -254,10 +261,47 @@ describe('FormalReport legacy accessibility', () => {
     await user.click(screen.getByRole('button', { name: /Submit full receipt for DTI review/i }));
 
     expect(await screen.findByText('Your report has been received')).toBeInTheDocument();
+    expect(screen.getByText(/saved to this device/i)).toBeInTheDocument();
+    expect(screen.queryByText('trk_private')).not.toBeInTheDocument();
+    expect(saveTrackingTokenMock).toHaveBeenCalledWith('REP-20260809-REAL', 'trk_private');
     expect(onReportSubmitted).toHaveBeenCalledWith(submittedReport, 'Verified API Store');
 
     act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: null })));
     expect(await screen.findByRole('button', { name: /Submit a new report/i })).toBeInTheDocument();
     expect(screen.queryByText('Your report has been received')).not.toBeInTheDocument();
+  });
+
+  it('shows the one-time recovery credential when device tracking storage fails', async () => {
+    saveTrackingTokenMock.mockRejectedValue(new Error('storage unavailable'));
+    const submittedReport: FormalReportResponse = {
+      report_reference: 'REP-20260809-FALLBACK',
+      secret_tracking_token: 'trk_copy_this',
+      status: 'Submitted',
+      submitted_at: '2026-08-09T05:00:00Z',
+    };
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
+    vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
+      if (url === '/public/capture-session') return { data: { success: true, data: {
+        capture_session_id: 42, session_uuid: 'capture-42', capture_token: 'capture-token',
+        expires_at: '2026-08-09T06:00:00Z', store_id: store.id, max_file_size: 10_000_000,
+        accepted_types: ['image/jpeg'],
+      } } };
+      if (url === '/public/reports') return { data: { success: true, data: submittedReport } };
+      throw new Error(`Unexpected POST: ${url}`);
+    });
+    const user = userEvent.setup();
+    render(<BackNavigationProvider><FormalReport /></BackNavigationProvider>);
+
+    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
+    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
+    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+    await user.click(await screen.findByRole('button', { name: /Open camera/i }));
+    await user.click(await screen.findByRole('button', { name: /Capture receipt photo/i }));
+    await user.click(await screen.findByRole('checkbox', { name: /receipt I intend to submit/i }));
+    await user.click(screen.getByRole('button', { name: /Submit full receipt for DTI review/i }));
+
+    expect(await screen.findByText('trk_copy_this')).toBeInTheDocument();
+    expect(screen.getByText(/automatic report access could not be saved/i)).toBeInTheDocument();
   });
 });

@@ -1,0 +1,52 @@
+.track-report-page { display: flex; flex-direction: column; gap: 16px; }
+.track-report-back { align-self: flex-end; min-height: 44px; width: auto; padding: 8px 14px; }
+.track-report-library, .track-report-result, .track-report-recovery, .track-report-state { margin: 0; }
+.track-report-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.track-report-heading h1 { margin: 0; color: var(--text-main); font-size: 1.15rem; }
+.track-report-heading p, .track-report-empty p, .track-report-state p, .track-report-recovery-body > p { margin: 3px 0 0; color: var(--text-muted); font-size: 0.82rem; line-height: 1.5; }
+.track-report-list { display: grid; gap: 10px; }
+.track-report-list-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 84px; padding: 13px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: #fff; color: var(--text-main); text-align: left; cursor: pointer; transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease; }
+.track-report-list-item:hover, .track-report-list-item.selected { border-color: var(--primary); background: #f8fbff; box-shadow: 0 6px 18px rgb(30 64 175 / 8%); }
+.track-report-list-item:focus-visible, .track-report-reference button:focus-visible, .track-report-recovery summary:focus-visible { outline: 3px solid rgb(37 99 235 / 28%); outline-offset: 2px; }
+.track-report-list-main, .track-report-list-state { display: flex; }
+.track-report-list-main { min-width: 0; flex-direction: column; gap: 4px; }
+.track-report-list-main strong { overflow-wrap: anywhere; color: var(--primary); font-size: 0.95rem; }
+.track-report-list-main span { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 0.77rem; }
+.track-report-list-state { flex-shrink: 0; align-items: flex-end; flex-direction: column; gap: 5px; }
+.track-report-list-state > svg { align-self: flex-end; color: var(--text-muted); }
+.track-report-status, .track-report-access-needed, .track-report-current { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 0.7rem; font-weight: 750; line-height: 1.2; }
+.track-report-status-pending { background: #fff7ed; color: #9a3412; }
+.track-report-status-info { background: #eff6ff; color: #1d4ed8; }
+.track-report-status-success { background: #ecfdf5; color: #047857; }
+.track-report-access-needed { background: #fef2f2; color: #b91c1c; }
+.track-report-empty, .track-report-state { display: flex; align-items: flex-start; gap: 12px; padding: 16px; }
+.track-report-empty { border: 1px dashed var(--border-color); border-radius: 12px; background: #f8fafc; }
+.track-report-state-warning { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+.track-report-spinner { animation: track-report-spin 900ms linear infinite; }
+@keyframes track-report-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .track-report-list-item { transition: none; } .track-report-spinner { animation: none; } }
+.track-report-error { margin: 0; }
+.track-report-summary { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: #f8fafc; }
+.track-report-eyebrow { color: var(--text-muted); font-size: 0.7rem; font-weight: 750; letter-spacing: 0.05em; }
+.track-report-reference { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+.track-report-reference strong { color: var(--primary); font-size: 1.15rem; overflow-wrap: anywhere; }
+.track-report-reference button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.track-report-summary-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex-basis: 100%; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.track-report-summary-meta > span { display: flex; align-items: flex-start; gap: 6px; }
+.track-report-summary-meta span span { display: grid; gap: 2px; }
+.track-report-summary-meta small { color: var(--text-muted); font-size: 0.7rem; }
+.track-report-summary-meta strong { color: var(--text-main); font-size: 0.85rem; }
+.track-report-timeline-title { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; color: var(--text-main); font-size: 0.95rem; }
+.track-report-timeline-copy { flex: 1; padding-top: 2px; }
+.track-report-timeline-copy > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.track-report-timeline-copy p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.82rem; line-height: 1.5; }
+.track-report-timeline-copy time { display: block; margin-top: 6px; color: #64748b; font-size: 0.75rem; font-weight: 550; }
+.track-report-current { background: #fff7ed; color: #9a3412; }
+.track-report-privacy { margin-top: 16px; }
+.track-report-recovery { padding: 0; overflow: hidden; }
+.track-report-recovery summary { display: flex; align-items: center; gap: 9px; min-height: 52px; padding: 12px 16px; color: var(--text-main); font-weight: 700; cursor: pointer; list-style: none; }
+.track-report-recovery summary::-webkit-details-marker { display: none; }
+.track-report-recovery-body { padding: 0 16px 16px; border-top: 1px solid var(--border-color); }
+.track-report-recovery-body form { display: grid; gap: 12px; margin-top: 14px; }
+.track-report-recovery-body label { display: block; margin-bottom: 5px; color: var(--text-muted); font-size: 0.75rem; font-weight: 750; }
+@media (max-width: 520px) { .track-report-list-item { align-items: flex-start; } .track-report-list-state { max-width: 42%; } .track-report-status { text-align: center; } .track-report-summary-meta { grid-template-columns: 1fr; } }

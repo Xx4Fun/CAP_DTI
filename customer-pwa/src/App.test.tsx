@@ -204,10 +204,28 @@ describe('legacy App shell routing and status', () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     history.replaceState(null, '', '/reports/track');
     render(<App />);
-    expect(await screen.findByRole('button', { name: /Track Report Status/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'My Reports' })).toBeInTheDocument();
     history.pushState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
     expect(await screen.findByRole('heading', { name: /Check prices with confidence/i })).toBeInTheDocument();
+  });
+
+  it('opens a submitted Home report directly in My Reports', async () => {
+    localStorage.setItem('price-watch-recent-reports', JSON.stringify([{
+      reportReference: 'REP-20260822-OPEN',
+      storeName: 'Verified API Store',
+      status: 'Submitted',
+      submittedAt: '2026-08-22T05:00:00Z',
+    }]));
+    vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /open report REP-20260822-OPEN/i }));
+
+    expect(location.pathname).toBe('/reports/track');
+    expect(await screen.findByRole('heading', { name: 'My Reports' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/public report reference code/i)).toHaveValue('REP-20260822-OPEN');
   });
 
   it('uses a real product route and restores the exact Prices view on device Back', async () => {
@@ -352,7 +370,7 @@ describe('legacy App shell routing and status', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('article', { name: 'Report REP-20260809-REAL' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /open report REP-20260809-REAL/i })).toBeInTheDocument();
     expect(screen.getByText('Verified API Store')).toBeInTheDocument();
     expect(localStorage.getItem('price-watch-recent-reports')).not.toContain('trk_');
   });
