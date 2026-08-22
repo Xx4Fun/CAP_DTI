@@ -30,6 +30,7 @@ describe('legacy App shell routing and status', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/');
     localStorage.clear();
+    sessionStorage.clear();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     ensureApiReadyMock.mockReset();
     ensureApiReadyMock.mockResolvedValue(undefined);
@@ -43,6 +44,21 @@ describe('legacy App shell routing and status', () => {
     expect(shouldShowServiceStartStatus(false, 'checking', false)).toBe(false);
   });
 
+  it('requests location once when the app opens', async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => success({
+      coords: { latitude: 10.7, longitude: 121.9 },
+    } as GeolocationPosition));
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+    vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
+
+    render(<App />);
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledTimes(1));
+  });
+
   it('uses stable paths while keeping the legacy navigation', async () => {
     vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
     const user = userEvent.setup();
@@ -50,6 +66,18 @@ describe('legacy App shell routing and status', () => {
     await user.click(screen.getByRole('button', { name: 'Prices' }));
     expect(location.pathname).toBe('/prices');
     expect(screen.getByRole('button', { name: 'Prices' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens the manual Compare flow from the primary navigation', async () => {
+    vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('unavailable'));
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Compare' }));
+
+    expect(location.pathname).toBe('/compare');
+    expect(screen.getByRole('button', { name: 'Compare' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('heading', { name: 'Choose a store' })).toBeInTheDocument();
   });
 
   it('shows the global offline notice on the scanner route', async () => {

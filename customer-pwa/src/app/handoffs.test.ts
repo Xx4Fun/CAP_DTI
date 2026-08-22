@@ -26,6 +26,11 @@ it('supports a store-only scanner handoff', () => {
   expect(consumeHandoff()).toEqual({ kind: 'store-to-scan', storeId: 12 });
 });
 
+it('supports a product handoff into manual Compare', () => {
+  writeHandoff({ kind: 'price-to-compare', commodityId: 4 });
+  expect(consumeHandoff()).toEqual({ kind: 'price-to-compare', commodityId: 4 });
+});
+
 it('rejects handoffs containing unapproved fields such as tokens', () => {
   sessionStorage.setItem('price-watch-flow-handoff', JSON.stringify({
     kind: 'price-to-scan', commodityId: 4, token: 'must-not-persist',

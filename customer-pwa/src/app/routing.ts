@@ -1,6 +1,7 @@
 export type AppRoute =
   | { name: 'home' }
   | { name: 'prices' }
+  | { name: 'compare' }
   | { name: 'product'; commodityId: number }
   | { name: 'scan' }
   | { name: 'reports' }
@@ -30,6 +31,7 @@ export function parseRoute(pathname: string): AppRoute {
   const routes: Partial<Record<string, AppRoute>> = {
     '/': { name: 'home' },
     '/prices': { name: 'prices' },
+    '/compare': { name: 'compare' },
     '/scan': { name: 'scan' },
     '/reports': { name: 'reports' },
     '/reports/new': { name: 'new-report' },
@@ -52,6 +54,7 @@ export function pathFor(route: AppRoute): string {
   const paths: Record<Exclude<AppRoute['name'], 'product' | 'receipt-processing' | 'receipt-review'>, string> = {
     home: '/',
     prices: '/prices',
+    compare: '/compare',
     scan: '/scan',
     reports: '/reports',
     'new-report': '/reports/new',

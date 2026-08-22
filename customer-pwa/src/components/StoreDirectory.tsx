@@ -10,6 +10,7 @@ import {
 } from '../app/verifiedCache';
 import { StoreFacadeImage } from './ShelfScanner';
 import { writeHandoff } from '../app/handoffs';
+import { matchesPublicStoreSearch } from '../app/storeSearch';
 
 interface StoreDirectoryProps {
   setActiveTab?: (tab: string) => void;
@@ -74,16 +75,7 @@ export const StoreDirectory: React.FC<StoreDirectoryProps> = ({ setActiveTab }) 
     fetchStores(val);
   };
 
-  const filteredStores = stores.filter((s) => {
-    const q = searchTerm.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      s.store_name.toLowerCase().includes(q) ||
-      s.address.toLowerCase().includes(q) ||
-      s.owner_name.toLowerCase().includes(q) ||
-      (s.dti_sec_number && s.dti_sec_number.toLowerCase().includes(q))
-    );
-  });
+  const filteredStores = stores.filter((store) => matchesPublicStoreSearch(store, searchTerm));
 
   const handleStartScanForStore = (store: Establishment) => {
     writeHandoff({ kind: 'store-to-scan', storeId: store.id });

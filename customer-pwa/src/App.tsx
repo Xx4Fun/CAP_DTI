@@ -27,6 +27,7 @@ import {
 } from './app/recentReports';
 import { getReceiptResumeToken } from './app/receiptResumeStore';
 import { refreshReceiptReportStatuses } from './app/receiptStatusRefresh';
+import { getCurrentPosition, type GeoPosition } from './app/geolocation';
 import {
   PUBLIC_COMMODITIES_CACHE_KEY,
   PUBLIC_CONFIG_CACHE_KEY,
@@ -47,6 +48,7 @@ const MoreView = lazy(() => import('./components/MoreView').then((module) => ({ 
 const tabForRoute = (route: AppRoute): string => {
   if (route.name === 'home') return 'home';
   if (route.name === 'prices' || route.name === 'product') return 'prices';
+  if (route.name === 'compare') return 'compare';
   if (route.name === 'scan') return 'scan';
   if (route.name === 'track-report') return 'track';
   if (route.name === 'more') return 'more';
@@ -55,6 +57,7 @@ const tabForRoute = (route: AppRoute): string => {
 
 const routeForTab = (tab: string): AppRoute => {
   if (tab === 'prices') return { name: 'prices' };
+  if (tab === 'compare') return { name: 'compare' };
   if (tab === 'scan') return { name: 'scan' };
   if (tab === 'track') return { name: 'track-report' };
   if (tab === 'reports') return { name: 'reports' };
@@ -72,6 +75,7 @@ interface BulletinState {
 
 const pageLoaderDestination = (activeTab: string): PageLoaderDestination => {
   if (activeTab === 'prices') return 'prices';
+  if (activeTab === 'compare') return 'compare';
   if (activeTab === 'scan') return 'scan';
   if (activeTab === 'reports') return 'reports';
   if (activeTab === 'track') return 'track';
@@ -138,10 +142,30 @@ export const App: React.FC = () => {
   const [refreshAttempt, setRefreshAttempt] = useState(0);
   const [trackingParams, setTrackingParams] = useState<{ reference: string; token: string } | null>(null);
   const [recentReports, setRecentReports] = useState<StoredRecentReport[]>(getRecentReports);
+  const [location, setLocation] = useState<GeoPosition | null>(null);
+  const [locationError, setLocationError] = useState('');
   const setActiveTab = (tab: string) => {
     window.scrollTo(0, 0);
     navigate(routeForTab(tab));
   };
+
+  useEffect(() => {
+    let active = true;
+
+    void getCurrentPosition()
+      .then((position) => {
+        if (!active) return;
+        setLocation(position);
+        setLocationError('');
+      })
+      .catch(() => {
+        if (!active) return;
+        setLocation(null);
+        setLocationError('Location is unavailable. Showing all stores in the standard order.');
+      });
+
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const refreshPublicData = async () => {
@@ -192,7 +216,7 @@ export const App: React.FC = () => {
     void refreshPublicData();
   }, [initialPublicCache, isOnline, refreshAttempt]);
 
-  const isScanTab = activeTab === 'scan';
+  const isScanTab = activeTab === 'scan' || activeTab === 'compare';
   const isHomeTab = activeTab === 'home';
 
   const recordSubmittedReport = (report: FormalReportResponse, storeName: string) => {
@@ -306,8 +330,24 @@ export const App: React.FC = () => {
           />
         )}
 
+        {activeTab === 'compare' && (
+          <ShelfScanner
+            mode="manual"
+            setActiveTab={setActiveTab}
+            location={location}
+            locationError={locationError}
+          />
+        )}
+
+        {/* The OCR scanner is intentionally preserved at /scan for possible future reuse.
+            It has no visible primary navigation entry while manual Compare is active. */}
         {activeTab === 'scan' && (
-          <ShelfScanner setActiveTab={setActiveTab} />
+          <ShelfScanner
+            mode="ocr"
+            setActiveTab={setActiveTab}
+            location={location}
+            locationError={locationError}
+          />
         )}
 
         {activeTab === 'reports' && route.name !== 'receipt-processing' && route.name !== 'receipt-review' && (
@@ -320,6 +360,8 @@ export const App: React.FC = () => {
             onReportSubmitted={recordSubmittedReport}
             continuousCaptureEnabled={config?.receipt_continuous_capture_enabled === true}
             vapidPublicKey={config?.receipt_web_push_enabled ? config.vapid_public_key || '' : ''}
+            location={location}
+            locationError={locationError}
           />
         )}
 

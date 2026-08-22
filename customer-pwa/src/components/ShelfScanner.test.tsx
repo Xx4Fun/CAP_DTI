@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type Establishment } from '../api/client';
 import { ShelfScanner } from './ShelfScanner';
 import { BackNavigationProvider } from '../app/backNavigation';
+import { writeHandoff } from '../app/handoffs';
 
 const store: Establishment = {
   id: 77,
@@ -16,10 +17,20 @@ const store: Establishment = {
   recidivism_index: 0,
 };
 
+const publicStore = {
+  id: 77,
+  store_name: 'Verified API Store',
+  latitude: 10.7,
+  longitude: 121.9,
+  address: 'Verified API Address',
+  is_verified: true,
+} as Establishment;
+
 describe('ShelfScanner Option A Honest Recovery State Machine', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/scan');
     sessionStorage.clear();
+    localStorage.clear();
     // Mock Canvas getContext, toBlob, and URL methods for jsdom environment
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       drawImage: vi.fn(),
@@ -53,9 +64,244 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     expect(screen.queryByRole('button', { name: 'Back to reports' })).not.toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Nearby' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Recent' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('1 store')).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByRole('button', { name: 'Favorite' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: 'Nearby' })).not.toBeInTheDocument();
+    expect(screen.queryByText('1 store')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nearest first')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state when a public store payload does not match the search', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [publicStore] } });
+    const user = userEvent.setup();
+
+    render(<ShelfScanner />);
+    await user.type(await screen.findByRole('searchbox', { name: 'Search verified stores' }), 'not-a-store');
+
+    expect(screen.getByText('No matching stores found')).toBeInTheDocument();
+  });
+
+  it('toggles favorites without selecting the store and filters the directory immediately', async () => {
+    const otherStore: Establishment = {
+      ...store,
+      id: 12,
+      dti_sec_number: 'SEC-OTHER-12',
+      store_name: 'Other Store',
+      address: 'Other Address',
+    };
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store, otherStore] } });
+    const user = userEvent.setup();
+
+    render(<ShelfScanner />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Verified API Store to favorites' }));
+    expect(screen.getByRole('heading', { name: 'Choose a store' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Verified API Store from favorites' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Favorite' }));
+    expect(screen.getByRole('button', { name: 'Continue with Verified API Store' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue with Other Store' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Verified API Store from favorites' }));
+    expect(screen.getByText('No favorite stores')).toBeInTheDocument();
+  });
+
+  it('orders the complete All directory nearest-first when app location is available', async () => {
+    const nearStore: Establishment = {
+      ...store,
+      id: 12,
+      dti_sec_number: 'SEC-NEAR-12',
+      store_name: 'Nearby Store',
+      latitude: 10.701,
+      longitude: 121.901,
+    };
+    const farStore: Establishment = {
+      ...store,
+      id: 13,
+      dti_sec_number: 'SEC-FAR-13',
+      store_name: 'Far Store',
+      latitude: 11.2,
+      longitude: 122.4,
+    };
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [farStore, nearStore] } });
+
+    render(<ShelfScanner location={{ latitude: 10.7, longitude: 121.9, timestamp: Date.now() }} />);
+
+    const cards = await screen.findAllByRole('button', { name: /Continue with .* Store/ });
+    expect(cards.map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Continue with Nearby Store',
+      'Continue with Far Store',
+    ]);
+  });
+
+  it('compares a manually entered shelf price without starting the camera or scan APIs', async () => {
+    const commodity = {
+      id: 41,
+      commodity_name: 'Absolute Distilled Water',
+      category: 'Bottled Water',
+      package_size: '1L',
+      unit: '1L',
+      baseline_price: 35,
+      effective_date: '2026-08-01',
+      is_active: true,
+    };
+    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => {
+      if (url === '/public/establishments') {
+        return Promise.resolve({ data: { success: true, data: [store] } });
+      }
+      if (url === '/public/commodities') {
+        return Promise.resolve({ data: { success: true, data: [commodity] } });
+      }
+      return Promise.reject(new Error(`Unexpected endpoint: ${url}`));
+    });
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          store,
+          product: commodity,
+          commodity_name: commodity.commodity_name,
+          package_size: commodity.package_size,
+          displayed_price: '37.00',
+          reference_price: '35.00',
+          regulatory_label: 'Current SRP',
+          comparison_status: 'ABOVE_SRP',
+          peso_difference: '2.00',
+          is_above_reference: true,
+        },
+      },
+    });
+    const getUserMedia = vi.fn();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    const user = userEvent.setup();
+
+    render(<ShelfScanner mode="manual" />);
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+
+    expect(await screen.findByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Capture Shutter')).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
+    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
+    expect(screen.getByText('Official unit')).toBeInTheDocument();
+    expect(screen.getByText('1L')).toBeInTheDocument();
+    expect(screen.getByText('Current SRP: ₱35.00')).toBeInTheDocument();
+
+    const priceInput = screen.getByRole('spinbutton', { name: 'Shelf price' });
+    expect(priceInput).toHaveAttribute('min', '0.01');
+    await user.type(priceInput, '37.00');
+    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+
+    expect(await screen.findByRole('heading', { name: 'Comparison Result' })).toBeInTheDocument();
+    expect(postSpy).toHaveBeenCalledWith('/public/compare-price', {
+      store_id: 77,
+      srp_bulletin_id: 41,
+      displayed_price: 37,
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(postSpy.mock.calls.some(([url]) => String(url).includes('/scan-tag'))).toBe(false);
+    expect(screen.getByText('Manual entry')).toBeInTheDocument();
+    expect(screen.queryByText(/OCR-Detected/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Report using receipt/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit item or price' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compare another item' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Return to Prices' })).toBeInTheDocument();
+  });
+
+  it('keeps the selected store and handles the manual result actions', async () => {
+    const commodity = {
+      id: 41,
+      commodity_name: 'Absolute Distilled Water',
+      category: 'Bottled Water',
+      unit: '1L',
+      baseline_price: 35,
+      effective_date: '2026-08-01',
+      is_active: true,
+    };
+    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => Promise.resolve({
+      data: { success: true, data: url === '/public/establishments' ? [store] : [commodity] },
+    }));
+    vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          store,
+          product: commodity,
+          displayed_price: '35.00',
+          reference_price: '35.00',
+          regulatory_label: 'Current SRP',
+          comparison_status: 'MATCHES_SRP',
+          peso_difference: '0.00',
+        },
+      },
+    });
+    const setActiveTab = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <BackNavigationProvider>
+        <ShelfScanner mode="manual" setActiveTab={setActiveTab} />
+      </BackNavigationProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
+    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
+    await user.type(screen.getByRole('spinbutton', { name: 'Shelf price' }), '35');
+    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+    await screen.findByRole('heading', { name: 'Comparison Result' });
+
+    act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: null })));
+    expect(await screen.findByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('Absolute Distilled Water');
+    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(35);
+
+    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+    await screen.findByRole('heading', { name: 'Comparison Result' });
+    await user.click(screen.getByRole('button', { name: 'Edit item or price' }));
+    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('Absolute Distilled Water');
+    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(35);
+
+    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+    await screen.findByRole('heading', { name: 'Comparison Result' });
+    await user.click(screen.getByRole('button', { name: 'Compare another item' }));
+    expect(screen.getByText('Verified API Store')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('');
+    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(null);
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
+    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
+    await user.type(screen.getByRole('spinbutton', { name: 'Shelf price' }), '35');
+    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+    await screen.findByRole('heading', { name: 'Comparison Result' });
+    await user.click(screen.getByRole('button', { name: 'Return to Prices' }));
+    expect(setActiveTab).toHaveBeenCalledWith('prices');
+  });
+
+  it('preselects the official item handed off from Prices', async () => {
+    const commodity = {
+      id: 41,
+      commodity_name: 'Absolute Distilled Water',
+      category: 'Bottled Water',
+      unit: '1L',
+      baseline_price: 35,
+      effective_date: '2026-08-01',
+      is_active: true,
+    };
+    writeHandoff({ kind: 'price-to-compare', commodityId: commodity.id });
+    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => Promise.resolve({
+      data: { success: true, data: url === '/public/establishments' ? [store] : [commodity] },
+    }));
+    const user = userEvent.setup();
+
+    render(<ShelfScanner mode="manual" />);
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+
+    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('Absolute Distilled Water');
+    expect(screen.getByText('Current SRP: ₱35.00')).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(null);
   });
 
   it('opens the live camera with one store-card activation and no selection confirmation', async () => {

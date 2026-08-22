@@ -54,7 +54,7 @@ export async function getCurrentPosition(): Promise<GeoPosition> {
       (err) => {
         reject(new Error(
           err.code === 1
-            ? 'Location access denied. Please enable location in your device settings to use the Nearby filter.'
+            ? 'Location access denied. Please enable location in your device settings to sort stores by distance.'
             : 'Unable to determine your location. Please try again.'
         ));
       },

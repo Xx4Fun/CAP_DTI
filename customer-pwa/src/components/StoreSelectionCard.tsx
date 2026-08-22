@@ -1,20 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faBuildingColumns,
   faLocationDot,
   faSpinner,
+  faStar,
   faStore,
-  faBuildingColumns,
-  faChevronRight,
 } from '@fortawesome/free-solid-svg-icons';
 import { resolveImageUrl, type Establishment } from '../api/client';
 
 export interface StoreSelectionCardProps {
   store: Establishment;
   distanceLabel?: string;
-  isClosest?: boolean;
+  isFavorite: boolean;
   busy?: boolean;
   disabled?: boolean;
+  onToggleFavorite: () => void;
   onActivate: () => void;
 }
 
@@ -27,80 +28,81 @@ function getStoreInitials(storeName: string): string {
 export const StoreSelectionCard: React.FC<StoreSelectionCardProps> = ({
   store,
   distanceLabel,
-  isClosest = false,
+  isFavorite,
   busy = false,
   disabled = false,
+  onToggleFavorite,
   onActivate,
 }) => {
   const imageUrl = resolveImageUrl(store.image_path);
   const [imageFailed, setImageFailed] = useState(false);
   const initials = useMemo(() => getStoreInitials(store.store_name), [store.store_name]);
+  const useInstitutionFallback = store.store_name.toLowerCase().includes('market');
 
   useEffect(() => setImageFailed(false), [imageUrl]);
 
-  const nameLower = store.store_name.toLowerCase();
-  const formattedDistance = distanceLabel
-    ? distanceLabel.toLowerCase().includes('away')
-      ? distanceLabel
-      : `${distanceLabel} away`
-    : undefined;
-
   return (
-    <button
-      type="button"
-      className="store-selection-card store-selection-card-horizontal"
-      aria-label={`Continue with ${store.store_name}`}
-      aria-busy={busy}
-      disabled={disabled}
-      onClick={onActivate}
-    >
-      {/* Left Thumbnail Photo / Facade */}
-      <div className="store-card-thumbnail" aria-hidden="true">
-        {imageUrl && !imageFailed ? (
-          <img
-            src={imageUrl}
-            alt=""
-            className="store-thumbnail-photo"
-            loading="lazy"
-            decoding="async"
-            onError={() => setImageFailed(true)}
-          />
-        ) : (
-          <div className={`store-thumbnail-facade-fallback ${nameLower.includes('market') ? 'facade-market' : 'facade-mart'}`}>
-            <FontAwesomeIcon icon={nameLower.includes('market') ? faBuildingColumns : faStore} className="store-thumbnail-icon" />
-            <span className="store-thumbnail-initials">{initials}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Right Details Column */}
-      <div className="store-card-content">
-        <div className="store-card-header-row">
-          <h2 className="store-card-title">
-            <FontAwesomeIcon icon={faStore} className="store-card-title-icon" aria-hidden="true" />
-            <span>{store.store_name}</span>
-          </h2>
-          <div className="store-card-header-actions">
-            {isClosest && <span className="store-closest-chip">Closest</span>}
-            <FontAwesomeIcon icon={faChevronRight} className="store-card-chevron" aria-hidden="true" />
-          </div>
-        </div>
-
-        <p className="store-card-address">
-          <FontAwesomeIcon icon={faLocationDot} className="store-card-pin" aria-hidden="true" />
-          <span className="store-card-address-text">{store.address}</span>
-          {formattedDistance && (
-            <span className="store-card-distance-inline">• {formattedDistance}</span>
+    <article className="store-selection-card">
+      <button
+        type="button"
+        className="store-card-select"
+        aria-label={`Continue with ${store.store_name}`}
+        aria-busy={busy}
+        disabled={disabled}
+        onClick={onActivate}
+      >
+        <span className="store-card-media" aria-hidden="true">
+          {imageUrl && !imageFailed ? (
+            <img
+              src={imageUrl}
+              alt=""
+              className="store-card-photo"
+              loading="lazy"
+              decoding="async"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <span className="store-card-facade-fallback">
+              <FontAwesomeIcon icon={useInstitutionFallback ? faBuildingColumns : faStore} />
+              <span>{initials}</span>
+            </span>
           )}
-        </p>
-      </div>
+        </span>
 
-      {busy && (
-        <div className="store-card-loading-overlay" aria-hidden="true">
-          <FontAwesomeIcon icon={faSpinner} spin size="2x" />
-        </div>
-      )}
-    </button>
+        <span className="store-card-shade" aria-hidden="true" />
+        <span className="store-card-copy">
+          <strong className="store-card-title">{store.store_name}</strong>
+          <span className="store-card-address">
+            <FontAwesomeIcon icon={faLocationDot} className="store-card-pin" aria-hidden="true" />
+            <span>{store.address}</span>
+          </span>
+        </span>
+
+        {distanceLabel && (
+          <span className="store-card-distance">
+            <FontAwesomeIcon icon={faLocationDot} aria-hidden="true" />
+            {distanceLabel.replace(/\s*away$/i, '')}
+          </span>
+        )}
+
+        {busy && (
+          <span className="store-card-loading-overlay" aria-hidden="true">
+            <FontAwesomeIcon icon={faSpinner} spin size="2x" />
+          </span>
+        )}
+      </button>
+
+      <button
+        type="button"
+        className={`store-card-favorite ${isFavorite ? 'active' : ''}`}
+        aria-label={`${isFavorite ? 'Remove' : 'Add'} ${store.store_name} ${isFavorite ? 'from' : 'to'} favorites`}
+        aria-pressed={isFavorite}
+        disabled={disabled}
+        onClick={onToggleFavorite}
+      >
+        <FontAwesomeIcon icon={faStar} aria-hidden="true" />
+        <span>Favorite</span>
+      </button>
+    </article>
   );
 };
-

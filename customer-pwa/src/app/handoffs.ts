@@ -4,6 +4,7 @@ const HANDOFF_KEY = 'price-watch-flow-handoff';
 
 export type FlowHandoff =
   | { kind: 'price-to-scan'; commodityId: number }
+  | { kind: 'price-to-compare'; commodityId: number }
   | { kind: 'price-to-report'; commodityId: number }
   | { kind: 'store-to-scan'; storeId: number }
   | {
@@ -42,7 +43,7 @@ function isFlowHandoff(value: unknown): value is FlowHandoff {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
 
-  if (item.kind === 'price-to-scan' || item.kind === 'price-to-report') {
+  if (item.kind === 'price-to-scan' || item.kind === 'price-to-compare' || item.kind === 'price-to-report') {
     return hasExactKeys(item, ['kind', 'commodityId']) && isPositiveId(item.commodityId);
   }
   if (item.kind === 'store-to-scan') {

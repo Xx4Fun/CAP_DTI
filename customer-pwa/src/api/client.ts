@@ -104,6 +104,18 @@ export interface Commodity {
   price_freeze_treatment?: string;
 }
 
+export interface SrpHistoryEntry {
+  id: number;
+  baseline_price: number;
+  effective_date: string | null;
+  source_reference?: string | null;
+}
+
+export interface CommodityHistoryResponse {
+  commodity_id: number;
+  history: SrpHistoryEntry[];
+}
+
 export interface ScanCandidate {
   id: number;
   commodity_name: string;
@@ -118,13 +130,13 @@ export interface ScanCandidate {
 
 export interface Establishment {
   id: number;
-  dti_sec_number: string;
+  dti_sec_number?: string;
   store_name: string;
-  owner_name: string;
+  owner_name?: string;
   latitude: number;
   longitude: number;
   address: string;
-  recidivism_index: number;
+  recidivism_index?: number;
   is_verified?: boolean;
   image_path?: string | null;
   photoType?: string;

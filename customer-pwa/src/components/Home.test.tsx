@@ -66,18 +66,18 @@ describe('approved Home experience', () => {
     expect(screen.getByText(/Price Freeze active/i)).toBeInTheDocument();
   });
 
-  it('keeps the established action keys for scan, report, prices, and tracking', async () => {
+  it('routes the visible comparison shortcut to manual Compare', async () => {
     const setActiveTab = vi.fn();
     const user = userEvent.setup();
     render(<Home setActiveTab={setActiveTab} stateOfCalamity={false} />);
 
-    await user.click(screen.getByRole('button', { name: 'Scan shelf tag' }));
+    await user.click(screen.getByRole('button', { name: 'Compare prices' }));
     await user.click(screen.getByRole('button', { name: 'Report concern' }));
     await user.click(screen.getByRole('button', { name: 'View bulletin details' }));
     await user.click(screen.getByRole('button', { name: 'Report a price concern' }));
 
     expect(setActiveTab.mock.calls).toEqual([
-      ['scan'],
+      ['compare'],
       ['reports'],
       ['prices'],
       ['reports'],
@@ -129,7 +129,7 @@ describe('approved Home experience', () => {
     expect(getComputedStyle(logo!).objectFit).toBe('contain');
   });
 
-  it.each(['home', 'prices', 'scan', 'reports', 'track'])(
+  it.each(['home', 'prices', 'compare', 'reports', 'track'])(
     'uses the same Home-style header on the %s section',
     (activeTab) => {
       render(<Navbar activeTab={activeTab} setActiveTab={vi.fn()} stateOfCalamity={false} />);
@@ -161,9 +161,14 @@ describe('approved Home experience', () => {
     const user = userEvent.setup();
     render(<Navbar activeTab="home" setActiveTab={mockSetActiveTab} stateOfCalamity={false} />);
 
-    for (const label of ['Home', 'Prices', 'Scan', 'Reports', 'More']) {
+    for (const label of ['Home', 'Prices', 'Compare', 'Reports', 'More']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
+    expect(screen.queryByRole('button', { name: 'Scan' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(screen.getByRole('button', { name: 'Compare Prices' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Live Shelf Tag Scanner' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'More' }));
     expect(mockSetActiveTab).toHaveBeenCalledWith('more');

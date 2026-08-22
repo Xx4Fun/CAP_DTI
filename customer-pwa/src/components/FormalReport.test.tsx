@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type Establishment, type FormalReportResponse } from '../api/client';
+import css from '../index.css?raw';
 import { FormalReport } from './FormalReport';
 import { BackNavigationProvider } from '../app/backNavigation';
 
@@ -16,9 +17,19 @@ const store: Establishment = {
   recidivism_index: 0,
 };
 
+const publicStore = {
+  id: 77,
+  store_name: 'Verified API Store',
+  latitude: 10.7,
+  longitude: 121.9,
+  address: 'Verified API Address',
+  is_verified: true,
+} as Establishment;
+
 describe('FormalReport legacy accessibility', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/reports');
+    localStorage.clear();
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       drawImage: vi.fn(),
     } as unknown as CanvasRenderingContext2D);
@@ -48,6 +59,10 @@ describe('FormalReport legacy accessibility', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it('balances the shared store search bar halfway across the hero boundary', () => {
+    expect(css).toMatch(/\.store-search-floating-wrapper\s*\{[^}]*margin:\s*-42px 16px 0/);
+  });
+
   it('uses an integrated receipt back control and accessible store filters', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
     const user = userEvent.setup();
@@ -65,9 +80,24 @@ describe('FormalReport legacy accessibility', () => {
     expect(backButton).toHaveTextContent(/^$/);
 
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Nearby' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Recent' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('1 store')).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByRole('button', { name: 'Favorite' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: 'Nearby' })).not.toBeInTheDocument();
+    expect(screen.queryByText('1 store')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nearest first')).not.toBeInTheDocument();
+  });
+
+  it('shows the empty state when a public store payload does not match the search', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [publicStore] } });
+    const user = userEvent.setup();
+
+    render(<FormalReport />);
+    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
+    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
+    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
+    await user.type(await screen.findByRole('searchbox', { name: 'Search verified stores' }), 'not-a-store');
+
+    expect(screen.getByText('No matching stores found')).toBeInTheDocument();
   });
 
   it('uses one store-card activation to open receipt guidelines without selection controls or SEC badge', async () => {

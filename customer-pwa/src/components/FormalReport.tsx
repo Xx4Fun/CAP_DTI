@@ -18,8 +18,10 @@ import {
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
 import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
-import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
+import { haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
+import { getFavoriteStoreIds, toggleFavoriteStore } from '../app/favoriteStores';
+import { matchesPublicStoreSearch } from '../app/storeSearch';
 import { StoreSelectionCard } from './StoreSelectionCard';
 import { StoreSelectionView, type StoreDirectoryFilter } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
@@ -33,6 +35,8 @@ interface FormalReportProps {
   onReportSubmitted?: (report: FormalReportResponse, storeName: string) => void;
   continuousCaptureEnabled?: boolean;
   vapidPublicKey?: string;
+  location?: GeoPosition | null;
+  locationError?: string;
 }
 
 export const FormalReport: React.FC<FormalReportProps> = ({
@@ -41,6 +45,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   onReportSubmitted,
   continuousCaptureEnabled = false,
   vapidPublicKey = '',
+  location = null,
+  locationError = '',
 }) => {
   // Navigation & Wizard Stage
   const [currentView, setCurrentView] = useState<'dashboard' | 'select-store' | 'camera-viewport' | 'review-submit' | 'confirmation'>('dashboard');
@@ -70,9 +76,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   const openingStoreRef = useRef<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeChip, setActiveChip] = useState<StoreDirectoryFilter>('all');
-  const [userGeo, setUserGeo] = useState<GeoPosition | null>(null);
-  const [geoError, setGeoError] = useState<string>('');
-  const [geoLoading, setGeoLoading] = useState<boolean>(false);
+  const [favoriteStoreIds, setFavoriteStoreIds] = useState<number[]>(getFavoriteStoreIds);
 
   // Camera & Image State
   const [hasCamera, setHasCamera] = useState<boolean>(true);
@@ -454,54 +458,28 @@ export const FormalReport: React.FC<FormalReportProps> = ({
     }
   };
 
-  const handleNearbyFilter = async () => {
-    if (activeChip === 'nearby') {
-      setActiveChip('all');
-      return;
-    }
-    setGeoLoading(true);
-    setGeoError('');
-    try {
-      const pos = await getCurrentPosition();
-      setUserGeo(pos);
-      setActiveChip('nearby');
-    } catch (err: any) {
-      setGeoError(err.message || 'Location unavailable');
-      setActiveChip('all');
-    } finally {
-      setGeoLoading(false);
-    }
-  };
-
   const filteredStores = React.useMemo(() => {
     let result = stores;
-    if (activeChip === 'nearby') {
-      if (userGeo) {
-        result = stores.filter(s => {
-          const dist = haversineKm(userGeo.latitude, userGeo.longitude, s.latitude, s.longitude);
-          return dist <= 2;
-        });
-      }
-    } else if (activeChip === 'recent') {
-      const recentIds = getRecentStoreIds();
+    const recentIds = getRecentStoreIds();
+    if (activeChip === 'recent') {
       result = stores.filter(s => recentIds.includes(s.id));
+    } else if (activeChip === 'favorite') {
+      result = stores.filter(s => favoriteStoreIds.includes(s.id));
     }
     
-    let filtered = result.filter(s =>
-      s.store_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.dti_sec_number.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    let filtered = result.filter((store) => matchesPublicStoreSearch(store, searchQuery));
 
-    if (activeChip === 'nearby' && userGeo) {
+    if (activeChip === 'all' && location) {
       filtered = [...filtered].sort((a, b) =>
-        haversineKm(userGeo.latitude, userGeo.longitude, a.latitude, a.longitude) -
-        haversineKm(userGeo.latitude, userGeo.longitude, b.latitude, b.longitude)
+        haversineKm(location.latitude, location.longitude, a.latitude, a.longitude) -
+        haversineKm(location.latitude, location.longitude, b.latitude, b.longitude)
       );
+    } else if (activeChip === 'recent') {
+      filtered = [...filtered].sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
     }
 
     return filtered;
-  }, [stores, activeChip, searchQuery, userGeo]);
+  }, [stores, activeChip, searchQuery, location, favoriteStoreIds]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1000,31 +978,33 @@ export const FormalReport: React.FC<FormalReportProps> = ({
           searchValue={searchQuery}
           onSearchChange={setSearchQuery}
           activeFilter={activeChip}
-          onFilterChange={(filter) => {
-            if (filter === 'nearby') void handleNearbyFilter();
-            else setActiveChip(filter);
-          }}
-          nearbyBusy={geoLoading}
+          onFilterChange={setActiveChip}
           resultCount={filteredStores.length}
-          sortedByProximity={Boolean(userGeo && activeChip === 'nearby')}
-          geoError={geoError}
-          emptyTitle={activeChip === 'recent' ? 'No recent stores' : 'No matching stores found'}
+          geoError={locationError}
+          emptyTitle={activeChip === 'recent'
+            ? 'No recent stores'
+            : activeChip === 'favorite'
+              ? 'No favorite stores'
+              : 'No matching stores found'}
           emptyDescription={activeChip === 'recent'
             ? 'Stores you report will appear here for faster access.'
-            : 'Try another store name or view the full directory.'}
+            : activeChip === 'favorite'
+              ? 'Tap the star on a store to keep it close at hand.'
+              : 'Try another store name or view the full directory.'}
           onReset={(searchQuery || activeChip !== 'all') ? () => {
             setSearchQuery('');
             setActiveChip('all');
           } : undefined}
         >
-          {filteredStores.map((store, index) => (
+          {filteredStores.map((store) => (
             <StoreSelectionCard
               key={store.id}
               store={store}
-              distanceLabel={userGeo
-                ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+              distanceLabel={location
+                ? formatDistance(haversineKm(location.latitude, location.longitude, store.latitude, store.longitude))
                 : undefined}
-              isClosest={index === 0 && Boolean(userGeo)}
+              isFavorite={favoriteStoreIds.includes(store.id)}
+              onToggleFavorite={() => setFavoriteStoreIds(toggleFavoriteStore(store.id))}
               busy={openingStoreId === store.id}
               disabled={openingStoreId !== null}
               onActivate={() => {

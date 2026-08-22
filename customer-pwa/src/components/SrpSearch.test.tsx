@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type Commodity } from '../api/client';
 import { PUBLIC_COMMODITIES_CACHE_KEY, writeVerifiedCache } from '../app/verifiedCache';
 import { PRICE_DIRECTORY_VIEW_KEY } from '../app/priceDirectoryState';
+import { consumeHandoff } from '../app/handoffs';
 import css from '../index.css?raw';
 import { SrpSearch } from './SrpSearch';
 
@@ -331,6 +332,9 @@ describe('SrpSearch product showcase cards', () => {
     expect(css).toMatch(/\.price-product-name\s*\{[^}]*font-size:\s*clamp\(0\.82rem,\s*3\.3vw,\s*0\.94rem\)/);
     expect(css).toMatch(/\.price-product-price-value\s*\{[^}]*font-size:\s*clamp\(1rem,\s*4\.5vw,\s*1\.2rem\)/);
     expect(css).toMatch(/\.price-product-card\s*\{[^}]*content-visibility:\s*auto/);
+    expect(css).toMatch(
+      /\.price-product-price::after\s*\{[^}]*radial-gradient\(circle at left center,\s*#ffffff 0 6px,\s*transparent 6px\)[^}]*repeat-y/,
+    );
     expect(css).not.toMatch(/\.price-product-price-dots\s*\{/);
   });
 });
@@ -524,6 +528,21 @@ describe('SrpSearch price filters', () => {
     expect(screen.getByRole('checkbox', { name: 'Canned Goods' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Milk' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Coffee' })).toBeInTheDocument();
+  });
+
+  it('hands the selected official item to manual Compare', async () => {
+    const setActiveTab = vi.fn();
+    const user = userEvent.setup();
+    vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse(liveCommodities));
+
+    render(<SrpSearch setActiveTab={setActiveTab} />);
+    await screen.findByText('Saba Sardines');
+    await waitForInitialPricesReveal();
+    await user.click(screen.getByRole('button', { name: 'View Saba Sardines price details' }));
+    await user.click(screen.getByRole('button', { name: 'Compare Prices' }));
+
+    expect(setActiveTab).toHaveBeenCalledWith('compare');
+    expect(consumeHandoff()).toEqual({ kind: 'price-to-compare', commodityId: 201 });
   });
 
   it('sanitizes an applied category when an unfiltered live refresh removes it', async () => {

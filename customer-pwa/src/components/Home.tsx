@@ -4,7 +4,7 @@ import {
   ChevronRight,
   Clock3,
   FileCheck2,
-  ScanLine,
+  Scale,
 } from 'lucide-react';
 import { RecentReportTicket, type RecentReportTicketProps } from './RecentReportTicket';
 import './Home.css';
@@ -71,11 +71,11 @@ export const Home: React.FC<HomeProps> = ({
             <button
               type="button"
               className="home-action-card home-action-card-scan"
-              onClick={() => setActiveTab('scan')}
-              aria-label="Scan shelf tag"
+              onClick={() => setActiveTab('compare')}
+              aria-label="Compare prices"
             >
               <div className="home-action-top">
-                <span className="home-action-icon"><ScanLine size={22} aria-hidden="true" /></span>
+                <span className="home-action-icon"><Scale size={22} aria-hidden="true" /></span>
                 <svg className="home-action-dots" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
                   <circle cx="4" cy="4" r="1.5" fill="currentColor" />
                   <circle cx="13" cy="4" r="1.5" fill="currentColor" />
@@ -97,8 +97,8 @@ export const Home: React.FC<HomeProps> = ({
               </div>
 
               <div className="home-action-copy">
-                <strong className="home-action-title">Scan shelf tag</strong>
-                <span className="home-action-subtitle">Compare any price instantly</span>
+                <strong className="home-action-title">Compare prices</strong>
+                <span className="home-action-subtitle">Check a shelf price against SRP</span>
               </div>
 
               <span className="home-action-arrow"><ChevronRight size={18} aria-hidden="true" /></span>

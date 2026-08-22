@@ -6,6 +6,12 @@ describe('routing', () => {
     expect(parseRoute('/prices/42')).toEqual({ name: 'product', commodityId: 42 });
   });
 
+  it('uses a dedicated route for manual price comparison', () => {
+    expect(parseRoute('/compare')).toEqual({ name: 'compare' });
+    expect(pathFor({ name: 'compare' })).toBe('/compare');
+    expect(parseRoute('/scan')).toEqual({ name: 'scan' });
+  });
+
   it('falls back to home for unknown paths', () => {
     expect(parseRoute('/not-a-screen')).toEqual({ name: 'home' });
   });

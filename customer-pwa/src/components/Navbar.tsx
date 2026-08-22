@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Tag, Scan, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
+import { Home, Tag, Scale, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
 import { useBackLayer } from '../hooks/useBackLayer';
 
 interface NavbarProps {
@@ -134,10 +134,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
               SRP Price Directory
             </button>
             <button
-              onClick={() => { setActiveTab('scan'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'scan' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'scan' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
+              onClick={() => { setActiveTab('compare'); setIsMenuOpen(false); }}
+              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'compare' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'compare' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
             >
-              Live Shelf Tag Scanner
+              Compare Prices
             </button>
             <button
               onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}
@@ -183,12 +183,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
         </button>
 
         <button
-          className={`nav-item nav-item-scan ${activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'active' : ''}`}
-          onClick={() => setActiveTab('scan')}
-          aria-current={activeTab === 'scan' || activeTab === 'shelf-scanner' ? 'page' : undefined}
+          className={`nav-item nav-item-scan ${activeTab === 'compare' ? 'active' : ''}`}
+          onClick={() => setActiveTab('compare')}
+          aria-current={activeTab === 'compare' ? 'page' : undefined}
         >
-          <Scan size={20} />
-          <span>Scan</span>
+          <Scale size={20} />
+          <span>Compare</span>
         </button>
 
         <button

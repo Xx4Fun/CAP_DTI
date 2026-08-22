@@ -22,8 +22,10 @@ import {
 } from '../api/client';
 import { consumeHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
-import { getCurrentPosition, haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
+import { haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
+import { getFavoriteStoreIds, toggleFavoriteStore } from '../app/favoriteStores';
+import { matchesPublicStoreSearch } from '../app/storeSearch';
 import { computeGuideSourceCrop, computeNormalizedCropSize } from '../app/shelfTagCrop';
 import { StoreSelectionCard } from './StoreSelectionCard';
 import { StoreSelectionView } from './StoreSelectionView';
@@ -31,6 +33,9 @@ import { useBackLayer } from '../hooks/useBackLayer';
 
 interface ShelfScannerProps {
   setActiveTab?: (tab: string) => void;
+  location?: GeoPosition | null;
+  locationError?: string;
+  mode?: 'manual' | 'ocr';
 }
 
 export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
@@ -118,6 +123,7 @@ const isCatalogCommodity = (candidate: ProductChoice): candidate is Commodity =>
 
 export type ScannerStepState =
   | 'SELECT_STORE'
+  | 'MANUAL_ENTRY'
   | 'CAMERA_LIVE'
   | 'UPLOADING'
   | 'ANALYZING'
@@ -130,17 +136,20 @@ export type ScannerStepState =
   | 'RESULT'
   | 'ERROR';
 
-export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
+export const ShelfScanner: React.FC<ShelfScannerProps> = ({
+  setActiveTab,
+  location = null,
+  locationError = '',
+  mode = 'ocr',
+}) => {
   const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
 
   // Store Selection State
   const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'nearby' | 'recent'>('all');
-  const [userGeo, setUserGeo] = useState<GeoPosition | null>(null);
-  const [geoError, setGeoError] = useState('');
-  const [geoLoading, setGeoLoading] = useState(false);
+  const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'recent' | 'favorite'>('all');
+  const [favoriteStoreIds, setFavoriteStoreIds] = useState<number[]>(getFavoriteStoreIds);
 
   // Camera & Capture State
   const [flashOn, setFlashOn] = useState(false);
@@ -176,19 +185,23 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
+  const handedOffCommodityRef = useRef<Commodity | null>(null);
 
   useEffect(() => {
     fetchStores();
+    if (mode === 'manual' && handoffRef.current?.kind === 'price-to-compare') {
+      void preloadHandoffCommodity(handoffRef.current.commodityId);
+    }
     return () => {
       scanGenerationRef.current += 1;
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
       analysisAbortRef.current?.abort();
     };
-  }, []);
+  }, [mode]);
 
   // Body Scroll Locking for Full-Screen Camera
   useEffect(() => {
-    if (scannerState === 'CAMERA_LIVE') {
+    if (mode === 'ocr' && scannerState === 'CAMERA_LIVE') {
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
       startCamera();
@@ -203,7 +216,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       document.body.style.touchAction = '';
       stopCamera();
     };
-  }, [scannerState, facingMode]);
+  }, [scannerState, facingMode, mode]);
 
   useEffect(() => {
     return () => {
@@ -256,6 +269,24 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       setStores([]);
       setSelectedStore(null);
       setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
+    }
+  };
+
+  const preloadHandoffCommodity = async (commodityId: number) => {
+    try {
+      const res = await apiClient.get('/public/commodities');
+      const directory = res.data?.success && Array.isArray(res.data.data)
+        ? res.data.data as Commodity[]
+        : [];
+      const commodity = directory.find((item) => item.id === commodityId) || null;
+      if (!commodity) return;
+      handedOffCommodityRef.current = commodity;
+      setSelectedCandidate(commodity);
+      setSelectedProductSource('MANUAL_SEARCH');
+      setCommoditySearchQuery(commodity.commodity_name);
+    } catch {
+      // The form remains usable if the previously selected item is no longer in the live directory.
+      handedOffCommodityRef.current = null;
     }
   };
 
@@ -351,6 +382,17 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
   };
 
   useBackLayer('scanner-step', scannerState !== 'SELECT_STORE', () => {
+    if (mode === 'manual') {
+      if (scannerState === 'RESULT') {
+        setErrorMessage('');
+        setScannerState('MANUAL_ENTRY');
+      } else if (scannerState === 'MANUAL_ENTRY') {
+        returnScannerToStart();
+      } else {
+        setScannerState(selectedStore ? 'MANUAL_ENTRY' : 'SELECT_STORE');
+      }
+      return;
+    }
     if (scannerState === 'CAMERA_LIVE' || scannerState === 'RESULT') {
       returnScannerToStart();
     } else {
@@ -383,7 +425,12 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     resetAllScanData();
     setSelectedStore(store);
     addRecentStore(store.id);
-    setScannerState('CAMERA_LIVE');
+    if (mode === 'manual' && handedOffCommodityRef.current) {
+      setSelectedCandidate(handedOffCommodityRef.current);
+      setSelectedProductSource('MANUAL_SEARCH');
+      setCommoditySearchQuery(handedOffCommodityRef.current.commodity_name);
+    }
+    setScannerState(mode === 'manual' ? 'MANUAL_ENTRY' : 'CAMERA_LIVE');
   };
 
   const handleShutterCapture = () => {
@@ -630,7 +677,9 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
       if (generation !== scanGenerationRef.current || err?.code === 'ERR_CANCELED') return;
       console.error('Comparison API error:', err);
       setErrorMessage(
-        err.response?.data?.message || 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.'
+        err.response?.data?.message || (mode === 'manual'
+          ? 'The price comparison could not be completed. Nothing was submitted.'
+          : 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.')
       );
       setScannerState('ERROR');
     } finally {
@@ -655,6 +704,41 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     executeComparison(selectedCandidate, parsedPrice);
   };
 
+  const handleManualEntryCommoditySelect = (commodity: Commodity) => {
+    handedOffCommodityRef.current = null;
+    setSelectedCandidate(commodity);
+    setSelectedProductSource('MANUAL_SEARCH');
+    setCommoditySearchQuery(commodity.commodity_name);
+    setCommoditySearchResults([]);
+    setCommoditySearchError('');
+    setErrorMessage('');
+  };
+
+  const handleManualCompare = () => {
+    const parsedPrice = Number(userPriceInput);
+    if (!selectedCandidate) {
+      setErrorMessage('Select an official item before comparing its price.');
+      return;
+    }
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0.01) {
+      setErrorMessage('Enter a shelf price of at least ₱0.01.');
+      return;
+    }
+    setErrorMessage('');
+    void executeComparison(selectedCandidate, parsedPrice, 'MANUAL_SEARCH', 'USER_ENTERED');
+  };
+
+  const handleEditManualComparison = () => {
+    setErrorMessage('');
+    setScannerState('MANUAL_ENTRY');
+  };
+
+  const handleCompareAnotherManualItem = () => {
+    handedOffCommodityRef.current = null;
+    resetAllScanData();
+    setScannerState('MANUAL_ENTRY');
+  };
+
   const openManualRecovery = () => {
     setErrorMessage('');
     setShowManualDirectorySearch(true);
@@ -673,54 +757,25 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
     setScannerState('RECOVERY');
   };
 
-  const handleNearbyFilter = async () => {
-    if (activeFilterChip === 'nearby') {
-      setActiveFilterChip('all');
-      return;
-    }
-    setGeoLoading(true);
-    setGeoError('');
-    try {
-      const pos = await getCurrentPosition();
-      setUserGeo(pos);
-      setActiveFilterChip('nearby');
-    } catch (err: any) {
-      setGeoError(err.message || 'Location unavailable');
-      setActiveFilterChip('all');
-    } finally {
-      setGeoLoading(false);
-    }
-  };
-
+  const recentStoreIds = getRecentStoreIds();
   const filteredStores = stores.filter((s) => {
     let matchesFilter = true;
-    if (activeFilterChip === 'nearby') {
-      if (userGeo) {
-        const dist = haversineKm(userGeo.latitude, userGeo.longitude, s.latitude, s.longitude);
-        matchesFilter = dist <= 2;
-      } else {
-        matchesFilter = true;
-      }
-    } else if (activeFilterChip === 'recent') {
-      const recentIds = getRecentStoreIds();
-      matchesFilter = recentIds.includes(s.id);
+    if (activeFilterChip === 'recent') {
+      matchesFilter = recentStoreIds.includes(s.id);
+    } else if (activeFilterChip === 'favorite') {
+      matchesFilter = favoriteStoreIds.includes(s.id);
     }
 
-    const q = searchTerm.toLowerCase().trim();
-    if (!q) return matchesFilter;
-    return (
-      matchesFilter &&
-      (s.store_name.toLowerCase().includes(q) ||
-       s.address.toLowerCase().includes(q) ||
-       s.owner_name.toLowerCase().includes(q))
-    );
+    return matchesFilter && matchesPublicStoreSearch(s, searchTerm);
   });
 
-  if (activeFilterChip === 'nearby' && userGeo) {
+  if (activeFilterChip === 'all' && location) {
     filteredStores.sort((a, b) =>
-      haversineKm(userGeo.latitude, userGeo.longitude, a.latitude, a.longitude) -
-      haversineKm(userGeo.latitude, userGeo.longitude, b.latitude, b.longitude)
+      haversineKm(location.latitude, location.longitude, a.latitude, a.longitude) -
+      haversineKm(location.latitude, location.longitude, b.latitude, b.longitude)
     );
+  } else if (activeFilterChip === 'recent') {
+    filteredStores.sort((a, b) => recentStoreIds.indexOf(a.id) - recentStoreIds.indexOf(b.id));
   }
 
   const handleReportWithReceipt = () => {
@@ -772,35 +827,35 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               searchValue={searchTerm}
               onSearchChange={setSearchTerm}
               activeFilter={activeFilterChip}
-              onFilterChange={(filter) => {
-                if (filter === 'nearby') void handleNearbyFilter();
-                else setActiveFilterChip(filter);
-              }}
-              nearbyBusy={geoLoading}
+              onFilterChange={setActiveFilterChip}
               resultCount={filteredStores.length}
-              sortedByProximity={Boolean(userGeo && activeFilterChip === 'nearby')}
-              geoError={geoError}
+              geoError={locationError}
               emptyTitle={errorMessage
                 ? 'Store directory unavailable'
                 : activeFilterChip === 'recent'
                   ? 'No recent stores'
+                  : activeFilterChip === 'favorite'
+                    ? 'No favorite stores'
                   : 'No matching stores found'}
               emptyDescription={errorMessage || (activeFilterChip === 'recent'
                 ? 'Stores you scan will appear here for faster access.'
+                : activeFilterChip === 'favorite'
+                  ? 'Tap the star on a store to keep it close at hand.'
                 : 'Try another store name or view the full directory.')}
               onReset={!errorMessage && (searchTerm || activeFilterChip !== 'all') ? () => {
                 setSearchTerm('');
                 setActiveFilterChip('all');
               } : undefined}
             >
-              {filteredStores.map((store, index) => (
+              {filteredStores.map((store) => (
                 <StoreSelectionCard
                   key={store.id}
                   store={store}
-                  distanceLabel={userGeo
-                    ? formatDistance(haversineKm(userGeo.latitude, userGeo.longitude, store.latitude, store.longitude))
+                  distanceLabel={location
+                    ? formatDistance(haversineKm(location.latitude, location.longitude, store.latitude, store.longitude))
                     : undefined}
-                  isClosest={index === 0 && Boolean(userGeo)}
+                  isFavorite={favoriteStoreIds.includes(store.id)}
+                  onToggleFavorite={() => setFavoriteStoreIds(toggleFavoriteStore(store.id))}
                   onActivate={() => handleStartScanForStore(store)}
                 />
               ))}
@@ -809,8 +864,130 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
         </div>
       )}
 
+      {/* Manual Compare is the visible customer flow. It intentionally bypasses camera and OCR. */}
+      {mode === 'manual' && scannerState === 'MANUAL_ENTRY' && selectedStore && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: 'calc(104px + env(safe-area-inset-bottom))' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              type="button"
+              onClick={returnScannerToStart}
+              aria-label="Back to store selection"
+              style={{ width: '42px', height: '42px', borderRadius: '12px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h1 style={{ margin: 0, color: '#0f172a', fontSize: '1.35rem', fontWeight: 800 }}>Compare a shelf price</h1>
+              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '0.82rem' }}>Choose an official item, then enter the price shown in store.</p>
+            </div>
+          </div>
+
+          <div style={{ background: '#eaf3ff', border: '1px solid #bfdbfe', borderRadius: '14px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <MapPin size={18} color="#2563eb" aria-hidden="true" />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: '#1e3a8a', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Selected store</div>
+              <div style={{ color: '#0f172a', fontSize: '0.9rem', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedStore.store_name}</div>
+            </div>
+          </div>
+
+          <section style={{ background: '#ffffff', border: '1px solid #dbe3ee', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label htmlFor="manual-commodity-search" style={{ display: 'block', color: '#0f172a', fontSize: '0.84rem', fontWeight: 750, marginBottom: '7px' }}>Official item</label>
+              <div style={{ position: 'relative' }}>
+                <Search size={18} color="#64748b" aria-hidden="true" style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input
+                  id="manual-commodity-search"
+                  type="search"
+                  aria-label="Search official item"
+                  placeholder="Search product name or brand"
+                  autoComplete="off"
+                  value={commoditySearchQuery}
+                  onChange={(event) => {
+                    const query = event.target.value;
+                    if (selectedCandidate && query !== selectedCandidate.commodity_name) {
+                      handedOffCommodityRef.current = null;
+                      setSelectedCandidate(null);
+                    }
+                    void searchCommodities(query);
+                  }}
+                  style={{ width: '100%', height: '46px', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '0 14px 0 40px', color: '#0f172a', background: '#ffffff', fontSize: '0.9rem', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            {isSearchingCommodities && <div role="status" style={{ color: '#64748b', fontSize: '0.8rem' }}>Searching official price directory…</div>}
+            {commoditySearchError && <div role="alert" style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{commoditySearchError}</div>}
+            {!isSearchingCommodities && commoditySearchQuery.trim() && !selectedCandidate && commoditySearchResults.length === 0 && !commoditySearchError && (
+              <div style={{ color: '#64748b', fontSize: '0.8rem' }}>No official items match that search.</div>
+            )}
+            {commoditySearchResults.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {commoditySearchResults.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-label={`Select ${item.commodity_name}`}
+                    onClick={() => handleManualEntryCommoditySelect(item)}
+                    style={{ width: '100%', border: '1px solid #dbe3ee', borderRadius: '12px', background: '#f8fafc', padding: '11px 12px', textAlign: 'left', cursor: 'pointer' }}
+                  >
+                    <span style={{ display: 'block', color: '#0f172a', fontSize: '0.86rem', fontWeight: 750 }}>{item.commodity_name}</span>
+                    <span style={{ display: 'block', color: '#64748b', fontSize: '0.74rem', marginTop: '3px' }}>{item.unit || item.package_size || 'Standard unit'} · Current SRP ₱{Number(item.baseline_price).toFixed(2)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {selectedCandidate && (
+              <div style={{ border: '1px solid #bfdbfe', borderRadius: '13px', background: '#eff6ff', padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                <strong style={{ color: '#0f172a', fontSize: '0.9rem' }}>{selectedCandidate.commodity_name}</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#475569', fontSize: '0.78rem' }}>
+                  <span>Official unit</span>
+                  <strong style={{ color: '#1e3a8a' }}>{selectedCandidate.unit || selectedCandidate.package_size || 'Standard'}</strong>
+                </div>
+                <div style={{ color: '#1d4ed8', fontSize: '0.8rem', fontWeight: 750 }}>Current SRP: ₱{Number(selectedCandidate.baseline_price || 0).toFixed(2)}</div>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="manual-shelf-price" style={{ display: 'block', color: '#0f172a', fontSize: '0.84rem', fontWeight: 750, marginBottom: '7px' }}>Shelf price</label>
+              <div style={{ position: 'relative' }}>
+                <span aria-hidden="true" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#475569', fontWeight: 750 }}>₱</span>
+                <input
+                  id="manual-shelf-price"
+                  type="number"
+                  aria-label="Shelf price"
+                  min="0.01"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={userPriceInput}
+                  onChange={(event) => {
+                    setUserPriceInput(event.target.value);
+                    setErrorMessage('');
+                  }}
+                  style={{ width: '100%', height: '48px', boxSizing: 'border-box', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '0 14px 0 34px', color: '#0f172a', background: '#ffffff', fontSize: '1rem', fontWeight: 700, outline: 'none' }}
+                />
+              </div>
+              <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '0.74rem' }}>Enter the price exactly as displayed on the shelf.</p>
+            </div>
+
+            {errorMessage && <div role="alert" style={{ borderRadius: '10px', background: '#fef2f2', color: '#b91c1c', padding: '10px 12px', fontSize: '0.8rem' }}>{errorMessage}</div>}
+
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleManualCompare}
+              disabled={!selectedCandidate || !Number.isFinite(Number(userPriceInput)) || Number(userPriceInput) < 0.01}
+              style={{ width: '100%', height: '48px', borderRadius: '12px', fontSize: '0.92rem', fontWeight: 750 }}
+            >
+              Compare price
+            </button>
+          </section>
+        </div>
+      )}
+
       {/* SCREEN 2: TRUE FULL-SCREEN LIVE CAMERA PREVIEW */}
-      {scannerState === 'CAMERA_LIVE' && (
+      {mode === 'ocr' && scannerState === 'CAMERA_LIVE' && (
         <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden' }}>
           
           {/* Top Translucent Control Overlay */}
@@ -1504,7 +1681,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                   fontSize: '0.72rem',
                   fontWeight: 700
                 }}>
-                  {(comparisonResult.product_source === 'MANUAL_SEARCH') ? 'Manual Directory Selection' : 'OCR-Detected'}
+                  {mode === 'manual'
+                    ? 'Manual entry'
+                    : (comparisonResult.product_source === 'MANUAL_SEARCH')
+                      ? 'Manual Directory Selection'
+                      : 'OCR-Detected'}
                 </span>
               </div>
             </div>
@@ -1554,7 +1735,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
                     fontSize: '0.68rem',
                     fontWeight: 700
                   }}>
-                    {(comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '✏️ Consumer-Entered Price' : '✔ OCR-Detected Tag Price'}
+                    {mode === 'manual'
+                      ? 'Consumer-entered price'
+                      : (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED')
+                        ? '✏️ Consumer-Entered Price'
+                        : '✔ OCR-Detected Tag Price'}
                   </span>
                 </div>
               </div>
@@ -1654,7 +1839,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               gap: '10px'
             }}
           >
-            {resultIsAboveReference && (
+            {mode === 'ocr' && resultIsAboveReference && (
               <button
                 className="btn-primary"
                 onClick={handleReportWithReceipt}
@@ -1664,56 +1849,86 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
               </button>
             )}
 
-            <button
-              onClick={handleCorrectResult}
-              style={{
-                width: '100%',
-                height: '42px',
-                borderRadius: '8px',
-                border: '1px solid #93c5fd',
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                fontSize: '0.85rem',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Correct product or price
-            </button>
+            {mode === 'manual' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleEditManualComparison}
+                  style={{ width: '100%', height: '44px', borderRadius: '10px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Edit item or price
+                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handleCompareAnotherManualItem}
+                    style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
+                  >
+                    Compare another item
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab?.('prices')}
+                    style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#1d4ed8', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
+                  >
+                    Return to Prices
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleCorrectResult}
+                  style={{
+                    width: '100%',
+                    height: '42px',
+                    borderRadius: '8px',
+                    border: '1px solid #93c5fd',
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Correct product or price
+                </button>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button
-                onClick={handleRetake}
-                style={{
-                  height: '42px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                Scan another item
-              </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    onClick={handleRetake}
+                    style={{
+                      height: '42px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#0f172a',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Scan another item
+                  </button>
 
-              <button
-                onClick={() => setActiveTab && setActiveTab('prices')}
-                style={{
-                  height: '42px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  background: '#ffffff',
-                  color: '#1d4ed8',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                View price history
-              </button>
-            </div>
+                  <button
+                    onClick={() => setActiveTab && setActiveTab('prices')}
+                    style={{
+                      height: '42px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: '#ffffff',
+                      color: '#1d4ed8',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    View price history
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1726,14 +1941,38 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
           </div>
 
           <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            Unable to analyze shelf tag
+            {mode === 'manual' ? 'Unable to compare price' : 'Unable to analyze shelf tag'}
           </h2>
 
           <p style={{ fontSize: '0.85rem', color: '#64748b', maxWidth: '340px', margin: 0, lineHeight: 1.4 }}>
-            {errorMessage || 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.'}
+            {errorMessage || (mode === 'manual'
+              ? 'The price comparison could not be completed. Nothing was submitted.'
+              : 'The shelf tag could not be processed. No comparison was generated and nothing was submitted.')}
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px', marginTop: '12px' }}>
+            {mode === 'manual' ? (
+              <>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage('');
+                    setScannerState('MANUAL_ENTRY');
+                  }}
+                  style={{ height: '46px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700 }}
+                >
+                  Back to price entry
+                </button>
+                <button
+                  type="button"
+                  onClick={returnScannerToStart}
+                  style={{ height: '46px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: '0.88rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Choose another store
+                </button>
+              </>
+            ) : <>
             {capturedBlob && (
               <button
                 className="btn-primary"
@@ -1775,6 +2014,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({ setActiveTab }) => {
             >
               Enter product and price manually
             </button>
+            </>}
           </div>
         </div>
       )}
