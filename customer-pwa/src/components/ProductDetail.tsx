@@ -9,7 +9,6 @@ import {
   faCircleInfo,
   faExpand,
   faMinus,
-  faScaleBalanced,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   apiClient,
@@ -28,7 +27,6 @@ export interface ProductDetailProps {
   dataSource: PriceDataSource;
   dataFetchedAt: number | null;
   onBack: () => void;
-  onCompare?: () => void;
   stateOfCalamity?: boolean;
 }
 
@@ -142,7 +140,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   dataSource,
   dataFetchedAt,
   onBack,
-  onCompare,
   stateOfCalamity,
 }) => {
   const [isFreezeOpen, setIsFreezeOpen] = useState(false);
@@ -380,13 +377,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           )}
         </div>
       </section>
-
-      {onCompare && (
-        <button type="button" className="product-detail-compare" onClick={onCompare}>
-          <FontAwesomeIcon icon={faScaleBalanced} aria-hidden="true" />
-          Compare Prices
-        </button>
-      )}
 
       {resolvedImageUrl && (
         <ProductImageLightbox

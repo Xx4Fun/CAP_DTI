@@ -36,7 +36,6 @@ import { PriceProductCard } from './PriceProductCard';
 import { PageLoader } from './PageLoader';
 import { navigate } from '../app/routing';
 import { useAppRoute } from '../hooks/useAppRoute';
-import { writeHandoff } from '../app/handoffs';
 
 interface SrpSearchProps {
   setActiveTab?: (tab: string) => void;
@@ -69,7 +68,6 @@ const PriceDirectorySkeleton: React.FC = () => (
 );
 
 export const SrpSearch: React.FC<SrpSearchProps> = ({
-  setActiveTab,
   stateOfCalamity = false,
   initialImageWaitMs = 2_500,
 }) => {
@@ -307,10 +305,6 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({
       <ProductDetail
         commodity={selectedCommodity}
         onBack={returnToPrices}
-        onCompare={() => {
-          writeHandoff({ kind: 'price-to-compare', commodityId: selectedCommodity.id });
-          setActiveTab?.('compare');
-        }}
         stateOfCalamity={stateOfCalamity}
         dataSource={dataSource}
         dataFetchedAt={dataFetchedAt}

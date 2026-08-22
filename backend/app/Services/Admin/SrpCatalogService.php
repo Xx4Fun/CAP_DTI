@@ -116,6 +116,107 @@ class SrpCatalogService
             ->values();
     }
 
+    public function currentIdentityMatches(string $search, int $limit = 5): Collection
+    {
+        $normalizedQuery = $this->normalizeIdentity($search);
+        if ($normalizedQuery === '') {
+            return collect();
+        }
+
+        return $this->currentRecords()
+            ->map(function (SrpBulletin $record) use ($normalizedQuery) {
+                $titleScore = $this->identityPhraseScore(
+                    $normalizedQuery,
+                    $this->normalizeIdentity($this->conciseTitle($record->commodity_name))
+                );
+                $aliasScore = $record->aliases
+                    ->map(fn ($alias) => $this->identityPhraseScore(
+                        $normalizedQuery,
+                        $this->normalizeIdentity((string) $alias->alias_name)
+                    ))
+                    ->filter(fn ($score) => $score !== null)
+                    ->map(fn ($score) => min(100.0, $score + 1.0))
+                    ->max();
+                $record->setAttribute('identity_match_score', max(
+                    $titleScore ?? 0.0,
+                    $aliasScore ?? 0.0
+                ));
+
+                return $record;
+            })
+            ->filter(fn (SrpBulletin $record) => (float) $record->identity_match_score > 0)
+            ->sort(function (SrpBulletin $left, SrpBulletin $right) {
+                $scoreOrder = (float) $right->identity_match_score <=> (float) $left->identity_match_score;
+
+                return $scoreOrder !== 0
+                    ? $scoreOrder
+                    : strcasecmp($left->commodity_name, $right->commodity_name);
+            })
+            ->take(min(5, max(1, $limit)))
+            ->each->offsetUnset('identity_match_score')
+            ->values();
+    }
+
+    private function conciseTitle(string $commodityName): string
+    {
+        $segments = preg_split('/\s+-\s+/', trim($commodityName)) ?: [];
+
+        return trim((string) (end($segments) ?: $commodityName));
+    }
+
+    private function normalizeIdentity(string $value): string
+    {
+        $normalized = preg_replace('/[^a-z0-9]+/', ' ', Str::lower(Str::ascii($value))) ?? '';
+
+        return trim(preg_replace('/\s+/', ' ', $normalized) ?? '');
+    }
+
+    private function identityPhraseScore(string $query, string $candidate): ?float
+    {
+        if ($candidate === '') {
+            return null;
+        }
+        if ($query === $candidate) {
+            return 100.0;
+        }
+        if (str_starts_with($candidate, $query)) {
+            return 92.0;
+        }
+        if (strlen($query) >= 4 && str_contains($candidate, $query)) {
+            return 88.0;
+        }
+
+        $candidateTokens = explode(' ', $candidate);
+        $tokenScores = [];
+        foreach (explode(' ', $query) as $queryToken) {
+            $best = 0.0;
+            foreach ($candidateTokens as $candidateToken) {
+                if ($queryToken === $candidateToken) {
+                    $best = 1.0;
+                    break;
+                }
+
+                $shorter = min(strlen($queryToken), strlen($candidateToken));
+                if ($shorter >= 3 && (str_starts_with($queryToken, $candidateToken) || str_starts_with($candidateToken, $queryToken))) {
+                    $best = max($best, 0.95);
+                    continue;
+                }
+
+                if (strlen($queryToken) >= 4 && strlen($candidateToken) >= 4) {
+                    $longer = max(strlen($queryToken), strlen($candidateToken));
+                    $best = max($best, 1 - (levenshtein($queryToken, $candidateToken) / $longer));
+                }
+            }
+
+            if ($best < 0.7) {
+                return null;
+            }
+            $tokenScores[] = $best;
+        }
+
+        return 70.0 + ((array_sum($tokenScores) / count($tokenScores)) * 20.0);
+    }
+
     private function lineageKey(SrpBulletin $record): string
     {
         return (string) ($record->commodity_key

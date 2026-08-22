@@ -137,16 +137,13 @@ describe('ProductDetail', () => {
     expect(screen.queryByRole('button', { name: /View full image/i })).not.toBeInTheDocument();
   });
 
-  it('keeps Compare Prices as the only product action', async () => {
-    const onCompare = vi.fn();
-    const user = userEvent.setup();
+  it('does not render scan, report, or compare action buttons on product details', () => {
     render(
-      <ProductDetail commodity={commodity} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} onCompare={onCompare} />,
+      <ProductDetail commodity={commodity} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />,
     );
     expect(screen.queryByRole('button', { name: /Scan shelf price/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Report a concern/i })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Compare Prices' }));
-    expect(onCompare).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /Compare Prices/i })).not.toBeInTheDocument();
   });
 
   it('shows confirmed price-freeze treatment without inventing duration or penalties', async () => {

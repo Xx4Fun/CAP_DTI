@@ -15,7 +15,9 @@ class PublicCommodityController extends Controller
         CommodityImageStorage $imageStorage
     ) {
         $search = trim((string) $request->input('query', ''));
-        $currentRecords = $catalog->currentRecords($search);
+        $currentRecords = $request->input('match_mode') === 'identity'
+            ? $catalog->currentIdentityMatches($search, (int) $request->input('limit', 5))
+            : $catalog->currentRecords($search);
 
         // Map existing non-null image_paths across all bulletins by commodity_name & commodity_key
         $imageMapByKey = SrpBulletin::query()

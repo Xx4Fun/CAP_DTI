@@ -530,19 +530,17 @@ describe('SrpSearch price filters', () => {
     expect(screen.getByRole('checkbox', { name: 'Coffee' })).toBeInTheDocument();
   });
 
-  it('hands the selected official item to manual Compare', async () => {
-    const setActiveTab = vi.fn();
+  it('renders product details without a compare button when an item is selected', async () => {
     const user = userEvent.setup();
     vi.spyOn(apiClient, 'get').mockResolvedValue(liveResponse(liveCommodities));
 
-    render(<SrpSearch setActiveTab={setActiveTab} />);
+    render(<SrpSearch />);
     await screen.findByText('Saba Sardines');
     await waitForInitialPricesReveal();
     await user.click(screen.getByRole('button', { name: 'View Saba Sardines price details' }));
-    await user.click(screen.getByRole('button', { name: 'Compare Prices' }));
 
-    expect(setActiveTab).toHaveBeenCalledWith('compare');
-    expect(consumeHandoff()).toEqual({ kind: 'price-to-compare', commodityId: 201 });
+    expect(screen.getByRole('heading', { name: 'Saba Sardines' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Compare Prices' })).not.toBeInTheDocument();
   });
 
   it('sanitizes an applied category when an unfiltered live refresh removes it', async () => {

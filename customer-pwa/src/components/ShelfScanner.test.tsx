@@ -211,6 +211,41 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     expect(screen.getByRole('button', { name: 'Return to Prices' })).toBeInTheDocument();
   });
 
+  it('uses identity matching and concise labels for typo-tolerant manual product search', async () => {
+    const commodity = {
+      id: 41,
+      commodity_name: 'Bottled Water - Distilled Water - Absolute (1L)',
+      category: 'Bottled Water - Distilled Water',
+      unit: '1L',
+      baseline_price: 25,
+      effective_date: '2026-08-01',
+      is_active: true,
+    };
+    const getSpy = vi.spyOn(apiClient, 'get').mockImplementation((url: string) => {
+      if (url === '/public/establishments') {
+        return Promise.resolve({ data: { success: true, data: [store] } });
+      }
+      if (url === '/public/commodities') {
+        return Promise.resolve({ data: { success: true, data: [commodity] } });
+      }
+      return Promise.reject(new Error(`Unexpected endpoint: ${url}`));
+    });
+    const user = userEvent.setup();
+
+    render(<ShelfScanner mode="manual" />);
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'bsolut');
+
+    const option = await screen.findByRole('button', { name: 'Select Absolute (1L)' });
+    expect(getSpy).toHaveBeenCalledWith('/public/commodities', {
+      params: { query: 'bsolut', match_mode: 'identity', limit: 5 },
+    });
+    expect(screen.queryByText('Bottled Water - Distilled Water - Absolute (1L)')).not.toBeInTheDocument();
+
+    await user.click(option);
+    expect(screen.getByText('Absolute (1L)')).toBeInTheDocument();
+  });
+
   it('keeps the selected store and handles the manual result actions', async () => {
     const commodity = {
       id: 41,

@@ -38,6 +38,13 @@ interface ShelfScannerProps {
   mode?: 'manual' | 'ocr';
 }
 
+const getConciseCommodityTitle = (commodity: Pick<Commodity, 'commodity_name' | 'category' | 'unit' | 'package_size'>): string =>
+  formatCommodityDisplay(
+    commodity.commodity_name,
+    commodity.category || '',
+    commodity.unit || commodity.package_size || '',
+  ).title || commodity.commodity_name;
+
 export const CompactStoreFacade: React.FC<{ photoType?: string; storeName: string }> = ({ photoType, storeName }) => {
   const name = storeName.toLowerCase();
 
@@ -283,7 +290,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
       handedOffCommodityRef.current = commodity;
       setSelectedCandidate(commodity);
       setSelectedProductSource('MANUAL_SEARCH');
-      setCommoditySearchQuery(commodity.commodity_name);
+      setCommoditySearchQuery(getConciseCommodityTitle(commodity));
     } catch {
       // The form remains usable if the previously selected item is no longer in the live directory.
       handedOffCommodityRef.current = null;
@@ -306,7 +313,10 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
     searchTimeoutRef.current = window.setTimeout(async () => {
       setIsSearchingCommodities(true);
       try {
-        const res = await apiClient.get('/public/commodities', { params: { query } });
+        const params = mode === 'manual'
+          ? { query, match_mode: 'identity', limit: 5 }
+          : { query };
+        const res = await apiClient.get('/public/commodities', { params });
         if (generation !== scanGenerationRef.current) return;
         if (res.data && res.data.success && Array.isArray(res.data.data)) {
           setCommoditySearchResults(res.data.data);
@@ -708,7 +718,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
     handedOffCommodityRef.current = null;
     setSelectedCandidate(commodity);
     setSelectedProductSource('MANUAL_SEARCH');
-    setCommoditySearchQuery(commodity.commodity_name);
+    setCommoditySearchQuery(getConciseCommodityTitle(commodity));
     setCommoditySearchResults([]);
     setCommoditySearchError('');
     setErrorMessage('');
@@ -926,11 +936,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   <button
                     key={item.id}
                     type="button"
-                    aria-label={`Select ${item.commodity_name}`}
+                    aria-label={`Select ${getConciseCommodityTitle(item)}`}
                     onClick={() => handleManualEntryCommoditySelect(item)}
                     style={{ width: '100%', border: '1px solid #dbe3ee', borderRadius: '12px', background: '#f8fafc', padding: '11px 12px', textAlign: 'left', cursor: 'pointer' }}
                   >
-                    <span style={{ display: 'block', color: '#0f172a', fontSize: '0.86rem', fontWeight: 750 }}>{item.commodity_name}</span>
+                    <span style={{ display: 'block', color: '#0f172a', fontSize: '0.86rem', fontWeight: 750 }}>{getConciseCommodityTitle(item)}</span>
                     <span style={{ display: 'block', color: '#64748b', fontSize: '0.74rem', marginTop: '3px' }}>{item.unit || item.package_size || 'Standard unit'} · Current SRP ₱{Number(item.baseline_price).toFixed(2)}</span>
                   </button>
                 ))}
@@ -939,7 +949,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
             {selectedCandidate && (
               <div style={{ border: '1px solid #bfdbfe', borderRadius: '13px', background: '#eff6ff', padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                <strong style={{ color: '#0f172a', fontSize: '0.9rem' }}>{selectedCandidate.commodity_name}</strong>
+                <strong style={{ color: '#0f172a', fontSize: '0.9rem' }}>{getConciseCommodityTitle(selectedCandidate as Commodity)}</strong>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#475569', fontSize: '0.78rem' }}>
                   <span>Official unit</span>
                   <strong style={{ color: '#1e3a8a' }}>{selectedCandidate.unit || selectedCandidate.package_size || 'Standard'}</strong>
