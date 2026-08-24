@@ -1,10 +1,44 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringRecordPage, MonitoringRecordRecord, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
 export const adminApi = {
+  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
+    return data(await api.get('/admin/monitoring-records', { params: filters }))
+  },
+  async getMonitoringRecord(id: number): Promise<MonitoringRecordRecord> {
+    return data(await api.get(`/admin/monitoring-records/${id}`))
+  },
+  async getMonitoringSignature(id: number, kind: 'officer' | 'representative'): Promise<Blob> {
+    return (await api.get(`/admin/monitoring-records/${id}/signatures/${kind}`, { responseType: 'blob' })).data
+  },
+  async getManagedUsers(filters: { search?: string; role?: 'all' | ManagedUserRole; status?: 'all' | 'active' | 'inactive'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<ManagedUserPage> {
+    const response = await api.get('/admin/users', { params: filters })
+    const paginator = response.data.data
+    return {
+      records: paginator.data ?? [],
+      pagination: {
+        current_page: paginator.current_page,
+        last_page: paginator.last_page,
+        per_page: paginator.per_page,
+        total: paginator.total,
+        from: paginator.from,
+        to: paginator.to,
+      },
+      counts: response.data.counts,
+    }
+  },
+  async createFieldOfficer(payload: { name: string; email: string; password: string; password_confirmation: string; is_active: boolean }): Promise<ManagedUserRecord> {
+    return data(await api.post('/admin/users/field-officers', payload))
+  },
+  async updateManagedUser(id: number, payload: { name?: string; email?: string; is_active?: boolean }): Promise<ManagedUserRecord> {
+    return data(await api.patch(`/admin/users/${id}`, payload))
+  },
+  async resetManagedUserPassword(id: number, payload: { password: string; password_confirmation: string }): Promise<{ message: string }> {
+    return data(await api.put(`/admin/users/${id}/password`, payload))
+  },
   async getStores(): Promise<StoreRecord[]> {
     return data(await api.get('/admin/stores'))
   },

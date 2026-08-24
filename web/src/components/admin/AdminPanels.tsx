@@ -9,6 +9,8 @@ import { LegalNoticeManager } from './LegalNoticeManager'
 import { EmergencyToggle } from './EmergencyToggle'
 import { SrpManagementPanel } from './SrpManagementPanel'
 import { SettingsPanel } from './SettingsPanel'
+import { UserManagementPanel } from './UserManagementPanel'
+import { FieldMonitoringRecords } from './FieldMonitoringRecords'
 import type { AdminUser } from '../../types/admin'
 
 export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (user: Partial<AdminUser>) => void }) {
@@ -17,7 +19,7 @@ export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (u
 
 import type { ModuleId } from './AdminShell'
 
-import { ArrowRight, Activity } from 'lucide-react'
+import { ArrowRight, Activity, MessageSquare } from 'lucide-react'
 
 function formatSubjectType(type?: string): string {
   if (!type) return 'System Record'
@@ -132,7 +134,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
             </div>
             <button
               type="button"
-              onClick={() => props.onNavigate?.('reports')}
+              onClick={() => props.onNavigate?.('consumer_reports')}
               style={{ background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
             >
               View all
@@ -158,7 +160,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
                 </p>
                 <button
                   type="button"
-                  onClick={() => props.onNavigate?.('reports')}
+                  onClick={() => props.onNavigate?.('consumer_reports')}
                   style={{ marginTop: '0.4rem', background: '#0052cc', color: '#ffffff', border: 'none', padding: '0.5rem 1.15rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
                 >
                   View receipt queue
@@ -192,7 +194,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
             </div>
             <button
               type="button"
-              onClick={() => props.onNavigate?.('stores')}
+              onClick={() => props.onNavigate?.('establishments_access')}
               style={{ background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
             >
               View all
@@ -218,7 +220,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
                 </p>
                 <button
                   type="button"
-                  onClick={() => props.onNavigate?.('stores')}
+                  onClick={() => props.onNavigate?.('establishments_access')}
                   style={{ marginTop: '0.4rem', background: '#0052cc', color: '#ffffff', border: 'none', padding: '0.5rem 1.15rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
                 >
                   Add first store
@@ -281,7 +283,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
                 <button
                   type="button"
                   className="admin-button secondary launch-analytics-btn"
-                  onClick={() => props.onNavigate?.('analytics')}
+                  onClick={() => props.onNavigate?.('field_monitoring')}
                 >
                   View 4-Week Temporal Chart <ArrowRight size={16} aria-hidden="true" />
                 </button>
@@ -300,7 +302,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
               </div>
               <button
                 type="button"
-                onClick={() => props.onNavigate?.('legal')}
+                onClick={() => props.onNavigate?.('legal_actions')}
                 style={{ background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
               >
                 View Engine
@@ -363,7 +365,7 @@ export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) 
       <StoreOnboarding
         onCreated={() => {
           if (props.onNavigate) {
-            props.onNavigate('store_monitoring')
+            props.onNavigate('gis_monitoring')
           }
         }}
       />
@@ -375,8 +377,25 @@ export function StoreMonitoringPanel() {
   return <StoreManager />
 }
 
-export function StoreManagementPanel() {
-  return <StoreManager />
+export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+  return <UserManagementPanel vendorRegistration={<StoreRegistrationPanel onNavigate={props.onNavigate} />} />
+}
+
+export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+  return (
+    <section className="admin-availability-panel admin-availability-panel-centered" aria-labelledby="communications-availability-title">
+      <MessageSquare size={28} aria-hidden="true" />
+      <div className="admin-availability-copy">
+        <h2 id="communications-availability-title">Two-way store conversations are not connected yet</h2>
+        <p>
+          The current system can issue legal notices and receive vendor rebuttal evidence, but it has no conversation threads, document-review inbox, or messaging API.
+        </p>
+      </div>
+      <button type="button" className="admin-button secondary" onClick={() => props.onNavigate?.('legal_actions')}>
+        Open Legal Actions <ArrowRight size={16} aria-hidden="true" />
+      </button>
+    </section>
+  )
 }
 
 export { SrpManagementPanel }
@@ -442,6 +461,11 @@ export function AuditPanel() {
   )
 }
 
-export function AnalyticsPanel() {
-  return <TemporalVolatility />
+export function FieldMonitoringPanel() {
+  return (
+    <div className="admin-module-stack">
+      <FieldMonitoringRecords />
+      <TemporalVolatility />
+    </div>
+  )
 }

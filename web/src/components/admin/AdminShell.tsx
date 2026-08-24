@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactElement, ComponentType } from 'react'
+import type { ReactElement } from 'react'
 import type { AdminUser } from '../../types/admin'
 import {
+  Building2,
   LayoutDashboard,
-  MapPin,
+  MessageSquare,
   TrendingUp,
   Receipt,
   Scale,
+  ScrollText,
   Siren,
   ChevronDown,
   ChevronLeft,
@@ -17,124 +19,139 @@ import {
   Settings,
   HelpCircle,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import {
-  AnalyticsPanel, AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel,
-  ReportReviewPanel, SettingsPanelWrapper, SrpManagementPanel, StoreMonitoringPanel, StoreRegistrationPanel,
+  AuditPanel, CommunicationsPanel, EmergencyPanel, EstablishmentsAccessPanel, FieldMonitoringPanel,
+  LegalDraftPanel, OverviewPanel, ReportReviewPanel, SettingsPanelWrapper, SrpManagementPanel, StoreMonitoringPanel,
 } from './AdminPanels'
 import { adminApi } from '../../services/adminApi'
 import './admin.css'
 
-export type CategoryId = 'overview' | 'stores' | 'price_regulation' | 'reports' | 'legal_engine' | 'emergency'
-export type ModuleId = 'overview' | 'stores' | 'store_registration' | 'store_monitoring' | 'srp' | 'reports' | 'analytics' | 'emergency' | 'legal' | 'audit' | 'settings'
-
-interface NavSubItem {
-  id: ModuleId
-  label: string
-}
+export type ModuleId =
+  | 'overview'
+  | 'consumer_reports'
+  | 'field_monitoring'
+  | 'establishments_access'
+  | 'gis_monitoring'
+  | 'communications'
+  | 'price_regulation'
+  | 'legal_actions'
+  | 'emergency_protocol'
+  | 'audit_trail'
+  | 'settings'
 
 interface NavItemConfig {
   id: ModuleId
-  icon: ComponentType<{ className?: string; size?: number }>
+  icon: LucideIcon
   label: string
-  categoryName: string
-  subItems?: NavSubItem[]
 }
 
-interface NavSectionConfig {
-  title: string
-  items: NavItemConfig[]
+type NavGroupId = 'reports_monitoring' | 'establishments_engagement' | 'regulation_enforcement'
+
+interface NavGroupConfig {
+  id: NavGroupId
+  icon: LucideIcon
+  label: string
+  items: Pick<NavItemConfig, 'id' | 'label'>[]
 }
 
-const navSectionsConfig: NavSectionConfig[] = [
+const dashboardNavItem: NavItemConfig = { id: 'overview', icon: LayoutDashboard, label: 'Dashboard' }
+const communicationsNavItem: NavItemConfig = { id: 'communications', icon: MessageSquare, label: 'Communications' }
+const auditNavItem: NavItemConfig = { id: 'audit_trail', icon: ScrollText, label: 'Audit Trail' }
+const fieldOfficerNavItems: NavItemConfig[] = [
+  dashboardNavItem,
+  { id: 'field_monitoring', icon: TrendingUp, label: 'Field Monitoring' },
+]
+
+const navGroups: NavGroupConfig[] = [
   {
-    title: 'MAIN MENU',
+    id: 'reports_monitoring',
+    icon: Receipt,
+    label: 'Monitoring',
     items: [
-      { id: 'overview', icon: LayoutDashboard, label: 'Dashboard Overview', categoryName: 'MAIN MENU' },
-      {
-        id: 'stores',
-        icon: MapPin,
-        label: 'Store Management',
-        categoryName: 'MAIN MENU',
-        subItems: [
-          { id: 'store_registration', label: 'Store Registration' },
-          { id: 'store_monitoring', label: 'Store Monitoring' },
-        ],
-      },
+      { id: 'consumer_reports', label: 'Consumer Reports' },
+      { id: 'field_monitoring', label: 'Field Monitoring' },
     ],
   },
   {
-    title: 'REGULATORY ENGINE',
+    id: 'establishments_engagement',
+    icon: Building2,
+    label: 'Establishments',
     items: [
-      {
-        id: 'analytics',
-        icon: TrendingUp,
-        label: 'Price Regulation',
-        categoryName: 'REGULATORY ENGINE',
-        subItems: [
-          { id: 'analytics', label: 'Four-Week Analytics' },
-          { id: 'srp', label: 'SRP Bulletins' },
-        ],
-      },
-      { id: 'reports', icon: Receipt, label: 'Consumer OCR Queue', categoryName: 'REGULATORY ENGINE' },
-      {
-        id: 'legal',
-        icon: Scale,
-        label: 'Legal Engine',
-        categoryName: 'REGULATORY ENGINE',
-        subItems: [
-          { id: 'legal', label: 'Notice Drafts' },
-          { id: 'audit', label: 'Audit Trail' },
-        ],
-      },
+      { id: 'establishments_access', label: 'User Management' },
+      { id: 'gis_monitoring', label: 'GIS Monitoring' },
     ],
   },
   {
-    title: 'SYSTEM',
+    id: 'regulation_enforcement',
+    icon: Scale,
+    label: 'Enforcement',
     items: [
-      { id: 'emergency', icon: Siren, label: 'Emergency Protocol', categoryName: 'SYSTEM' },
+      { id: 'price_regulation', label: 'Price Regulation' },
+      { id: 'legal_actions', label: 'Legal Actions' },
+      { id: 'emergency_protocol', label: 'Emergency Protocol' },
     ],
   },
 ]
 
+const parentGroupByModule = new Map<ModuleId, NavGroupId>(
+  navGroups.flatMap((group) => group.items.map((item) => [item.id, group.id] as const)),
+)
+
+function parentGroupForModule(module: ModuleId): NavGroupId | null {
+  return parentGroupByModule.get(module) ?? null
+}
+
 const panels: Record<ModuleId, { title: string; description: string; component: (props: any) => ReactElement }> = {
-  overview: { title: 'Regulatory Overview', description: 'Current Admin workload and declared regulatory context.', component: OverviewPanel },
-  stores: { title: 'GIS Store Monitoring', description: 'GIS store mapping, verification state, compliance monitoring, and vendor invitation portal.', component: StoreMonitoringPanel },
-  store_registration: { title: 'Store Registration', description: 'Onboard and register a new commercial establishment into the DTI GIS database.', component: StoreRegistrationPanel },
-  store_monitoring: { title: 'GIS Store Monitoring', description: 'GIS store mapping, verification state, compliance monitoring, and vendor invitation portal.', component: StoreMonitoringPanel },
-  srp: { title: 'Temporal SRP Records', description: 'Preview and append dated SRP versions. Existing versions remain unchanged.', component: SrpManagementPanel },
-  reports: { title: 'Formal receipt review', description: 'Review consumer-submitted formal receipts only. Shelf-tag scans are excluded.', component: ReportReviewPanel },
-  analytics: { title: 'Four-Week Price Analytics', description: 'Validated receipts and verified field inspections against date-correct SRP values.', component: AnalyticsPanel },
-  emergency: { title: 'State of Calamity Controls', description: 'Record declarations and authoritative Price Freeze or APC sources.', component: EmergencyPanel },
-  legal: { title: 'Legal Notice Drafts', description: 'Official dispatch remains blocked until an approved DTI policy is configured.', component: LegalDraftPanel },
-  audit: { title: 'Read-Only Audit Trail', description: 'Review sensitive Admin actions and regulatory decisions.', component: AuditPanel },
+  overview: { title: 'Dashboard', description: 'Current Admin workload and declared regulatory context.', component: OverviewPanel },
+  consumer_reports: { title: 'Consumer Reports', description: 'Review consumer-submitted formal receipts only. Shelf-tag scans are excluded.', component: ReportReviewPanel },
+  field_monitoring: { title: 'Field Monitoring', description: 'Observe automatically accepted officer visits, evidence status, and verified price trends.', component: FieldMonitoringPanel },
+  establishments_access: { title: 'User Management', description: 'Manage vendor and DTI Field Monitoring accounts, credentials, and access status.', component: EstablishmentsAccessPanel },
+  gis_monitoring: { title: 'GIS Monitoring', description: 'Map registered establishments, compliance findings, and vendor access.', component: StoreMonitoringPanel },
+  communications: { title: 'Store Communications', description: 'Review the current availability of DTI-to-store communication workflows.', component: CommunicationsPanel },
+  price_regulation: { title: 'Price Regulation', description: 'Preview and append dated SRP versions. Existing versions remain unchanged.', component: SrpManagementPanel },
+  legal_actions: { title: 'Legal Actions', description: 'Prepare regulatory notices under the currently configured policy safeguards.', component: LegalDraftPanel },
+  emergency_protocol: { title: 'Emergency Protocol', description: 'Record declarations and authoritative Price Freeze or APC sources.', component: EmergencyPanel },
+  audit_trail: { title: 'Audit Trail', description: 'Review sensitive Admin actions and regulatory decisions.', component: AuditPanel },
   settings: { title: 'System & Profile Settings', description: 'Configure your officer credentials, alert preferences, regional GIS parameters, and regulatory thresholds.', component: SettingsPanelWrapper },
 }
 
 const allowedModules = new Set<ModuleId>(Object.keys(panels) as ModuleId[])
-
-function readModuleFromUrl(isFieldOfficer: boolean): ModuleId {
-  const requested = new URLSearchParams(window.location.search).get('module') as ModuleId | null
-  if (!requested || !allowedModules.has(requested)) return 'overview'
-  if (isFieldOfficer && requested !== 'overview' && requested !== 'analytics') return 'overview'
-  return requested
+const legacyModuleAliases: Record<string, ModuleId> = {
+  reports: 'consumer_reports',
+  analytics: 'field_monitoring',
+  stores: 'establishments_access',
+  store_registration: 'establishments_access',
+  store_monitoring: 'gis_monitoring',
+  srp: 'price_regulation',
+  legal: 'legal_actions',
+  emergency: 'emergency_protocol',
+  audit: 'audit_trail',
 }
 
-function parentCategoryFor(module: ModuleId): string | null {
-  if (module === 'stores' || module === 'store_registration' || module === 'store_monitoring') return 'stores'
-  if (module === 'analytics' || module === 'srp') return 'analytics'
-  if (module === 'legal' || module === 'audit') return 'legal'
-  return null
+function canAccessModule(module: ModuleId, isFieldOfficer: boolean): boolean {
+  return !isFieldOfficer || module === 'overview' || module === 'field_monitoring'
+}
+
+function readModuleFromUrl(isFieldOfficer: boolean): ModuleId {
+  const requested = new URLSearchParams(window.location.search).get('module')
+  const resolved = requested ? legacyModuleAliases[requested] ?? requested : 'overview'
+  if (!allowedModules.has(resolved as ModuleId)) return 'overview'
+  const module = resolved as ModuleId
+  return canAccessModule(module, isFieldOfficer) ? module : 'overview'
 }
 
 export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () => void }) {
   const [currentUser, setCurrentUser] = useState<AdminUser>(user)
   const isFieldOfficer = currentUser.role === 'field_officer'
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromUrl(isFieldOfficer))
+  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(() => {
+    if (isFieldOfficer) return null
+    return parentGroupForModule(readModuleFromUrl(false))
+  })
   const [isCalamityActive, setIsCalamityActive] = useState<boolean | null>(null)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
-  const [openCategory, setOpenCategory] = useState<string | null>(() => parentCategoryFor(readModuleFromUrl(isFieldOfficer)))
-  const [accountOpen, setAccountOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [logoutModalOpen, setLogoutModalOpen] = useState(false)
 
@@ -152,11 +169,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     const restoreModule = () => {
       const restored = readModuleFromUrl(isFieldOfficer)
       setActiveModule(restored)
-      setOpenCategory(parentCategoryFor(restored))
+      setOpenGroup(isFieldOfficer ? null : parentGroupForModule(restored))
     }
     const closeMenus = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setAccountOpen(false)
         setIsMobileOpen(false)
         setHelpOpen(false)
         setLogoutModalOpen(false)
@@ -179,13 +195,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     })
   }, [])
 
-  const toggleCategory = (categoryId: string) => {
-    setOpenCategory((prev) => (prev === categoryId ? null : categoryId))
-  }
-
   const navigateTo = (module: ModuleId) => {
-    if (isFieldOfficer && module !== 'overview' && module !== 'analytics') return
+    if (!canAccessModule(module, isFieldOfficer)) return
     setActiveModule(module)
+    setOpenGroup(isFieldOfficer ? null : parentGroupForModule(module))
     if (isCollapsed) setIsCollapsed(false)
     const url = new URL(window.location.href)
     url.searchParams.set('module', module)
@@ -193,16 +206,14 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     setIsMobileOpen(false)
   }
 
-  const avatarInitial = user.role === 'super_admin' ? 'A' : user.role === 'field_officer' ? 'F' : 'E'
-
-  // Filter sections for field officer
-  const navSections = navSectionsConfig.map((sec) => ({
-    ...sec,
-    items: sec.items.filter((item) => {
-      if (!isFieldOfficer) return true
-      return item.id === 'overview' || item.id === 'analytics'
-    }),
-  })).filter((sec) => sec.items.length > 0)
+  const toggleGroup = (group: NavGroupId) => {
+    if (isCollapsed) {
+      setIsCollapsed(false)
+      setOpenGroup(group)
+      return
+    }
+    setOpenGroup((current) => current === group ? null : group)
+  }
 
   const Panel = panels[activeModule].component
 
@@ -246,7 +257,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             <button
               type="button"
               className="sidebar-collapse-btn"
-              onClick={() => setIsCollapsed(true)}
+              onClick={() => {
+                setIsCollapsed(true)
+                setOpenGroup(null)
+              }}
               title="Collapse Sidebar"
               aria-label="Collapse Sidebar"
             >
@@ -255,70 +269,113 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
           )}
         </div>
 
-        {/* Section 2: Navigation Items (Clean Flat List without Section Headings) */}
+        {/* Section 2: Workflow navigation */}
         <nav aria-label="DTI Admin modules">
-          {navSections.flatMap((sec) => sec.items).map((item) => {
-            const IconComponent = item.icon
-            const isParentActive = activeModule === item.id || item.subItems?.some((s) => s.id === activeModule)
-            const isOpen = openCategory === item.id
+          <div className="nav-section">
+            {(isFieldOfficer ? fieldOfficerNavItems : [dashboardNavItem]).map((item) => {
+                const IconComponent = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`admin-nav-item ${activeModule === item.id ? 'active' : ''}`}
+                    onClick={() => navigateTo(item.id)}
+                    aria-current={activeModule === item.id ? 'page' : undefined}
+                    title={isCollapsed ? item.label : undefined}
+                    aria-label={isCollapsed ? item.label : undefined}
+                  >
+                    <div className="nav-item-content">
+                      <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
+                      {!isCollapsed && <span>{item.label}</span>}
+                    </div>
+                  </button>
+                )
+            })}
 
-            return (
-              <div key={item.id} className="nav-group">
+            {!isFieldOfficer && navGroups.map((group) => {
+              const IconComponent = group.icon
+              const isOpen = openGroup === group.id
+              const hasActiveChild = group.items.some((item) => item.id === activeModule)
+              const childListId = `admin-nav-group-${group.id}`
+
+              return (
+                <div className="nav-group" key={group.id}>
+                  <button
+                    type="button"
+                    className={`admin-nav-item admin-nav-parent ${hasActiveChild ? 'active' : ''}`}
+                    onClick={() => toggleGroup(group.id)}
+                    aria-expanded={isOpen}
+                    aria-controls={childListId}
+                    title={isCollapsed ? group.label : undefined}
+                    aria-label={isCollapsed ? group.label : undefined}
+                  >
+                    <div className="nav-item-content">
+                      <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
+                      {!isCollapsed && <span>{group.label}</span>}
+                    </div>
+                    {!isCollapsed && <ChevronDown className={`nav-group-chevron ${isOpen ? 'open' : ''}`} size={16} strokeWidth={2.3} aria-hidden="true" />}
+                  </button>
+                  {isOpen && (
+                    <div className="nav-group-children" id={childListId}>
+                      {group.items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`admin-nav-child ${activeModule === item.id ? 'active' : ''}`}
+                          onClick={() => navigateTo(item.id)}
+                          aria-current={activeModule === item.id ? 'page' : undefined}
+                        >
+                          <span>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {!isFieldOfficer && (() => {
+              const IconComponent = communicationsNavItem.icon
+              return (
                 <button
                   type="button"
-                  className={`admin-nav-item ${isParentActive ? 'active' : ''}`}
-                  onClick={() => {
-                    if (isCollapsed) setIsCollapsed(false)
-                    if (item.subItems) {
-                      toggleCategory(item.id)
-                    } else {
-                      navigateTo(item.id)
-                    }
-                  }}
-                  aria-current={activeModule === item.id ? 'page' : undefined}
-                  aria-expanded={item.subItems ? isOpen : undefined}
-                  aria-controls={item.subItems ? `nav-group-${item.id}` : undefined}
-                  title={isCollapsed ? item.label : undefined}
+                  className={`admin-nav-item ${activeModule === communicationsNavItem.id ? 'active' : ''}`}
+                  onClick={() => navigateTo(communicationsNavItem.id)}
+                  aria-current={activeModule === communicationsNavItem.id ? 'page' : undefined}
+                  title={isCollapsed ? communicationsNavItem.label : undefined}
+                  aria-label={isCollapsed ? communicationsNavItem.label : undefined}
                 >
                   <div className="nav-item-content">
-                    <IconComponent size={18} aria-hidden="true" />
-                    {!isCollapsed && <span>{item.label}</span>}
+                    <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
+                    {!isCollapsed && <span>{communicationsNavItem.label}</span>}
                   </div>
-                  {!isCollapsed && item.subItems && (
-                    <ChevronDown
-                      size={16}
-                      className={`chevron-icon ${isOpen ? 'open' : ''}`}
-                    />
-                  )}
                 </button>
+              )
+            })()}
 
-                {!isCollapsed && item.subItems && (
-                  <div
-                    id={`nav-group-${item.id}`}
-                    className={`nav-dropdown-container ${isOpen ? 'open' : ''}`}
-                    aria-hidden={!isOpen}
-                  >
-                    {item.subItems.map((sub) => (
-                      <button
-                        key={sub.id}
-                        type="button"
-                        className={`admin-nav-sub-item ${activeModule === sub.id ? 'active' : ''}`}
-                        onClick={() => {
-                          navigateTo(sub.id)
-                        }}
-                        tabIndex={isOpen ? 0 : -1}
-                      >
-                        {sub.label}
-                      </button>
-                    ))}
+            {!isFieldOfficer && (() => {
+              const IconComponent = auditNavItem.icon
+              return (
+                <button
+                  type="button"
+                  className={`admin-nav-item ${activeModule === auditNavItem.id ? 'active' : ''}`}
+                  onClick={() => navigateTo(auditNavItem.id)}
+                  aria-current={activeModule === auditNavItem.id ? 'page' : undefined}
+                  title={isCollapsed ? auditNavItem.label : undefined}
+                  aria-label={isCollapsed ? auditNavItem.label : undefined}
+                >
+                  <div className="nav-item-content">
+                    <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
+                    {!isCollapsed && <span>{auditNavItem.label}</span>}
                   </div>
-                )}
-              </div>
-            )
-          })}
+                </button>
+              )
+            })()}
+          </div>
         </nav>
 
-        {/* Section 3: Bottom Section (Settings, Help, Account Showcase) */}
+        {/* Section 3: Bottom Section (Settings, Help, Logout) */}
+        <div className="sidebar-section-divider" role="separator" />
         <div className="admin-sidebar-bottom">
           <button
             type="button"
@@ -329,7 +386,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             title="Settings"
           >
             <div className="nav-item-content">
-              <Settings size={18} aria-hidden="true" />
+              <Settings size={18} strokeWidth={2.3} aria-hidden="true" />
               {!isCollapsed && <span>Settings</span>}
             </div>
           </button>
@@ -344,51 +401,23 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             title="Help & Support"
           >
             <div className="nav-item-content">
-              <HelpCircle size={18} aria-hidden="true" />
+              <HelpCircle size={18} strokeWidth={2.3} aria-hidden="true" />
               {!isCollapsed && <span>Help &amp; Support</span>}
             </div>
           </button>
 
-          <div className="sidebar-account-wrapper">
-            <button
-              type="button"
-              className="sidebar-profile-card"
-              aria-label={`${user.name} account`}
-              aria-expanded={accountOpen}
-              aria-controls="admin-account-menu"
-              onClick={() => {
-                if (isCollapsed) setIsCollapsed(false)
-                setAccountOpen((open) => !open)
-              }}
-            >
-              <div className="profile-icon-container">
-                <span className={`header-avatar-badge avatar-badge-${user.role}`} aria-hidden="true">
-                  {avatarInitial}
-                </span>
-              </div>
-              {!isCollapsed && (
-                <div className="user-card-details">
-                  <span className="user-card-title">DTI Admin</span>
-                  <span className="user-card-email">{user.email}</span>
-                </div>
-              )}
-            </button>
-
-            {accountOpen && (
-              <div className="sidebar-account-menu" id="admin-account-menu" role="menu">
-                <button
-                  type="button"
-                  className="account-menu-logout-btn"
-                  onClick={() => {
-                    setAccountOpen(false)
-                    setLogoutModalOpen(true)
-                  }}
-                >
-                  <LogOut size={17} aria-hidden="true" /> Logout
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            className="admin-nav-item admin-nav-logout"
+            onClick={() => setLogoutModalOpen(true)}
+            title={isCollapsed ? 'Logout' : undefined}
+            aria-label="Logout"
+          >
+            <div className="nav-item-content">
+              <LogOut size={18} strokeWidth={2.3} aria-hidden="true" />
+              {!isCollapsed && <span>Logout</span>}
+            </div>
+          </button>
         </div>
 
       </aside>
@@ -461,9 +490,9 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <h4 style={{ margin: '0 0 0.5rem', color: '#0f172a' }}>System Quick Links</h4>
                 <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.85rem', color: '#475569' }}>
-                  <li><strong>Store Management:</strong> Register new establishments and monitor spatial GIS store compliance.</li>
-                  <li><strong>Price Regulation:</strong> Review 4-week temporal price volatility vs SRP.</li>
-                  <li><strong>Consumer OCR Queue:</strong> Inspect citizen receipt scans and validated price tags.</li>
+                  <li><strong>Establishments &amp; Access:</strong> Register new establishments and review access availability.</li>
+                  <li><strong>Field Monitoring:</strong> Review temporal price volatility from verified inspections.</li>
+                  <li><strong>Consumer Reports:</strong> Inspect citizen receipt evidence and formal findings.</li>
                 </ul>
               </div>
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
@@ -587,4 +616,3 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     </div>
   )
 }
-

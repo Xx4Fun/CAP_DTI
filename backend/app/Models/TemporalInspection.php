@@ -22,6 +22,9 @@ class TemporalInspection extends Model
         'validation_status',
         'validated_at',
         'validated_by',
+        'monitoring_record_id',
+        'monitoring_record_item_id',
+        'officer_user_id',
     ];
 
     protected $casts = [

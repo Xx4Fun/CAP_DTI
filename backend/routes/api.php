@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AuditEventController;
 use App\Http\Controllers\Admin\EmergencyAdminController;
 use App\Http\Controllers\Admin\LegalDraftController;
+use App\Http\Controllers\Admin\MonitoringRecordController;
 use App\Http\Controllers\Admin\ReportReviewController;
 use App\Http\Controllers\Admin\SrpAdminController;
 use App\Http\Controllers\Admin\SrpManagementController;
@@ -16,6 +17,9 @@ use App\Http\Controllers\Admin\VendorInvitationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalamityController;
 use App\Http\Controllers\CitizenTipController;
+use App\Http\Controllers\Field\FieldAuthController;
+use App\Http\Controllers\Field\FieldDataController;
+use App\Http\Controllers\Field\FieldMonitoringController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LegalNoticeController;
 use App\Http\Controllers\PublicCommodityController;
@@ -26,6 +30,7 @@ use App\Http\Controllers\SyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/field/login', [FieldAuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/vendor-invitations/{token}/accept', [VendorInvitationController::class, 'accept']);
 Route::get('/health/ready', [HealthController::class, 'ready'])->middleware('throttle:30,1');
 
@@ -58,6 +63,14 @@ Route::prefix('public')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('field')->group(function () {
+        Route::get('/session', [FieldAuthController::class, 'session']);
+        Route::post('/password', [FieldAuthController::class, 'password']);
+        Route::post('/logout', [FieldAuthController::class, 'logout']);
+        Route::get('/bootstrap', [FieldDataController::class, 'bootstrap']);
+        Route::get('/monitoring-records', [FieldMonitoringController::class, 'index']);
+        Route::post('/monitoring-records/sync', [FieldMonitoringController::class, 'sync']);
+    });
     Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {
         Route::get('/session', [AdminSessionController::class, 'show']);
         Route::post('/reauthenticate', [AdminSessionController::class, 'reauthenticate']);
@@ -65,6 +78,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/audit-events', [AuditEventController::class, 'index']);
         Route::get('/stores', [StoreAdminController::class, 'index']);
         Route::get('/users', [UserManagementController::class, 'index']);
+        Route::get('/monitoring-records', [MonitoringRecordController::class, 'index']);
+        Route::get('/monitoring-records/{monitoringRecord}', [MonitoringRecordController::class, 'show']);
+        Route::get('/monitoring-records/{monitoringRecord}/signatures/{kind}', [MonitoringRecordController::class, 'signature']);
         Route::post('/users/field-officers', [UserManagementController::class, 'storeFieldOfficer']);
         Route::patch('/users/{managedUser}', [UserManagementController::class, 'update']);
         Route::put('/users/{managedUser}/password', [UserManagementController::class, 'updatePassword']);

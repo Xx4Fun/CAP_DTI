@@ -11,6 +11,11 @@ vi.mock('../../services/adminApi', () => ({
     getReports: vi.fn().mockResolvedValue([]),
     getEmergencies: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
+    getManagedUsers: vi.fn().mockResolvedValue({
+      records: [],
+      pagination: { current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null },
+      counts: { total: 0, field_officer: 0, vendor: 0, inactive: 0 },
+    }),
   },
 }))
 
@@ -19,68 +24,178 @@ describe('AdminShell', () => {
     window.history.replaceState({}, '', '/')
   })
 
-  it('shows all management modules to a DTI evaluator', () => {
+  it('groups evaluator modules by workflow while keeping Dashboard and Audit Trail standalone', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
-    expect(screen.getByRole('navigation', { name: /DTI Admin modules/i })).toBeInTheDocument()
-    for (const label of ['Dashboard Overview', 'Store Management', 'Price Regulation', 'Consumer OCR Queue', 'Legal Engine', 'Emergency Protocol']) {
-      expect(screen.getByRole('button', { name: new RegExp(label, 'i') })).toBeInTheDocument()
-    }
+    const navigation = screen.getByRole('navigation', { name: /DTI Admin modules/i })
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
+      'Dashboard',
+      'Monitoring',
+      'Establishments',
+      'Enforcement',
+      'Communications',
+      'Audit Trail',
+    ])
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Establishments' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Enforcement' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Communications' })).not.toHaveAttribute('aria-expanded')
+    expect(screen.getByRole('button', { name: 'Dashboard' })).not.toHaveAttribute('aria-expanded')
+    expect(screen.getByRole('button', { name: 'Audit Trail' })).not.toHaveAttribute('aria-expanded')
   })
 
-  it('limits a field officer to read-only overview and analytics', () => {
+  it('classifies related modules into a one-group-open accordion without navigating from parent buttons', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Monitoring' }))
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Consumer Reports' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Field Monitoring' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).get('module')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Establishments' }))
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Consumer Reports' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'User Management' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'GIS Monitoring' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Enforcement' }))
+    expect(screen.getByRole('button', { name: 'Establishments' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'GIS Monitoring' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Price Regulation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Legal Actions' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Emergency Protocol' })).toBeInTheDocument()
+  })
+
+  it('limits a field officer to Dashboard and Field Monitoring', () => {
     render(<AdminShell user={{ id: 2, name: 'Officer', email: 'officer@dti.test', role: 'field_officer' }} />)
 
-    expect(screen.getByRole('button', { name: /Dashboard Overview/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Price Regulation/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Emergency Protocol/i })).not.toBeInTheDocument()
+    const navigation = screen.getByRole('navigation', { name: /DTI Admin modules/i })
+    expect(within(navigation).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
+      'Dashboard',
+      'Field Monitoring',
+    ])
   })
 
   it('moves focus to the selected panel heading', async () => {
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
-    await user.click(screen.getByRole('button', { name: /Consumer OCR Queue/i }))
-    expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Monitoring' }))
+    await user.click(screen.getByRole('button', { name: 'Consumer Reports' }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Consumer Reports' })).toHaveFocus()
   })
 
   it('uses the sticky header as the single active page heading', () => {
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
-    expect(screen.getByRole('button', { name: /Price Regulation/i })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getAllByRole('heading', { name: 'Regulatory Overview' })).toHaveLength(1)
-    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1, name: 'Regulatory Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enforcement' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getAllByRole('heading', { name: 'Dashboard' })).toHaveLength(1)
+    expect(within(screen.getByRole('banner')).getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getAllByText('DTI Officer Portal')).toHaveLength(1)
   })
 
-  it('expands a navigation group without leaving the current page', async () => {
+  it('uses group parents only as toggles and child modules as navigation', async () => {
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
-    await user.click(screen.getByRole('button', { name: /Price Regulation/i }))
+    await user.click(screen.getByRole('button', { name: 'Enforcement' }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).get('module')).toBeNull()
 
-    expect(screen.getByRole('button', { name: /Price Regulation/i })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('heading', { level: 1, name: 'Regulatory Overview' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Price Regulation' }))
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Price Regulation' })).toBeInTheDocument()
+    expect(new URLSearchParams(window.location.search).get('module')).toBe('price_regulation')
   })
 
-  it('restores an authorized module from the URL and updates it on navigation', async () => {
+  it('restores legacy module aliases and writes canonical routes on navigation', async () => {
     window.history.replaceState({}, '', '/?module=reports')
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Formal receipt review' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Dashboard Overview/i }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Consumer Reports' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: /^Dashboard$/i }))
     expect(new URLSearchParams(window.location.search).get('module')).toBe('overview')
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('uses a red logout menu item and confirms logout via modal', async () => {
+  it('uses canonical routes for Dashboard workflow shortcuts', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(await screen.findByRole('button', { name: /View receipt queue/i }))
+
+    expect(new URLSearchParams(window.location.search).get('module')).toBe('consumer_reports')
+    expect(screen.getByRole('heading', { level: 1, name: 'Consumer Reports' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('shows truthful unavailable states for modules without backend support', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Establishments' }))
+    await user.click(screen.getByRole('button', { name: 'User Management' }))
+    expect(await screen.findByRole('table', { name: 'Managed user accounts' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Communications' }))
+    expect(screen.getByText(/Two-way store conversations are not connected yet/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Send message|Approve document|Reject document/i })).not.toBeInTheDocument()
+  })
+
+  it('expands the sidebar and opens a selected group from collapsed mode', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Sidebar' }))
+    await user.click(screen.getByRole('button', { name: 'Monitoring' }))
+
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Consumer Reports' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: /DTI Admin Sidebar Navigation/i })).not.toHaveClass('collapsed')
+  })
+
+  it('keeps section labels out of the collapsed sidebar', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Sidebar' }))
+
+    expect(screen.queryByText('Main Menu')).not.toBeInTheDocument()
+    expect(screen.queryByText('General')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
+  })
+
+  it('renders the accessible logout button while the sidebar is collapsed', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Sidebar' }))
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
+    expect(screen.queryByText('DTI Admin')).not.toBeInTheDocument()
+    expect(screen.queryByText('evaluator@dti.test')).not.toBeInTheDocument()
+  })
+
+  it('closes an open navigation group when the sidebar is collapsed', async () => {
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Monitoring' }))
+    await user.click(screen.getByRole('button', { name: 'Collapse Sidebar' }))
+
+    expect(screen.getByRole('button', { name: 'Monitoring' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Consumer Reports')).not.toBeInTheDocument()
+  })
+
+  it('renders a direct logout button in the bottom sidebar and confirms logout via modal', async () => {
     const onLogoutMock = vi.fn()
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} onLogout={onLogoutMock} />)
 
-    expect(screen.queryByRole('button', { name: /Messages/i })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
-    expect(screen.queryByRole('button', { name: /Lock session/i })).not.toBeInTheDocument()
-    
     const logoutBtn = screen.getByRole('button', { name: /Logout/i })
     expect(logoutBtn).toBeInTheDocument()
     await user.click(logoutBtn)
@@ -99,19 +214,11 @@ describe('AdminShell', () => {
     expect(screen.queryByText('Normal Market Protocol')).not.toBeInTheDocument()
   })
 
-  it('renders DTI Admin title and user email with role badge initial in sidebar account showcase', () => {
-    const { rerender } = render(<AdminShell user={{ id: 1, name: 'Officer Juan', email: 'juan@dti.test', role: 'dti_evaluator' }} />)
+  it('renders bottom sidebar items: Settings, Help & Support, and Logout', () => {
+    render(<AdminShell user={{ id: 1, name: 'Officer Juan', email: 'juan@dti.test', role: 'dti_evaluator' }} />)
 
-    expect(screen.getByText('DTI Admin')).toBeInTheDocument()
-    expect(screen.getByText('juan@dti.test')).toBeInTheDocument()
-    expect(screen.getByText('E')).toBeInTheDocument()
-
-    rerender(<AdminShell user={{ id: 2, name: 'Admin Boss', email: 'admin@dti.test', role: 'super_admin' }} />)
-    expect(screen.getByText('admin@dti.test')).toBeInTheDocument()
-    expect(screen.getByText('A')).toBeInTheDocument()
-
-    rerender(<AdminShell user={{ id: 3, name: 'Field Inspector', email: 'field@dti.test', role: 'field_officer' }} />)
-    expect(screen.getByText('field@dti.test')).toBeInTheDocument()
-    expect(screen.getByText('F')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Help & Support' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
   })
 })

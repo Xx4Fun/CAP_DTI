@@ -30,6 +30,76 @@ export interface StoreRecord {
   recidivism_index?: number
 }
 
+export type ManagedUserRole = 'field_officer' | 'vendor'
+
+export interface ManagedUserRecord {
+  id: number
+  name: string
+  email: string
+  role: ManagedUserRole
+  is_active: boolean
+  created_at: string
+  stores: Array<{ id: number; store_name: string }>
+}
+
+export interface ManagedUserPage {
+  records: ManagedUserRecord[]
+  pagination: {
+    current_page: number
+    last_page: number
+    per_page: number
+    total: number
+    from: number | null
+    to: number | null
+  }
+  counts: {
+    total: number
+    field_officer: number
+    vendor: number
+    inactive: number
+  }
+}
+
+export interface MonitoringRecordItem {
+  id: number
+  srp_id: number
+  recorded_price: number | string
+  baseline_price: number | string
+  previous_price?: number | string | null
+  variance_percent: number | null
+  is_anomaly: boolean
+  bulletin?: { id: number; commodity_name: string; unit: string | null; baseline_price: number | string }
+}
+
+export interface MonitoringRecordRecord {
+  id: number
+  client_uuid: string
+  status: string
+  finalized_at: string
+  received_at: string
+  representative_name: string
+  representative_title?: string | null
+  sync_source: 'online' | 'offline_queue'
+  latitude?: number | string
+  longitude?: number | string
+  location_accuracy_meters?: number | string
+  items_count: number
+  anomaly_count: number
+  officer: { id: number; name: string; email: string }
+  store: { id: number; store_name: string; address: string }
+  items: MonitoringRecordItem[]
+}
+
+export interface MonitoringRecordPage {
+  data: MonitoringRecordRecord[]
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+  from: number | null
+  to: number | null
+}
+
 export interface ConsumerReportRecord {
   id: number
   report_reference: string

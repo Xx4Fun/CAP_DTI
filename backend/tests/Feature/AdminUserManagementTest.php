@@ -65,6 +65,7 @@ class AdminUserManagementTest extends TestCase
         ])->assertCreated()
             ->assertJsonPath('data.role', 'field_officer')
             ->assertJsonPath('data.is_active', true)
+            ->assertJsonPath('data.must_change_password', true)
             ->assertJsonMissing(['password' => 'permanent-password']);
 
         $officer = User::where('email', 'ana.officer@dti.gov.ph')->firstOrFail();

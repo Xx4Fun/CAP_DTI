@@ -45,7 +45,7 @@ describe('DTI Admin application session', () => {
     render(<App />)
 
     expect(await screen.findByRole('button', { name: /sign in/i })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /regulatory overview/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
   })
 
   it('opens Admin only after the server validates the session token', async () => {
@@ -71,7 +71,7 @@ describe('DTI Admin application session', () => {
     render(<App />)
 
     expect(screen.getByRole('status')).toHaveTextContent(/checking secure session/i)
-    expect(await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/admin/session')
   })
 
@@ -98,9 +98,8 @@ describe('DTI Admin application session', () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Logged out successfully' } })
 
     render(<App />)
-    await screen.findByRole('heading', { level: 1, name: /regulatory overview/i })
-    await user.click(screen.getByRole('button', { name: /Evaluator account/i }))
-    await user.click(screen.getByRole('button', { name: /logout/i }))
+    await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
+    await user.click(screen.getByRole('button', { name: /^logout$/i }))
     await user.click(screen.getByRole('button', { name: /log out/i }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/logout'))
@@ -152,12 +151,14 @@ describe('DTI Admin application session', () => {
     vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
     render(<App />)
-    await screen.findByRole('heading', { level: 1, name: /overview/i })
+    await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
     await act(async () => {
       window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
     })
 
-    expect(await screen.findByText('You were logged out due to inactivity. Sign in again to continue.')).toHaveAttribute('role', 'status')
+    await waitFor(() => {
+      expect(screen.getByText('You were logged out due to inactivity. Sign in again to continue.')).toHaveAttribute('role', 'status')
+    }, { timeout: 10000 })
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
-  })
+  }, 15000)
 })

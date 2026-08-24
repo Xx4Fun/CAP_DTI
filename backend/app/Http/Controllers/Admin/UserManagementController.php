@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\FieldOfflineLease;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
@@ -68,6 +69,7 @@ class UserManagementController extends Controller
             'email' => strtolower($data['email']),
             'role' => 'field_officer',
             'is_active' => $data['is_active'] ?? true,
+            'must_change_password' => true,
         ]);
         $audit->record($request, 'user.created', $user, ['role' => $user->role, 'is_active' => $user->is_active]);
 
@@ -93,6 +95,7 @@ class UserManagementController extends Controller
         $managedUser->fill($data)->save();
         if ($wasActive && ! $managedUser->is_active) {
             $managedUser->tokens()->delete();
+            FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         }
         $audit->record($request, 'user.updated', $managedUser, ['changed_fields' => array_keys($data)]);
 
@@ -105,8 +108,12 @@ class UserManagementController extends Controller
         $this->requireManagedRole($managedUser);
         $guard->requireRecentReauthentication($request);
         $data = $request->validate(['password' => ['required', 'string', 'min:12', 'confirmed']]);
-        $managedUser->forceFill(['password' => $data['password']])->save();
+        $managedUser->forceFill([
+            'password' => $data['password'],
+            'must_change_password' => $managedUser->role === 'field_officer',
+        ])->save();
         $managedUser->tokens()->delete();
+        FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         $audit->record($request, 'user.password_reset', $managedUser);
 
         return response()->json(['data' => ['message' => 'Password updated and active sessions revoked.']]);
