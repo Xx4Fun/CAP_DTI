@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\SrpAdminController;
 use App\Http\Controllers\Admin\SrpManagementController;
 use App\Http\Controllers\Admin\StoreAdminController;
 use App\Http\Controllers\Admin\TemporalAnalyticsController;
+use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\VendorInvitationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalamityController;
@@ -63,6 +64,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/overview', [AdminOverviewController::class, 'show']);
         Route::get('/audit-events', [AuditEventController::class, 'index']);
         Route::get('/stores', [StoreAdminController::class, 'index']);
+        Route::get('/users', [UserManagementController::class, 'index']);
+        Route::post('/users/field-officers', [UserManagementController::class, 'storeFieldOfficer']);
+        Route::patch('/users/{managedUser}', [UserManagementController::class, 'update']);
+        Route::put('/users/{managedUser}/password', [UserManagementController::class, 'updatePassword']);
         Route::post('/stores', [StoreAdminController::class, 'store']);
         Route::patch('/stores/{store}', [StoreAdminController::class, 'update']);
         Route::post('/stores/{store}/invitations', [VendorInvitationController::class, 'store']);

@@ -17,7 +17,7 @@ class AuthController extends Controller {
 
         $user = User::where('email', $request->email)->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (!$user || ! $user->is_active || !Hash::check($request->password, $user->password)) {
             $audit->recordAs($request, $user, 'auth.login_failed', $user ?? 'authentication', [
                 'email_fingerprint' => hash('sha256', strtolower($request->email)),
             ]);
