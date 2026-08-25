@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -50,6 +51,40 @@ class AdminUserManagementTest extends TestCase
             ->assertJsonPath('counts.field_officer', 1)
             ->assertJsonPath('counts.inactive', 0)
             ->assertJsonMissing(['email' => 'consumer@example.test']);
+    }
+
+    public function test_manager_search_is_case_insensitive_for_names_emails_and_establishments(): void
+    {
+        DB::statement('PRAGMA case_sensitive_like = ON');
+
+        $vendor = User::create([
+            'name' => 'MaRiA Vendor',
+            'email' => 'MixedCase@example.test',
+            'password' => 'vendor-password',
+            'role' => 'vendor',
+        ]);
+        Store::create([
+            'dti_sec_number' => 'SEC-USERS-CASE',
+            'store_name' => 'CaMeL Market',
+            'owner_name' => 'Maria Vendor',
+            'latitude' => 10.7424,
+            'longitude' => 121.9406,
+            'address' => 'Antique',
+            'vendor_user_id' => $vendor->id,
+        ]);
+
+        Sanctum::actingAs($this->manager());
+
+        try {
+            foreach (['maria', 'MARIA', 'mixedcase@', 'MIXEDCASE@', 'camel', 'CAMEL'] as $search) {
+                $this->getJson('/api/admin/users?search='.$search)
+                    ->assertOk()
+                    ->assertJsonPath('data.total', 1)
+                    ->assertJsonPath('data.data.0.id', $vendor->id);
+            }
+        } finally {
+            DB::statement('PRAGMA case_sensitive_like = OFF');
+        }
     }
 
     public function test_manager_creates_an_active_field_officer_with_a_hashed_password(): void

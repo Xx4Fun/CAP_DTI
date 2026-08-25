@@ -42,10 +42,11 @@ class UserManagementController extends Controller
             $query->where('is_active', $filters['status'] === 'active');
         }
         if ($search = trim($filters['search'] ?? '')) {
-            $query->where(function ($nested) use ($search) {
-                $nested->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhereHas('stores', fn ($stores) => $stores->where('store_name', 'like', "%{$search}%"));
+            $searchTerm = '%'.strtolower($search).'%';
+            $query->where(function ($nested) use ($searchTerm) {
+                $nested->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$searchTerm])
+                    ->orWhereHas('stores', fn ($stores) => $stores->whereRaw('LOWER(store_name) LIKE ?', [$searchTerm]));
             });
         }
 
