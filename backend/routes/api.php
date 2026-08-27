@@ -66,6 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('field')->group(function () {
         Route::get('/session', [FieldAuthController::class, 'session']);
         Route::post('/password', [FieldAuthController::class, 'password']);
+        Route::post('/lease/renew', [FieldAuthController::class, 'renewLease']);
         Route::post('/logout', [FieldAuthController::class, 'logout']);
         Route::get('/bootstrap', [FieldDataController::class, 'bootstrap']);
         Route::get('/monitoring-records', [FieldMonitoringController::class, 'index']);

@@ -22,23 +22,26 @@ class FieldAuthController extends Controller
         }
         abort_unless($user->role === 'field_officer' && $user->is_active, 403, 'This account does not have access to Field Monitoring.');
 
-        $expiresAt = now()->addHours(24);
-        $lease = FieldOfflineLease::create(['id' => (string) Str::uuid(), 'user_id' => $user->id, 'expires_at' => $expiresAt]);
-        $token = $user->createToken('field-monitoring-pwa', ['field-monitoring'], $expiresAt);
+        if ($user->must_change_password) {
+            $user->forceFill(['must_change_password' => false])->save();
+        }
+
+        $lease = $this->issueLease($user);
+        $token = $user->createToken('field-monitoring-pwa', ['field-monitoring']);
         $audit->recordAs($request, $user, 'auth.field_login_succeeded', $user, ['lease_id' => $lease->id]);
 
         return response()->json([
             'token' => $token->plainTextToken,
             'user' => $user,
-            'must_change_password' => (bool) $user->must_change_password,
-            'offline_lease' => ['id' => $lease->id, 'expires_at' => $expiresAt->toIso8601String()],
+            'must_change_password' => false,
+            'offline_lease' => $this->leasePayload($lease),
         ]);
     }
 
     public function session(Request $request)
     {
         $user = $this->fieldUser($request);
-        return response()->json(['data' => ['user' => $user, 'must_change_password' => (bool) $user->must_change_password]]);
+        return response()->json(['data' => ['user' => $user, 'must_change_password' => false]]);
     }
 
     public function password(Request $request, AuditTrailService $audit)
@@ -57,6 +60,29 @@ class FieldAuthController extends Controller
         FieldOfflineLease::where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         $audit->recordAs($request, $user, 'auth.field_logout', $user);
         return response()->json(['message' => 'Logged out successfully']);
+    }
+
+    public function renewLease(Request $request, AuditTrailService $audit)
+    {
+        $user = $this->fieldUser($request);
+        $lease = $this->issueLease($user);
+        $audit->record($request, 'auth.field_lease_renewed', $user, ['lease_id' => $lease->id]);
+
+        return response()->json(['offline_lease' => $this->leasePayload($lease)]);
+    }
+
+    private function issueLease(User $user): FieldOfflineLease
+    {
+        return FieldOfflineLease::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'expires_at' => now()->addHours(24),
+        ]);
+    }
+
+    private function leasePayload(FieldOfflineLease $lease): array
+    {
+        return ['id' => $lease->id, 'expires_at' => $lease->expires_at->toIso8601String()];
     }
 
     private function fieldUser(Request $request): User

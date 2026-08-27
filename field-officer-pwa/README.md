@@ -8,14 +8,14 @@ Installable React PWA for DTI field officers. Accounts are issued from Admin Use
 2. Run `npm install`.
 3. Run `npm run dev` (defaults to `http://localhost:5175`).
 
-The first sign-in must be online. An officer replaces the Admin-issued temporary password and creates a 4–8 digit device PIN. The PIN-derived AES-GCM key protects the cached bootstrap data, session, drafts, and completed sync queue in IndexedDB.
+The first sign-in must be online. The Admin-issued password is the officer's final credential, followed by creation of a 4–8 digit device PIN. A random AES-GCM data key protects cached field data in IndexedDB and is wrapped by the PIN-derived key. Supported devices may also enable WebAuthn PRF biometric unlock while retaining the PIN fallback.
 
 ## Production configuration
 
 - Serve the PWA over HTTPS so installation, precise geolocation, and service workers are available.
 - Set `VITE_API_BASE_URL` to the deployed Laravel `/api` URL before building.
 - Set `VITE_FIELD_PWA_URL` in the Admin web build to this PWA's public HTTPS URL so the one-time credential handoff opens the correct application.
-- Run the new backend migration before enabling officer sign-in.
+- No additional schema migration is required for PIN, biometric, lock, or lease-renewal support.
 
 ## Verification
 

@@ -94,6 +94,12 @@ h1 { letter-spacing: -.025em; }
 .process-strip div { position: relative; display: flex; align-items: center; gap: 9px; color: #50687b; font-size: .82rem; font-weight: 700; }
 .process-strip div:not(:last-child)::after { content: ''; position: absolute; top: 50%; right: 18px; width: 28%; height: 1px; background: #bac9d2; }
 .process-strip svg { width: 18px; }
+.security-panel { display: flex; align-items: center; gap: 13px; margin-top: 22px; padding: 16px 18px; border: 1px solid #d7e0e5; border-radius: var(--radius); background: #fff; box-shadow: 0 8px 24px rgba(31, 55, 75, .06); }
+.security-panel > svg { flex: 0 0 auto; color: var(--blue); }
+.security-panel > span { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.security-panel small { color: var(--muted); }
+.authorization-warning { display: flex; align-items: flex-start; gap: 10px; padding: 13px 18px; color: #805109; background: var(--amber-soft); border-bottom: 1px solid #e5c88e; }
+.authorization-warning svg { flex: 0 0 auto; margin-top: 2px; }
 .field-notice, .install-strip { display: flex; align-items: center; gap: 10px; padding: 11px 18px; }
 .field-notice { position: sticky; top: 0; z-index: 10; color: #075f53; background: #e2f6f0; border-bottom: 1px solid #b5ddd3; }
 .field-notice span { flex: 1; }
@@ -224,6 +230,8 @@ em.within, em.accepted { color: #07665a; background: var(--teal-soft); }
   .mobile-header .brand > span { width: 37px; height: 37px; border-radius: 9px; font-size: .75rem; }
   .mobile-header .brand strong { font-size: .86rem; }
   .mobile-header .brand small { font-size: .63rem; }
+  .mobile-header .network-chip { margin-left: auto; }
+  .header-lock { display: grid; place-items: center; width: 40px; height: 40px; margin-left: 7px; padding: 0; border: 0; border-radius: 9px; color: #d9e8f7; background: #174e83; }
   .bottom-nav { position: fixed; inset: auto 0 0; z-index: 20; display: grid; grid-template-columns: 1fr 76px 1fr; align-items: end; min-height: 67px; padding: 5px 30px calc(7px + env(safe-area-inset-bottom)); border-top: 1px solid #d5dfe5; background: #fff; box-shadow: 0 -10px 28px rgba(20, 43, 61, .1); }
   .bottom-nav > button:not(.bottom-start) { min-height: 49px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #728391; background: transparent; font-size: .68rem; font-weight: 700; }
   .bottom-nav > button.active { color: var(--navy); }
@@ -244,6 +252,9 @@ em.within, em.accepted { color: #07665a; background: var(--teal-soft); }
   .start-panel p { font-size: .85rem; }
   .start-panel .primary-button { grid-column: 1 / -1; width: 100%; }
   .queue-panel, .pending-section, .history-section { padding: 18px; }
+  .security-panel { align-items: flex-start; flex-wrap: wrap; margin-top: 15px; padding: 15px; }
+  .security-panel > span { width: calc(100% - 40px); }
+  .security-panel button { width: 100%; }
   .process-strip { grid-template-columns: repeat(4, minmax(70px, 1fr)); gap: 5px; margin-top: 15px; padding: 14px 7px; overflow-x: auto; }
   .process-strip div { flex-direction: column; gap: 4px; text-align: center; font-size: .67rem; }
   .visit-workspace { min-height: 0; padding: 19px 15px; }
@@ -277,6 +288,461 @@ em.within, em.accepted { color: #07665a; background: var(--teal-soft); }
   .auth-panel { width: calc(100% - 28px); margin: -34px auto 24px; padding: 28px 22px; }
   .auth-panel h1 { font-size: 1.7rem; }
   .install-strip { right: 12px; bottom: calc(80px + env(safe-area-inset-bottom)); width: calc(100vw - 24px); }
+}
+
+/* ==========================================================================
+   DTI Field Monitoring - Responsive Full-Screen 1:1 Login Screen
+   ========================================================================== */
+
+.login-container {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  background: #ffffff;
+}
+
+.login-left-column {
+  flex: 1;
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-artwork-img {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  object-fit: cover;
+}
+
+.login-right-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background: #ffffff;
+  overflow-y: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  box-sizing: border-box;
+}
+
+.login-header {
+  text-align: center;
+}
+
+.login-dti-logo {
+  width: 90px;
+  height: auto;
+  margin-bottom: 1rem;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.login-title-highlight {
+  color: #0052cc;
+}
+
+.login-subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.login-subtitle-line {
+  flex: 1;
+  height: 1px;
+  background: #cbd5e1;
+}
+
+.login-error-badge {
+  background: #fef2f2;
+  border-left: 4px solid #dc2626;
+  border-top: 1px solid #fecaca;
+  border-right: 1px solid #fecaca;
+  border-bottom: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 0.75rem 1rem;
+  border-radius: 0 8px 8px 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.login-form .input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.login-form label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  color: #64748b;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.login-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 0.875rem 0.75rem 2.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #0f172a;
+  background: #ffffff;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-input:focus {
+  border-color: #0052cc;
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.15);
+}
+
+.input-wrapper input[type="password"],
+.input-wrapper input[type="text"]#password {
+  padding-right: 3rem;
+}
+
+.login-password-toggle {
+  position: absolute;
+  right: 6px;
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.login-password-toggle:hover {
+  color: #0f172a;
+  background-color: #f1f5f9;
+}
+
+.login-btn {
+  margin-top: 0.5rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: none;
+  background: #0052cc;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 82, 204, 0.25);
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: #0040a8;
+}
+
+.login-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.login-footer {
+  margin-top: 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.login-footer-guarantee {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.login-shield-icon {
+  color: #0052cc;
+  flex-shrink: 0;
+}
+
+.login-footer-tagline {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.login-ph-bar {
+  width: 100%;
+  height: 4px;
+  display: flex;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.login-ph-blue { flex: 1; background: #0038a8; }
+.login-ph-yellow { flex: 1; background: #fcd116; }
+.login-ph-red { flex: 1; background: #ce1126; }
+
+/* --------------------------------------------------------------------------
+   Full-Screen Responsive Multi-Device Adaptations
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   Full-Screen Responsive Multi-Device Adaptations
+   -------------------------------------------------------------------------- */
+
+/* Tablets & iPads in Portrait (601px - 1023px and orientation: portrait) */
+@media (min-width: 601px) and (max-width: 1023px) and (orientation: portrait) {
+  .login-container {
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: #ffffff;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-left-column {
+    display: none !important;
+  }
+  .login-right-column {
+    flex: 1;
+    width: 100%;
+    padding: 3.5rem 3rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    box-sizing: border-box;
+  }
+  .login-card {
+    max-width: 580px;
+    width: 100%;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2.25rem;
+    margin: auto 0;
+  }
+  .login-dti-logo {
+    width: 110px;
+    margin-bottom: 1.15rem;
+  }
+  .login-title {
+    font-size: 2.85rem;
+  }
+  .login-subtitle-row {
+    font-size: 1.05rem;
+    gap: 1.25rem;
+    margin-top: 0.85rem;
+  }
+  .login-form {
+    gap: 1.75rem;
+  }
+  .login-form label {
+    font-size: 1.05rem;
+  }
+  .login-input {
+    min-height: 58px;
+    font-size: 1.15rem;
+    padding: 0.95rem 1.15rem 0.95rem 3.25rem;
+    border-radius: 12px;
+  }
+  .input-icon {
+    left: 18px;
+  }
+  .login-btn {
+    min-height: 58px;
+    font-size: 1.15rem;
+    border-radius: 12px;
+    margin-top: 0.75rem;
+  }
+  .login-footer {
+    margin-top: 1.75rem;
+    padding-top: 1.75rem;
+    gap: 0.85rem;
+  }
+  .login-footer-guarantee {
+    font-size: 1rem;
+    gap: 0.65rem;
+  }
+  .login-footer-tagline {
+    font-size: 0.88rem;
+  }
+  .login-ph-bar {
+    height: 6px;
+  }
+}
+
+/* Mobile Phones (<= 600px, e.g. iPhone 16 Pro, Galaxy, Pixel) */
+@media (max-width: 600px) {
+  .login-container {
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: #ffffff;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-left-column {
+    display: none !important;
+  }
+  .login-right-column {
+    flex: 1;
+    width: 100%;
+    padding: 2.25rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    box-sizing: border-box;
+  }
+  .login-card {
+    max-width: 440px;
+    width: 100%;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1.85rem;
+    margin: auto 0;
+  }
+  .login-dti-logo {
+    width: 88px;
+    margin-bottom: 1rem;
+  }
+  .login-title {
+    font-size: 2.3rem;
+  }
+  .login-subtitle-row {
+    font-size: 0.9rem;
+    margin-top: 0.65rem;
+  }
+  .login-input {
+    min-height: 52px;
+    font-size: 1.05rem;
+  }
+  .login-btn {
+    min-height: 52px;
+    font-size: 1.05rem;
+  }
+  .login-footer {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    gap: 0.65rem;
+  }
+}
+
+/* Landscape Mode (Tablets & iPads in Landscape: 601px - 1023px) */
+@media (min-width: 601px) and (max-width: 1023px) and (orientation: landscape) {
+  .login-container {
+    flex-direction: row;
+    background: #ffffff;
+  }
+  .login-left-column {
+    display: block !important;
+    flex: 0 0 45%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .login-right-column {
+    flex: 0 0 55%;
+    padding: 2rem 2rem;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .login-card {
+    max-width: 420px;
+    gap: 1.25rem;
+  }
+}
+
+/* Desktop (>= 1024px) */
+@media (min-width: 1024px) {
+  .login-container {
+    flex-direction: row;
+    background: #ffffff;
+  }
+  .login-left-column {
+    display: block !important;
+    flex: 0 0 50%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .login-right-column {
+    flex: 0 0 50%;
+    padding: 3rem 2.5rem;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .login-card {
+    max-width: 420px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }

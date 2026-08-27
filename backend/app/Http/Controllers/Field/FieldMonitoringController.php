@@ -32,7 +32,6 @@ class FieldMonitoringController extends Controller
     public function sync(Request $request, AuditTrailService $audit)
     {
         $user = $this->fieldUser($request);
-        abort_if($user->must_change_password, 403, 'Replace the temporary password before synchronizing field data.');
         $data = $request->validate($this->rules());
         $results = [];
         foreach ($data['records'] as $index => $payload) {

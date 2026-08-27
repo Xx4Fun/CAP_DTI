@@ -70,7 +70,7 @@ class UserManagementController extends Controller
             'email' => strtolower($data['email']),
             'role' => 'field_officer',
             'is_active' => $data['is_active'] ?? true,
-            'must_change_password' => true,
+            'must_change_password' => false,
         ]);
         $audit->record($request, 'user.created', $user, ['role' => $user->role, 'is_active' => $user->is_active]);
 
@@ -111,7 +111,7 @@ class UserManagementController extends Controller
         $data = $request->validate(['password' => ['required', 'string', 'min:12', 'confirmed']]);
         $managedUser->forceFill([
             'password' => $data['password'],
-            'must_change_password' => $managedUser->role === 'field_officer',
+            'must_change_password' => false,
         ])->save();
         $managedUser->tokens()->delete();
         FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);

@@ -14,8 +14,6 @@ class FieldDataController extends Controller
     {
         $user = $request->user();
         abort_unless($user?->role === 'field_officer' && $user->is_active && $user->currentAccessToken()?->can('field-monitoring'), 403, 'Forbidden');
-        abort_if($user->must_change_password, 403, 'Replace the temporary password before downloading field data.');
-
         $filters = $request->validate(['since' => ['nullable', 'string', 'max:128']]);
         $version = hash('sha256', implode('|', [
             Store::max('updated_at') ?? 'none',

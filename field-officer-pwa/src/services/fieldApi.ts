@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { BootstrapData, FieldSession, MonitoringRecord, Page, VisitDraft } from '../types'
+import type { BootstrapData, FieldSession, MonitoringRecord, OfflineLease, Page, VisitDraft } from '../types'
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api', timeout: 25_000 })
 const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } })
@@ -10,6 +10,9 @@ export const fieldApi = {
   },
   async changePassword(token: string, password: string) {
     return (await client.post('/field/password', { password, password_confirmation: password }, auth(token))).data
+  },
+  async renewLease(token: string): Promise<OfflineLease> {
+    return (await client.post('/field/lease/renew', {}, auth(token))).data.offline_lease
   },
   async bootstrap(token: string, since?: string): Promise<BootstrapData> {
     return (await client.get('/field/bootstrap', { ...auth(token), params: since ? { since } : undefined })).data.data

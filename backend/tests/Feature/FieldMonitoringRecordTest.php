@@ -6,6 +6,7 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Models\User;
+use App\Models\FieldOfflineLease;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -169,6 +170,19 @@ class FieldMonitoringRecordTest extends TestCase
         $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
             ->assertUnprocessable()
             ->assertJsonValidationErrors('records.0.items');
+        $this->assertDatabaseCount('monitoring_records', 0);
+    }
+
+    public function test_sync_rejects_a_visit_finalized_after_its_offline_lease_expired(): void
+    {
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        FieldOfflineLease::findOrFail($this->leaseId)->update(['expires_at' => now()->subMinutes(5)]);
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'The offline authorization lease did not cover this finalized visit.');
         $this->assertDatabaseCount('monitoring_records', 0);
     }
 

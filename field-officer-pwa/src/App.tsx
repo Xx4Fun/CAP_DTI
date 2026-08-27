@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, Check, CheckCircle2, ChevronLeft,
   ChevronRight, ClipboardCheck, CloudOff, History, ListChecks, LocateFixed, LockKeyhole,
-  LogOut, MapPin, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, Signal,
+  Fingerprint, Lock, LogOut, MapPin, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, Signal,
   TriangleAlert, Wifi, WifiOff, X
 } from 'lucide-react'
 import { InstallPrompt } from './components/InstallPrompt'
+import { Login } from './components/Login'
 import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
 import { canFinalizeVisit, createDraft, analyzeLine } from './app/workflow'
-import { clearVault, createVault, deleteSecret, hasVault, lockVault, readSecret, unlockVault, writeSecret } from './app/vault'
+import {
+  clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
+  hasBiometricUnlock, hasVault, isBiometricUnlockAvailable, lockVault, readSecret,
+  unlockVault, unlockVaultWithBiometrics, writeSecret,
+} from './app/vault'
+import { applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldLockAfterBackground } from './app/sessionPolicy'
 import type { BootstrapData, Bulletin, FieldSession, MonitoringRecord, Page, VisitDraft } from './types'
 
-type Gate = 'checking' | 'login' | 'password' | 'pin' | 'unlock' | 'ready'
+type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'attention' | 'ready'
 type View = 'home' | 'visit' | 'history'
 const EMPTY_BOOTSTRAP: BootstrapData = { version: '', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }
 
@@ -27,6 +32,9 @@ export default function App() {
   const [online, setOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
   const [notice, setNotice] = useState('')
+  const [biometricAvailable, setBiometricAvailable] = useState(false)
+  const [biometricEnabled, setBiometricEnabled] = useState(false)
+  const hiddenAt = useRef<number | null>(null)
 
   useEffect(() => { void hasVault().then((exists) => setGate(exists ? 'unlock' : 'login')) }, [])
   useEffect(() => {
@@ -35,22 +43,64 @@ export default function App() {
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update) }
   }, [])
 
-  const hydrate = useCallback(async (next: FieldSession) => {
-    setSession(next)
+  const hydrate = useCallback(async (next: FieldSession, renewOnline = true) => {
     const cached = await readSecret<BootstrapData>('bootstrap')
     const cachedQueue = await readSecret<VisitDraft[]>('queue')
     const cachedDraft = await readSecret<VisitDraft>('active-draft')
+    let effectiveSession = next
+    let effectiveDraft = cachedDraft || null
+    if (navigator.onLine && renewOnline) {
+      try {
+        const lease = await fieldApi.renewLease(next.token)
+        const renewed = applyRenewedLease(next, effectiveDraft, lease)
+        effectiveSession = renewed.session
+        effectiveDraft = renewed.draft
+        await writeSecret('session', effectiveSession)
+        if (effectiveDraft) await writeSecret('active-draft', effectiveDraft)
+      } catch (error) {
+        const status = (error as { response?: { status?: number } }).response?.status
+        if (status === 401 || status === 403) {
+          lockVault(); setGate('attention'); return
+        }
+        if (!cached || !canFinalizeWithLease(next.offline_lease)) throw error
+      }
+    }
+    setSession(effectiveSession)
     if (cached) setBootstrap(cached)
     if (cachedQueue) setQueue(cachedQueue)
-    if (cachedDraft) setDraft(cachedDraft)
+    if (effectiveDraft) setDraft(effectiveDraft)
     if (navigator.onLine) {
       try {
-        const downloaded = await fieldApi.bootstrap(next.token)
+        const downloaded = await fieldApi.bootstrap(effectiveSession.token)
         setBootstrap(downloaded); await writeSecret('bootstrap', downloaded)
       } catch (error) { if (!cached) throw error }
     }
+    setBiometricAvailable(await isBiometricUnlockAvailable())
+    setBiometricEnabled(await hasBiometricUnlock())
     setGate('ready')
   }, [])
+
+  const lockWorkspace = useCallback(async () => {
+    if (gate !== 'ready' || !session) return
+    try {
+      await writeSecret('session', session)
+      await writeSecret('queue', queue)
+      if (draft) await writeSecret('active-draft', draft)
+    } finally {
+      lockVault()
+      setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDraft(null); setView('home'); setGate('unlock')
+    }
+  }, [draft, gate, queue, session])
+
+  useEffect(() => {
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt.current = Date.now(); return }
+      if (shouldLockAfterBackground(hiddenAt.current, Date.now())) void lockWorkspace()
+      hiddenAt.current = null
+    }
+    document.addEventListener('visibilitychange', visibility)
+    return () => document.removeEventListener('visibilitychange', visibility)
+  }, [lockWorkspace])
 
   const saveQueue = async (next: VisitDraft[]) => { setQueue(next); await writeSecret('queue', next) }
   const syncQueue = useCallback(async () => {
@@ -59,36 +109,64 @@ export default function App() {
     try {
       await fieldApi.sync(session.token, queue.map((item) => ({ ...item, sync_source: 'offline_queue' })))
       await saveQueue([]); setNotice(`${queue.length} queued visit${queue.length === 1 ? '' : 's'} synchronized.`)
-    } catch (error) { setNotice(apiError(error, 'Queued visits remain safely on this device. Try sync again when the connection is stable.')) }
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status
+      if (status === 401 || status === 403) {
+        await writeSecret('session', session); await writeSecret('queue', queue)
+        if (draft) await writeSecret('active-draft', draft)
+        lockVault(); setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDraft(null); setGate('attention')
+      } else setNotice(apiError(error, 'Queued visits remain safely on this device. Try sync again when the connection is stable.'))
+    }
     finally { setSyncing(false) }
-  }, [queue, session, syncing])
+  }, [draft, queue, session, syncing])
 
   useEffect(() => { if (online && gate === 'ready') void syncQueue() }, [online, gate, syncQueue])
   useEffect(() => { if (gate === 'ready' && draft) void writeSecret('active-draft', draft) }, [draft, gate])
 
   if (gate === 'checking') return <CenteredStatus icon={<ShieldCheck />} title="Opening secure workspace" detail="Checking this device…" />
-  if (gate === 'login') return <Login onAuthenticated={(next, mustChange) => { setSession(next); setGate(mustChange ? 'password' : 'pin') }} />
-  if (gate === 'password' && session) return <ReplacePassword session={session} onDone={() => setGate('pin')} />
-  if (gate === 'pin' && session) return <PinSetup onDone={async (pin) => { await createVault(pin); await writeSecret('session', session); await hydrate(session) }} />
+  if (gate === 'login') return <Login onAuthenticated={(next) => { setSession(next); setGate('pin') }} />
+  if (gate === 'pin' && session) return <PinSetup onDone={async (pin) => {
+    await createVault(pin); await writeSecret('session', session)
+    if (await isBiometricUnlockAvailable()) setGate('biometric')
+    else await hydrate(session, false)
+  }} />
+  if (gate === 'biometric' && session) return <BiometricSetup onEnable={async () => { await enableBiometricUnlock(); await hydrate(session, false) }} onSkip={() => void hydrate(session, false)} />
   if (gate === 'unlock') return <Unlock onUnlocked={async () => {
     const saved = await readSecret<FieldSession>('session')
-    if (!saved) { await clearVault(); setGate('login'); return }
+    if (!saved) { lockVault(); setGate('attention'); return }
     await hydrate(saved)
-  }} onReset={async () => { await clearVault(); setGate('login') }} />
+  }} />
+  if (gate === 'attention') return <AuthFrame title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device."><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></AuthFrame>
   if (!session) return null
-  if (new Date(session.offline_lease.expires_at).getTime() <= Date.now()) return <RenewAccess email={session.user.email} queueCount={queue.length} onRenewed={async (next) => { await writeSecret('session', next); await hydrate(next) }} />
-
-  const startVisit = () => { if (!draft) setDraft(createDraft(session.offline_lease.id)); setView('visit') }
+  const leaseValid = canFinalizeWithLease(session.offline_lease)
+  const startVisit = () => {
+    if (!leaseValid) { setNotice('Offline authorization expired. Connect and unlock again before starting another official visit.'); return }
+    if (!draft) setDraft(createDraft(session.offline_lease.id)); setView('visit')
+  }
   return <div className="field-app">
     <InstallPrompt />
-    <AppRail view={view} name={session.user.name} online={online} queueCount={queue.length} onNavigate={setView} onLogout={async () => {
-      try { if (navigator.onLine) await fieldApi.logout(session.token) } finally { await clearVault(); lockVault(); setSession(null); setGate('login') }
+    <AppRail view={view} name={session.user.name} online={online} queueCount={queue.length} onNavigate={setView} onLock={() => void lockWorkspace()} onLogout={async () => {
+      const blocked = logoutBlock(queue, draft)
+      if (blocked === 'queue') { setNotice('Synchronize all completed visits before signing out.'); return }
+      if (blocked === 'draft' && !window.confirm('Discard the active draft and sign out? This draft cannot be recovered.')) return
+      if (!navigator.onLine) { setNotice('Connect to the internet to revoke this device session before signing out.'); return }
+      try {
+        if (draft) { await deleteSecret('active-draft'); setDraft(null) }
+        await fieldApi.logout(session.token)
+        await clearVault(); setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setGate('login')
+      } catch (error) { setNotice(apiError(error, 'Sign out could not revoke this device session. Try again while online.')) }
     }} />
     <main className="field-main">
-      <header className="mobile-header"><Brand /><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={14} /> : <WifiOff size={14} />}{online ? 'Online' : 'Offline'}</span></header>
+      <header className="mobile-header"><Brand /><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={14} /> : <WifiOff size={14} />}{online ? 'Online' : 'Offline'}</span><button type="button" className="header-lock" onClick={() => void lockWorkspace()} aria-label="Lock now"><Lock size={17} /></button></header>
       {notice && <div className="field-notice" role="status"><CheckCircle2 size={18} /><span>{notice}</span><button type="button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={17} /></button></div>}
-      {view === 'home' && <Dashboard name={session.user.name} queue={queue} activeDraft={draft} online={online} bootstrap={bootstrap} onStart={startVisit} onResume={() => setView('visit')} onSync={() => void syncQueue()} syncing={syncing} />}
-      {view === 'visit' && draft && <VisitWizard draft={draft} bootstrap={bootstrap} online={online} onDraft={setDraft} onCancel={() => setView('home')} onFinish={async (finished) => {
+      {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
+      {view === 'home' && <Dashboard name={session.user.name} queue={queue} activeDraft={draft} online={online} bootstrap={bootstrap} onStart={startVisit} onResume={() => setView('visit')} onSync={() => void syncQueue()} syncing={syncing} biometricAvailable={biometricAvailable} biometricEnabled={biometricEnabled} onToggleBiometric={async () => {
+        try {
+          if (biometricEnabled) { await disableBiometricUnlock(); setBiometricEnabled(false); setNotice('Device biometric unlock disabled. PIN unlock remains available.') }
+          else { await enableBiometricUnlock(); setBiometricEnabled(true); setNotice('Device biometric unlock enabled. PIN unlock remains available.') }
+        } catch (error) { setNotice(apiError(error, 'Biometric security could not be changed.')) }
+      }} />}
+      {view === 'visit' && draft && <VisitWizard draft={draft} bootstrap={bootstrap} online={online} authorizationValid={leaseValid} onDraft={setDraft} onCancel={() => setView('home')} onFinish={async (finished) => {
         if (navigator.onLine) {
           try { await fieldApi.sync(session.token, [finished]); setNotice('Visit accepted and added to monitoring history.') }
           catch (error) {
@@ -103,70 +181,51 @@ export default function App() {
     </main>
     <nav className="bottom-nav" aria-label="Field monitoring navigation">
       <NavButton active={view === 'home'} icon={<ListChecks />} label="Activity" onClick={() => setView('home')} />
-      <button type="button" className="bottom-start" onClick={startVisit} aria-label="Start a monitoring visit"><Plus /></button>
+      <button type="button" className="bottom-start" disabled={!leaseValid} onClick={startVisit} aria-label="Start a monitoring visit"><Plus /></button>
       <NavButton active={view === 'history'} icon={<History />} label="History" onClick={() => setView('history')} />
     </nav>
   </div>
 }
 
-function Login({ onAuthenticated }: { onAuthenticated: (session: FieldSession, mustChange: boolean) => void }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError(''); try { const result = await fieldApi.login(email, password); onAuthenticated(result, result.must_change_password) } catch (reason) { setError(apiError(reason, 'Sign-in failed. Check the connection and try again.')) } finally { setBusy(false) } }
-  return <AuthFrame title="Field Monitoring" detail="Secure access for authorized DTI field officers.">
-    <form onSubmit={submit} className="auth-form">
-      <label>Email address<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-      <label>Temporary or current password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="primary-button" disabled={busy}>{busy ? 'Signing in…' : 'Sign in securely'}<ArrowRight size={18} /></button>
-    </form>
-    <p className="auth-footnote"><LockKeyhole size={15} /> First sign-in requires internet. Your Admin-issued temporary password must be replaced.</p>
-  </AuthFrame>
-}
-
-function ReplacePassword({ session, onDone }: { session: FieldSession; onDone: () => void }) {
-  const [password, setPassword] = useState(''); const [confirm, setConfirm] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  return <AuthFrame title="Replace temporary password" detail="Create a private password before field data is downloaded."><form className="auth-form" onSubmit={async (event) => {
-    event.preventDefault(); if (password !== confirm) { setError('Passwords do not match.'); return } setBusy(true); setError('')
-    try { await fieldApi.changePassword(session.token, password); onDone() } catch (reason) { setError(apiError(reason, 'The password could not be changed.')) } finally { setBusy(false) }
-  }}><label>New password<input type="password" minLength={12} required value={password} onChange={(event) => setPassword(event.target.value)} /></label><label>Confirm new password<input type="password" minLength={12} required value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save private password'}<ArrowRight size={18} /></button></form></AuthFrame>
-}
 
 function PinSetup({ onDone }: { onDone: (pin: string) => Promise<void> }) {
   const [pin, setPin] = useState(''); const [confirm, setConfirm] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
   return <AuthFrame title="Protect offline access" detail="Set a device-only PIN. It encrypts downloaded stores, drafts, and the sync queue."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); if (pin !== confirm) { setError('PINs do not match.'); return } if (!/^\d{4,8}$/.test(pin)) { setError('Use a 4 to 8 digit PIN.'); return } setBusy(true); try { await onDone(pin) } catch (reason) { setError(apiError(reason, 'The secure vault could not be created.')) } finally { setBusy(false) } }}><label>New device PIN<input inputMode="numeric" pattern="[0-9]{4,8}" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label><label>Confirm PIN<input inputMode="numeric" pattern="[0-9]{4,8}" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Encrypting…' : 'Secure this device'}<ShieldCheck size={18} /></button></form></AuthFrame>
 }
 
-function Unlock({ onUnlocked, onReset }: { onUnlocked: () => Promise<void>; onReset: () => Promise<void> }) {
-  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  return <AuthFrame title="Unlock field workspace" detail="Use the PIN created on this device. Internet is not required."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(''); try { await unlockVault(pin); await onUnlocked() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.') } finally { setBusy(false) } }}><label>Device PIN<input autoFocus inputMode="numeric" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock'}<LockKeyhole size={18} /></button><button type="button" className="text-button" onClick={() => void onReset()}>Remove offline data and sign in again</button></form></AuthFrame>
+function BiometricSetup({ onEnable, onSkip }: { onEnable: () => Promise<void>; onSkip: () => void }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  return <AuthFrame title="Enable device biometric unlock" detail="Use this device's fingerprint or facial verification to unlock faster. PRICE-Watch receives only verification success or failure; your PIN always remains available."><div className="auth-form"><button type="button" className="primary-button" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await onEnable() } catch (reason) { setError(apiError(reason, 'Biometric unlock could not be enabled. You can continue with the PIN.')) } finally { setBusy(false) } }}><Fingerprint size={18} />{busy ? 'Waiting for device…' : 'Enable biometric unlock'}</button>{error && <p className="form-error" role="alert">{error}</p>}<button type="button" className="text-button" disabled={busy} onClick={onSkip}>Not now — use PIN</button></div></AuthFrame>
 }
 
-function RenewAccess({ email, queueCount, onRenewed }: { email: string; queueCount: number; onRenewed: (session: FieldSession) => Promise<void> }) {
-  const [password, setPassword] = useState(''); const [replacement, setReplacement] = useState(''); const [confirmation, setConfirmation] = useState(''); const [pending, setPending] = useState<(FieldSession & { must_change_password: boolean }) | null>(null); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  if (pending?.must_change_password) return <AuthFrame title="Replace reset password" detail="An Admin reset requires a new private password before your secure queue can synchronize."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); if (replacement !== confirmation) { setError('Passwords do not match.'); return } setBusy(true); setError(''); try { await fieldApi.changePassword(pending.token, replacement); await onRenewed(pending) } catch (reason) { setError(apiError(reason, 'The password could not be changed.')) } finally { setBusy(false) } }}><label>New password<input type="password" minLength={12} required value={replacement} onChange={(event) => setReplacement(event.target.value)} /></label><label>Confirm password<input type="password" minLength={12} required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Renewing…' : 'Renew secure access'}<ShieldCheck size={18} /></button></form></AuthFrame>
-  return <AuthFrame title="Renew field authorization" detail={`This device lease expired. ${queueCount ? `${queueCount} queued visit${queueCount === 1 ? ' is' : 's are'} still encrypted and will be preserved.` : 'Your downloaded field data remains encrypted.'}`}><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(''); try { const next = await fieldApi.login(email, password); if (next.must_change_password) setPending(next); else await onRenewed(next) } catch (reason) { setError(apiError(reason, 'Authorization could not be renewed. Connect to the internet and try again.')) } finally { setBusy(false) } }}><label>DTI email address<input value={email} readOnly /></label><label>Current password<input type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy || !navigator.onLine}>{busy ? 'Renewing…' : navigator.onLine ? 'Renew access and synchronize' : 'Internet required'}<RefreshCw size={18} /></button></form></AuthFrame>
+function Unlock({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
+  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [biometric, setBiometric] = useState(false)
+  useEffect(() => { void Promise.all([hasBiometricUnlock(), isBiometricUnlockAvailable()]).then(([enabled, available]) => setBiometric(enabled && available)) }, [])
+  const biometricUnlock = async () => { setBusy(true); setError(''); try { await unlockVaultWithBiometrics(); await onUnlocked() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Biometric unlock failed. Use the device PIN.') } finally { setBusy(false) } }
+  return <AuthFrame title="Unlock field workspace" detail="Use the PIN created on this device. Internet is not required."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(''); try { await unlockVault(pin); await onUnlocked() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.') } finally { setBusy(false) } }}><label>Device PIN<input autoFocus inputMode="numeric" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock with PIN'}<LockKeyhole size={18} /></button>{biometric && <button type="button" className="secondary-button" disabled={busy} onClick={() => void biometricUnlock()}><Fingerprint size={18} />Use device biometric unlock</button>}</form></AuthFrame>
 }
 
 function AuthFrame({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) { return <main className="auth-page"><section className="auth-brand"><Brand /><div><ShieldCheck /><span>Official DTI field workspace</span></div></section><section className="auth-panel"><h1>{title}</h1><p>{detail}</p>{children}</section></main> }
 function Brand() { return <div className="brand"><span>DTI</span><strong>PRICE-Watch</strong><small>Field Monitoring</small></div> }
 function CenteredStatus({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <main className="centered-status">{icon}<h1>{title}</h1><p>{detail}</p></main> }
 
-function AppRail({ view, name, online, queueCount, onNavigate, onLogout }: { view: View; name: string; online: boolean; queueCount: number; onNavigate: (v: View) => void; onLogout: () => void }) {
-  return <aside className="app-rail"><Brand /><div className={`network-panel ${online ? 'online' : ''}`}>{online ? <Signal /> : <CloudOff />}<span><strong>{online ? 'Connected' : 'Offline mode'}</strong><small>{online ? 'Ready to synchronize' : `${queueCount} visit${queueCount === 1 ? '' : 's'} secured`}</small></span></div><nav><NavButton active={view === 'home'} icon={<ListChecks />} label="Activity" onClick={() => onNavigate('home')} /><NavButton active={view === 'history'} icon={<History />} label="History & queue" onClick={() => onNavigate('history')} /></nav><div className="rail-account"><span className="account-mark">{name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('')}</span><span><strong>{name}</strong><small>DTI Field Officer</small></span><button type="button" aria-label="Sign out" onClick={onLogout}><LogOut size={17} /></button></div></aside>
+function AppRail({ view, name, online, queueCount, onNavigate, onLock, onLogout }: { view: View; name: string; online: boolean; queueCount: number; onNavigate: (v: View) => void; onLock: () => void; onLogout: () => void }) {
+  return <aside className="app-rail"><Brand /><div className={`network-panel ${online ? 'online' : ''}`}>{online ? <Signal /> : <CloudOff />}<span><strong>{online ? 'Connected' : 'Offline mode'}</strong><small>{online ? 'Ready to synchronize' : `${queueCount} visit${queueCount === 1 ? '' : 's'} secured`}</small></span></div><nav><NavButton active={view === 'home'} icon={<ListChecks />} label="Activity" onClick={() => onNavigate('home')} /><NavButton active={view === 'history'} icon={<History />} label="History & queue" onClick={() => onNavigate('history')} /></nav><div className="rail-account"><span className="account-mark">{name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('')}</span><span><strong>{name}</strong><small>DTI Field Officer</small></span><button type="button" aria-label="Lock now" onClick={onLock}><Lock size={17} /></button><button type="button" aria-label="Sign out" onClick={onLogout}><LogOut size={17} /></button></div></aside>
 }
 function NavButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" className={active ? 'active' : ''} onClick={onClick}>{icon}<span>{label}</span></button> }
 
-function Dashboard({ name, queue, activeDraft, online, bootstrap, onStart, onResume, onSync, syncing }: { name: string; queue: VisitDraft[]; activeDraft: VisitDraft | null; online: boolean; bootstrap: BootstrapData; onStart: () => void; onResume: () => void; onSync: () => void; syncing: boolean }) {
+function Dashboard({ name, queue, activeDraft, online, bootstrap, onStart, onResume, onSync, syncing, biometricAvailable, biometricEnabled, onToggleBiometric }: { name: string; queue: VisitDraft[]; activeDraft: VisitDraft | null; online: boolean; bootstrap: BootstrapData; onStart: () => void; onResume: () => void; onSync: () => void; syncing: boolean; biometricAvailable: boolean; biometricEnabled: boolean; onToggleBiometric: () => Promise<void> }) {
   return <div className="page dashboard"><div className="page-heading"><div><h1>Good day, {name.split(' ')[0]}</h1><p>Capture a complete store visit, even when the signal drops.</p></div><button type="button" className="primary-button desktop-action" onClick={onStart}><Plus size={18} />Start monitoring visit</button></div>
     <section className="readiness-band"><div><span className="readiness-icon"><BadgeCheck /></span><span><strong>Field data ready</strong><small>{bootstrap.stores.length} active stores · {bootstrap.srp_bulletins.length} current commodity references</small></span></div><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={15} /> : <WifiOff size={15} />}{online ? 'Online' : 'Working offline'}</span></section>
     <div className="dashboard-grid"><section className="start-panel"><MapPin /><div><h2>{activeDraft ? 'Continue saved monitoring visit' : 'Start a price monitoring visit'}</h2><p>{activeDraft ? `${activeDraft.items.length} commodity line${activeDraft.items.length === 1 ? '' : 's'} saved securely on this device.` : 'Select any active registered establishment, record multiple commodity prices, then lock the visit with both signatures and accurate GPS.'}</p></div><button type="button" className="primary-button" onClick={activeDraft ? onResume : onStart}>{activeDraft ? 'Resume visit' : 'Begin visit'}<ArrowRight size={18} /></button></section>
       <section className="queue-panel"><div className="section-title"><div><h2>Secure sync queue</h2><p>Completed visits waiting on this device.</p></div><span className="queue-count">{queue.length}</span></div>{queue.length ? <>{queue.slice(0, 3).map((item) => <div className="queue-row" key={item.client_uuid}><CloudOff /><span><strong>{bootstrap.stores.find((store) => store.id === item.store_id)?.store_name || 'Completed visit'}</strong><small>{item.items.length} recorded item{item.items.length === 1 ? '' : 's'} · locked for sync</small></span><ShieldCheck /></div>)}<button type="button" className="secondary-button full" disabled={!online || syncing} onClick={onSync}><RefreshCw className={syncing ? 'spin' : ''} size={17} />{syncing ? 'Synchronizing…' : 'Synchronize now'}</button></> : <div className="quiet-empty"><CheckCircle2 /><strong>No visits waiting</strong><span>Completed offline visits will remain encrypted here until accepted.</span></div>}</section></div>
+    {biometricAvailable && <section className="security-panel"><Fingerprint /><span><strong>Device biometric unlock</strong><small>{biometricEnabled ? 'Enabled with PIN fallback' : 'Use this device’s fingerprint or facial verification. PIN remains required as fallback.'}</small></span><button type="button" className="secondary-button" onClick={() => void onToggleBiometric()}>{biometricEnabled ? 'Disable' : 'Enable'}</button></section>}
     <section className="process-strip" aria-label="Visit process"><Process icon={<Building2 />} title="Choose store" /><Process icon={<PackageSearch />} title="Record prices" /><Process icon={<ClipboardCheck />} title="Review visit" /><Process icon={<ShieldCheck />} title="Lock evidence" /></section>
   </div>
 }
 function Process({ icon, title }: { icon: React.ReactNode; title: string }) { return <div>{icon}<span>{title}</span></div> }
 
-function VisitWizard({ draft, bootstrap, online, onDraft, onCancel, onFinish }: { draft: VisitDraft; bootstrap: BootstrapData; online: boolean; onDraft: (draft: VisitDraft) => void; onCancel: () => void; onFinish: (draft: VisitDraft) => Promise<void> }) {
+function VisitWizard({ draft, bootstrap, online, authorizationValid, onDraft, onCancel, onFinish }: { draft: VisitDraft; bootstrap: BootstrapData; online: boolean; authorizationValid: boolean; onDraft: (draft: VisitDraft) => void; onCancel: () => void; onFinish: (draft: VisitDraft) => Promise<void> }) {
   const [step, setStep] = useState(0); const [query, setQuery] = useState(''); const [selectedSrp, setSelectedSrp] = useState(''); const [price, setPrice] = useState(''); const [error, setError] = useState(''); const [locating, setLocating] = useState(false); const [finishing, setFinishing] = useState(false)
   const steps = ['Store', 'Prices', 'Review', 'Evidence', 'Finish']
   const stores = bootstrap.stores.filter((store) => `${store.store_name} ${store.address}`.toLowerCase().includes(query.toLowerCase()))
@@ -174,7 +233,7 @@ function VisitWizard({ draft, bootstrap, online, onDraft, onCancel, onFinish }: 
   const next = () => { setError(''); if (step === 0 && !draft.store_id) return setError('Choose a registered store to continue.'); if (step === 1 && !draft.items.length) return setError('Add at least one commodity price.'); setStep(Math.min(4, step + 1)) }
   const addItem = () => { const srpId = Number(selectedSrp); const amount = Number(price); if (!srpId || !Number.isFinite(amount) || amount < 0) { setError('Choose a commodity and enter its shelf price.'); return } const without = draft.items.filter((item) => item.srp_id !== srpId); onDraft({ ...draft, items: [...without, { srp_id: srpId, recorded_price: amount }] }); setSelectedSrp(''); setPrice(''); setError('') }
   const captureLocation = () => { setLocating(true); setError(''); navigator.geolocation.getCurrentPosition((position) => { onDraft({ ...draft, location: { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_meters: position.coords.accuracy, captured_at: new Date(position.timestamp).toISOString() } }); setLocating(false) }, (reason) => { setError(`Location unavailable: ${reason.message}. Allow precise location and try again.`); setLocating(false) }, { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 }) }
-  const finish = async () => { const final = { ...draft, finalized_at: new Date().toISOString(), sync_source: (online ? 'online' : 'offline_queue') as VisitDraft['sync_source'] }; const issues = canFinalizeVisit(final); if (issues.length) { setError(issues.join(' ')); return } setFinishing(true); setError(''); try { await onFinish(final) } catch (reason) { setError(apiError(reason, 'The server could not validate this visit. Review the evidence and try again.')) } finally { setFinishing(false) } }
+  const finish = async () => { if (!authorizationValid) { setError('Offline authorization expired. Your draft is preserved; connect and unlock again before finalizing.'); return } const final = { ...draft, finalized_at: new Date().toISOString(), sync_source: (online ? 'online' : 'offline_queue') as VisitDraft['sync_source'] }; const issues = canFinalizeVisit(final); if (issues.length) { setError(issues.join(' ')); return } setFinishing(true); setError(''); try { await onFinish(final) } catch (reason) { setError(apiError(reason, 'The server could not validate this visit. Review the evidence and try again.')) } finally { setFinishing(false) } }
   return <div className="page visit-page"><button type="button" className="back-button" onClick={onCancel}><ArrowLeft size={17} />Back to activity</button><div className="visit-heading"><div><h1>Monitoring visit</h1><p>{selectedStore?.store_name || 'Select an active registered establishment'}</p></div><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={14} /> : <WifiOff size={14} />}{online ? 'Online' : 'Offline capture'}</span></div>
     <ol className="stepper">{steps.map((label, index) => <li key={label} className={index === step ? 'current' : index < step ? 'done' : ''}><span>{index < step ? <Check size={15} /> : index + 1}</span><small>{label}</small></li>)}</ol>
     <section className="visit-workspace">
@@ -184,7 +243,7 @@ function VisitWizard({ draft, bootstrap, online, onDraft, onCancel, onFinish }: 
       {step === 3 && <div className="step-content"><h2>Lock the visit evidence</h2><p>Both people sign the same completed record. Signatures are stored as private evidence.</p><div className="representative-fields"><label>Store representative name<input value={draft.representative.name} onChange={(event) => onDraft({ ...draft, representative: { ...draft.representative, name: event.target.value } })} /></label><label>Position (optional)<input value={draft.representative.title} onChange={(event) => onDraft({ ...draft, representative: { ...draft.representative, title: event.target.value } })} /></label></div><div className="signature-grid"><SignaturePad label="DTI field officer" value={draft.signatures.officer_png_base64} onChange={(value) => onDraft({ ...draft, signatures: { ...draft.signatures, officer_png_base64: value } })} /><SignaturePad label="Store representative" value={draft.signatures.representative_png_base64} onChange={(value) => onDraft({ ...draft, signatures: { ...draft.signatures, representative_png_base64: value } })} /></div></div>}
       {step === 4 && <div className="step-content finish-step"><h2>Capture location and finish</h2><p>Precise GPS within 100 metres is required. The record will be accepted automatically after server validation.</p><div className={`location-lock ${draft.location && draft.location.accuracy_meters <= 100 ? 'valid' : ''}`}><LocateFixed /><span>{draft.location ? <><strong>{draft.location.accuracy_meters <= 100 ? 'Location verified' : 'Location needs improvement'}</strong><small>{draft.location.latitude.toFixed(6)}, {draft.location.longitude.toFixed(6)} · ±{Math.round(draft.location.accuracy_meters)} m</small></> : <><strong>Location not captured</strong><small>Move near a window or outdoors for better GPS.</small></>}</span><button type="button" className="secondary-button" disabled={locating} onClick={captureLocation}>{locating ? 'Locating…' : draft.location ? 'Capture again' : 'Capture GPS'}</button></div><div className="final-checks"><FinalCheck okay={draft.items.length > 0} label={`${draft.items.length} commodity line${draft.items.length === 1 ? '' : 's'} reviewed`} /><FinalCheck okay={Boolean(draft.signatures.officer_png_base64 && draft.signatures.representative_png_base64)} label="Both signatures captured" /><FinalCheck okay={Boolean(draft.location && draft.location.accuracy_meters <= 100)} label="Precise location locked" /></div><div className={`submission-mode ${online ? 'online' : ''}`}>{online ? <Wifi /> : <CloudOff />}<span><strong>{online ? 'Submit for automatic acceptance' : 'Secure to encrypted queue'}</strong><small>{online ? 'The validated visit appears in Admin monitoring immediately.' : 'It will synchronize after this device reconnects and is unlocked.'}</small></span></div></div>}
       {error && <p className="form-error visit-error" role="alert"><TriangleAlert size={17} />{error}</p>}
-      <div className="wizard-actions">{step > 0 && <button type="button" className="secondary-button" onClick={() => { setError(''); setStep(step - 1) }}><ChevronLeft size={17} />Previous</button>}<span />{step < 4 ? <button type="button" className="primary-button" onClick={next}>Continue<ChevronRight size={17} /></button> : <button type="button" className="primary-button" disabled={finishing} onClick={() => void finish()}>{finishing ? 'Securing visit…' : online ? 'Finalize & submit' : 'Finalize offline'}<ShieldCheck size={18} /></button>}</div>
+      <div className="wizard-actions">{step > 0 && <button type="button" className="secondary-button" onClick={() => { setError(''); setStep(step - 1) }}><ChevronLeft size={17} />Previous</button>}<span />{step < 4 ? <button type="button" className="primary-button" onClick={next}>Continue<ChevronRight size={17} /></button> : <button type="button" className="primary-button" disabled={finishing || !authorizationValid} onClick={() => void finish()}>{!authorizationValid ? 'Authorization expired' : finishing ? 'Securing visit…' : online ? 'Finalize & submit' : 'Finalize offline'}<ShieldCheck size={18} /></button>}</div>
     </section></div>
 }
 

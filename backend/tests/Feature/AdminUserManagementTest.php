@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Store;
 use App\Models\User;
+use App\Models\FieldOfflineLease;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -100,11 +101,12 @@ class AdminUserManagementTest extends TestCase
         ])->assertCreated()
             ->assertJsonPath('data.role', 'field_officer')
             ->assertJsonPath('data.is_active', true)
-            ->assertJsonPath('data.must_change_password', true)
+            ->assertJsonPath('data.must_change_password', false)
             ->assertJsonMissing(['password' => 'permanent-password']);
 
         $officer = User::where('email', 'ana.officer@dti.gov.ph')->firstOrFail();
         $this->assertTrue(Hash::check('permanent-password', $officer->password));
+        $this->assertFalse($officer->must_change_password);
         $this->assertDatabaseHas('audit_events', ['action' => 'user.created', 'subject_id' => $officer->id]);
     }
 
@@ -112,6 +114,7 @@ class AdminUserManagementTest extends TestCase
     {
         $officer = User::create(['name' => 'Old Name', 'email' => 'old@dti.test', 'password' => 'old-password-value', 'role' => 'field_officer']);
         $officer->createToken('field-monitoring-mobile');
+        $lease = FieldOfflineLease::create(['user_id' => $officer->id, 'expires_at' => now()->addDay()]);
         Sanctum::actingAs($this->manager());
 
         $this->patchJson("/api/admin/users/{$officer->id}", [
@@ -128,7 +131,9 @@ class AdminUserManagementTest extends TestCase
         $officer->refresh();
         $this->assertSame('Updated Name', $officer->name);
         $this->assertTrue(Hash::check('new-permanent-password', $officer->password));
+        $this->assertFalse($officer->must_change_password);
         $this->assertCount(0, $officer->tokens()->get());
+        $this->assertNotNull($lease->fresh()->revoked_at);
         $this->assertDatabaseHas('audit_events', ['action' => 'user.updated', 'subject_id' => $officer->id]);
         $this->assertDatabaseHas('audit_events', ['action' => 'user.password_reset', 'subject_id' => $officer->id]);
     }
