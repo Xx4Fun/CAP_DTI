@@ -105,7 +105,7 @@ function parentGroupForModule(module: ModuleId): NavGroupId | null {
 const panels: Record<ModuleId, { title: string; description: string; component: (props: any) => ReactElement }> = {
   overview: { title: 'Dashboard', description: 'Current Admin workload and declared regulatory context.', component: OverviewPanel },
   consumer_reports: { title: 'Consumer Reports', description: 'Review consumer-submitted formal receipts only. Shelf-tag scans are excluded.', component: ReportReviewPanel },
-  field_monitoring: { title: 'Field Monitoring', description: 'Observe automatically accepted officer visits, evidence status, and verified price trends.', component: FieldMonitoringPanel },
+  field_monitoring: { title: 'Field Monitoring', description: 'Review accepted officer visits and their validation evidence.', component: FieldMonitoringPanel },
   establishments_access: { title: 'User Management', description: 'Manage vendor and DTI Field Monitoring accounts, credentials, and access status.', component: EstablishmentsAccessPanel },
   gis_monitoring: { title: 'GIS Monitoring', description: 'Map registered establishments, compliance findings, and vendor access.', component: StoreMonitoringPanel },
   communications: { title: 'Store Communications', description: 'Review the current availability of DTI-to-store communication workflows.', component: CommunicationsPanel },
