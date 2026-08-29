@@ -3,7 +3,6 @@ import { adminApi } from '../../services/adminApi'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
 import { StoreManager } from './StoreManager'
 import { StoreOnboarding } from '../StoreOnboarding'
-import { TemporalVolatility } from './TemporalVolatility'
 import { CitizenTipReview } from './CitizenTipReview'
 import { LegalNoticeManager } from './LegalNoticeManager'
 import { EmergencyToggle } from './EmergencyToggle'
@@ -462,10 +461,5 @@ export function AuditPanel() {
 }
 
 export function FieldMonitoringPanel() {
-  return (
-    <div className="admin-module-stack">
-      <FieldMonitoringRecords />
-      <TemporalVolatility />
-    </div>
-  )
+  return <FieldMonitoringRecords />
 }
