@@ -10,6 +10,7 @@ use App\Services\Admin\SensitiveActionGuard;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\Admin\SrpRevisionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -52,25 +53,27 @@ class SrpManagementController extends Controller
 
         $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
 
-        $bulletin = SrpBulletin::create([
-            'commodity_key' => $commodityKey,
-            'commodity_name' => $data['commodity_name'],
-            'image_path' => $data['image_path'] ?? null,
-            'category' => $data['category'] ?? null,
-            'unit' => $data['unit'] ?? null,
-            'regulatory_classification' => $data['regulatory_classification'] ?? null,
-            'baseline_price' => (float) $data['baseline_price'],
-            'effective_date' => $data['effective_date'],
-            'source_reference' => $data['source_reference'],
-            'is_active' => true,
-            'created_by' => $request->user()->id,
-        ]);
-
-        $audit->record($request, 'srp.created', $bulletin, [
-            'commodity_name' => $bulletin->commodity_name,
-            'baseline_price' => $bulletin->baseline_price,
-            'effective_date' => $bulletin->effective_date?->toDateString(),
-        ]);
+        $bulletin = DB::transaction(function () use ($commodityKey, $data, $request, $audit) {
+            $bulletin = SrpBulletin::create([
+                'commodity_key' => $commodityKey,
+                'commodity_name' => $data['commodity_name'],
+                'image_path' => $data['image_path'] ?? null,
+                'category' => $data['category'] ?? null,
+                'unit' => $data['unit'] ?? null,
+                'regulatory_classification' => $data['regulatory_classification'] ?? null,
+                'baseline_price' => (float) $data['baseline_price'],
+                'effective_date' => $data['effective_date'],
+                'source_reference' => $data['source_reference'],
+                'is_active' => true,
+                'created_by' => $request->user()->id,
+            ]);
+            $audit->recordOrFail($request, 'srp.created', $bulletin, [
+                'commodity_name' => $bulletin->commodity_name,
+                'baseline_price' => $bulletin->baseline_price,
+                'effective_date' => $bulletin->effective_date?->toDateString(),
+            ]);
+            return $bulletin;
+        });
 
         return response()->json(['data' => $bulletin], 201);
     }
@@ -95,23 +98,23 @@ class SrpManagementController extends Controller
         $targetImagePath = $data['image_path'] ?? $srp->image_path;
 
         // Sync metadata and image_path across all revisions of this commodity lineage
-        SrpBulletin::query()
-            ->where('commodity_key', $srp->commodity_key)
-            ->orWhere('commodity_name', $srp->commodity_name)
-            ->update([
-                'commodity_key' => $commodityKey,
-                'commodity_name' => $data['commodity_name'],
-                'unit' => $data['unit'] ?? null,
-                'category' => $data['category'] ?? null,
-                'regulatory_classification' => $data['regulatory_classification'] ?? null,
-                'image_path' => $targetImagePath,
+        DB::transaction(function () use ($srp, $commodityKey, $data, $targetImagePath, $request, $audit) {
+            SrpBulletin::query()
+                ->where('commodity_key', $srp->commodity_key)
+                ->orWhere('commodity_name', $srp->commodity_name)
+                ->update([
+                    'commodity_key' => $commodityKey,
+                    'commodity_name' => $data['commodity_name'],
+                    'unit' => $data['unit'] ?? null,
+                    'category' => $data['category'] ?? null,
+                    'regulatory_classification' => $data['regulatory_classification'] ?? null,
+                    'image_path' => $targetImagePath,
+                ]);
+            $srp->refresh();
+            $audit->recordOrFail($request, 'srp.metadata_updated', $srp, [
+                'commodity_name' => $srp->commodity_name,
             ]);
-
-        $srp->refresh();
-
-        $audit->record($request, 'srp.metadata_updated', $srp, [
-            'commodity_name' => $srp->commodity_name,
-        ]);
+        });
 
         return response()->json(['data' => $srp]);
     }
@@ -136,7 +139,7 @@ class SrpManagementController extends Controller
         ]);
 
         $created = [];
-        \Illuminate\Support\Facades\DB::transaction(function () use ($data, $request, $revisionService, &$created) {
+        DB::transaction(function () use ($data, $request, $revisionService, $audit, &$created) {
             foreach ($data['updates'] as $update) {
                 $original = SrpBulletin::findOrFail($update['id']);
 
@@ -164,13 +167,12 @@ class SrpManagementController extends Controller
                 $revision = $revisionService->create($original, $payload, $request->user(), $request);
                 $created[] = $revision;
             }
+            $audit->recordOrFail($request, 'srp.batch_revisions_created', 'srp_batch', [
+                'count' => count($created),
+                'effective_date' => $data['effective_date'],
+                'source_reference' => $data['source_reference'],
+            ]);
         });
-
-        $audit->record($request, 'srp.batch_revisions_created', 'srp_batch', [
-            'count' => count($created),
-            'effective_date' => $data['effective_date'],
-            'source_reference' => $data['source_reference'],
-        ]);
 
         return response()->json([
             'data' => [

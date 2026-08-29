@@ -43,7 +43,7 @@ class AdminRouteHardeningTest extends TestCase
         $this->assertFalse(Cache::get('state_of_calamity'));
     }
 
-    public function test_field_officer_receives_only_sanitized_analytics_options(): void
+    public function test_field_officer_cannot_read_admin_analytics_options(): void
     {
         Store::create([
             'dti_sec_number' => 'PRIVATE-SEC-001',
@@ -55,11 +55,7 @@ class AdminRouteHardeningTest extends TestCase
         ]);
         Sanctum::actingAs($this->user('field_officer'));
 
-        $this->getJson('/api/admin/analytics/options')
-            ->assertOk()
-            ->assertJsonPath('data.stores.0.store_name', 'Public Store Label')
-            ->assertJsonMissing(['owner_name' => 'Private Owner'])
-            ->assertJsonMissing(['dti_sec_number' => 'PRIVATE-SEC-001']);
+        $this->getJson('/api/admin/analytics/options')->assertForbidden();
     }
 
     public function test_sensitive_emergency_creation_requires_recent_reauthentication(): void

@@ -60,7 +60,7 @@ class AdminSettingsController extends Controller
             'name' => 'required|string|max:255',
             'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'current_password' => 'nullable|required_with:new_password|string',
-            'new_password' => 'nullable|string|min:8',
+            'new_password' => 'nullable|string|min:12',
         ]);
 
         if (!empty($validated['new_password'])) {

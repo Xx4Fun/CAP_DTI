@@ -46,16 +46,20 @@ class SrpImportService
     public function import(array $payload, User $actor, Request $request): array
     {
         $preview = $this->preview($payload);
-        $inserted = DB::transaction(function () use ($preview, $actor) {
+        $inserted = DB::transaction(function () use ($preview, $actor, $request) {
             $count = 0;
             foreach ($preview['rows'] as $row) {
                 if (SrpBulletin::where('commodity_key', $row['commodity_key'])->whereDate('effective_date', $row['effective_date'])->exists()) continue;
                 SrpBulletin::create($row + ['created_by' => $actor->id]);
                 $count++;
             }
+            $this->audit->recordOrFail($request, 'srp.imported', 'srp_import', [
+                'inserted' => $count,
+                'effective_date' => $preview['effective_date'],
+                'source_reference' => $preview['source_reference'],
+            ]);
             return $count;
         });
-        $this->audit->record($request, 'srp.imported', 'srp_import', ['inserted' => $inserted, 'effective_date' => $preview['effective_date'], 'source_reference' => $preview['source_reference']]);
         return $preview + ['inserted' => $inserted];
     }
 }

@@ -9,6 +9,7 @@ use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -65,14 +66,17 @@ class UserManagementController extends Controller
             'password' => ['required', 'string', 'min:12', 'confirmed'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
-        $user = User::create([
-            ...$data,
-            'email' => strtolower($data['email']),
-            'role' => 'field_officer',
-            'is_active' => $data['is_active'] ?? true,
-            'must_change_password' => false,
-        ]);
-        $audit->record($request, 'user.created', $user, ['role' => $user->role, 'is_active' => $user->is_active]);
+        $user = DB::transaction(function () use ($data, $request, $audit) {
+            $user = User::create([
+                ...$data,
+                'email' => strtolower($data['email']),
+                'role' => 'field_officer',
+                'is_active' => $data['is_active'] ?? true,
+                'must_change_password' => false,
+            ]);
+            $audit->recordOrFail($request, 'user.created', $user, ['role' => $user->role, 'is_active' => $user->is_active]);
+            return $user;
+        });
 
         return response()->json(['data' => $user->load('stores:id,vendor_user_id,store_name')], 201);
     }
@@ -92,13 +96,15 @@ class UserManagementController extends Controller
         if (isset($data['email'])) {
             $data['email'] = strtolower($data['email']);
         }
-        $wasActive = (bool) $managedUser->is_active;
-        $managedUser->fill($data)->save();
-        if ($wasActive && ! $managedUser->is_active) {
-            $managedUser->tokens()->delete();
-            FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
-        }
-        $audit->record($request, 'user.updated', $managedUser, ['changed_fields' => array_keys($data)]);
+        DB::transaction(function () use ($data, $request, $audit, $managedUser) {
+            $wasActive = (bool) $managedUser->is_active;
+            $managedUser->fill($data)->save();
+            if ($wasActive && ! $managedUser->is_active) {
+                $managedUser->tokens()->delete();
+                FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            }
+            $audit->recordOrFail($request, 'user.updated', $managedUser, ['changed_fields' => array_keys($data)]);
+        });
 
         return response()->json(['data' => $managedUser->load('stores:id,vendor_user_id,store_name')]);
     }
@@ -109,13 +115,15 @@ class UserManagementController extends Controller
         $this->requireManagedRole($managedUser);
         $guard->requireRecentReauthentication($request);
         $data = $request->validate(['password' => ['required', 'string', 'min:12', 'confirmed']]);
-        $managedUser->forceFill([
-            'password' => $data['password'],
-            'must_change_password' => false,
-        ])->save();
-        $managedUser->tokens()->delete();
-        FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
-        $audit->record($request, 'user.password_reset', $managedUser);
+        DB::transaction(function () use ($data, $request, $audit, $managedUser) {
+            $managedUser->forceFill([
+                'password' => $data['password'],
+                'must_change_password' => false,
+            ])->save();
+            $managedUser->tokens()->delete();
+            FieldOfflineLease::where('user_id', $managedUser->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            $audit->recordOrFail($request, 'user.password_reset', $managedUser);
+        });
 
         return response()->json(['data' => ['message' => 'Password updated and active sessions revoked.']]);
     }

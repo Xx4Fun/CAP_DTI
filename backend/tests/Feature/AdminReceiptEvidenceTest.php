@@ -12,6 +12,7 @@ use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -94,6 +95,28 @@ class AdminReceiptEvidenceTest extends TestCase
             'action' => 'report.evidence_asset_accessed',
             'subject_id' => $report->id,
         ]);
+    }
+
+    public function test_private_evidence_download_fails_closed_when_audit_storage_is_unavailable(): void
+    {
+        $report = $this->createReport('AUDIT-DOWN', 'Submitted', true);
+        $path = "receipt-evidence/{$report->evidenceBundle->evidence_uuid}/frame.jpg";
+        Storage::disk('receipt_evidence')->put($path, 'private-frame');
+        $asset = ReceiptEvidenceAsset::create([
+            'receipt_evidence_bundle_id' => $report->receipt_evidence_bundle_id,
+            'kind' => 'extracted_frame',
+            'sequence' => 0,
+            'disk' => 'receipt_evidence',
+            'path' => $path,
+            'mime_type' => 'image/jpeg',
+            'size_bytes' => strlen('private-frame'),
+            'sha256' => hash('sha256', 'private-frame'),
+        ]);
+        Schema::drop('audit_events');
+
+        $this->get("/api/admin/reports/{$report->id}/evidence-assets/{$asset->id}")
+            ->assertStatus(503)
+            ->assertJsonPath('message', 'Audit trail is unavailable. Private evidence cannot be accessed safely.');
     }
 
     public function test_per_item_decisions_create_findings_but_count_one_receipt_incident(): void

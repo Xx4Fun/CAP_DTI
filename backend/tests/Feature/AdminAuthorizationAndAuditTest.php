@@ -53,20 +53,16 @@ class AdminAuthorizationAndAuditTest extends TestCase
         $this->deleteJson('/api/admin/audit-events/1')->assertNotFound();
     }
 
-    public function test_field_officer_can_read_count_only_admin_overview(): void
+    public function test_field_officer_cannot_read_the_admin_overview(): void
     {
         Sanctum::actingAs($this->user('field_officer'));
 
-        $this->getJson('/api/admin/overview')
-            ->assertOk()
-            ->assertJsonStructure(['data' => ['stores', 'pending_reports', 'active_emergencies']])
-            ->assertJsonMissing(['owner_name'])
-            ->assertJsonMissing(['dti_sec_number']);
+        $this->getJson('/api/admin/overview')->assertForbidden();
     }
 
     public function test_admin_overview_keeps_available_counts_when_emergency_schema_is_missing(): void
     {
-        Sanctum::actingAs($this->user('field_officer'));
+        Sanctum::actingAs($this->user('dti_evaluator'));
         Schema::drop('regulatory_emergencies');
 
         $this->getJson('/api/admin/overview')

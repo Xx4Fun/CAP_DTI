@@ -47,6 +47,7 @@ class AdminRegulatoryWorkflowTest extends TestCase
 
     public function test_store_invitation_is_hashed_expiring_audited_and_accepts_a_real_password(): void
     {
+        config(['mail.default' => 'smtp']);
         $response = $this->postJson("/api/admin/stores/{$this->store->id}/invitations", [
             'email' => 'vendor@market.test',
             'expires_in_hours' => 24,
@@ -60,6 +61,7 @@ class AdminRegulatoryWorkflowTest extends TestCase
         $this->assertDatabaseMissing('vendor_invitations', ['token_hash' => $token]);
         $this->assertDatabaseHas('vendor_invitations', ['token_hash' => hash('sha256', $token), 'status' => 'pending']);
         Mail::assertQueued(VendorInvitationMail::class);
+        $response->assertJsonPath('delivery_status', 'queued');
 
         $this->postJson("/api/vendor-invitations/{$token}/accept", [
             'name' => 'Vendor Owner',

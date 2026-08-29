@@ -44,6 +44,25 @@ class AuthControllerTest extends TestCase {
         $response->assertStatus(422);
     }
 
+    public function test_field_officer_is_directed_to_the_dedicated_field_login(): void {
+        $user = User::create([
+            'name' => 'Field Officer',
+            'email' => 'field@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'field_officer',
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'password123',
+        ]);
+
+        $response->assertStatus(403)
+            ->assertJsonPath('status', 'FIELD_PWA_REQUIRED')
+            ->assertJsonMissingPath('token');
+        $this->assertCount(0, $user->fresh()->tokens);
+    }
+
     public function test_user_can_logout_and_revoke_token(): void {
         $user = User::create([
             'name' => 'John Doe',

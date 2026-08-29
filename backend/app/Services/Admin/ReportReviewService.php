@@ -44,7 +44,7 @@ class ReportReviewService
                 );
             }
             if ($report->store_id) $this->recalculateRecidivism(Store::findOrFail($report->store_id));
-            $this->audit->record($request, 'report.'.$action, $report, [
+            $this->audit->recordOrFail($request, 'report.'.$action, $report, [
                 'reason' => $reason, 'corrected_fields' => array_keys($corrected),
                 'regulatory_finding' => $corrected['regulatory_finding'] ?? null,
             ]);
@@ -127,7 +127,7 @@ class ReportReviewService
             if ($report->store_id) {
                 $this->recalculateRecidivism(Store::findOrFail($report->store_id));
             }
-            $this->audit->record($request, 'report.'.$action, $report, [
+            $this->audit->recordOrFail($request, 'report.'.$action, $report, [
                 'reason' => $reason,
                 'item_count' => count($itemDecisions),
                 'regulatory_finding' => $hasConfirmedViolation ? 'confirmed_violation' : 'not_confirmed',

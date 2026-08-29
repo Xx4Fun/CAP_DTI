@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,6 +18,24 @@ class AuditTrailService
     public function record(Request $request, string $action, Model|string $subject, array $metadata = []): ?AuditEvent
     {
         return $this->recordAs($request, $request->user(), $action, $subject, $metadata);
+    }
+
+    public function recordOrFail(
+        Request $request,
+        string $action,
+        Model|string $subject,
+        array $metadata = [],
+        string $message = 'Audit trail is unavailable. This audited operation cannot be completed safely.'
+    ): AuditEvent {
+        $event = $this->record($request, $action, $subject, $metadata);
+        if (! $event) {
+            throw new HttpResponseException(response()->json([
+                'status' => 'AUDIT_TRAIL_UNAVAILABLE',
+                'message' => $message,
+            ], 503));
+        }
+
+        return $event;
     }
 
     public function recordAs(

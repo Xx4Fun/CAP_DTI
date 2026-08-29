@@ -47,17 +47,13 @@ class SrpRevisionService
 
         return DB::transaction(function () use ($original, $preview, $data, $actor, $request) {
             $revision = SrpBulletin::create($preview['proposed'] + ['created_by' => $actor->id]);
-            $event = $this->audit->record($request, 'srp.revision_created', $revision, [
+            $this->audit->recordOrFail($request, 'srp.revision_created', $revision, [
                 'original_id' => $original->id,
                 'changed_fields' => $preview['changed_fields'],
                 'effective_date' => $revision->effective_date?->toDateString(),
                 'source_reference' => $revision->source_reference,
                 'change_reason' => $data['change_reason'],
             ]);
-
-            if (! $event) {
-                throw new HttpResponseException($this->unavailableResponse());
-            }
 
             return $revision;
         });

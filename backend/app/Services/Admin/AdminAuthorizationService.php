@@ -13,7 +13,7 @@ class AdminAuthorizationService
 
     public function canViewAnalytics(User $user): bool
     {
-        return in_array($user->role, ['dti_evaluator', 'super_admin', 'field_officer'], true);
+        return in_array($user->role, ['dti_evaluator', 'super_admin'], true);
     }
 
     public function requireManager(User $user): void

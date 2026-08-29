@@ -49,13 +49,12 @@ class AdminSessionController extends Controller
         abort_unless($token && method_exists($token, 'getKey'), 403, 'Token reauthentication is unavailable.');
 
         $until = now()->addMinutes(config('admin_security.reauthentication_minutes'));
+        $audit->recordOrFail($request, 'auth.reauthenticated', $request->user());
         Cache::put(
             $this->reauthenticationCacheKey($token->getKey()),
             $until->toIso8601String(),
             $until
         );
-        $audit->record($request, 'auth.reauthenticated', $request->user());
-
         return response()->json(['data' => [
             'reauthenticated_until' => $until->toIso8601String(),
         ]]);

@@ -10,6 +10,7 @@ use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\EmergencyPriceResolver;
 use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class EmergencyAdminController extends Controller
 {
@@ -26,12 +27,15 @@ class EmergencyAdminController extends Controller
             'location' => 'required|string', 'starts_on' => 'required|date', 'ends_on' => 'nullable|date|after_or_equal:starts_on',
             'declaration_reference' => 'required|string', 'confirmed' => 'required|accepted',
         ]);
-        $emergency = RegulatoryEmergency::create([
-            'location' => $data['location'], 'starts_on' => $data['starts_on'], 'ends_on' => $data['ends_on'] ?? null,
-            'declaration_reference' => $data['declaration_reference'], 'status' => 'active',
-            'confirmed_at' => now(), 'responsible_admin_id' => $request->user()->id,
-        ]);
-        $audit->record($request, 'emergency.confirmed', $emergency, ['declaration_reference' => $emergency->declaration_reference, 'location' => $emergency->location]);
+        $emergency = DB::transaction(function () use ($data, $request, $audit) {
+            $emergency = RegulatoryEmergency::create([
+                'location' => $data['location'], 'starts_on' => $data['starts_on'], 'ends_on' => $data['ends_on'] ?? null,
+                'declaration_reference' => $data['declaration_reference'], 'status' => 'active',
+                'confirmed_at' => now(), 'responsible_admin_id' => $request->user()->id,
+            ]);
+            $audit->recordOrFail($request, 'emergency.confirmed', $emergency, ['declaration_reference' => $emergency->declaration_reference, 'location' => $emergency->location]);
+            return $emergency;
+        });
         return response()->json(['data' => $emergency], 201);
     }
     public function update(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
@@ -43,16 +47,18 @@ class EmergencyAdminController extends Controller
             'ends_on' => 'nullable|required_if:status,ended|date|after_or_equal:'.$emergency->starts_on->toDateString(),
             'confirmed' => 'required|accepted',
         ]);
-        $previous = $emergency->status;
-        $emergency->update([
-            'status' => $data['status'],
-            'ends_on' => $data['ends_on'] ?? now()->toDateString(),
-        ]);
-        $audit->record($request, 'emergency.status_changed', $emergency, [
-            'previous_status' => $previous,
-            'status' => $emergency->status,
-            'ends_on' => $emergency->ends_on?->toDateString(),
-        ]);
+        DB::transaction(function () use ($data, $request, $audit, $emergency) {
+            $previous = $emergency->status;
+            $emergency->update([
+                'status' => $data['status'],
+                'ends_on' => $data['ends_on'] ?? now()->toDateString(),
+            ]);
+            $audit->recordOrFail($request, 'emergency.status_changed', $emergency, [
+                'previous_status' => $previous,
+                'status' => $emergency->status,
+                'ends_on' => $emergency->ends_on?->toDateString(),
+            ]);
+        });
         return response()->json(['data' => $emergency->fresh()]);
     }
     public function storePrice(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
@@ -78,8 +84,11 @@ class EmergencyAdminController extends Controller
         }
         $data['location'] = $emergency->location;
         $data['declaration_reference'] = $emergency->declaration_reference;
-        $record = RegulatoryPriceRecord::create($data + ['created_by' => $request->user()->id]);
-        $audit->record($request, 'emergency_price.created', $record, ['price_type' => $record->price_type, 'source_reference' => $record->source_reference]);
+        $record = DB::transaction(function () use ($data, $request, $audit) {
+            $record = RegulatoryPriceRecord::create($data + ['created_by' => $request->user()->id]);
+            $audit->recordOrFail($request, 'emergency_price.created', $record, ['price_type' => $record->price_type, 'source_reference' => $record->source_reference]);
+            return $record;
+        });
         return response()->json(['data' => $record], 201);
     }
     public function resolve(Request $request, AdminAuthorizationService $auth, EmergencyPriceResolver $resolver)

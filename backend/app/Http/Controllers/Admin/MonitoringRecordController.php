@@ -52,7 +52,13 @@ class MonitoringRecordController extends Controller
         $disk = $kind === 'officer' ? $monitoringRecord->officer_signature_disk : $monitoringRecord->representative_signature_disk;
         $path = $kind === 'officer' ? $monitoringRecord->officer_signature_path : $monitoringRecord->representative_signature_path;
         abort_unless(Storage::disk($disk)->exists($path), 404, 'Signature evidence is unavailable.');
-        $audit->record($request, 'monitoring_record.signature_viewed', $monitoringRecord, ['kind' => $kind]);
+        $audit->recordOrFail(
+            $request,
+            'monitoring_record.signature_viewed',
+            $monitoringRecord,
+            ['kind' => $kind],
+            'Audit trail is unavailable. Private signature evidence cannot be accessed safely.'
+        );
         return response(Storage::disk($disk)->get($path), 200, [
             'Content-Type' => 'image/png', 'Cache-Control' => 'private, no-store',
             'Content-Disposition' => 'inline; filename="signature.png"',

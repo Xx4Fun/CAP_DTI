@@ -19,26 +19,26 @@ class VendorInvitationService
 
     public function create(Store $store, string $email, User $actor, Request $request, int $hours = 24): array
     {
-        if (!in_array(config('mail.default'), ['array', 'log'], true)) {
-            throw ValidationException::withMessages(['email' => ['Vendor invitations require the array or log mail driver during development.']]);
-        }
-
         $raw = Str::random(64);
-        $invitation = VendorInvitation::create([
-            'store_id' => $store->id,
-            'email' => strtolower($email),
-            'token_hash' => hash('sha256', $raw),
-            'status' => 'pending',
-            'expires_at' => now()->addHours($hours),
-            'invited_by' => $actor->id,
-        ]);
         $url = rtrim(config('app.frontend_url'), '/').'/vendor-invitation?token='.urlencode($raw);
-        Mail::to($email)->queue(new VendorInvitationMail($url, $store->store_name));
-        $this->audit->record($request, 'invitation.created', $invitation, [
-            'email' => strtolower($email), 'expires_at' => $invitation->expires_at->toIso8601String(),
-        ]);
+        $invitation = DB::transaction(function () use ($store, $email, $raw, $hours, $actor, $request) {
+            $invitation = VendorInvitation::create([
+                'store_id' => $store->id,
+                'email' => strtolower($email),
+                'token_hash' => hash('sha256', $raw),
+                'status' => 'pending',
+                'expires_at' => now()->addHours($hours),
+                'invited_by' => $actor->id,
+            ]);
+            $this->audit->recordOrFail($request, 'invitation.created', $invitation, [
+                'email' => strtolower($email), 'expires_at' => $invitation->expires_at->toIso8601String(),
+            ]);
+            return $invitation;
+        });
 
-        return ['invitation' => $invitation, 'invitation_url' => $url];
+        Mail::to($email)->queue(new VendorInvitationMail($url, $store->store_name));
+
+        return ['invitation' => $invitation, 'invitation_url' => $url, 'delivery_status' => 'queued'];
     }
 
     public function accept(string $raw, string $name, string $password, Request $request): User
@@ -82,10 +82,12 @@ class VendorInvitationService
         if ($invitation->status !== 'pending') {
             throw ValidationException::withMessages(['invitation' => ['Only pending invitations can be cancelled.']]);
         }
-        $invitation->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-        $this->audit->record($request, 'invitation.cancelled', $invitation, [
-            'email' => $invitation->email,
-        ]);
+        DB::transaction(function () use ($invitation, $request) {
+            $invitation->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+            $this->audit->recordOrFail($request, 'invitation.cancelled', $invitation, [
+                'email' => $invitation->email,
+            ]);
+        });
         return $invitation->fresh();
     }
 }

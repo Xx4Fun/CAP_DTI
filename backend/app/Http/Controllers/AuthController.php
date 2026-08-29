@@ -26,7 +26,18 @@ class AuthController extends Controller {
             ]);
         }
 
-        $isDtiUser = in_array($user->role, ['super_admin', 'dti_evaluator', 'field_officer'], true);
+        if ($user->role === 'field_officer') {
+            $audit->recordAs($request, $user, 'auth.admin_login_redirected', $user, [
+                'required_client' => 'field-monitoring-pwa',
+            ]);
+
+            return response()->json([
+                'status' => 'FIELD_PWA_REQUIRED',
+                'message' => 'Use the Field Monitoring PWA to sign in with this account.',
+            ], 403);
+        }
+
+        $isDtiUser = in_array($user->role, ['super_admin', 'dti_evaluator'], true);
         $expiresAt = $isDtiUser
             ? now()->addHours(config('admin_security.absolute_timeout_hours'))
             : null;

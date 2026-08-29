@@ -16,9 +16,14 @@ class ReportReviewController extends Controller
     public function index(Request $request, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-        $reports = ConsumerReport::with(['store', 'items.srp', 'evidenceBundle.assets'])
+        $filters = $request->validate([
+            'page' => 'sometimes|integer|min:1',
+            'per_page' => 'sometimes|integer|min:1|max:50',
+        ]);
+        $paginator = ConsumerReport::with(['store', 'items.srp', 'evidenceBundle.assets'])
             ->whereNotIn('status', ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'])
-            ->latest()->get()->map(fn ($report) => [
+            ->latest()->paginate($filters['per_page'] ?? 20);
+        $reports = $paginator->getCollection()->map(fn ($report) => [
             'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
             'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
             'raw_ocr_json' => $report->raw_ocr_json, 'consumer_confirmed_json' => $report->consumer_confirmed_json,
@@ -48,7 +53,17 @@ class ReportReviewController extends Controller
                 'evaluator_decision_json' => $item->evaluator_decision_json,
             ])->values(),
         ]);
-        return response()->json(['data' => $reports]);
+        return response()->json([
+            'data' => $reports,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ],
+        ]);
     }
     public function decision(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, ReportReviewService $service)
     {
@@ -98,7 +113,13 @@ class ReportReviewController extends Controller
     {
         $auth->requireManager($request->user());
         abort_unless($report->image_vault_path && Storage::disk('local')->exists($report->image_vault_path), 404);
-        $audit->record($request, 'report.evidence_accessed', $report);
+        $audit->recordOrFail(
+            $request,
+            'report.evidence_accessed',
+            $report,
+            [],
+            'Audit trail is unavailable. Private evidence cannot be accessed safely.'
+        );
         return Storage::disk('local')->download($report->image_vault_path, $report->report_reference.'.jpg');
     }
 
@@ -135,10 +156,10 @@ class ReportReviewController extends Controller
         $auth->requireManager($request->user());
         abort_unless($report->receipt_evidence_bundle_id && $asset->receipt_evidence_bundle_id === $report->receipt_evidence_bundle_id, 404);
         abort_unless(Storage::disk($asset->disk)->exists($asset->path), 404);
-        $audit->record($request, 'report.evidence_asset_accessed', $report, [
+        $audit->recordOrFail($request, 'report.evidence_asset_accessed', $report, [
             'asset_id' => $asset->id,
             'kind' => $asset->kind,
-        ]);
+        ], 'Audit trail is unavailable. Private evidence cannot be accessed safely.');
 
         return Storage::disk($asset->disk)->download(
             $asset->path,

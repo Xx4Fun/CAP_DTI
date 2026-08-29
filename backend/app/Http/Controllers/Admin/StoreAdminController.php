@@ -8,6 +8,7 @@ use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StoreAdminController extends Controller
@@ -31,10 +32,13 @@ class StoreAdminController extends Controller
             'is_active' => 'boolean', 'is_verified' => 'boolean', 'is_public' => 'boolean',
         ]);
         $data = array_merge(['is_active' => true, 'is_verified' => false, 'is_public' => false], $data);
-        $store = Store::create($data);
-        $audit->record($request, 'store.created', $store, ['visibility' => [
-            'active' => (bool) $store->is_active, 'verified' => (bool) $store->is_verified, 'public' => (bool) $store->is_public,
-        ]]);
+        $store = DB::transaction(function () use ($data, $request, $audit) {
+            $store = Store::create($data);
+            $audit->recordOrFail($request, 'store.created', $store, ['visibility' => [
+                'active' => (bool) $store->is_active, 'verified' => (bool) $store->is_verified, 'public' => (bool) $store->is_public,
+            ]]);
+            return $store;
+        });
         return response()->json(['data' => $store], 201);
     }
 
@@ -62,8 +66,10 @@ class StoreAdminController extends Controller
             $data['verified_at'] = now();
             $data['verified_by'] = $request->user()->id;
         }
-        $store->forceFill($data)->save();
-        $audit->record($request, 'store.updated', $store, ['changed_fields' => array_keys($data)]);
+        DB::transaction(function () use ($data, $request, $audit, $store) {
+            $store->forceFill($data)->save();
+            $audit->recordOrFail($request, 'store.updated', $store, ['changed_fields' => array_keys($data)]);
+        });
         return response()->json(['data' => $store]);
     }
 }
