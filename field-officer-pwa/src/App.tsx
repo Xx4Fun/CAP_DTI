@@ -1,25 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ArrowLeft, ArrowRight, BadgeCheck, Building2, Check, CheckCircle2, ChevronLeft,
-  ChevronRight, ClipboardCheck, CloudOff, History, ListChecks, LocateFixed, LockKeyhole,
-  Fingerprint, Lock, LogOut, MapPin, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, Signal,
+  ArrowLeft, Building2, Check, CheckCircle2, ChevronLeft,
+  ChevronRight, CloudOff, LocateFixed, LockKeyhole,
+  Fingerprint, Plus, Search, ShieldCheck,
   TriangleAlert, Wifi, WifiOff, X
 } from 'lucide-react'
 import { InstallPrompt } from './components/InstallPrompt'
-import { Login } from './components/Login'
+import { LoginForm } from './components/Login'
+import { AuthShell } from './components/AuthShell'
+import { DevicePinInput } from './components/DevicePinInput'
+import { FieldAppShell, type TopLevelView } from './components/FieldAppShell'
+import { ActivityPage, HistoryPage, HomePage, ProfilePage } from './components/FieldPages'
 import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
 import { canFinalizeVisit, createDraft, analyzeLine } from './app/workflow'
 import {
   clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
-  hasBiometricUnlock, hasVault, isBiometricUnlockAvailable, lockVault, readSecret,
-  unlockVault, unlockVaultWithBiometrics, writeSecret,
+  getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
+  restoreVaultSession, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './app/vault'
+import type { BiometricAvailability, VaultUnlockResult } from './app/vault'
 import { applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldLockAfterBackground } from './app/sessionPolicy'
-import type { BootstrapData, Bulletin, FieldSession, MonitoringRecord, Page, VisitDraft } from './types'
+import type { BootstrapData, Bulletin, FieldSession, VisitDraft } from './types'
 
-type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'attention' | 'ready'
-type View = 'home' | 'visit' | 'history'
+type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'migration' | 'attention' | 'ready'
+type View = TopLevelView | 'visit'
 const EMPTY_BOOTSTRAP: BootstrapData = { version: '', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }
 
 export default function App() {
@@ -32,11 +37,10 @@ export default function App() {
   const [online, setOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
   const [notice, setNotice] = useState('')
-  const [biometricAvailable, setBiometricAvailable] = useState(false)
+  const [biometricAvailability, setBiometricAvailability] = useState<BiometricAvailability>('browser-unsupported')
   const [biometricEnabled, setBiometricEnabled] = useState(false)
   const hiddenAt = useRef<number | null>(null)
 
-  useEffect(() => { void hasVault().then((exists) => setGate(exists ? 'unlock' : 'login')) }, [])
   useEffect(() => {
     const update = () => setOnline(navigator.onLine)
     window.addEventListener('online', update); window.addEventListener('offline', update)
@@ -75,10 +79,25 @@ export default function App() {
         setBootstrap(downloaded); await writeSecret('bootstrap', downloaded)
       } catch (error) { if (!cached) throw error }
     }
-    setBiometricAvailable(await isBiometricUnlockAvailable())
+    setBiometricAvailability(await getBiometricUnlockAvailability())
     setBiometricEnabled(await hasBiometricUnlock())
     setGate('ready')
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      if (!await hasVault()) { setGate('login'); return }
+      if (!await restoreVaultSession()) { setGate('unlock'); return }
+      try {
+        const saved = await readSecret<FieldSession>('session')
+        if (!saved) { lockVault(); setGate('attention'); return }
+        await hydrate(saved)
+      } catch {
+        lockVault()
+        setGate('unlock')
+      }
+    })()
+  }, [hydrate])
 
   const lockWorkspace = useCallback(async () => {
     if (gate !== 'ready' || !session) return
@@ -123,49 +142,55 @@ export default function App() {
   useEffect(() => { if (online && gate === 'ready') void syncQueue() }, [online, gate, syncQueue])
   useEffect(() => { if (gate === 'ready' && draft) void writeSecret('active-draft', draft) }, [draft, gate])
 
-  if (gate === 'checking') return <CenteredStatus icon={<ShieldCheck />} title="Opening secure workspace" detail="Checking this device…" />
-  if (gate === 'login') return <Login onAuthenticated={(next) => { setSession(next); setGate('pin') }} />
-  if (gate === 'pin' && session) return <PinSetup onDone={async (pin) => {
-    await createVault(pin); await writeSecret('session', session)
-    if (await isBiometricUnlockAvailable()) setGate('biometric')
-    else await hydrate(session, false)
-  }} />
-  if (gate === 'biometric' && session) return <BiometricSetup onEnable={async () => { await enableBiometricUnlock(); await hydrate(session, false) }} onSkip={() => void hydrate(session, false)} />
-  if (gate === 'unlock') return <Unlock onUnlocked={async () => {
+  const completeUnlock = useCallback(async (result: VaultUnlockResult) => {
     const saved = await readSecret<FieldSession>('session')
     if (!saved) { lockVault(); setGate('attention'); return }
+    if (result.requiresPinMigration) { setSession(saved); setGate('migration'); return }
     await hydrate(saved)
-  }} />
-  if (gate === 'attention') return <AuthFrame title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device."><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></AuthFrame>
+  }, [hydrate])
+
+  if (gate !== 'ready') return <AuthShell contentKey={gate}>
+    {gate === 'checking' && <SecurityMessage title="Opening secure workspace" detail="Checking this device…" icon={<ShieldCheck />} />}
+    {gate === 'login' && <LoginForm onAuthenticated={(next) => { setSession(next); setGate('pin') }} />}
+    {gate === 'pin' && session && <PinSetup onDone={async (pin) => {
+      await createVault(pin); await writeSecret('session', session)
+      setBiometricAvailability(await getBiometricUnlockAvailability())
+      setGate('biometric')
+    }} />}
+    {gate === 'biometric' && session && <BiometricSetup availability={biometricAvailability} onEnable={async () => { await enableBiometricUnlock(); await hydrate(session, false) }} onSkip={() => void hydrate(session, false)} />}
+    {gate === 'unlock' && <Unlock onUnlocked={completeUnlock} />}
+    {gate === 'migration' && session && <PinSetup migration onDone={async (pin) => { await rewrapVaultPin(pin); await hydrate(session) }} />}
+    {gate === 'attention' && <SecurityMessage title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device." icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
+  </AuthShell>
   if (!session) return null
   const leaseValid = canFinalizeWithLease(session.offline_lease)
   const startVisit = () => {
     if (!leaseValid) { setNotice('Offline authorization expired. Connect and unlock again before starting another official visit.'); return }
     if (!draft) setDraft(createDraft(session.offline_lease.id)); setView('visit')
   }
-  return <div className="field-app">
+  const logoutWorkspace = async () => {
+    const blocked = logoutBlock(queue, draft)
+    if (blocked === 'queue') { setNotice('Synchronize all completed visits before signing out.'); return }
+    if (blocked === 'draft' && !window.confirm('Discard the active draft and sign out? This draft cannot be recovered.')) return
+    if (!navigator.onLine) { setNotice('Connect to the internet to revoke this device session before signing out.'); return }
+    try {
+      if (draft) { await deleteSecret('active-draft'); setDraft(null) }
+      await fieldApi.logout(session.token)
+      await clearVault(); setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setView('home'); setGate('login')
+    } catch (error) { setNotice(apiError(error, 'Sign out could not revoke this device session. Try again while online.')) }
+  }
+  const toggleBiometric = async () => {
+    if (biometricEnabled) { await disableBiometricUnlock(); setBiometricEnabled(false); setNotice('Device biometric unlock disabled. PIN unlock remains available.') }
+    else { await enableBiometricUnlock(); setBiometricEnabled(true); setNotice('Device biometric unlock enabled. PIN unlock remains available.') }
+  }
+  const shellView: TopLevelView = view === 'visit' ? 'activity' : view
+  return <>
     <InstallPrompt />
-    <AppRail view={view} name={session.user.name} online={online} queueCount={queue.length} onNavigate={setView} onLock={() => void lockWorkspace()} onLogout={async () => {
-      const blocked = logoutBlock(queue, draft)
-      if (blocked === 'queue') { setNotice('Synchronize all completed visits before signing out.'); return }
-      if (blocked === 'draft' && !window.confirm('Discard the active draft and sign out? This draft cannot be recovered.')) return
-      if (!navigator.onLine) { setNotice('Connect to the internet to revoke this device session before signing out.'); return }
-      try {
-        if (draft) { await deleteSecret('active-draft'); setDraft(null) }
-        await fieldApi.logout(session.token)
-        await clearVault(); setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setGate('login')
-      } catch (error) { setNotice(apiError(error, 'Sign out could not revoke this device session. Try again while online.')) }
-    }} />
-    <main className="field-main">
-      <header className="mobile-header"><Brand /><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={14} /> : <WifiOff size={14} />}{online ? 'Online' : 'Offline'}</span><button type="button" className="header-lock" onClick={() => void lockWorkspace()} aria-label="Lock now"><Lock size={17} /></button></header>
+    <FieldAppShell activeView={shellView} officerName={session.user.name} online={online} queueCount={queue.length} hasActiveDraft={Boolean(draft)} authorizationValid={leaseValid} onNavigate={setView} onStartVisit={startVisit} onLock={() => void lockWorkspace()}>
       {notice && <div className="field-notice" role="status"><CheckCircle2 size={18} /><span>{notice}</span><button type="button" aria-label="Dismiss message" onClick={() => setNotice('')}><X size={17} /></button></div>}
       {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
-      {view === 'home' && <Dashboard name={session.user.name} queue={queue} activeDraft={draft} online={online} bootstrap={bootstrap} onStart={startVisit} onResume={() => setView('visit')} onSync={() => void syncQueue()} syncing={syncing} biometricAvailable={biometricAvailable} biometricEnabled={biometricEnabled} onToggleBiometric={async () => {
-        try {
-          if (biometricEnabled) { await disableBiometricUnlock(); setBiometricEnabled(false); setNotice('Device biometric unlock disabled. PIN unlock remains available.') }
-          else { await enableBiometricUnlock(); setBiometricEnabled(true); setNotice('Device biometric unlock enabled. PIN unlock remains available.') }
-        } catch (error) { setNotice(apiError(error, 'Biometric security could not be changed.')) }
-      }} />}
+      {view === 'home' && <HomePage name={session.user.name} bootstrap={bootstrap} queueCount={queue.length} activeDraft={draft} online={online} authorizationValid={leaseValid} onStart={startVisit} onViewActivity={() => setView('activity')} />}
+      {view === 'activity' && <ActivityPage activeDraft={draft} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} onResume={() => setView('visit')} onStart={startVisit} onSync={() => void syncQueue()} />}
       {view === 'visit' && draft && <VisitWizard draft={draft} bootstrap={bootstrap} online={online} authorizationValid={leaseValid} onDraft={setDraft} onCancel={() => setView('home')} onFinish={async (finished) => {
         if (navigator.onLine) {
           try { await fieldApi.sync(session.token, [finished]); setNotice('Visit accepted and added to monitoring history.') }
@@ -177,54 +202,83 @@ export default function App() {
         } else { await saveQueue([...queue, { ...finished, sync_source: 'offline_queue' }]); setNotice('Visit secured offline and queued for synchronization.') }
         await deleteSecret('active-draft'); setDraft(null); setView('home')
       }} />}
-      {view === 'history' && <HistoryView session={session} queue={queue} online={online} onSync={() => void syncQueue()} syncing={syncing} />}
-    </main>
-    <nav className="bottom-nav" aria-label="Field monitoring navigation">
-      <NavButton active={view === 'home'} icon={<ListChecks />} label="Activity" onClick={() => setView('home')} />
-      <button type="button" className="bottom-start" disabled={!leaseValid} onClick={startVisit} aria-label="Start a monitoring visit"><Plus /></button>
-      <NavButton active={view === 'history'} icon={<History />} label="History" onClick={() => setView('history')} />
-    </nav>
-  </div>
+      {view === 'history' && <HistoryPage session={session} online={online} />}
+      {view === 'profile' && <ProfilePage session={session} online={online} biometricAvailability={biometricAvailability} biometricEnabled={biometricEnabled} onToggleBiometric={toggleBiometric} onLock={() => void lockWorkspace()} onLogout={() => void logoutWorkspace()} />}
+    </FieldAppShell>
+  </>
 }
 
 
-function PinSetup({ onDone }: { onDone: (pin: string) => Promise<void> }) {
-  const [pin, setPin] = useState(''); const [confirm, setConfirm] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  return <AuthFrame title="Protect offline access" detail="Set a device-only PIN. It encrypts downloaded stores, drafts, and the sync queue."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); if (pin !== confirm) { setError('PINs do not match.'); return } if (!/^\d{4,8}$/.test(pin)) { setError('Use a 4 to 8 digit PIN.'); return } setBusy(true); try { await onDone(pin) } catch (reason) { setError(apiError(reason, 'The secure vault could not be created.')) } finally { setBusy(false) } }}><label>New device PIN<input inputMode="numeric" pattern="[0-9]{4,8}" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label><label>Confirm PIN<input inputMode="numeric" pattern="[0-9]{4,8}" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Encrypting…' : 'Secure this device'}<ShieldCheck size={18} /></button></form></AuthFrame>
+function PinSetup({ onDone, migration = false }: { onDone: (pin: string) => Promise<void>; migration?: boolean }) {
+  const [step, setStep] = useState<'create' | 'confirm'>('create'); const [pin, setPin] = useState(''); const [confirm, setConfirm] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
+  const complete = async (next: string) => {
+    if (next !== pin) { setError('PINs do not match. Re-enter the four digits.'); setConfirm(''); return }
+    setBusy(true); setError('')
+    try { await onDone(pin) } catch (reason) { setError(apiError(reason, migration ? 'The PIN could not be updated. Your previous PIN still works.' : 'The secure vault could not be created.')); setConfirm('') } finally { setBusy(false) }
+  }
+  const title = step === 'create' ? (migration ? 'Create a new 4-digit PIN' : 'Create device PIN') : 'Confirm device PIN'
+  return <SecurityMessage title={title} detail={step === 'create' ? (migration ? 'Replace your previous device PIN without changing encrypted field data or biometric enrollment.' : 'Choose four digits used only to unlock encrypted field work on this device.') : 'Enter the same four digits again to secure this device.'} icon={<LockKeyhole />}>
+    <form className="auth-form pin-form" onSubmit={(event) => { event.preventDefault(); if (step === 'create' && pin.length === 4) setStep('confirm'); else if (step === 'confirm' && confirm.length === 4) void complete(confirm) }}>
+      {step === 'create' ? <DevicePinInput autoFocus disabled={busy} value={pin} onChange={(next) => { setError(''); setPin(next); if (next.length === 4) setStep('confirm') }} /> : <DevicePinInput autoFocus disabled={busy} label="Confirm 4-digit device PIN" value={confirm} onChange={(next) => { setError(''); setConfirm(next); if (next.length === 4) void complete(next) }} />}
+      <p className="pin-guidance" aria-live="polite">{busy ? 'Securing encrypted workspace…' : `${step === 'create' ? pin.length : confirm.length} of 4 digits entered`}</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </form>
+  </SecurityMessage>
 }
 
-function BiometricSetup({ onEnable, onSkip }: { onEnable: () => Promise<void>; onSkip: () => void }) {
+function biometricCompatibility(availability: Exclude<BiometricAvailability, 'available'>) {
+  if (availability === 'browser-unsupported') return { title: 'Biometric unlock needs a newer browser', detail: 'Use Chrome or Edge 133 or newer, then reopen PRICE-Watch from its secure HTTPS address. Your device PIN remains available.' }
+  if (availability === 'platform-authenticator-unavailable') return { title: 'Set up biometrics on this device', detail: 'No enrolled fingerprint or facial verification is available to this browser. Set it up in your device settings, then try again. Your PIN remains available.' }
+  return { title: 'Biometric vault unlock is not supported', detail: 'This device can verify your identity, but its authenticator cannot provide the encrypted key required by PRICE-Watch. Continue with your device PIN.' }
+}
+
+function BiometricSetup({ availability, onEnable, onSkip }: { availability: BiometricAvailability; onEnable: () => Promise<void>; onSkip: () => void }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
-  return <AuthFrame title="Enable device biometric unlock" detail="Use this device's fingerprint or facial verification to unlock faster. PRICE-Watch receives only verification success or failure; your PIN always remains available."><div className="auth-form"><button type="button" className="primary-button" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await onEnable() } catch (reason) { setError(apiError(reason, 'Biometric unlock could not be enabled. You can continue with the PIN.')) } finally { setBusy(false) } }}><Fingerprint size={18} />{busy ? 'Waiting for device…' : 'Enable biometric unlock'}</button>{error && <p className="form-error" role="alert">{error}</p>}<button type="button" className="text-button" disabled={busy} onClick={onSkip}>Not now — use PIN</button></div></AuthFrame>
+  if (availability !== 'available') {
+    const compatibility = biometricCompatibility(availability)
+    return <SecurityMessage title={compatibility.title} detail={compatibility.detail} icon={<Fingerprint />}><button type="button" className="primary-button" onClick={onSkip}>Continue with PIN<LockKeyhole size={18} /></button></SecurityMessage>
+  }
+  return <SecurityMessage title="Enable device biometric unlock" detail="Use this device's fingerprint or facial verification to unlock faster. PRICE-Watch receives only verification success or failure; your PIN always remains available." icon={<Fingerprint />}><div className="auth-form"><button type="button" className="primary-button" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await onEnable() } catch (reason) { setError(apiError(reason, 'Biometric unlock could not be enabled. You can continue with the PIN.')) } finally { setBusy(false) } }}><Fingerprint size={18} />{busy ? 'Waiting for device…' : 'Enable biometric unlock'}</button>{error && <p className="form-error" role="alert">{error}</p>}<button type="button" className="text-button" disabled={busy} onClick={onSkip}>Not now — use PIN</button></div></SecurityMessage>
 }
 
-function Unlock({ onUnlocked }: { onUnlocked: () => Promise<void> }) {
-  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [biometric, setBiometric] = useState(false)
-  useEffect(() => { void Promise.all([hasBiometricUnlock(), isBiometricUnlockAvailable()]).then(([enabled, available]) => setBiometric(enabled && available)) }, [])
-  const biometricUnlock = async () => { setBusy(true); setError(''); try { await unlockVaultWithBiometrics(); await onUnlocked() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Biometric unlock failed. Use the device PIN.') } finally { setBusy(false) } }
-  return <AuthFrame title="Unlock field workspace" detail="Use the PIN created on this device. Internet is not required."><form className="auth-form" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(''); try { await unlockVault(pin); await onUnlocked() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.') } finally { setBusy(false) } }}><label>Device PIN<input autoFocus inputMode="numeric" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock with PIN'}<LockKeyhole size={18} /></button>{biometric && <button type="button" className="secondary-button" disabled={busy} onClick={() => void biometricUnlock()}><Fingerprint size={18} />Use device biometric unlock</button>}</form></AuthFrame>
+function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Promise<void> }) {
+  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [compatibilityNote, setCompatibilityNote] = useState(''); const [busy, setBusy] = useState(false); const [canReturnToChoices, setCanReturnToChoices] = useState(false); const [mode, setMode] = useState<'checking' | 'biometric' | 'choices' | 'pin'>('checking')
+  const biometricAttempt = useRef<Promise<void> | null>(null); const automaticAttempted = useRef(false)
+  const finishBiometric = useCallback(() => {
+    if (biometricAttempt.current) return biometricAttempt.current
+    setMode('biometric'); setBusy(true); setError('')
+    const attempt = (async () => { try { await onUnlocked(await unlockVaultWithBiometrics()) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Biometric unlock failed. Use the device PIN.'); setMode('choices') } finally { setBusy(false) } })()
+    biometricAttempt.current = attempt
+    void attempt.finally(() => { if (biometricAttempt.current === attempt) biometricAttempt.current = null })
+    return attempt
+  }, [onUnlocked])
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([hasBiometricUnlock(), getBiometricUnlockAvailability(), getVaultPinLength()]).then(([enabled, availability, pinLength]) => {
+      if (cancelled) return
+      if (enabled && availability === 'available' && (pinLength === null || pinLength === 4)) {
+        if (!automaticAttempted.current) { automaticAttempted.current = true; void finishBiometric() }
+      } else {
+        if (enabled && availability !== 'available') setCompatibilityNote(biometricCompatibility(availability).detail)
+        setMode('pin')
+      }
+    })
+    return () => { cancelled = true }
+  }, [finishBiometric])
+  const finishPin = async (nextPin: string) => { if (!/^\d{4}$/.test(nextPin) || busy) return; setBusy(true); setError(''); try { await onUnlocked(await unlockVault(nextPin)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.'); setPin('') } finally { setBusy(false) } }
+  return <SecurityMessage title="Unlock field workspace" detail={mode === 'biometric' || mode === 'checking' ? 'Confirm your identity using this device.' : 'Your encrypted visits and downloaded field data stay on this device.'} icon={mode === 'biometric' || mode === 'checking' ? <Fingerprint /> : <LockKeyhole />}>
+    {(mode === 'biometric' || mode === 'checking') && <div className="biometric-wait" role="status"><span className="biometric-pulse"><Fingerprint /></span><strong>{busy ? 'Waiting for device verification…' : 'Checking biometric enrollment…'}</strong></div>}
+    {mode === 'choices' && <div className="auth-form unlock-choices-container"><div className="unlock-choices-card"><button type="button" className="unlock-choice-btn unlock-choice-bio" disabled={busy} onClick={() => void finishBiometric()}><span className="unlock-choice-icon-wrap"><Fingerprint size={28} /></span><span className="unlock-choice-label">Try biometric again</span></button><div className="unlock-choices-divider" /><button type="button" className="unlock-choice-btn unlock-choice-pin" onClick={() => { setPin(''); setError(''); setCanReturnToChoices(true); setMode('pin') }}><span className="unlock-choice-icon-wrap"><LockKeyhole size={28} /></span><span className="unlock-choice-label">Use device PIN</span></button></div>{error && <p className="form-error" role="alert">{error}</p>}</div>}
+    {mode === 'pin' && <div className="auth-form pin-form">
+      <DevicePinInput autoFocus disabled={busy} length={4} label="4-digit device PIN" value={pin} onChange={(next) => { setError(''); setPin(next); if (next.length === 4) void finishPin(next) }} />
+      {canReturnToChoices && <button type="button" className="text-button pin-back-button" disabled={busy} onClick={() => { setPin(''); setError(''); setCanReturnToChoices(false); setMode('choices') }}><ArrowLeft size={17} />Back to unlock options</button>}
+      {compatibilityNote && <p className="compatibility-note" role="status">{compatibilityNote}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>}
+  </SecurityMessage>
 }
 
-function AuthFrame({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) { return <main className="auth-page"><section className="auth-brand"><Brand /><div><ShieldCheck /><span>Official DTI field workspace</span></div></section><section className="auth-panel"><h1>{title}</h1><p>{detail}</p>{children}</section></main> }
-function Brand() { return <div className="brand"><span>DTI</span><strong>PRICE-Watch</strong><small>Field Monitoring</small></div> }
-function CenteredStatus({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <main className="centered-status">{icon}<h1>{title}</h1><p>{detail}</p></main> }
-
-function AppRail({ view, name, online, queueCount, onNavigate, onLock, onLogout }: { view: View; name: string; online: boolean; queueCount: number; onNavigate: (v: View) => void; onLock: () => void; onLogout: () => void }) {
-  return <aside className="app-rail"><Brand /><div className={`network-panel ${online ? 'online' : ''}`}>{online ? <Signal /> : <CloudOff />}<span><strong>{online ? 'Connected' : 'Offline mode'}</strong><small>{online ? 'Ready to synchronize' : `${queueCount} visit${queueCount === 1 ? '' : 's'} secured`}</small></span></div><nav><NavButton active={view === 'home'} icon={<ListChecks />} label="Activity" onClick={() => onNavigate('home')} /><NavButton active={view === 'history'} icon={<History />} label="History & queue" onClick={() => onNavigate('history')} /></nav><div className="rail-account"><span className="account-mark">{name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('')}</span><span><strong>{name}</strong><small>DTI Field Officer</small></span><button type="button" aria-label="Lock now" onClick={onLock}><Lock size={17} /></button><button type="button" aria-label="Sign out" onClick={onLogout}><LogOut size={17} /></button></div></aside>
-}
-function NavButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" className={active ? 'active' : ''} onClick={onClick}>{icon}<span>{label}</span></button> }
-
-function Dashboard({ name, queue, activeDraft, online, bootstrap, onStart, onResume, onSync, syncing, biometricAvailable, biometricEnabled, onToggleBiometric }: { name: string; queue: VisitDraft[]; activeDraft: VisitDraft | null; online: boolean; bootstrap: BootstrapData; onStart: () => void; onResume: () => void; onSync: () => void; syncing: boolean; biometricAvailable: boolean; biometricEnabled: boolean; onToggleBiometric: () => Promise<void> }) {
-  return <div className="page dashboard"><div className="page-heading"><div><h1>Good day, {name.split(' ')[0]}</h1><p>Capture a complete store visit, even when the signal drops.</p></div><button type="button" className="primary-button desktop-action" onClick={onStart}><Plus size={18} />Start monitoring visit</button></div>
-    <section className="readiness-band"><div><span className="readiness-icon"><BadgeCheck /></span><span><strong>Field data ready</strong><small>{bootstrap.stores.length} active stores · {bootstrap.srp_bulletins.length} current commodity references</small></span></div><span className={`network-chip ${online ? 'online' : ''}`}>{online ? <Wifi size={15} /> : <WifiOff size={15} />}{online ? 'Online' : 'Working offline'}</span></section>
-    <div className="dashboard-grid"><section className="start-panel"><MapPin /><div><h2>{activeDraft ? 'Continue saved monitoring visit' : 'Start a price monitoring visit'}</h2><p>{activeDraft ? `${activeDraft.items.length} commodity line${activeDraft.items.length === 1 ? '' : 's'} saved securely on this device.` : 'Select any active registered establishment, record multiple commodity prices, then lock the visit with both signatures and accurate GPS.'}</p></div><button type="button" className="primary-button" onClick={activeDraft ? onResume : onStart}>{activeDraft ? 'Resume visit' : 'Begin visit'}<ArrowRight size={18} /></button></section>
-      <section className="queue-panel"><div className="section-title"><div><h2>Secure sync queue</h2><p>Completed visits waiting on this device.</p></div><span className="queue-count">{queue.length}</span></div>{queue.length ? <>{queue.slice(0, 3).map((item) => <div className="queue-row" key={item.client_uuid}><CloudOff /><span><strong>{bootstrap.stores.find((store) => store.id === item.store_id)?.store_name || 'Completed visit'}</strong><small>{item.items.length} recorded item{item.items.length === 1 ? '' : 's'} · locked for sync</small></span><ShieldCheck /></div>)}<button type="button" className="secondary-button full" disabled={!online || syncing} onClick={onSync}><RefreshCw className={syncing ? 'spin' : ''} size={17} />{syncing ? 'Synchronizing…' : 'Synchronize now'}</button></> : <div className="quiet-empty"><CheckCircle2 /><strong>No visits waiting</strong><span>Completed offline visits will remain encrypted here until accepted.</span></div>}</section></div>
-    {biometricAvailable && <section className="security-panel"><Fingerprint /><span><strong>Device biometric unlock</strong><small>{biometricEnabled ? 'Enabled with PIN fallback' : 'Use this device’s fingerprint or facial verification. PIN remains required as fallback.'}</small></span><button type="button" className="secondary-button" onClick={() => void onToggleBiometric()}>{biometricEnabled ? 'Disable' : 'Enable'}</button></section>}
-    <section className="process-strip" aria-label="Visit process"><Process icon={<Building2 />} title="Choose store" /><Process icon={<PackageSearch />} title="Record prices" /><Process icon={<ClipboardCheck />} title="Review visit" /><Process icon={<ShieldCheck />} title="Lock evidence" /></section>
-  </div>
-}
-function Process({ icon, title }: { icon: React.ReactNode; title: string }) { return <div>{icon}<span>{title}</span></div> }
-
+function SecurityMessage({ title, detail, icon, children }: { title: string; detail: string; icon: React.ReactNode; children?: React.ReactNode }) { return <div className="security-content"><span className="security-icon" aria-hidden="true">{icon}</span><h2>{title}</h2><p>{detail}</p>{children}</div> }
 function VisitWizard({ draft, bootstrap, online, authorizationValid, onDraft, onCancel, onFinish }: { draft: VisitDraft; bootstrap: BootstrapData; online: boolean; authorizationValid: boolean; onDraft: (draft: VisitDraft) => void; onCancel: () => void; onFinish: (draft: VisitDraft) => Promise<void> }) {
   const [step, setStep] = useState(0); const [query, setQuery] = useState(''); const [selectedSrp, setSelectedSrp] = useState(''); const [price, setPrice] = useState(''); const [error, setError] = useState(''); const [locating, setLocating] = useState(false); const [finishing, setFinishing] = useState(false)
   const steps = ['Store', 'Prices', 'Review', 'Evidence', 'Finish']
@@ -251,13 +305,3 @@ function LineTable({ draft, bulletins, onRemove }: { draft: VisitDraft; bulletin
   return <div className="line-table"><div className="line-header"><span>Commodity</span><span>SRP</span><span>Shelf price</span><span>Assessment</span>{onRemove && <span />}</div>{draft.items.map((line) => { const item = bulletins.find((entry) => entry.id === line.srp_id); const baseline = Number(item?.baseline_price || 0); const analysis = analyzeLine(line, baseline); return <div className="line-row" key={line.srp_id}><span data-label="Commodity"><strong>{item?.commodity_name || `Commodity #${line.srp_id}`}</strong><small>{item?.unit || 'Current bulletin'}</small></span><span data-label="SRP">₱{baseline.toFixed(2)}</span><span data-label="Shelf price"><strong>₱{line.recorded_price.toFixed(2)}</strong></span><span data-label="Assessment"><em className={analysis.is_anomaly ? 'attention' : 'within'}>{analysis.is_anomaly ? `+${analysis.variance_percent}% above reference` : 'Within reference range'}</em></span>{onRemove && <button type="button" aria-label={`Remove ${item?.commodity_name}`} onClick={() => onRemove(line.srp_id)}><X size={17} /></button>}</div>})}</div>
 }
 function FinalCheck({ okay, label }: { okay: boolean; label: string }) { return <div className={okay ? 'okay' : ''}>{okay ? <CheckCircle2 /> : <span className="open-check" />}<span>{label}</span></div> }
-
-function HistoryView({ session, queue, online, onSync, syncing }: { session: FieldSession; queue: VisitDraft[]; online: boolean; onSync: () => void; syncing: boolean }) {
-  const [page, setPage] = useState<Page<MonitoringRecord> | null>(null); const [current, setCurrent] = useState(1); const [error, setError] = useState(''); const [loading, setLoading] = useState(false)
-  useEffect(() => { if (!online) return; setLoading(true); setError(''); void fieldApi.history(session.token, current).then(setPage).catch((reason) => setError(apiError(reason, 'Monitoring history could not load.'))).finally(() => setLoading(false)) }, [current, online, session.token])
-  return <div className="page history-page"><div className="page-heading"><div><h1>History & sync queue</h1><p>Accepted visits are read-only. Pending visits remain encrypted on this device.</p></div>{queue.length > 0 && <button type="button" className="primary-button" disabled={!online || syncing} onClick={onSync}><RefreshCw className={syncing ? 'spin' : ''} size={17} />Synchronize {queue.length}</button>}</div>
-    {queue.length > 0 && <section className="pending-section"><div className="section-title"><div><h2>Waiting to synchronize</h2><p>Do not remove local data until these visits are accepted.</p></div><span className="queue-count">{queue.length}</span></div>{queue.map((item) => <div className="pending-record" key={item.client_uuid}><CloudOff /><span><strong>Visit {item.client_uuid.slice(0, 8).toUpperCase()}</strong><small>{item.items.length} item{item.items.length === 1 ? '' : 's'} · finalized {item.finalized_at ? formatDate(item.finalized_at) : 'as draft'}</small></span><em>Encrypted</em></div>)}</section>}
-    <section className="history-section"><div className="section-title"><div><h2>Accepted monitoring visits</h2><p>Server-validated evidence visible to Admin monitoring.</p></div></div>{!online && <div className="offline-message"><WifiOff /><span><strong>History needs a connection</strong><small>Your offline queue remains available above.</small></span></div>}{error && <p className="form-error" role="alert">{error}</p>}{loading ? <div className="history-loading">Loading accepted visits…</div> : page?.data.length ? <div className="history-table"><div className="history-head"><span>Establishment</span><span>Officer visit</span><span>Items</span><span>Observations</span><span>Status</span></div>{page.data.map((record) => <div className="history-row" key={record.id}><span data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></span><span data-label="Officer visit">{formatDate(record.finalized_at)}</span><span data-label="Items">{record.items_count}</span><span data-label="Observations"><em className={record.anomaly_count ? 'attention' : 'within'}>{record.anomaly_count || 'None'}</em></span><span data-label="Status"><em className="accepted">Accepted</em></span></div>)}</div> : online && <div className="quiet-empty"><History /><strong>No accepted visits yet</strong><span>Your completed monitoring records will appear here.</span></div>}{page && page.last_page > 1 && <div className="pagination"><span>Showing {page.from}–{page.to} of {page.total}</span><div><button type="button" disabled={current <= 1} onClick={() => setCurrent(current - 1)}><ChevronLeft /></button><strong>Page {current} of {page.last_page}</strong><button type="button" disabled={current >= page.last_page} onClick={() => setCurrent(current + 1)}><ChevronRight /></button></div></div>}</section>
-  </div>
-}
-function formatDate(value: string) { return new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) }

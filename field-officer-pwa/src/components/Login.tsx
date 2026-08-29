@@ -1,14 +1,15 @@
 ﻿import React, { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Eye, EyeOff, LoaderCircle, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, LoaderCircle, Lock, Mail, TriangleAlert } from 'lucide-react'
 import { apiError, fieldApi } from '../services/fieldApi'
 import type { FieldSession } from '../types'
+import { AuthShell } from './AuthShell'
 
 interface LoginProps {
   onAuthenticated: (session: FieldSession) => void
 }
 
-export const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
+export const LoginForm: React.FC<LoginProps> = ({ onAuthenticated }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -30,44 +31,13 @@ export const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
     }
   }
 
-  return (
-    <div className="login-container">
-      {/* Left Column Artwork (Active on Landscape & Desktop) */}
-      <div className="login-left-column">
-        <img
-          src="/branding/login-artwork.webp"
-          alt="DTI fair trade and consumer protection illustration"
-          className="login-artwork-img"
-        />
-      </div>
-
-      {/* Right Column / Centered Authentication Panel */}
-      <div className="login-right-column">
-        <div className="login-card">
-          {/* Header */}
-          <div className="login-header">
-            <img
-              src="/branding/dti-logo.svg"
-              alt="DTI Official Logo"
-              className="login-dti-logo"
-            />
-            <h1 className="login-title">
-              PRICE-<span className="login-title-highlight">Watch</span>
-            </h1>
-            <div className="login-subtitle-row">
-              <div className="login-subtitle-line" />
-              <span>— DTI Field Monitoring —</span>
-              <div className="login-subtitle-line" />
-            </div>
-          </div>
-
+  return <>
           {error && (
             <div role="alert" className="error-badge login-error-badge">
-              ⚠️ {error}
+              <TriangleAlert size={18} aria-hidden="true" /> <span>{error}</span>
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="login-form">
             <div className="input-group">
               <label htmlFor="email">Email address</label>
@@ -132,23 +102,7 @@ export const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
             </button>
           </form>
 
-          {/* Footer */}
-          <div className="login-footer">
-            <div className="login-footer-guarantee">
-              <ShieldCheck size={18} className="login-shield-icon" />
-              <span>Secure. Official. Committed to Fair Trade.</span>
-            </div>
-            <div className="login-footer-tagline">
-              Protecting Consumers. Supporting Businesses.
-            </div>
-            <div className="login-ph-bar">
-              <div className="login-ph-blue" />
-              <div className="login-ph-yellow" />
-              <div className="login-ph-red" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+  </>
 }
+
+export const Login: React.FC<LoginProps> = (props) => <AuthShell><LoginForm {...props} /></AuthShell>

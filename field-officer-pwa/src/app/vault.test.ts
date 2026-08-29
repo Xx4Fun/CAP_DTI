@@ -1,14 +1,23 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  clearVault, createVault, enableBiometricUnlock, hasBiometricUnlock,
-  isBiometricUnlockAvailable, lockVault, readSecret, unlockVault,
-  unlockVaultWithBiometrics, writeSecret,
+  clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
+  isBiometricUnlockAvailable, lockVault, readSecret, restoreVaultSession,
+  rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './vault'
 import type { VaultBiometricProvider } from './vault'
 
 const LEGACY_DB = 'price-watch-field-vault'
 const LEGACY_STORE = 'encrypted-values'
+const sessionValues = new Map<string, string>()
+Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
+  get length() { return sessionValues.size },
+  clear: () => sessionValues.clear(),
+  getItem: (key: string) => sessionValues.get(key) ?? null,
+  key: (index: number) => [...sessionValues.keys()][index] ?? null,
+  removeItem: (key: string) => { sessionValues.delete(key) },
+  setItem: (key: string, value: string) => { sessionValues.set(key, value) },
+} })
 
 async function legacyKey(pin: string, salt: Uint8Array) {
   const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey'])
@@ -65,10 +74,12 @@ function biometricProvider(secret = new Uint8Array(32).fill(7)): VaultBiometricP
 }
 
 describe('encrypted offline vault', () => {
-  beforeEach(async () => { await clearVault() })
+  beforeEach(async () => { sessionStorage.clear(); await clearVault() })
+  afterEach(() => { vi.unstubAllGlobals() })
 
   it('does not persist plaintext and requires the correct PIN after locking', async () => {
     await createVault('4321')
+    expect(await getVaultPinLength()).toBe(4)
     await writeSecret('session', { token: 'private-token' })
     lockVault()
     await expect(unlockVault('1111')).rejects.toThrow('PIN')
@@ -109,6 +120,121 @@ describe('encrypted offline vault', () => {
 
   it('reports biometric unlock unavailable when platform verification or PRF is missing', async () => {
     expect(await isBiometricUnlockAvailable({ ...biometricProvider(), isAvailable: async () => false })).toBe(false)
+  })
+
+  it('detects PRF support using the WebAuthn extension capability key', async () => {
+    const MockPublicKeyCredential = class {
+      static async isUserVerifyingPlatformAuthenticatorAvailable() { return true }
+      static async getClientCapabilities() { return { 'extension:prf': true, prf: false } }
+    }
+    vi.stubGlobal('PublicKeyCredential', MockPublicKeyCredential)
+    vi.stubGlobal('window', { PublicKeyCredential: MockPublicKeyCredential })
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: {} })
+
+    expect(await isBiometricUnlockAvailable()).toBe(true)
+  })
+
+  it('finishes PRF enrollment with an assertion when registration returns only enabled', async () => {
+    const secret = new Uint8Array(32).fill(9)
+    const MockPublicKeyCredential = class {
+      static async isUserVerifyingPlatformAuthenticatorAvailable() { return true }
+      static async getClientCapabilities() { return { 'extension:prf': true } }
+    }
+    const create = vi.fn().mockResolvedValue({
+      rawId: new Uint8Array([4, 5, 6]).buffer,
+      getClientExtensionResults: () => ({ prf: { enabled: true } }),
+    })
+    const get = vi.fn().mockResolvedValue({
+      getClientExtensionResults: () => ({ prf: { results: { first: secret.buffer } } }),
+    })
+    vi.stubGlobal('PublicKeyCredential', MockPublicKeyCredential)
+    vi.stubGlobal('window', { PublicKeyCredential: MockPublicKeyCredential })
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: { create, get } })
+
+    await createVault('4321')
+    await enableBiometricUnlock()
+
+    expect(await hasBiometricUnlock()).toBe(true)
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('distinguishes outdated browsers from missing platform authenticators and PRF support', async () => {
+    const BrowserWithoutCapabilities = class {
+      static async isUserVerifyingPlatformAuthenticatorAvailable() { return true }
+    }
+    vi.stubGlobal('PublicKeyCredential', BrowserWithoutCapabilities)
+    vi.stubGlobal('window', { PublicKeyCredential: BrowserWithoutCapabilities })
+    Object.defineProperty(navigator, 'credentials', { configurable: true, value: {} })
+    expect(await getBiometricUnlockAvailability()).toBe('browser-unsupported')
+
+    const NoPlatformAuthenticator = class {
+      static async isUserVerifyingPlatformAuthenticatorAvailable() { return false }
+      static async getClientCapabilities() { return { 'extension:prf': true } }
+    }
+    vi.stubGlobal('PublicKeyCredential', NoPlatformAuthenticator)
+    vi.stubGlobal('window', { PublicKeyCredential: NoPlatformAuthenticator })
+    expect(await getBiometricUnlockAvailability()).toBe('platform-authenticator-unavailable')
+
+    const NoPrf = class {
+      static async isUserVerifyingPlatformAuthenticatorAvailable() { return true }
+      static async getClientCapabilities() { return { 'extension:prf': false } }
+    }
+    vi.stubGlobal('PublicKeyCredential', NoPrf)
+    vi.stubGlobal('window', { PublicKeyCredential: NoPrf })
+    expect(await getBiometricUnlockAvailability()).toBe('prf-unsupported')
+  })
+
+  it('restores the data key only within the same browser session and clears it on explicit lock', async () => {
+    await createVault('4321')
+    await writeSecret('draft', { client_uuid: 'same-session' })
+    expect(sessionStorage.length).toBeGreaterThan(0)
+
+    expect(await restoreVaultSession()).toBe(true)
+    expect(await readSecret('draft')).toEqual({ client_uuid: 'same-session' })
+
+    lockVault()
+    expect(sessionStorage.length).toBe(0)
+    expect(await restoreVaultSession()).toBe(false)
+  })
+
+  it('rejects a corrupt session wrapper and removes the shortcut', async () => {
+    await createVault('4321')
+    sessionStorage.setItem('price-watch-field-session-wrapper', '{"iv":[1],"data":[2]}')
+    expect(await restoreVaultSession()).toBe(false)
+    expect(sessionStorage.length).toBe(0)
+    await expect(readSecret('draft')).rejects.toThrow('Unlock this device')
+  })
+
+  it('rewraps the same encrypted data key under a new four-digit PIN without changing evidence', async () => {
+    const provider = biometricProvider()
+    await createVault('123456')
+    await writeSecret('queue', [{ client_uuid: 'evidence-1' }])
+    await enableBiometricUnlock(provider)
+    lockVault()
+    expect(await unlockVault('123456')).toEqual({ requiresPinMigration: true })
+
+    await rewrapVaultPin('2468')
+    lockVault()
+    await expect(unlockVault('123456')).rejects.toThrow('PIN')
+    await unlockVault('2468')
+    expect(await readSecret('queue')).toEqual([{ client_uuid: 'evidence-1' }])
+    expect(await hasBiometricUnlock()).toBe(true)
+  })
+
+  it('keeps the previous PIN wrapper when a migration write is interrupted', async () => {
+    await createVault('123456')
+    await writeSecret('draft', { client_uuid: 'preserved-draft' })
+    lockVault()
+    await unlockVault('123456')
+    const originalPut = IDBObjectStore.prototype.put
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(() => { throw new Error('simulated interruption') })
+    await expect(rewrapVaultPin('2468')).rejects.toThrow('simulated interruption')
+    put.mockRestore()
+
+    lockVault()
+    await unlockVault('123456')
+    expect(await readSecret('draft')).toEqual({ client_uuid: 'preserved-draft' })
+    IDBObjectStore.prototype.put = originalPut
   })
 
   it('transactionally migrates a legacy PIN vault after the next correct unlock', async () => {

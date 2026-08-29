@@ -10,7 +10,7 @@ The officer selects any active registered store, records one or more commodity p
 
 ## Selected direction
 
-Extend the incumbent PRICE-Watch visual world: off-white working surfaces, DTI cobalt navigation and primary actions, Outfit typography, restrained regulatory status color, and lucide-style line icons. The dashboard leads with connection and queue state, not promotional content. A numbered progress rail echoes `dti.png` without reproducing its flowchart cards. The memorable moment is the final evidence lock: both signatures and GPS converge into one clear, irreversible confirmation.
+Extend the incumbent PRICE-Watch visual world: off-white working surfaces, the official DTI SVG, DTI cobalt navigation and primary actions, Outfit typography, restrained regulatory status color, and lucide-style line icons. The authenticated shell leads with operational readiness, active work, and connection state rather than promotional content. A numbered progress rail echoes `dti.png` without reproducing its flowchart cards. The memorable moment remains the final evidence lock: both signatures and GPS converge into one clear, irreversible confirmation.
 
 ## Scope and boundaries
 
@@ -27,8 +27,9 @@ Extend the incumbent PRICE-Watch visual world: off-white working surfaces, DTI c
 
 ## Interaction and layout
 
-- Phone: bottom navigation for Home, New Visit, Queue, and History; one primary action per screen; sticky progress/action region during visit entry.
-- Tablet/desktop: persistent left rail, wider work canvas, and side-by-side visit summary where space permits.
+- Phone: customer-PWA-style fixed header and five-destination bottom navigation for Home, Activity, a raised Add action, History, and Profile. Add starts a visit only when no draft exists; otherwise it opens Activity so an existing draft is never overwritten.
+- Tablet/desktop: persistent left rail using the DTI Admin blue palette, a wider work canvas, and side-by-side operational summaries where space permits. The rail is 220 pixels on tablet and 264 pixels on desktop.
+- Home owns readiness and summary information. Activity owns the active draft and encrypted synchronization queue. History shows server-accepted records only. Profile owns officer identity, biometric enrollment, explicit lock, and sign out.
 - Connectivity is checked automatically after evidence lock. Online visits synchronize; offline visits enter the encrypted queue with manual and automatic retry affordances.
 - Finalized evidence is read-only. Rejected server synchronization never deletes the local record and presents the server reason as Needs Attention.
 

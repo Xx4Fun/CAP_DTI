@@ -2,10 +2,14 @@ const DB_NAME = 'price-watch-field-vault'
 const STORE = 'encrypted-values'
 const ITERATIONS = 150_000
 const METADATA_KEY = 'vault:v2'
+const SESSION_KEY = 'price-watch-field-session-key'
+const SESSION_WRAPPER = 'price-watch-field-session-wrapper'
 
 interface Envelope { iv: number[]; data: number[] }
 interface BiometricWrapper { credentialId: number[]; prfSalt: number[]; wrapper: Envelope }
-interface VaultMetadata { version: 2; pinSalt: number[]; pinWrapper: Envelope; verifier: Envelope; biometric?: BiometricWrapper }
+interface VaultMetadata { version: 2; pinSalt: number[]; pinWrapper: Envelope; verifier: Envelope; pinLength?: number; biometric?: BiometricWrapper }
+export interface VaultUnlockResult { requiresPinMigration: boolean }
+export type BiometricAvailability = 'available' | 'browser-unsupported' | 'platform-authenticator-unavailable' | 'prf-unsupported'
 
 export interface VaultBiometricProvider {
   isAvailable(): Promise<boolean>
@@ -14,6 +18,12 @@ export interface VaultBiometricProvider {
 }
 
 let activeKey: CryptoKey | null = null
+
+function clearVaultSession(): void {
+  if (typeof sessionStorage === 'undefined') return
+  sessionStorage.removeItem(SESSION_KEY)
+  sessionStorage.removeItem(SESSION_WRAPPER)
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -37,7 +47,14 @@ async function setRaw(key: string, value: unknown): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, 'readwrite')
-    transaction.objectStore(STORE).put(value, key)
+    try {
+      transaction.objectStore(STORE).put(value, key)
+    } catch (error) {
+      transaction.abort()
+      db.close()
+      reject(error)
+      return
+    }
     transaction.oncomplete = () => { db.close(); resolve() }
     transaction.onerror = () => { db.close(); reject(transaction.error) }
   })
@@ -132,7 +149,37 @@ async function verifyDataKey(key: CryptoKey, verifier: Envelope): Promise<void> 
   if (!result.valid) throw new Error('Invalid vault key.')
 }
 
+async function rememberVaultSession(key: CryptoKey): Promise<void> {
+  if (typeof sessionStorage === 'undefined') return
+  const sessionKey = await generateDataKey()
+  const wrapper = await encrypt({ key: await exportDataKey(key) }, sessionKey)
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(await exportDataKey(sessionKey)))
+  sessionStorage.setItem(SESSION_WRAPPER, JSON.stringify(wrapper))
+}
+
+export async function restoreVaultSession(): Promise<boolean> {
+  activeKey = null
+  if (typeof sessionStorage === 'undefined') return false
+  const rawSessionKey = sessionStorage.getItem(SESSION_KEY)
+  const rawWrapper = sessionStorage.getItem(SESSION_WRAPPER)
+  if (!rawSessionKey || !rawWrapper) return false
+  try {
+    const metadata = await getRaw<VaultMetadata>(METADATA_KEY)
+    if (!metadata) throw new Error('Vault metadata is missing.')
+    const sessionKey = await importDataKey(new Uint8Array(JSON.parse(rawSessionKey) as number[]))
+    const wrapped = await decrypt<{ key: number[] }>(JSON.parse(rawWrapper) as Envelope, sessionKey)
+    const dataKey = await importDataKey(new Uint8Array(wrapped.key))
+    await verifyDataKey(dataKey, metadata.verifier)
+    activeKey = dataKey
+    return true
+  } catch {
+    clearVaultSession()
+    return false
+  }
+}
+
 export async function hasVault(): Promise<boolean> { return Boolean(await getRaw(METADATA_KEY) || await getRaw('salt')) }
+export async function getVaultPinLength(): Promise<number | null> { return (await getRaw<VaultMetadata>(METADATA_KEY))?.pinLength ?? null }
 
 export async function createVault(pin: string): Promise<void> {
   if (!/^\d{4,8}$/.test(pin)) throw new Error('Use a 4 to 8 digit PIN.')
@@ -144,13 +191,16 @@ export async function createVault(pin: string): Promise<void> {
     pinSalt: Array.from(pinSalt),
     pinWrapper: await encrypt({ key: await exportDataKey(dataKey) }, pinKey),
     verifier: await encrypt({ valid: true }, dataKey),
+    pinLength: pin.length,
   }
   await setRaw(METADATA_KEY, metadata)
   activeKey = dataKey
+  await rememberVaultSession(dataKey)
 }
 
-export async function unlockVault(pin: string): Promise<void> {
+export async function unlockVault(pin: string): Promise<VaultUnlockResult> {
   activeKey = null
+  clearVaultSession()
   const metadata = await getRaw<VaultMetadata>(METADATA_KEY)
   if (metadata) {
     try {
@@ -158,16 +208,21 @@ export async function unlockVault(pin: string): Promise<void> {
       const wrapped = await decrypt<{ key: number[] }>(metadata.pinWrapper, pinKey)
       const dataKey = await importDataKey(new Uint8Array(wrapped.key))
       await verifyDataKey(dataKey, metadata.verifier)
+      const pinLength = metadata.pinLength ?? pin.length
+      if (metadata.pinLength === undefined) await setRaw(METADATA_KEY, { ...metadata, pinLength })
       activeKey = dataKey
-      return
+      const result = { requiresPinMigration: pinLength !== 4 }
+      if (!result.requiresPinMigration) await rememberVaultSession(dataKey)
+      return result
     } catch {
+      activeKey = null
       throw new Error('The PIN is incorrect or the secure vault is damaged.')
     }
   }
-  await migrateLegacyVault(pin)
+  return migrateLegacyVault(pin)
 }
 
-async function migrateLegacyVault(pin: string): Promise<void> {
+async function migrateLegacyVault(pin: string): Promise<VaultUnlockResult> {
   const salt = await getRaw<number[]>('salt')
   const verifier = await getRaw<Envelope>('verifier')
   if (!salt || !verifier) throw new Error('No offline vault exists on this device.')
@@ -190,6 +245,7 @@ async function migrateLegacyVault(pin: string): Promise<void> {
       pinSalt: Array.from(pinSalt),
       pinWrapper: await encrypt({ key: await exportDataKey(dataKey) }, pinKey),
       verifier: await encrypt({ valid: true }, dataKey),
+      pinLength: pin.length,
     }
     const encrypted = await Promise.all(plaintext.map(async ([key, value]) => [key, await encrypt(value, dataKey)] as [string, Envelope]))
     await verifyDataKey(dataKey, metadata.verifier)
@@ -198,13 +254,33 @@ async function migrateLegacyVault(pin: string): Promise<void> {
     })))
     await commitMigration(metadata, encrypted)
     activeKey = dataKey
+    const result = { requiresPinMigration: pin.length !== 4 }
+    if (!result.requiresPinMigration) await rememberVaultSession(dataKey)
+    return result
   } catch {
     activeKey = null
     throw new Error('The vault could not be upgraded safely. Your encrypted work was preserved; unlock with the PIN and try again.')
   }
 }
 
-export function lockVault() { activeKey = null }
+export async function rewrapVaultPin(pin: string): Promise<void> {
+  if (!activeKey) throw new Error('Unlock the existing vault before changing its PIN.')
+  if (!/^\d{4}$/.test(pin)) throw new Error('Use exactly four digits.')
+  const metadata = await getRaw<VaultMetadata>(METADATA_KEY)
+  if (!metadata) throw new Error('No secure vault exists on this device.')
+  const pinSalt = crypto.getRandomValues(new Uint8Array(16))
+  const pinKey = await derivePinKey(pin, pinSalt)
+  const nextMetadata: VaultMetadata = {
+    ...metadata,
+    pinSalt: Array.from(pinSalt),
+    pinWrapper: await encrypt({ key: await exportDataKey(activeKey) }, pinKey),
+    pinLength: 4,
+  }
+  await setRaw(METADATA_KEY, nextMetadata)
+  await rememberVaultSession(activeKey)
+}
+
+export function lockVault() { activeKey = null; clearVaultSession() }
 
 export async function writeSecret(key: string, value: unknown): Promise<void> {
   if (!activeKey) throw new Error('Unlock this device before saving field data.')
@@ -222,8 +298,25 @@ export async function deleteSecret(key: string): Promise<void> {
   await deleteRaw(`secret:${key}`)
 }
 
+async function detectBrowserBiometricAvailability(): Promise<BiometricAvailability> {
+  if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) return 'browser-unsupported'
+  const api = window.PublicKeyCredential as typeof PublicKeyCredential & { getClientCapabilities?: () => Promise<Record<string, boolean>> }
+  if (!api.getClientCapabilities) return 'browser-unsupported'
+  if (!await api.isUserVerifyingPlatformAuthenticatorAvailable()) return 'platform-authenticator-unavailable'
+  return (await api.getClientCapabilities())['extension:prf'] === true ? 'available' : 'prf-unsupported'
+}
+
+export async function getBiometricUnlockAvailability(provider: VaultBiometricProvider = browserBiometricProvider): Promise<BiometricAvailability> {
+  try {
+    if (provider === browserBiometricProvider) return await detectBrowserBiometricAvailability()
+    return await provider.isAvailable() ? 'available' : 'prf-unsupported'
+  } catch {
+    return 'browser-unsupported'
+  }
+}
+
 export async function isBiometricUnlockAvailable(provider: VaultBiometricProvider = browserBiometricProvider): Promise<boolean> {
-  try { return await provider.isAvailable() } catch { return false }
+  return await getBiometricUnlockAvailability(provider) === 'available'
 }
 
 export async function hasBiometricUnlock(): Promise<boolean> { return Boolean((await getRaw<VaultMetadata>(METADATA_KEY))?.biometric) }
@@ -253,8 +346,9 @@ export async function disableBiometricUnlock(): Promise<void> {
   }
 }
 
-export async function unlockVaultWithBiometrics(provider: VaultBiometricProvider = browserBiometricProvider): Promise<void> {
+export async function unlockVaultWithBiometrics(provider: VaultBiometricProvider = browserBiometricProvider): Promise<VaultUnlockResult> {
   activeKey = null
+  clearVaultSession()
   const metadata = await getRaw<VaultMetadata>(METADATA_KEY)
   if (!metadata?.biometric) throw new Error('Biometric unlock is not enabled. Use the device PIN.')
   try {
@@ -264,6 +358,9 @@ export async function unlockVaultWithBiometrics(provider: VaultBiometricProvider
     const dataKey = await importDataKey(new Uint8Array(wrapped.key))
     await verifyDataKey(dataKey, metadata.verifier)
     activeKey = dataKey
+    const result = { requiresPinMigration: metadata.pinLength !== 4 }
+    if (!result.requiresPinMigration) await rememberVaultSession(dataKey)
+    return result
   } catch {
     throw new Error('Biometric verification was not completed. Use the device PIN.')
   }
@@ -271,6 +368,7 @@ export async function unlockVaultWithBiometrics(provider: VaultBiometricProvider
 
 export async function clearVault(): Promise<void> {
   activeKey = null
+  clearVaultSession()
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DB_NAME)
     request.onsuccess = () => resolve()
@@ -279,14 +377,11 @@ export async function clearVault(): Promise<void> {
   })
 }
 
-type PrfExtensionResults = { prf?: { results?: { first?: ArrayBuffer } } }
+type PrfExtensionResults = { prf?: { enabled?: boolean; results?: { first?: ArrayBuffer } } }
 
 const browserBiometricProvider: VaultBiometricProvider = {
   async isAvailable() {
-    if (!window.PublicKeyCredential || !navigator.credentials) return false
-    if (!await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) return false
-    const api = PublicKeyCredential as typeof PublicKeyCredential & { getClientCapabilities?: () => Promise<Record<string, boolean>> }
-    return (await api.getClientCapabilities?.())?.prf === true
+    return await detectBrowserBiometricAvailability() === 'available'
   },
   async enroll(prfSalt) {
     const credential = await navigator.credentials.create({ publicKey: {
@@ -297,9 +392,12 @@ const browserBiometricProvider: VaultBiometricProvider = {
       timeout: 60_000, attestation: 'none',
       extensions: { prf: { eval: { first: prfSalt } } } as AuthenticationExtensionsClientInputs,
     } }) as PublicKeyCredential | null
-    const secret = (credential?.getClientExtensionResults() as PrfExtensionResults | undefined)?.prf?.results?.first
-    if (!credential || !secret) throw new Error('This authenticator does not provide PRF unlock.')
-    return { credentialId: new Uint8Array(credential.rawId), secret: new Uint8Array(secret) }
+    if (!credential) throw new Error('Biometric enrollment was not completed.')
+    const credentialId = new Uint8Array(credential.rawId)
+    const prf = (credential.getClientExtensionResults() as PrfExtensionResults | undefined)?.prf
+    if (prf?.results?.first) return { credentialId, secret: new Uint8Array(prf.results.first) }
+    if (prf?.enabled !== true) throw new Error('This authenticator does not provide PRF unlock.')
+    return { credentialId, secret: await browserBiometricProvider.verify(credentialId, prfSalt) }
   },
   async verify(credentialId, prfSalt) {
     const credential = await navigator.credentials.get({ publicKey: {

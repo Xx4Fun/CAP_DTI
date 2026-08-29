@@ -28,6 +28,7 @@ describe('Field Officer PWA Responsive 1:1 Login Screen', () => {
 
     // Main container has responsive class
     expect(container.querySelector('.login-container')).toBeInTheDocument()
+    expect(container.querySelector('.auth-shell')).toBeInTheDocument()
 
     // Left column artwork (.webp)
     const artwork = screen.getByAltText('DTI fair trade and consumer protection illustration')
