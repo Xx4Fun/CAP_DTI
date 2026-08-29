@@ -1,5 +1,7 @@
 .superpowers/
 .worktrees/
 .playwright-mcp/
+.impeccable/
 *.log
 trash/
+docs/.obsidian/
