@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { StoreRecord } from '../../types/admin'
-import { StoreMap, getStoreStatusInfo } from './StoreMap'
+import { StoreMap } from './StoreMap'
+import { getStoreStatusInfo } from './storeMapUtils'
 import { StoreDetailOverlay } from './StoreDetailOverlay'
 
-type StatusFilter = 'all' | 'compliant' | 'anomaly' | 'flagged'
+type StatusFilter = 'all' | 'no-findings' | 'pending' | 'inactive' | 'findings'
 
 export const StoreManager: React.FC = () => {
   const [stores, setStores] = useState<StoreRecord[]>([])
@@ -18,11 +19,19 @@ export const StoreManager: React.FC = () => {
   const [email, setEmail] = useState('')
   const [link, setLink] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [inviteSending, setInviteSending] = useState(false)
+  const [inviteError, setInviteError] = useState('')
 
   const loadStores = () => {
     setLoading(true)
+    setLoadError(null)
     void adminApi.getStores().then((data) => {
       setStores(data)
+      setLoading(false)
+    }).catch(() => {
+      setStores([])
+      setLoadError('Establishments could not be loaded. Retry when the Admin API is available.')
       setLoading(false)
     })
   }
@@ -52,9 +61,10 @@ export const StoreManager: React.FC = () => {
 
   const counts = {
     all: stores.length,
-    compliant: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && s.is_verified).length,
-    anomaly: stores.filter((s) => !s.is_verified || (!s.is_active && (s.recidivism_index || 0) === 0)).length,
-    flagged: stores.filter((s) => (s.recidivism_index || 0) > 0 || !s.is_active).length,
+    noFindings: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && s.is_verified).length,
+    pending: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && !s.is_verified).length,
+    inactive: stores.filter((s) => (s.recidivism_index || 0) === 0 && !s.is_active).length,
+    findings: stores.filter((s) => (s.recidivism_index || 0) > 0).length,
   }
 
   const filteredStores = stores.filter((s) => {
@@ -66,9 +76,10 @@ export const StoreManager: React.FC = () => {
     if (!matchesSearch) return false
 
     const recidivism = s.recidivism_index || 0
-    if (statusFilter === 'compliant') return recidivism === 0 && s.is_active && s.is_verified
-    if (statusFilter === 'anomaly') return !s.is_verified || (!s.is_active && recidivism === 0)
-    if (statusFilter === 'flagged') return recidivism > 0 || !s.is_active
+    if (statusFilter === 'no-findings') return recidivism === 0 && s.is_active && s.is_verified
+    if (statusFilter === 'pending') return recidivism === 0 && s.is_active && !s.is_verified
+    if (statusFilter === 'inactive') return recidivism === 0 && !s.is_active
+    if (statusFilter === 'findings') return recidivism > 0
 
     return true
   })
@@ -129,13 +140,13 @@ export const StoreManager: React.FC = () => {
         </span>
         <span style={{ height: '14px', width: '1px', background: '#cbd5e1' }} />
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#059669' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {counts.compliant} Clean
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {counts.noFindings} No findings
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#d97706' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b' }} /> {counts.anomaly} Anomaly
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b' }} /> {counts.pending} Pending verification
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#dc2626' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} /> {counts.flagged} Flagged
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} /> {counts.findings} Confirmed findings
         </span>
       </div>
 
@@ -289,51 +300,67 @@ export const StoreManager: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('compliant')}
+                    onClick={() => setStatusFilter('no-findings')}
                     style={{
                       padding: '0.3rem 0.65rem',
                       borderRadius: '6px',
-                      border: statusFilter === 'compliant' ? '1px solid #059669' : '1px solid #e2e8f0',
-                      background: statusFilter === 'compliant' ? '#ecfdf5' : '#ffffff',
-                      color: statusFilter === 'compliant' ? '#059669' : '#64748b',
+                      border: statusFilter === 'no-findings' ? '1px solid #059669' : '1px solid #e2e8f0',
+                      background: statusFilter === 'no-findings' ? '#ecfdf5' : '#ffffff',
+                      color: statusFilter === 'no-findings' ? '#059669' : '#64748b',
                       fontSize: '0.76rem',
                       fontWeight: 600,
                       cursor: 'pointer',
                     }}
                   >
-                    Clean ({counts.compliant})
+                    No findings ({counts.noFindings})
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('anomaly')}
+                    onClick={() => setStatusFilter('pending')}
                     style={{
                       padding: '0.3rem 0.65rem',
                       borderRadius: '6px',
-                      border: statusFilter === 'anomaly' ? '1px solid #d97706' : '1px solid #e2e8f0',
-                      background: statusFilter === 'anomaly' ? '#fffbeb' : '#ffffff',
-                      color: statusFilter === 'anomaly' ? '#d97706' : '#64748b',
+                      border: statusFilter === 'pending' ? '1px solid #d97706' : '1px solid #e2e8f0',
+                      background: statusFilter === 'pending' ? '#fffbeb' : '#ffffff',
+                      color: statusFilter === 'pending' ? '#d97706' : '#64748b',
                       fontSize: '0.76rem',
                       fontWeight: 600,
                       cursor: 'pointer',
                     }}
                   >
-                    Anomaly ({counts.anomaly})
+                    Pending ({counts.pending})
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('flagged')}
+                    onClick={() => setStatusFilter('inactive')}
                     style={{
                       padding: '0.3rem 0.65rem',
                       borderRadius: '6px',
-                      border: statusFilter === 'flagged' ? '1px solid #dc2626' : '1px solid #e2e8f0',
-                      background: statusFilter === 'flagged' ? '#fef2f2' : '#ffffff',
-                      color: statusFilter === 'flagged' ? '#dc2626' : '#64748b',
+                      border: statusFilter === 'inactive' ? '1px solid #64748b' : '1px solid #e2e8f0',
+                      background: statusFilter === 'inactive' ? '#f1f5f9' : '#ffffff',
+                      color: statusFilter === 'inactive' ? '#334155' : '#64748b',
                       fontSize: '0.76rem',
                       fontWeight: 600,
                       cursor: 'pointer',
                     }}
                   >
-                    Flagged ({counts.flagged})
+                    Inactive ({counts.inactive})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('findings')}
+                    style={{
+                      padding: '0.3rem 0.65rem',
+                      borderRadius: '6px',
+                      border: statusFilter === 'findings' ? '1px solid #dc2626' : '1px solid #e2e8f0',
+                      background: statusFilter === 'findings' ? '#fef2f2' : '#ffffff',
+                      color: statusFilter === 'findings' ? '#dc2626' : '#64748b',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Findings ({counts.findings})
                   </button>
                 </div>
               </div>
@@ -343,6 +370,12 @@ export const StoreManager: React.FC = () => {
                 {loading && (
                   <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
                     Loading establishments...
+                  </div>
+                )}
+
+                {loadError && (
+                  <div role="alert" style={{ padding: '1rem', color: '#991b1b', background: '#fef2f2', borderRadius: '8px', fontSize: '0.82rem' }}>
+                    {loadError} <button type="button" onClick={loadStores}>Retry</button>
                   </div>
                 )}
 
@@ -359,13 +392,11 @@ export const StoreManager: React.FC = () => {
                   return (
                     <div
                       key={store.id}
-                      onClick={() => setSelectedStoreId(store.id)}
                       style={{
                         padding: '0.75rem 0.85rem',
                         borderRadius: '8px',
                         border: isSelected ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
                         background: isSelected ? '#eff6ff' : '#ffffff',
-                        cursor: 'pointer',
                         transition: 'all 0.15s ease',
                         display: 'flex',
                         flexDirection: 'column',
@@ -439,6 +470,7 @@ export const StoreManager: React.FC = () => {
                             setInviteStore(store)
                             setEmail('')
                             setLink('')
+                            setInviteError('')
                           }}
                           style={{
                             padding: '0.35rem 0.6rem',
@@ -464,13 +496,15 @@ export const StoreManager: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div
+            <button
+              type="button"
               onClick={toggleSidebar}
-              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.4rem' }}
+              aria-label="Expand GIS Registry Sidebar"
+              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', gap: '0.4rem', border: 0, background: 'transparent' }}
               title="Expand GIS Registry Sidebar"
             >
               <i className="fa-solid fa-map-location-dot" style={{ color: '#1e3a8a', fontSize: '1.2rem' }} aria-hidden="true" />
-            </div>
+            </button>
           )}
         </div>
       </div>
@@ -526,8 +560,16 @@ export const StoreManager: React.FC = () => {
             <form
               onSubmit={async (event) => {
                 event.preventDefault()
-                const result = await adminApi.inviteVendor(inviteStore.id, email)
-                setLink(result.invitation_url)
+                setInviteSending(true)
+                setInviteError('')
+                try {
+                  const result = await adminApi.inviteVendor(inviteStore.id, email)
+                  setLink(result.invitation_url)
+                } catch (error: any) {
+                  setInviteError(error.response?.data?.message || error.response?.data?.errors?.email?.[0] || 'The vendor invitation could not be queued.')
+                } finally {
+                  setInviteSending(false)
+                }
               }}
               style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
             >
@@ -577,6 +619,7 @@ export const StoreManager: React.FC = () => {
                   />
                 </div>
               )}
+              {inviteError && <p role="alert" className="admin-feedback error">{inviteError}</p>}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <button
@@ -597,6 +640,7 @@ export const StoreManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={inviteSending}
                   style={{
                     padding: '0.55rem 1.1rem',
                     background: '#1d4ed8',
@@ -611,7 +655,7 @@ export const StoreManager: React.FC = () => {
                     gap: '0.4rem',
                   }}
                 >
-                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> Generate Invitation
+                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> {inviteSending ? 'Queueing invitation...' : 'Generate and queue invitation'}
                 </button>
               </div>
             </form>
@@ -621,4 +665,3 @@ export const StoreManager: React.FC = () => {
     </div>
   )
 }
-

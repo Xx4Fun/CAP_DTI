@@ -1,19 +1,22 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
-import { StoreManager } from './StoreManager'
-import { StoreOnboarding } from '../StoreOnboarding'
-import { CitizenTipReview } from './CitizenTipReview'
-import { LegalNoticeManager } from './LegalNoticeManager'
-import { EmergencyToggle } from './EmergencyToggle'
-import { SrpManagementPanel } from './SrpManagementPanel'
-import { SettingsPanel } from './SettingsPanel'
-import { UserManagementPanel } from './UserManagementPanel'
-import { FieldMonitoringRecords } from './FieldMonitoringRecords'
 import type { AdminUser } from '../../types/admin'
 
+const StoreManager = lazy(() => import('./StoreManager').then((module) => ({ default: module.StoreManager })))
+const StoreOnboarding = lazy(() => import('../StoreOnboarding').then((module) => ({ default: module.StoreOnboarding })))
+const CitizenTipReview = lazy(() => import('./CitizenTipReview').then((module) => ({ default: module.CitizenTipReview })))
+const LegalNoticeManager = lazy(() => import('./LegalNoticeManager').then((module) => ({ default: module.LegalNoticeManager })))
+const EmergencyToggle = lazy(() => import('./EmergencyToggle').then((module) => ({ default: module.EmergencyToggle })))
+const LazySrpManagementPanel = lazy(() => import('./SrpManagementPanel').then((module) => ({ default: module.SrpManagementPanel })))
+const SettingsPanel = lazy(() => import('./SettingsPanel').then((module) => ({ default: module.SettingsPanel })))
+const UserManagementPanel = lazy(() => import('./UserManagementPanel').then((module) => ({ default: module.UserManagementPanel })))
+const FieldMonitoringRecords = lazy(() => import('./FieldMonitoringRecords').then((module) => ({ default: module.FieldMonitoringRecords })))
+
+const PanelLoader = () => <div className="admin-panel-loader" role="status">Loading Admin module...</div>
+
 export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (user: Partial<AdminUser>) => void }) {
-  return <SettingsPanel user={props.user} onUserUpdate={props.onUserUpdate} />
+  return <Suspense fallback={<PanelLoader />}><SettingsPanel user={props.user} onUserUpdate={props.onUserUpdate} /></Suspense>
 }
 
 import type { ModuleId } from './AdminShell'
@@ -105,8 +108,8 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
           </div>
           <div className="kpi-card-content">
             <span className="kpi-card-title">ACTIVE SRP BULLETINS</span>
-            <strong className="kpi-card-val purple">1</strong>
-            <span className="kpi-card-sub">DTI Prevailing Baseline</span>
+            <strong className="kpi-card-val purple">Unavailable</strong>
+            <span className="kpi-card-sub">No authoritative bulletin count supplied by this overview</span>
           </div>
         </article>
 
@@ -255,29 +258,18 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
                 <h3>Monitoring Activity</h3>
                 <p>Four-week price compliance across San Jose de Buenavista establishments.</p>
               </div>
-              <span className="badge-live-dot"><span className="dot" /> Live Analytics Connected</span>
+              <span className="badge-live-dot">Analytics workspace</span>
             </div>
 
             <div className="chart-preview-container">
-              <div className="chart-stats-summary">
-                <div className="stat-pill">
-                  <span className="stat-value">100%</span>
-                  <span className="stat-label">Prevailing SRP Rate</span>
-                </div>
-                <div className="stat-pill">
-                  <span className="stat-value">0%</span>
-                  <span className="stat-label">Price Volatility Anomaly</span>
-                </div>
-                <div className="stat-pill">
-                  <span className="stat-value">San Jose</span>
-                  <span className="stat-label">Pilot Coverage Zone</span>
-                </div>
+              <div className="chart-stats-summary" role="status">
+                <p>No authoritative trend summary is available on the dashboard. Open Temporal Analytics to select a store and commodity.</p>
               </div>
               <div className="chart-placeholder-box">
                 <div className="chart-placeholder-content">
                   <Activity size={32} className="chart-icon" aria-hidden="true" />
-                  <p>Temporal Volatility Analytics Engine Ready</p>
-                  <small>Interactive compliance curve with prevailing SRP baseline overlay</small>
+                  <p>Temporal analytics</p>
+                  <small>Choose a store and commodity before interpreting price history.</small>
                 </div>
                 <button
                   type="button"
@@ -308,42 +300,8 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ padding: '0.75rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span className="kpi-badge danger" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', fontWeight: 700 }}>
-                    <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '0.3rem' }} aria-hidden="true" />
-                    SCO DISPATCHED
-                  </span>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Ref: SCO-2026-0801</span>
-                </div>
-                <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Grand Central Supermarket</strong>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: '#475569', lineHeight: 1.3 }}>
-                  +19.2% Variance on Premium Rice (₱62.00 vs ₱52.00)
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem', paddingTop: '0.35rem', borderTop: '1px dashed #cbd5e1', fontSize: '0.75rem' }}>
-                  <span style={{ color: '#dc2626', fontWeight: 700 }}>48h Rebuttal Countdown</span>
-                  <span style={{ color: '#64748b' }}>Due: 47h 52m</span>
-                </div>
-              </div>
-
-              <div style={{ padding: '0.75rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span className="kpi-badge warning" style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', fontWeight: 700 }}>
-                    <i className="fa-solid fa-file-contract" style={{ marginRight: '0.3rem' }} aria-hidden="true" />
-                    LOI PENDING RESPONSE
-                  </span>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Ref: LOI-2026-0728</span>
-                </div>
-                <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Antique Commercial Mart</strong>
-                <p style={{ margin: 0, fontSize: '0.78rem', color: '#475569', lineHeight: 1.3 }}>
-                  +12.5% Variance on Canned Sardines (₱22.50 vs ₱20.00)
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.2rem', paddingTop: '0.35rem', borderTop: '1px dashed #cbd5e1', fontSize: '0.75rem' }}>
-                  <span style={{ color: '#d97706', fontWeight: 700 }}>Awaiting Vendor Proof</span>
-                  <span style={{ color: '#64748b' }}>Due: 18h 14m</span>
-                </div>
-              </div>
+            <div role="status" style={{ padding: '1rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
+              No legal action records are available from an authoritative source. The legal engine remains preview-only until approved policy rules are configured.
             </div>
           </div>
         </div>
@@ -352,32 +310,27 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
   )
 }
 
-export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) => void; onBack?: () => void }) {
   return (
-    <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.5rem' }}>
-      <div style={{ marginBottom: '1.25rem' }}>
-        <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>Establishment Registration</h3>
-        <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-          Onboard a new commercial establishment by providing SEC/DTI registration details and pinning its precise GIS location.
-        </p>
-      </div>
-      <StoreOnboarding
-        onCreated={() => {
-          if (props.onNavigate) {
-            props.onNavigate('gis_monitoring')
-          }
-        }}
-      />
-    </div>
+    <Suspense fallback={<PanelLoader />}>
+    <StoreOnboarding
+      onBack={props.onBack}
+      onCreated={() => {
+        if (props.onNavigate) {
+          props.onNavigate('gis_monitoring')
+        }
+      }}
+    />
+    </Suspense>
   )
 }
 
 export function StoreMonitoringPanel() {
-  return <StoreManager />
+  return <Suspense fallback={<PanelLoader />}><StoreManager /></Suspense>
 }
 
 export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleId) => void }) {
-  return <UserManagementPanel vendorRegistration={<StoreRegistrationPanel onNavigate={props.onNavigate} />} />
+  return <Suspense fallback={<PanelLoader />}><UserManagementPanel vendorRegistration={<StoreRegistrationPanel onNavigate={props.onNavigate} />} /></Suspense>
 }
 
 export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => void }) {
@@ -387,7 +340,7 @@ export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => 
       <div className="admin-availability-copy">
         <h2 id="communications-availability-title">Two-way store conversations are not connected yet</h2>
         <p>
-          The current system can issue legal notices and receive vendor rebuttal evidence, but it has no conversation threads, document-review inbox, or messaging API.
+          The current system has no conversation threads, document-review inbox, messaging API, or approved legal-notice dispatch workflow.
         </p>
       </div>
       <button type="button" className="admin-button secondary" onClick={() => props.onNavigate?.('legal_actions')}>
@@ -397,18 +350,20 @@ export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => 
   )
 }
 
-export { SrpManagementPanel }
+export function SrpManagementPanel() {
+  return <Suspense fallback={<PanelLoader />}><LazySrpManagementPanel /></Suspense>
+}
 
 export function ReportReviewPanel() {
-  return <CitizenTipReview />
+  return <Suspense fallback={<PanelLoader />}><CitizenTipReview /></Suspense>
 }
 
 export function EmergencyPanel() {
-  return <EmergencyToggle />
+  return <Suspense fallback={<PanelLoader />}><EmergencyToggle /></Suspense>
 }
 
 export function LegalDraftPanel() {
-  return <LegalNoticeManager />
+  return <Suspense fallback={<PanelLoader />}><LegalNoticeManager /></Suspense>
 }
 
 export function AuditPanel() {
@@ -461,5 +416,5 @@ export function AuditPanel() {
 }
 
 export function FieldMonitoringPanel() {
-  return <FieldMonitoringRecords />
+  return <Suspense fallback={<PanelLoader />}><FieldMonitoringRecords /></Suspense>
 }

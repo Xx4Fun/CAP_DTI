@@ -93,8 +93,14 @@ describe('DTI Admin safeguards', () => {
 
     expect(await screen.findByText('12')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
-    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.getAllByText('Unavailable')).toHaveLength(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('100%')).not.toBeInTheDocument()
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+    expect(screen.queryByText(/SCO-2026-0801/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/LOI-2026-0728/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/No authoritative trend summary is available/i)).toBeInTheDocument()
+    expect(screen.getByText(/No legal action records are available/i)).toBeInTheDocument()
   })
 
   it('shows a safe schema-unavailable state instead of an empty audit trail', async () => {
@@ -114,7 +120,7 @@ describe('DTI Admin safeguards', () => {
     const user = userEvent.setup()
 
     render(<LegalDraftPanel />)
-    expect(screen.getByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
+    expect(await screen.findByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Preview watermarked draft' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute(
@@ -136,12 +142,22 @@ describe('DTI Admin safeguards', () => {
       ends_on: null,
       status: 'active',
     }])
-    vi.mocked(adminApi.createEmergencyPrice).mockResolvedValue({})
+    vi.mocked(adminApi.createEmergencyPrice).mockResolvedValue({
+      id: 21,
+      regulatory_emergency_id: 7,
+      commodity_key: 'rice-1kg',
+      price_type: 'APC',
+      authoritative_price: 45.5,
+      effective_from: '2026-07-26',
+      effective_until: null,
+      source_reference: 'DTI-APC-2026-07',
+    })
     const user = userEvent.setup()
 
     render(<EmergencyPanel />)
+    await screen.findByRole('option', { name: /PDRRMC-2026-07/i })
     await user.selectOptions(
-      await screen.findByRole('combobox', { name: 'Confirmed declaration' }),
+      screen.getByRole('combobox', { name: 'Confirmed declaration' }),
       '7',
     )
     await user.type(screen.getByRole('textbox', { name: 'Commodity key' }), 'rice-1kg')

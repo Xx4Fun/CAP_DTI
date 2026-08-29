@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
 import { UserManagementPanel } from './UserManagementPanel'
+import adminCss from './admin.css?raw'
+import { AdminToastHost } from './AdminToastHost'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -51,6 +53,21 @@ describe('User Management', () => {
     })))
   })
 
+  it('uses an accessible status filter without a visible label', async () => {
+    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
+
+    await screen.findByText('Maria Vendor')
+    expect(screen.getByRole('combobox', { name: 'Filter users by status' })).toBeInTheDocument()
+    expect(screen.queryByText('Status', { selector: '.user-status-filter > span' })).not.toBeInTheDocument()
+  })
+
+  it('uses one 48px height for each filter toolbar control', () => {
+    expect(adminCss).toMatch(/\.user-management-command\s*\{[^}]*--user-toolbar-control-height:\s*48px;/s)
+    expect(adminCss).toMatch(/\.user-management-command \.admin-search-field input\s*\{[^}]*height:\s*var\(--user-toolbar-control-height\);/s)
+    expect(adminCss).toMatch(/\.user-role-tabs\s*\{[^}]*height:\s*var\(--user-toolbar-control-height\);/s)
+    expect(adminCss).toMatch(/\.user-status-filter select\s*\{[^}]*height:\s*var\(--user-toolbar-control-height\);/s)
+  })
+
   it('uses the existing vendor flow and opens the dedicated officer page', async () => {
     const user = userEvent.setup()
     render(<UserManagementPanel vendorRegistration={<div>Existing vendor registration</div>} />)
@@ -77,7 +94,7 @@ describe('User Management', () => {
       stores: [],
     })
     const user = userEvent.setup()
-    render(<UserManagementPanel vendorRegistration={<div />} />)
+    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
 
     await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Add user' }))
@@ -98,13 +115,17 @@ describe('User Management', () => {
     expect(await screen.findByRole('heading', { name: 'Field officer access is ready' })).toBeInTheDocument()
     expect(screen.getByText('ana@dti.gov.ph')).toBeInTheDocument()
     expect(screen.getByText('permanent-password')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Field Monitoring PWA' })).toHaveAttribute('href')
+    expect(screen.getByText(/Admin-issued password/i)).toBeInTheDocument()
+    expect(screen.queryByText(/temporary password/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/replaces this password/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Field Monitoring PWA address is not configured/i)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open Field Monitoring PWA' })).not.toBeInTheDocument()
   })
 
   it('deactivates an account from its row actions', async () => {
     vi.mocked(adminApi.updateManagedUser).mockResolvedValue({ ...usersPage.records[0], is_active: false })
     const user = userEvent.setup()
-    render(<UserManagementPanel vendorRegistration={<div />} />)
+    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
 
     await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Actions for Maria Vendor' }))
@@ -112,5 +133,8 @@ describe('User Management', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm deactivation' }))
 
     expect(adminApi.updateManagedUser).toHaveBeenCalledWith(7, { is_active: false })
+    const notice = await screen.findByText('Maria Vendor was deactivated.')
+    expect(notice.closest('[data-sonner-toast]')).toBeInTheDocument()
+    expect(screen.queryByText('Maria Vendor was deactivated.', { selector: '.admin-feedback' })).not.toBeInTheDocument()
   })
 })

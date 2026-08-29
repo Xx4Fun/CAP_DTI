@@ -29,7 +29,7 @@ describe('Login', () => {
       name: 'DTI fair trade and consumer protection illustration',
     })
 
-    expect(artwork).toHaveAttribute('src', '/branding/login-artwork.png')
+    expect(artwork).toHaveAttribute('src', '/branding/login-artwork.webp')
     expect(artwork).toHaveStyle({
       width: '100%',
       height: '100vh',
@@ -56,7 +56,7 @@ describe('Login', () => {
     expect(screen.queryByText(/SQLSTATE|audit_events|pgsql/i)).not.toBeInTheDocument()
   })
 
-  it('waits for readiness before sending credentials and shows startup status', async () => {
+  it('waits for readiness without inserting startup status into the form layout', async () => {
     let releaseReadiness: (() => void) | undefined
     ensureApiReadyMock.mockReturnValue(new Promise<void>((resolve) => {
       releaseReadiness = resolve
@@ -68,9 +68,9 @@ describe('Login', () => {
       },
     })
     const user = userEvent.setup()
-    render(<Login onLoginSuccess={vi.fn()} serverStatus="starting" />)
+    render(<Login onLoginSuccess={vi.fn()} />)
 
-    expect(screen.getByRole('status')).toHaveTextContent('Connecting to secure server')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await user.type(screen.getByLabelText(/email address/i), 'officer@dti.test')
     await user.type(screen.getByLabelText(/^password$/i), 'secret')
     await user.click(screen.getByRole('button', { name: /sign in/i }))

@@ -75,10 +75,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
     // Verify workspace title and status filter pills
     expect(await screen.findByRole('heading', { name: /Formal Receipt OCR Review Queue/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /All Reports/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reports on this page/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Pending Review \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Validated \/ LOI Issued \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Dismissed \(/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Closed \/ Dismissed \(/i })).toBeInTheDocument()
 
     // Default renders all reports in left list
     expect(screen.getByText('RPT-2026-001')).toBeInTheDocument()
@@ -93,7 +93,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.queryByText('RPT-2026-003')).not.toBeInTheDocument()
 
     // Filter by Validated / LOI Issued
-    await user.click(screen.getByRole('button', { name: /Validated \/ LOI Issued \(/i }))
+    await user.click(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i }))
     expect(screen.queryByText('RPT-2026-001')).not.toBeInTheDocument()
     expect(screen.getByText('RPT-2026-002')).toBeInTheDocument()
   })

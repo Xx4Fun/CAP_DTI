@@ -5,7 +5,6 @@ import {
   Building2,
   LayoutDashboard,
   MessageSquare,
-  TrendingUp,
   Receipt,
   Scale,
   ScrollText,
@@ -58,11 +57,6 @@ interface NavGroupConfig {
 const dashboardNavItem: NavItemConfig = { id: 'overview', icon: LayoutDashboard, label: 'Dashboard' }
 const communicationsNavItem: NavItemConfig = { id: 'communications', icon: MessageSquare, label: 'Communications' }
 const auditNavItem: NavItemConfig = { id: 'audit_trail', icon: ScrollText, label: 'Audit Trail' }
-const fieldOfficerNavItems: NavItemConfig[] = [
-  dashboardNavItem,
-  { id: 'field_monitoring', icon: TrendingUp, label: 'Field Monitoring' },
-]
-
 const navGroups: NavGroupConfig[] = [
   {
     id: 'reports_monitoring',
@@ -217,6 +211,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
   const Panel = panels[activeModule].component
 
+  if (isFieldOfficer) {
+    return <main className="admin-session-boot"><h1>Use the Field Monitoring PWA</h1><p>Field Officer accounts cannot access the DTI Admin portal.</p></main>
+  }
+
   return (
     <div className="admin-shell">
       <a className="skip-link" href="#admin-main">Skip to Admin content</a>
@@ -272,7 +270,7 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
         {/* Section 2: Workflow navigation */}
         <nav aria-label="DTI Admin modules">
           <div className="nav-section">
-            {(isFieldOfficer ? fieldOfficerNavItems : [dashboardNavItem]).map((item) => {
+            {[dashboardNavItem].map((item) => {
                 const IconComponent = item.icon
                 return (
                   <button
@@ -481,10 +479,9 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
             </header>
             <div className="admin-modal-body" style={{ display: 'grid', gap: '1.25rem' }}>
               <div style={{ background: '#eff6ff', padding: '1rem', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
-                <h4 style={{ margin: '0 0 0.5rem', color: '#1e3a8a' }}>R.A. 7581 — Philippine Price Act Enforcement</h4>
+                <h4 style={{ margin: '0 0 0.5rem', color: '#1e3a8a' }}>Regulatory policy status</h4>
                 <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e40af' }}>
-                  Normal Market: 10% allowance above SRP baseline. Trigger Letter of Inquiry (LOI) with 48h expiration for initial offense.<br />
-                  Emergency/State of Calamity: Zero-tolerance APC policy. Immediate Show Cause Order (SCO) dispatch.
+                  Automatic legal deadlines and LOI/SCO dispatch are unavailable until DTI-approved policy rules are configured. Price comparisons are decision support only; an authorized evaluator must verify the applicable source and evidence.
                 </p>
               </div>
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
@@ -496,9 +493,9 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                 </ul>
               </div>
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ margin: '0 0 0.5rem', color: '#0f172a' }}>DTI Antique Support Desk</h4>
+                <h4 style={{ margin: '0 0 0.5rem', color: '#0f172a' }}>Support contact</h4>
                 <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
-                  Provincial Office: San Jose de Buenavista, Antique | Email: antique@dti.gov.ph
+                  No authoritative support address is configured in this Admin build. Use your organization’s verified internal directory.
                 </p>
               </div>
             </div>

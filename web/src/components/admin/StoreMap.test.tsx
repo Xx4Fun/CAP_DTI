@@ -1,8 +1,18 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { StoreMap, getStoreStatusInfo } from './StoreMap'
+import { StoreMap } from './StoreMap'
+import { buildStorePopupContent, getStoreStatusInfo } from './storeMapUtils'
 import { StoreManager } from './StoreManager'
+import { StoreOnboarding } from '../StoreOnboarding'
 import type { StoreRecord } from '../../types/admin'
+import api from '../../services/api'
+
+vi.mock('../../services/api', () => ({
+  default: {
+    post: vi.fn().mockResolvedValue({ data: { data: { id: 10 } } }),
+  },
+}))
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -50,7 +60,7 @@ vi.mock('../../services/adminApi', () => ({
 }))
 
 describe('CartoDB Light StoreMap and StoreManager', () => {
-  it('correctly calculates status info for compliant, minor anomaly, and flagged stores', () => {
+  it('describes only the status facts present in store records', () => {
     const compliantStore: StoreRecord = {
       id: 1,
       store_name: 'Clean Store',
@@ -86,8 +96,32 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     }
 
     expect(getStoreStatusInfo(compliantStore).status).toBe('green')
+    expect(getStoreStatusInfo(compliantStore).label).toBe('No Confirmed Findings')
     expect(getStoreStatusInfo(anomalyStore).status).toBe('yellow')
+    expect(getStoreStatusInfo(anomalyStore).label).toBe('Verification Pending')
     expect(getStoreStatusInfo(flaggedStore).status).toBe('red')
+    expect(getStoreStatusInfo(flaggedStore).label).toBe('2 Confirmed Findings')
+  })
+
+  it('renders API-provided popup values as text instead of executable markup', () => {
+    const store = {
+      id: 9,
+      store_name: '<img src=x onerror="alert(1)">',
+      dti_sec_number: '<script>bad()</script>',
+      address: 'Antique',
+      latitude: 10.74,
+      longitude: 121.94,
+      is_active: true,
+      is_verified: true,
+      is_public: true,
+      recidivism_index: 0,
+    } satisfies StoreRecord
+
+    const popup = buildStorePopupContent(store, getStoreStatusInfo(store), 10.74, 121.94)
+
+    expect(popup.textContent).toContain('<img src=x onerror="alert(1)">')
+    expect(popup.querySelector('img')).toBeNull()
+    expect(popup.querySelector('script')).toBeNull()
   })
 
   it('renders single location StoreMap component', () => {
@@ -101,9 +135,45 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     expect(await screen.findByText('Store Monitoring')).toBeInTheDocument()
     expect(screen.getByText(/CartoDB GIS Monitor/i)).toBeInTheDocument()
     expect(screen.getByText('All (3)')).toBeInTheDocument()
-    expect(screen.getByText('Clean (1)')).toBeInTheDocument()
-    expect(screen.getByText('Anomaly (1)')).toBeInTheDocument()
-    expect(screen.getByText('Flagged (1)')).toBeInTheDocument()
+    expect(screen.getByText('No findings (1)')).toBeInTheDocument()
+    expect(screen.getByText('Pending (1)')).toBeInTheDocument()
+    expect(screen.getByText('Inactive (0)')).toBeInTheDocument()
+    expect(screen.getByText('Findings (1)')).toBeInTheDocument()
+  })
+
+  it('renders redesigned StoreOnboarding with light map, synchronized coordinates, and creates establishment', async () => {
+    const user = userEvent.setup()
+    const onCreated = vi.fn()
+    const onBack = vi.fn()
+
+    render(<StoreOnboarding onCreated={onCreated} onBack={onBack} />)
+
+    expect(screen.getByRole('heading', { name: 'Register new establishment' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to User Management' })).toBeInTheDocument()
+    expect(screen.getByText('Synchronized GIS Coordinates')).toBeInTheDocument()
+    expect(screen.getByText('CartoDB Voyager Light')).toBeInTheDocument()
+
+    // Test form filling
+    await user.type(screen.getByLabelText(/SEC \/ DTI registration number/i), 'SEC-2026-TEST')
+    await user.type(screen.getByLabelText(/Store \/ business name/i), 'Antique Central Market')
+    await user.type(screen.getByLabelText(/Owner \/ proprietor full name/i), 'Juan Santos')
+    await user.type(screen.getByLabelText(/Business address/i), 'Bantayan, San Jose de Buenavista')
+
+    // Submit
+    await user.click(screen.getByRole('button', { name: 'Register establishment' }))
+
+    expect(api.post).toHaveBeenCalledWith('/admin/stores', expect.objectContaining({
+      dti_sec_number: 'SEC-2026-TEST',
+      store_name: 'Antique Central Market',
+      owner_name: 'Juan Santos',
+      address: 'Bantayan, San Jose de Buenavista',
+      latitude: 10.7424,
+      longitude: 121.9406,
+    }))
+    expect(onCreated).toHaveBeenCalled()
+
+    // Test breadcrumb
+    await user.click(screen.getByRole('button', { name: 'Back to User Management' }))
+    expect(onBack).toHaveBeenCalled()
   })
 })
-

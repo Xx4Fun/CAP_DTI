@@ -6,7 +6,6 @@ import { FieldMonitoringPanel } from './AdminPanels'
 import { FieldMonitoringRecords } from './FieldMonitoringRecords'
 
 vi.mock('../../services/adminApi', () => ({ adminApi: { getMonitoringRecords: vi.fn(), getMonitoringRecord: vi.fn(), getMonitoringSignature: vi.fn() } }))
-vi.mock('./TemporalVolatility', () => ({ TemporalVolatility: () => <section>Price volatility analytics</section> }))
 
 const record = {
   id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z',
@@ -82,5 +81,21 @@ describe('FieldMonitoringRecords', () => {
 
     expect(screen.queryByRole('heading', { name: 'Visit #14' })).not.toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Accepted field monitoring visits' })).toBeInTheDocument()
+  })
+
+  it('opens the signature tab during the user click before awaiting the private blob', async () => {
+    const user = userEvent.setup()
+    const popup = { location: { href: '' }, close: vi.fn() }
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
+    vi.mocked(adminApi.getMonitoringSignature).mockResolvedValue(new Blob(['signature'], { type: 'image/png' }))
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:signature')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    render(<FieldMonitoringRecords />)
+
+    await user.click(await screen.findByRole('button', { name: 'View visit 14' }))
+    await user.click(await screen.findByRole('button', { name: 'Officer signature' }))
+
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    expect(popup.location.href).toBe('blob:signature')
   })
 })

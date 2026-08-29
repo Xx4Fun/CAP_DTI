@@ -78,7 +78,10 @@ export function FieldMonitoringRecords() {
   const signature = async (kind: 'officer' | 'representative') => {
     if (!selected) return
     const popup = window.open('', '_blank')
-    if (!popup) { setError('The signature could not open because pop-ups are blocked. Allow pop-ups for this Admin site and try again.'); return }
+    if (!popup) {
+      setError('The signature could not open because pop-ups are blocked. Allow pop-ups for this Admin site and try again.')
+      return
+    }
     popup.opener = null
     try {
       const url = URL.createObjectURL(await adminApi.getMonitoringSignature(selected.id, kind))

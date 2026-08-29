@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { getAdminToken, getAuthToken } from './adminSession';
 
 const api = axios.create({
@@ -9,6 +10,28 @@ const api = axios.create({
         'Accept': 'application/json'
     }
 });
+
+type PendingReauthenticationRequest = {
+    config: AxiosRequestConfig & { _adminReauthenticationRetry?: boolean };
+    resolve: (response: AxiosResponse) => void;
+    reject: (reason?: unknown) => void;
+};
+
+let pendingReauthenticationRequests: PendingReauthenticationRequest[] = [];
+
+(api as any).resumePendingAdminRequests = () => {
+    const pending = pendingReauthenticationRequests;
+    pendingReauthenticationRequests = [];
+    pending.forEach(({ config, resolve, reject }) => {
+        api.request({ ...config, _adminReauthenticationRetry: true } as any).then(resolve).catch(reject);
+    });
+};
+
+(api as any).cancelPendingAdminRequests = () => {
+    const pending = pendingReauthenticationRequests;
+    pendingReauthenticationRequests = [];
+    pending.forEach(({ reject }) => reject(new Error('Sensitive action cancelled before password confirmation.')));
+};
 
 
 api.interceptors.request.use((config) => {
@@ -28,7 +51,13 @@ api.interceptors.response.use(
         if (error.response?.status === 403
             && error.response?.data?.status === 'REAUTHENTICATION_REQUIRED'
             && getAdminToken()) {
-            window.dispatchEvent(new Event('admin-reauthentication-required'));
+            const config = error.config as PendingReauthenticationRequest['config'];
+            if (!config?._adminReauthenticationRetry) {
+                return new Promise<AxiosResponse>((resolve, reject) => {
+                    pendingReauthenticationRequests.push({ config, resolve, reject });
+                    window.dispatchEvent(new Event('admin-reauthentication-required'));
+                });
+            }
         }
         return Promise.reject(error);
     }

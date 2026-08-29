@@ -51,7 +51,7 @@ describe('SRP management workspace', () => {
     render(<SrpManagementPanel />)
 
     expect(await screen.findByRole('table', { name: 'SRP bulletin records' })).toBeInTheDocument()
-    expect(screen.getByText('Premium Rice')).toBeInTheDocument()
+    expect(await screen.findByText('Premium Rice')).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Search SRP bulletins' })).toBeInTheDocument()
     expect(screen.getByText(/entries/i)).toBeInTheDocument()
     expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
+import { adminToast } from '../../services/adminToast'
 import type { RegulatoryEmergencyRecord } from '../../types/admin'
 import {
   Calendar,
@@ -7,7 +8,6 @@ import {
   Search,
   Shield,
   ShieldAlert,
-  Zap,
 } from 'lucide-react'
 
 export interface AuthoritativePriceRecord {
@@ -23,43 +23,26 @@ export interface AuthoritativePriceRecord {
 }
 
 export const EmergencyToggle: React.FC = () => {
-  const [message, setMessage] = useState('')
   const [emergencies, setEmergencies] = useState<RegulatoryEmergencyRecord[]>([])
-  const [emergencyPrices, setEmergencyPrices] = useState<AuthoritativePriceRecord[]>([
-    {
-      id: 101,
-      regulatory_emergency_id: 7,
-      commodity_key: 'rice-well-milled-1kg',
-      price_type: 'APC',
-      authoritative_price: 45.50,
-      effective_from: '2026-07-26',
-      effective_until: null,
-      source_reference: 'DTI-APC-2026-07',
-      declaration_reference: 'PDRRMC-2026-07',
-    },
-    {
-      id: 102,
-      regulatory_emergency_id: 7,
-      commodity_key: 'canned-sardines-155g',
-      price_type: 'PRICE_FREEZE',
-      authoritative_price: 22.00,
-      effective_from: '2026-07-26',
-      effective_until: null,
-      source_reference: 'DTI-FREEZE-2026-01',
-      declaration_reference: 'PDRRMC-2026-07',
-    },
-  ])
+  const [emergencyPrices, setEmergencyPrices] = useState<AuthoritativePriceRecord[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [savingAction, setSavingAction] = useState<string | null>(null)
   const [apcSearch, setApcSearch] = useState('')
   const [apcTypeFilter, setApcTypeFilter] = useState<'ALL' | 'PRICE_FREEZE' | 'APC'>('ALL')
-  const [scoEscalationStatus, setScoEscalationStatus] = useState<string | null>(null)
 
   const loadEmergencies = () => {
     setLoading(true)
+    setLoadError(null)
     void adminApi.getEmergencies().then((data) => {
       setEmergencies(data)
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }).catch(() => {
+      setEmergencies([])
+      setLoadError('Could not load emergency declarations. Current market protocol is unavailable until the connection is restored.')
+      setLoading(false)
+    })
   }
 
   useEffect(() => {
@@ -75,10 +58,6 @@ export const EmergencyToggle: React.FC = () => {
     const matchesType = apcTypeFilter === 'ALL' || price.price_type === apcTypeFilter
     return matchesSearch && matchesType
   })
-
-  const triggerScoSweep = () => {
-    setScoEscalationStatus('Automated SCO Escalation Sweep executed: 2 non-compliant establishments flagged under R.A. 7581 emergency protocols and escalated directly to Show Cause Order (SCO) status.')
-  }
 
   return (
     <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
@@ -125,45 +104,33 @@ export const EmergencyToggle: React.FC = () => {
                   fontWeight: 800,
                   letterSpacing: '0.05em',
                   textTransform: 'uppercase',
-                  background: isCalamityActive ? '#fee2e2' : '#dcfce7',
-                  color: isCalamityActive ? '#991b1b' : '#166534',
-                  border: isCalamityActive ? '1px solid #fca5a5' : '1px solid #86efac',
+                  background: loadError ? '#fef3c7' : isCalamityActive ? '#fee2e2' : '#dcfce7',
+                  color: loadError ? '#92400e' : isCalamityActive ? '#991b1b' : '#166534',
+                  border: loadError ? '1px solid #fcd34d' : isCalamityActive ? '1px solid #fca5a5' : '1px solid #86efac',
                 }}
               >
-                {isCalamityActive ? 'CALAMITY PROTOCOL ACTIVE 🚨' : 'NORMAL MARKET PROTOCOL 🟢'}
+                {loadError ? 'MARKET PROTOCOL UNAVAILABLE' : isCalamityActive ? 'CALAMITY PROTOCOL ACTIVE' : 'NORMAL MARKET PROTOCOL'}
               </span>
             </div>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-              {isCalamityActive
-                ? `Emergency price controls active across ${activeEmergencies.length} declared jurisdiction(s). Standard 10% SRP allowance is suspended.`
-                : 'Market pricing operating under standard SRP baseline (+10% allowance limit).'}
+              {loadError
+                ? 'The declaration service could not be reached. No market status is being inferred.'
+                : isCalamityActive
+                  ? `Emergency price controls active across ${activeEmergencies.length} declared jurisdiction(s).`
+                  : 'No active emergency declaration is recorded.'}
             </p>
           </div>
         </div>
 
-        {/* Command Bar Quick Trigger Controls */}
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={triggerScoSweep}
-            style={{
-              padding: '0.55rem 1rem',
-              borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              background: 'rgba(255, 255, 255, 0.15)',
-              color: '#ffffff',
-              fontWeight: 700,
-              fontSize: '0.82rem',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-            }}
-          >
-            <Zap size={16} /> Automated SCO Trigger Sweep
-          </button>
-        </div>
       </section>
+
+      {loadError && (
+        <div role="alert" className="admin-alert admin-alert--error">
+          <p>{loadError}</p>
+          <button type="button" onClick={loadEmergencies}>Retry</button>
+        </div>
+      )}
+      {actionError && <div role="alert" className="admin-alert admin-alert--error">{actionError}</div>}
 
       {/* Active Freeze Date Range Indicators Card */}
       <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
@@ -243,16 +210,26 @@ export const EmergencyToggle: React.FC = () => {
             event.preventDefault()
             const element = event.currentTarget
             const form = new FormData(element)
-            await adminApi.createEmergency({
-              location: form.get('location'),
-              starts_on: form.get('starts_on'),
-              ends_on: form.get('ends_on') || null,
-              declaration_reference: form.get('reference'),
-              confirmed: form.get('confirmed') === 'on',
-            })
-            setMessage('Emergency declaration recorded.')
-            await loadEmergencies()
-            element.reset()
+            setActionError(null)
+            setSavingAction('declaration')
+            try {
+              await adminApi.createEmergency({
+                location: form.get('location'),
+                starts_on: form.get('starts_on'),
+                ends_on: form.get('ends_on') || null,
+                declaration_reference: form.get('reference'),
+                confirmed: form.get('confirmed') === 'on',
+              })
+              adminToast.success('Emergency declaration recorded.', { id: 'emergency-declaration-created' })
+              await loadEmergencies()
+              element.reset()
+            } catch (error: any) {
+              const message = error.response?.data?.message || 'The emergency declaration could not be recorded.'
+              setActionError(message)
+              adminToast.error(message, { id: 'emergency-declaration-error' })
+            } finally {
+              setSavingAction(null)
+            }
           }}
           style={{ display: 'grid', gap: '0.85rem' }}
         >
@@ -316,6 +293,7 @@ export const EmergencyToggle: React.FC = () => {
 
           <button
             type="submit"
+            disabled={savingAction !== null}
             style={{
               padding: '0.65rem 1.2rem',
               background: '#dc2626',
@@ -327,7 +305,7 @@ export const EmergencyToggle: React.FC = () => {
               justifySelf: 'start',
             }}
           >
-            Record declaration
+            {savingAction === 'declaration' ? 'Recording declaration...' : 'Record declaration'}
           </button>
         </form>
 
@@ -373,13 +351,25 @@ export const EmergencyToggle: React.FC = () => {
                           type="button"
                           onClick={async () => {
                             if (!window.confirm('Confirm that this emergency declaration has ended?')) return
-                            await adminApi.updateEmergency(emergency.id, {
-                              status: 'ended',
-                              ends_on: new Date().toISOString().slice(0, 10),
-                              confirmed: true,
-                            })
-                            await loadEmergencies()
+                            setActionError(null)
+                            setSavingAction(`end-${emergency.id}`)
+                            try {
+                              await adminApi.updateEmergency(emergency.id, {
+                                status: 'ended',
+                                ends_on: new Date().toISOString().slice(0, 10),
+                                confirmed: true,
+                              })
+                              await loadEmergencies()
+                              adminToast.success('Emergency declaration ended.', { id: 'emergency-declaration-ended' })
+                            } catch (error: any) {
+                              const message = error.response?.data?.message || 'The emergency declaration could not be ended.'
+                              setActionError(message)
+                              adminToast.error(message, { id: 'emergency-declaration-end-error' })
+                            } finally {
+                              setSavingAction(null)
+                            }
                           }}
+                          disabled={savingAction !== null}
                           style={{
                             padding: '0.25rem 0.55rem',
                             borderRadius: '6px',
@@ -390,7 +380,7 @@ export const EmergencyToggle: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          End declaration
+                          {savingAction === `end-${emergency.id}` ? 'Ending...' : 'End declaration'}
                         </button>
                       </div>
                     ) : (
@@ -455,7 +445,9 @@ export const EmergencyToggle: React.FC = () => {
               {filteredPrices.length === 0 ? (
                 <tr>
                   <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                    No authoritative price records matched filter.
+                    {emergencyPrices.length === 0
+                      ? 'No authoritative emergency price records are available. Records appear here only after the API confirms a saved source.'
+                      : 'No authoritative price records matched the current filter.'}
                   </td>
                 </tr>
               ) : (
@@ -519,19 +511,10 @@ export const EmergencyToggle: React.FC = () => {
             const effUntil = (form.get('effective_until') as string) || null
             const srcRef = String(form.get('source_reference'))
 
-            await adminApi.createEmergencyPrice({
-              regulatory_emergency_id: emId,
-              commodity_key: commKey,
-              price_type: pType,
-              authoritative_price: authPrice,
-              effective_from: effFrom,
-              effective_until: effUntil,
-              source_reference: srcRef,
-            })
-
-            setEmergencyPrices((prev) => [
-              {
-                id: Date.now(),
+            setActionError(null)
+            setSavingAction('price')
+            try {
+              const savedRecord = await adminApi.createEmergencyPrice({
                 regulatory_emergency_id: emId,
                 commodity_key: commKey,
                 price_type: pType,
@@ -539,12 +522,17 @@ export const EmergencyToggle: React.FC = () => {
                 effective_from: effFrom,
                 effective_until: effUntil,
                 source_reference: srcRef,
-              },
-              ...prev,
-            ])
-
-            setMessage('Authoritative emergency price recorded.')
-            element.reset()
+              }) as AuthoritativePriceRecord
+              setEmergencyPrices((prev) => [savedRecord, ...prev])
+              adminToast.success('Authoritative emergency price recorded.', { id: 'emergency-price-created' })
+              element.reset()
+            } catch (error: any) {
+              const message = error.response?.data?.message || 'The authoritative emergency price could not be recorded.'
+              setActionError(message)
+              adminToast.error(message, { id: 'emergency-price-error' })
+            } finally {
+              setSavingAction(null)
+            }
           }}
           style={{ display: 'grid', gap: '0.85rem' }}
         >
@@ -659,6 +647,7 @@ export const EmergencyToggle: React.FC = () => {
 
           <button
             type="submit"
+            disabled={savingAction !== null}
             style={{
               padding: '0.6rem 1.1rem',
               background: '#1d4ed8',
@@ -670,52 +659,11 @@ export const EmergencyToggle: React.FC = () => {
               justifySelf: 'start',
             }}
           >
-            Save authoritative price record
+            {savingAction === 'price' ? 'Saving authoritative price...' : 'Save authoritative price record'}
           </button>
         </form>
       </section>
 
-      {/* Automated Show Cause Order Escalation Trigger Section */}
-      <section className="admin-card" style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: '12px', padding: '1.25rem' }}>
-        <h3 style={{ margin: '0 0 0.4rem', fontSize: '1.1rem', color: '#991b1b', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Zap size={18} style={{ color: '#dc2626' }} /> Automated Show Cause Order (SCO) Escalation Triggers
-        </h3>
-        <p style={{ margin: '0 0 1rem', fontSize: '0.84rem', color: '#7f1d1d', lineHeight: 1.5 }}>
-          Under R.A. 7581 Section 6 calamity protocols, the +10% price variance allowance is immediately suspended. All recorded shelf price anomalies and repeat offenders (Recidivism Index &gt; 0) are automatically queued for Show Cause Order (SCO) issuance.
-        </p>
-
-        <button
-          type="button"
-          onClick={triggerScoSweep}
-          style={{
-            padding: '0.65rem 1.2rem',
-            background: '#dc2626',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            fontWeight: 700,
-            fontSize: '0.88rem',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-          }}
-        >
-          <Zap size={16} /> Execute Automated SCO Escalation Sweep
-        </button>
-
-        {scoEscalationStatus && (
-          <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', background: '#ffffff', border: '1px solid #fca5a5', borderRadius: '8px', color: '#991b1b', fontSize: '0.84rem', fontWeight: 600 }}>
-            {scoEscalationStatus}
-          </div>
-        )}
-      </section>
-
-      {message && (
-        <p role="status" style={{ margin: 0, color: '#059669', fontSize: '0.85rem', fontWeight: 600 }}>
-          {message}
-        </p>
-      )}
     </div>
   )
 }

@@ -93,7 +93,7 @@ describe('TemporalVolatility', () => {
     expect(screen.getByRole('button', { name: /Last 7 Days/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Last 14 Days/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Last 30 Days/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /All Records/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /All Returned Records/i })).toBeInTheDocument()
 
     // Visual Legend Callouts
     expect(screen.getByTestId('visual-legend-callouts')).toBeInTheDocument()
@@ -104,10 +104,10 @@ describe('TemporalVolatility', () => {
 
   it('calculates and renders direct peso and percentage variance callout for anomalies', async () => {
     vi.mocked(adminApi.getAnalytics).mockResolvedValueOnce({
-      labels: ['2026-07-15'],
+      labels: ['2026-08-15'],
       price_series: [54],
       srp_series: [48],
-      table_rows: [{ date: '2026-07-15', price: 54, srp: 48, source: 'Field Inspection' }],
+      table_rows: [{ date: '2026-08-15', price: 54, srp: 48, source: 'Field Inspection' }],
       recidivism_count: 1,
     })
 
@@ -125,6 +125,6 @@ describe('TemporalVolatility', () => {
 
     const callout = await screen.findByTestId('variance-callout-card')
     expect(callout).toBeInTheDocument()
-    expect(screen.getByText(/\+₱6\.00 \(\+12\.5%\) above prevailing SRP ceiling — Flagged for LOI dispatch/i)).toBeInTheDocument()
+    expect(screen.getByText(/\+₱6\.00 \(\+12\.5%\).*No legal action is inferred/i)).toBeInTheDocument()
   })
 })

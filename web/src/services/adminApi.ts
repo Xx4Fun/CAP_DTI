@@ -101,6 +101,13 @@ export const adminApi = {
   async getReports(): Promise<ConsumerReportRecord[]> {
     return data(await api.get('/admin/reports'))
   },
+  async getReportPage(params: { page: number; per_page: number }): Promise<{
+    data: ConsumerReportRecord[]
+    meta: { current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null }
+  }> {
+    const response = await api.get('/admin/reports', { params })
+    return response.data
+  },
   async decideReport(id: number, payload: unknown): Promise<ConsumerReportRecord> {
     return data(await api.post(`/admin/reports/${id}/decision`, payload))
   },

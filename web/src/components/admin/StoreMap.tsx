@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import type { StoreRecord } from '../../types/admin'
+import { buildStorePopupContent, getStoreStatusInfo } from './storeMapUtils'
 
 export interface StoreMapProps {
   latitude?: number
@@ -15,41 +16,6 @@ export interface StoreMapProps {
   height?: string
   title?: string
   fullCanvas?: boolean
-}
-
-export function getStoreStatusInfo(store: StoreRecord): {
-  status: 'green' | 'yellow' | 'red'
-  label: string
-  bg: string
-  color: string
-  border: string
-} {
-  const recidivism = store.recidivism_index || 0
-  if (recidivism > 0 || !store.is_active) {
-    return {
-      status: 'red',
-      label: recidivism > 0 ? `${recidivism} Confirmed Finding${recidivism > 1 ? 's' : ''}` : 'Inactive / Flagged',
-      bg: '#fef2f2',
-      color: '#dc2626',
-      border: '#fecaca',
-    }
-  }
-  if (!store.is_verified) {
-    return {
-      status: 'yellow',
-      label: 'Minor Anomaly / Unverified',
-      bg: '#fffbeb',
-      color: '#d97706',
-      border: '#fde68a',
-    }
-  }
-  return {
-    status: 'green',
-    label: '0 Clean (Compliant)',
-    bg: '#ecfdf5',
-    color: '#059669',
-    border: '#a7f3d0',
-  }
 }
 
 function createCustomPinIcon(status: 'green' | 'yellow' | 'red', isSelected: boolean = false): L.DivIcon {
@@ -107,6 +73,8 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
   const storesRef = useRef(stores)
   storesRef.current = stores
+  const initialLatitudeRef = useRef(latitude)
+  const initialLongitudeRef = useRef(longitude)
   const onSelectStoreRef = useRef(onSelectStore)
   onSelectStoreRef.current = onSelectStore
   const onOpenStoreDetailRef = useRef(onOpenStoreDetail)
@@ -120,8 +88,9 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
     if (!mapInstance.current) {
       // Initialize CartoDB Light basemap targeting San Jose de Buenavista, Antique
-      const initialLat = stores && stores.length > 0 ? Number(stores[0].latitude) || latitude : latitude
-      const initialLng = stores && stores.length > 0 ? Number(stores[0].longitude) || longitude : longitude
+      const initialStores = storesRef.current
+      const initialLat = initialStores && initialStores.length > 0 ? Number(initialStores[0].latitude) || initialLatitudeRef.current : initialLatitudeRef.current
+      const initialLng = initialStores && initialStores.length > 0 ? Number(initialStores[0].longitude) || initialLongitudeRef.current : initialLongitudeRef.current
 
       mapInstance.current = L.map(mapRef.current, {
         center: [initialLat, initialLng],
@@ -131,7 +100,7 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current)
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(import.meta.env.VITE_CARTO_BASEMAP_KEY ?? '')}`, {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
         subdomains: 'abcd',
@@ -200,36 +169,11 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
       const marker = L.marker([lat, lng], { icon: pinIcon }).addTo(mapInstance.current!)
 
-      const popupHtml = `
-        <div style="font-family: system-ui, -apple-system, sans-serif; padding: 4px; min-width: 190px;">
-          <h4 style="margin: 0 0 4px; font-size: 0.9rem; font-weight: 700; color: #0f172a;">${store.store_name}</h4>
-          <p style="margin: 0 0 6px; font-size: 0.78rem; color: #475569;">
-            <strong style="color: #1e3a8a;">SEC #:</strong> ${store.dti_sec_number || 'N/A'}
-          </p>
-          <div style="margin-bottom: 6px;">
-            <span style="display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; background: ${statusInfo.bg}; color: ${statusInfo.color}; border: 1px solid ${statusInfo.border};">
-              ${statusInfo.label}
-            </span>
-          </div>
-          <p style="margin: 0 0 8px; font-size: 0.72rem; color: #64748b; font-family: monospace;">
-            Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}
-          </p>
-          <button
-            type="button"
-            class="leaflet-open-info-btn"
-            data-store-id="${store.id}"
-            style="width: 100%; padding: 5px 8px; border-radius: 6px; border: none; background: #1d4ed8; color: #ffffff; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;"
-          >
-            <i class="fa-solid fa-circle-info"></i> Open Store Info
-          </button>
-        </div>
-      `
-
-      marker.bindPopup(popupHtml)
+      marker.bindPopup(buildStorePopupContent(store, statusInfo, lat, lng))
 
       marker.on('click', () => {
-        onSelectStore?.(store)
-        onOpenStoreDetail?.(store)
+        onSelectStoreRef.current?.(store)
+        onOpenStoreDetailRef.current?.(store)
       })
 
       if (isSelected) {
@@ -352,17 +296,16 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       {stores && (
         <div style={{ display: 'flex', gap: '1rem', marginTop: '0.6rem', fontSize: '0.75rem', color: '#64748b', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} /> Compliant
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} /> No Confirmed Findings
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} /> Minor Anomaly
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} /> Verification Pending
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} /> Flagged / Recidivist
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} /> Inactive or Confirmed Findings
           </span>
         </div>
       )}
     </div>
   )
 }
-

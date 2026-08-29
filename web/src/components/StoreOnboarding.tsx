@@ -1,209 +1,476 @@
-import React, { useState, useEffect, useRef } from 'react';
-import L from 'leaflet';
-import api from '../services/api';
+import React, { useState, useEffect, useRef } from 'react'
+import type { FormEvent } from 'react'
+import L from 'leaflet'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Compass,
+  Loader2,
+  MapPin,
+  ShieldCheck,
+  Store,
+} from 'lucide-react'
+import api from '../services/api'
+import { adminToast } from '../services/adminToast'
 
-export const StoreOnboarding: React.FC<{ onCreated?: () => void }> = ({ onCreated }) => {
-  const [secNumber, setSecNumber] = useState('');
-  const [storeName, setStoreName] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const [address, setAddress] = useState('');
-  const [latitude, setLatitude] = useState(10.7424);
-  const [longitude, setLongitude] = useState(121.9406);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
+interface NominatimSuggestion {
+  place_id: number
+  display_name: string
+  lat: string
+  lon: string
+}
 
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
+export interface StoreOnboardingProps {
+  onCreated?: () => void
+  onBack?: () => void
+}
 
+export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onBack }) => {
+  const [secNumber, setSecNumber] = useState('')
+  const [storeName, setStoreName] = useState('')
+  const [ownerName, setOwnerName] = useState('')
+  const [address, setAddress] = useState('')
+  const [latitude, setLatitude] = useState(10.7424)
+  const [longitude, setLongitude] = useState(121.9406)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // Geocoding & address suggestions state
+  const [suggestions, setSuggestions] = useState<NominatimSuggestion[]>([])
+  const [searchingAddress, setSearchingAddress] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [reverseGeocoding, setReverseGeocoding] = useState(false)
+  const [addressSource, setAddressSource] = useState<'typed' | 'map' | 'suggestion' | null>(null)
+
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstance = useRef<L.Map | null>(null)
+  const markerRef = useRef<L.Marker | null>(null)
+  const initialLatitudeRef = useRef(latitude)
+  const initialLongitudeRef = useRef(longitude)
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggestionContainerRef = useRef<HTMLDivElement>(null)
+
+  // Initialize Leaflet map with CartoDB Voyager Light tiles
   useEffect(() => {
-    if (mapRef.current && !mapInstance.current) {
-      // Initialize Leaflet map targeting San Jose de Buenavista, Antique
-      mapInstance.current = L.map(mapRef.current).setView([10.7424, 121.9406], 15);
+    if (!mapRef.current) return
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(mapInstance.current);
+    if ((mapRef.current as any)._leaflet_id) {
+      delete (mapRef.current as any)._leaflet_id
+    }
 
-      // Create a custom SVG pulsing marker
-      const customIcon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div style="background-color: var(--primary); width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px var(--primary); animation: pulse 1.5s infinite;"></div>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7]
-      });
+    if (!mapInstance.current) {
+      mapInstance.current = L.map(mapRef.current, {
+        center: [initialLatitudeRef.current, initialLongitudeRef.current],
+        zoom: 15,
+        zoomControl: false,
+      })
 
-      // Default marker
-      markerRef.current = L.marker([10.7424, 121.9406], { icon: customIcon, draggable: true })
-        .addTo(mapInstance.current);
+      L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current)
 
-      // Drag event handler
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(import.meta.env.VITE_CARTO_BASEMAP_KEY ?? '')}`, {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 20,
+      }).addTo(mapInstance.current)
+
+      const pinIcon = L.divIcon({
+        className: 'store-onboarding-pin',
+        html: `
+          <div style="
+            background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 3px solid #ffffff;
+            box-shadow: 0 0 14px rgba(37, 99, 235, 0.6), 0 0 0 4px rgba(37, 99, 235, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+          ">
+            <div style="width: 6px; height: 6px; background: #ffffff; border-radius: 50%;"></div>
+          </div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      })
+
+      markerRef.current = L.marker([initialLatitudeRef.current, initialLongitudeRef.current], {
+        icon: pinIcon,
+        draggable: true,
+      }).addTo(mapInstance.current)
+
+      // Marker drag event -> reverse geocode
       markerRef.current.on('dragend', () => {
         if (markerRef.current) {
-          const position = markerRef.current.getLatLng();
-          setLatitude(parseFloat(position.lat.toFixed(6)));
-          setLongitude(parseFloat(position.lng.toFixed(6)));
+          const pos = markerRef.current.getLatLng()
+          const lat = parseFloat(pos.lat.toFixed(6))
+          const lng = parseFloat(pos.lng.toFixed(6))
+          setLatitude(lat)
+          setLongitude(lng)
+          void performReverseGeocode(lat, lng)
         }
-      });
+      })
 
-      // Map click event handler to move marker
+      // Map click event -> move marker & reverse geocode
       mapInstance.current.on('click', (e: L.LeafletMouseEvent) => {
         if (markerRef.current) {
-          markerRef.current.setLatLng(e.latlng);
-          setLatitude(parseFloat(e.latlng.lat.toFixed(6)));
-          setLongitude(parseFloat(e.latlng.lng.toFixed(6)));
+          markerRef.current.setLatLng(e.latlng)
+          const lat = parseFloat(e.latlng.lat.toFixed(6))
+          const lng = parseFloat(e.latlng.lng.toFixed(6))
+          setLatitude(lat)
+          setLongitude(lng)
+          void performReverseGeocode(lat, lng)
         }
-      });
+      })
     }
+
+    const handleResize = () => {
+      if (mapInstance.current) {
+        mapInstance.current.invalidateSize()
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
 
     return () => {
+      window.removeEventListener('resize', handleResize)
       if (mapInstance.current) {
-        mapInstance.current.remove();
-        mapInstance.current = null;
+        mapInstance.current.remove()
+        mapInstance.current = null
       }
-    };
-  }, []);
-
-  // Update marker position if coordinates are edited manually in form
-  const handleCoordChange = (lat: number, lng: number) => {
-    setLatitude(lat);
-    setLongitude(lng);
-    if (markerRef.current && mapInstance.current) {
-      markerRef.current.setLatLng([lat, lng]);
-      mapInstance.current.panTo([lat, lng]);
     }
-  };
+  }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage('');
-    setIsError(false);
+  // Dismiss suggestions on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (
+        suggestionContainerRef.current &&
+        !suggestionContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  // Reverse Geocoding (Coordinates -> Address string via Nominatim)
+  const performReverseGeocode = async (lat: number, lng: number) => {
+    try {
+      setReverseGeocoding(true)
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'PRICE-Watch-DTI-Antique/1.0 (dti.gov.ph)',
+          'Accept-Language': 'en-PH,en',
+        },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data && data.display_name) {
+          setAddress(data.display_name)
+          setAddressSource('map')
+        }
+      }
+    } catch {
+      // Graceful offline fallback
+    } finally {
+      setReverseGeocoding(false)
+    }
+  }
+
+  // Forward Geocoding (Address query -> Coordinates via Nominatim)
+  const handleAddressChange = (value: string) => {
+    setAddress(value)
+    setAddressSource('typed')
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+
+    if (value.trim().length < 3) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        setSearchingAddress(true)
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          value.trim()
+        )}&format=json&limit=5&countrycodes=ph`
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'PRICE-Watch-DTI-Antique/1.0 (dti.gov.ph)',
+            'Accept-Language': 'en-PH,en',
+          },
+        })
+        if (res.ok) {
+          const data: NominatimSuggestion[] = await res.json()
+          setSuggestions(data)
+          setShowSuggestions(data.length > 0)
+        }
+      } catch {
+        // Fallback silently if offline
+      } finally {
+        setSearchingAddress(false)
+      }
+    }, 450)
+  }
+
+  // Handle selecting a suggested address from dropdown
+  const handleSelectSuggestion = (sug: NominatimSuggestion) => {
+    const lat = parseFloat(parseFloat(sug.lat).toFixed(6))
+    const lng = parseFloat(parseFloat(sug.lon).toFixed(6))
+    setAddress(sug.display_name)
+    setLatitude(lat)
+    setLongitude(lng)
+    setAddressSource('suggestion')
+    setShowSuggestions(false)
+
+    if (markerRef.current) {
+      markerRef.current.setLatLng([lat, lng])
+    }
+    if (mapInstance.current) {
+      mapInstance.current.setView([lat, lng], 16, { animate: true })
+    }
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
 
     try {
       await api.post('/admin/stores', {
-        dti_sec_number: secNumber,
-        store_name: storeName,
-        owner_name: ownerName,
-        address,
+        dti_sec_number: secNumber.trim(),
+        store_name: storeName.trim(),
+        owner_name: ownerName.trim(),
+        address: address.trim(),
         latitude,
-        longitude
-      });
-      setMessage('Store registered privately. Verify it before enabling public visibility.');
-      onCreated?.();
-      // Reset form
-      setSecNumber('');
-      setStoreName('');
-      setOwnerName('');
-      setAddress('');
+        longitude,
+      })
+      adminToast.success('Establishment registered privately. Ready for verification and vendor invite.', {
+        id: 'store-onboard-success',
+      })
+      onCreated?.()
     } catch (err: any) {
-      setIsError(true);
-      if (err.response && err.response.data && err.response.data.message) {
-        setMessage(err.response.data.message);
-      } else if (err.response && err.response.data && err.response.data.errors) {
-        setMessage(Object.values(err.response.data.errors).flat().join(' '));
+      if (err.response?.data?.message) {
+        setError(err.response.data.message)
+      } else if (err.response?.data?.errors) {
+        setError(Object.values(err.response.data.errors).flat().join(' '))
       } else {
-        setMessage('Failed to onboard store. Connection error.');
+        setError('Failed to onboard establishment. Please check your connection.')
       }
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="onboarding-grid">
-      <div className="glass onboarding-card">
-        <h2 className="section-title">Onboard New Vendor</h2>
-        <p className="section-subtitle">Register store details and set geographical coordinate lockpin.</p>
-
-        {message && (
-          <div className={isError ? 'error-badge' : 'success-badge'}>
-            {message}
-          </div>
+    <div className="field-officer-create-page">
+      <header className="admin-form-header-bar">
+        {onBack && (
+          <button
+            type="button"
+            className="admin-header-back-button"
+            aria-label="Back to User Management"
+            title="Back to User Management"
+            onClick={onBack}
+          >
+            <ArrowLeft size={18} strokeWidth={2.5} aria-hidden="true" />
+          </button>
         )}
+        <h2 className="admin-form-page-title">Register new establishment</h2>
+      </header>
 
-        <form onSubmit={handleSubmit} className="onboarding-form">
-          <div className="input-group">
-            <label>SEC Registration Number</label>
-            <input 
-              type="text" 
-              value={secNumber}
-              onChange={(e) => setSecNumber(e.target.value)}
-              placeholder="e.g. SEC-CS202612345"
-              required 
-            />
-          </div>
+      <form className="field-officer-create-card" onSubmit={handleSubmit}>
+        <div className="field-officer-card-body">
+          {/* Left Column: Establishment Details */}
+          <div className="field-officer-section">
+            <div className="field-officer-section-header">
+              <div className="field-section-icon">
+                <Store size={22} />
+              </div>
+              <div>
+                <h3>Establishment details</h3>
+                <p>Official registration, trade name, and proprietor information</p>
+              </div>
+            </div>
 
-          <div className="input-group">
-            <label>Store Name</label>
-            <input 
-              type="text" 
-              value={storeName}
-              onChange={(e) => setStoreName(e.target.value)}
-              placeholder="e.g. Antique Quality Groceries"
-              required 
-            />
-          </div>
+            <div className="field-officer-fields">
+              <div className="admin-field-group">
+                <label htmlFor="store-sec-number" className="required-field">
+                  SEC / DTI registration number
+                </label>
+                <input
+                  id="store-sec-number"
+                  required
+                  autoFocus
+                  autoComplete="off"
+                  placeholder="e.g. SEC-CS202612345"
+                  value={secNumber}
+                  onChange={(e) => setSecNumber(e.target.value)}
+                />
+                <small className="field-helper-text">Unique business registration or SEC certificate number.</small>
+              </div>
 
-          <div className="input-group">
-            <label>Owner Full Name</label>
-            <input 
-              type="text" 
-              value={ownerName}
-              onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="e.g. Maria Clara Santos"
-              required 
-            />
-          </div>
+              <div className="admin-field-group">
+                <label htmlFor="store-trade-name" className="required-field">
+                  Store / business name
+                </label>
+                <input
+                  id="store-trade-name"
+                  required
+                  autoComplete="organization"
+                  placeholder="e.g. Antique Quality Groceries"
+                  value={storeName}
+                  onChange={(e) => setStoreName(e.target.value)}
+                />
+              </div>
 
-          <div className="input-group">
-            <label>Geographic Coordinates</label>
-            <div className="coords-row">
-              <input 
-                type="number" 
-                step="0.000001"
-                value={latitude}
-                onChange={(e) => handleCoordChange(parseFloat(e.target.value), longitude)}
-                placeholder="Latitude"
-                required 
-              />
-              <input 
-                type="number" 
-                step="0.000001"
-                value={longitude}
-                onChange={(e) => handleCoordChange(latitude, parseFloat(e.target.value))}
-                placeholder="Longitude"
-                required 
-              />
+              <div className="admin-field-group">
+                <label htmlFor="store-owner-name" className="required-field">
+                  Owner / proprietor full name
+                </label>
+                <input
+                  id="store-owner-name"
+                  required
+                  autoComplete="name"
+                  placeholder="e.g. Maria Clara Santos"
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                />
+              </div>
+
+              <div className="admin-field-group" ref={suggestionContainerRef} style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label htmlFor="store-business-address" className="required-field">
+                    Business address
+                  </label>
+                  {addressSource === 'map' && (
+                    <span className="address-source-pill map">
+                      <MapPin size={12} /> Resolved from map pin
+                    </span>
+                  )}
+                  {addressSource === 'suggestion' && (
+                    <span className="address-source-pill search">
+                      <CheckCircle2 size={12} /> Matched location
+                    </span>
+                  )}
+                </div>
+
+                <div className="address-input-wrapper">
+                  <textarea
+                    id="store-business-address"
+                    required
+                    rows={3}
+                    placeholder="Type address to search location, or click/drag pin on map..."
+                    value={address}
+                    onChange={(e) => handleAddressChange(e.target.value)}
+                    onFocus={() => {
+                      if (suggestions.length > 0) setShowSuggestions(true)
+                    }}
+                  />
+                  {(searchingAddress || reverseGeocoding) && (
+                    <span className="address-search-spinner" title="Resolving location...">
+                      <Loader2 size={16} className="spin-animation" />
+                    </span>
+                  )}
+                </div>
+
+                {/* Forward Geocoding Dropdown Suggestions */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="address-suggestions-dropdown" role="listbox">
+                    {suggestions.map((sug) => (
+                      <li
+                        key={sug.place_id}
+                        role="option"
+                        aria-selected={false}
+                        className="address-suggestion-item"
+                        onClick={() => handleSelectSuggestion(sug)}
+                      >
+                        <MapPin size={15} className="suggestion-icon" />
+                        <span className="suggestion-text">{sug.display_name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <small className="field-helper-text">
+                  Typing will suggest Philippine addresses; selecting one moves the map pin.
+                </small>
+              </div>
             </div>
           </div>
 
-          <div className="input-group">
-            <label>Business Address</label>
-            <textarea 
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Provide exact physical street location..."
-              rows={3}
-              required 
-            />
+          {/* Right Column: Location & GIS Pinning */}
+          <div className="field-officer-section">
+            <div className="field-officer-section-header">
+              <div className="field-section-icon">
+                <Compass size={22} />
+              </div>
+              <div>
+                <h3>Geographical location</h3>
+                <p>Pin the exact physical storefront coordinates on the GIS map</p>
+              </div>
+            </div>
+
+            <div className="field-officer-fields">
+              <div className="store-map-wrapper">
+                <div
+                  ref={mapRef}
+                  className="leaflet-map-frame store-registration-map"
+                  aria-label="Interactive establishment location map"
+                />
+              </div>
+
+              <div className="coords-display-card">
+                <div className="coords-display-header">
+                  <span className="coords-label">
+                    <Compass size={14} /> Synchronized GIS Coordinates
+                  </span>
+                  <span className="coords-badge">CartoDB Voyager Light</span>
+                </div>
+                <div className="coords-values">
+                  <div className="coord-chip">
+                    <span className="coord-chip-label">Latitude:</span>
+                    <code>{latitude.toFixed(6)}</code>
+                  </div>
+                  <div className="coord-chip">
+                    <span className="coord-chip-label">Longitude:</span>
+                    <code>{longitude.toFixed(6)}</code>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <button type="submit" className="btn-primary onboarding-btn" disabled={loading}>
-            {loading ? 'Processing Onboarding...' : 'Onboard & Drop Pin'}
-          </button>
-        </form>
-      </div>
-
-      <div className="glass map-container-card">
-        <div className="map-header">
-          <h3>Geographical Pin Locator</h3>
-          <span className="map-badge">Leaflet.js Light/Dark Engine</span>
         </div>
-        <div ref={mapRef} className="leaflet-map-frame" style={{ height: '420px', borderRadius: '8px' }}></div>
-        <p className="map-instructions">Click anywhere on the map or drag the pin to dynamically set coordinates.</p>
-      </div>
+
+        {error && (
+          <p className="admin-feedback error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <footer className="field-officer-card-footer">
+          <div className="field-officer-card-notice">
+            <ShieldCheck size={18} />
+            <span>Store is registered in the official DTI registry with unverified status until inspected.</span>
+          </div>
+          <div className="field-officer-card-actions">
+            {onBack && (
+              <button type="button" className="admin-button secondary" onClick={onBack}>
+                Cancel
+              </button>
+            )}
+            <button type="submit" className="admin-button primary" disabled={loading}>
+              {loading ? 'Registering establishment…' : 'Register establishment'}
+            </button>
+          </div>
+        </footer>
+      </form>
     </div>
-  );
-};
+  )
+}
+export default StoreOnboarding

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
 import { EmergencyToggle } from './EmergencyToggle'
 import { LegalNoticeManager } from './LegalNoticeManager'
+import { AdminToastHost } from './AdminToastHost'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -21,79 +22,77 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     vi.clearAllMocks()
   })
 
-  it('renders official DTI DOM letterhead previewer and toggles between LOI and SCO', async () => {
+  it('renders the draft letterhead and switches between LOI and SCO', async () => {
     const user = userEvent.setup()
-    render(<LegalNoticeManager />)
+    render(<><LegalNoticeManager /><AdminToastHost /></>)
 
-    // Verify official DTI Antique letterhead components
     expect(screen.getByText('Department of Trade and Industry')).toBeInTheDocument()
-    expect(screen.getByText('OFFICIAL NOTICE OF INQUIRY (LOI)')).toBeInTheDocument()
-    expect(screen.getByText(/48-Hour Rebuttal Window/i)).toBeInTheDocument()
+    expect(screen.getByText('DRAFT NOTICE OF INQUIRY (LOI)')).toBeInTheDocument()
 
-    // Toggle template to SCO
-    const scoButton = screen.getByRole('button', { name: 'SCO (Show Cause Order)' })
-    await user.click(scoButton)
+    await user.click(screen.getByRole('button', { name: 'SCO (Show Cause Order)' }))
 
-    expect(screen.getByText('FORMAL SHOW CAUSE ORDER (SCO)')).toBeInTheDocument()
-    expect(screen.getByText(/Mandatory Emergency Escalation Triggered/i)).toBeInTheDocument()
+    expect(screen.getByText('DRAFT SHOW CAUSE ORDER (SCO)')).toBeInTheDocument()
   })
 
-  it('requires certification before authorizing legal notice dispatch', async () => {
-    vi.mocked(adminApi.dispatchLegal).mockResolvedValue({} as any)
+  it('keeps official dispatch unavailable and sandboxes draft HTML', async () => {
+    vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
     const user = userEvent.setup()
 
-    render(<LegalNoticeManager />)
+    render(<><LegalNoticeManager /><AdminToastHost /></>)
 
-    const dispatchBtn = screen.getByRole('button', { name: /Authorize & Issue Legal Notice/i })
-    expect(dispatchBtn).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Authorize & Issue Legal Notice/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /dispatch authorization/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/No notice, deadline, notification, or vendor state change/i)).toBeInTheDocument()
 
-    const certifyCheckbox = screen.getByRole('checkbox', { name: /Certify evaluator review & dispatch authorization/i })
-    await user.click(certifyCheckbox)
-
-    expect(dispatchBtn).toBeEnabled()
-    await user.click(dispatchBtn)
-
-    expect(adminApi.dispatchLegal).toHaveBeenCalled()
-    expect(await screen.findByText(/Notice LOI-2026-0801-042 successfully authorized/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Preview watermarked draft/i }))
+    expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute('sandbox', '')
+    expect(adminApi.dispatchLegal).not.toHaveBeenCalled()
   })
 
-  it('renders emergency command bar, date range indicators, APC lookup table, and SCO escalation triggers', async () => {
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([
-      {
-        id: 7,
-        location: 'San Jose, Antique',
-        declaration_reference: 'PDRRMC-2026-07',
-        starts_on: '2026-07-26',
-        ends_on: null,
-        status: 'active',
-      },
-    ])
-    const user = userEvent.setup()
+  it('renders only API-backed emergency records and exposes no simulated SCO action', async () => {
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+      id: 7,
+      location: 'San Jose, Antique',
+      declaration_reference: 'PDRRMC-2026-07',
+      starts_on: '2026-07-26',
+      ends_on: null,
+      status: 'active',
+    }])
+
+    render(<><EmergencyToggle /><AdminToastHost /></>)
+
+    expect(await screen.findByText('State of Calamity Regulatory Command Bar')).toBeInTheDocument()
+    expect(screen.getAllByText('PDRRMC-2026-07').length).toBeGreaterThan(0)
+    expect(screen.getByText('Authoritative APC Ceiling & Price Freeze Lookup Table')).toBeInTheDocument()
+    expect(screen.queryByText('rice-well-milled-1kg')).not.toBeInTheDocument()
+    expect(screen.getByText(/No authoritative emergency price records are available/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /SCO.*Sweep/i })).not.toBeInTheDocument()
+  })
+
+  it('shows an unavailable state when emergency declarations cannot be loaded', async () => {
+    vi.mocked(adminApi.getEmergencies).mockRejectedValue(new Error('offline'))
 
     render(<EmergencyToggle />)
 
-    // Verify Emergency Command Bar
-    expect(await screen.findByText('State of Calamity Regulatory Command Bar')).toBeInTheDocument()
-    expect(screen.getByText('CALAMITY PROTOCOL ACTIVE 🚨')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load emergency declarations/i)
+    expect(screen.queryByText(/NORMAL MARKET PROTOCOL/i)).not.toBeInTheDocument()
+  })
 
-    // Verify Active Freeze Date Range Indicators
-    expect(screen.getAllByText('PDRRMC-2026-07').length).toBeGreaterThan(0)
-    expect(screen.getByText(/ACTIVE \(Day/i)).toBeInTheDocument()
+  it('keeps a failed declaration visible as an error and does not claim success', async () => {
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([])
+    vi.mocked(adminApi.createEmergency).mockRejectedValue({ response: { data: { message: 'Audit storage unavailable.' } } })
+    const user = userEvent.setup()
 
-    // Verify APC Ceiling Lookup Table
-    expect(screen.getByText('Authoritative APC Ceiling & Price Freeze Lookup Table')).toBeInTheDocument()
-    expect(screen.getByText('rice-well-milled-1kg')).toBeInTheDocument()
-    expect(screen.getByText('₱45.50')).toBeInTheDocument()
+    render(<><EmergencyToggle /><AdminToastHost /></>)
+    await screen.findByText('No emergency declarations recorded.')
+    await user.type(screen.getByLabelText('Location'), 'Antique')
+    await user.type(screen.getByLabelText('Declaration reference'), 'DECL-7')
+    await user.type(screen.getByLabelText('Start date'), '2026-08-29')
+    await user.click(screen.getByRole('checkbox', { name: /I confirm this declaration/i }))
+    await user.click(screen.getByRole('button', { name: 'Record declaration' }))
 
-    // Filter APC Table
-    const searchInput = screen.getByPlaceholderText('Filter commodity key...')
-    await user.type(searchInput, 'sardines')
-    expect(screen.getByText('canned-sardines-155g')).toBeInTheDocument()
-    expect(screen.queryByText('rice-well-milled-1kg')).not.toBeInTheDocument()
-
-    // Execute SCO Escalation Sweep
-    const sweepBtn = screen.getByRole('button', { name: /Execute Automated SCO Escalation Sweep/i })
-    await user.click(sweepBtn)
-    expect(await screen.findByText(/Automated SCO Escalation Sweep executed/i)).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Audit storage unavailable.')
+    expect(screen.queryByText('Emergency declaration recorded.')).not.toBeInTheDocument()
+    expect(adminApi.getEmergencies).toHaveBeenCalledTimes(1)
   })
 })

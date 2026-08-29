@@ -23,21 +23,33 @@ export const TemporalVolatility: React.FC = () => {
   const [dateRange, setDateRange] = useState<'7d' | '14d' | '30d' | 'all'>('30d')
   const [analytics, setAnalytics] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void adminApi.getAnalyticsOptions().then((data) => {
       setStores(data.stores)
       setCommodities(data.commodities)
+    }).catch(() => {
+      setError('Analytics filters could not be loaded. Retry when the Admin API is available.')
     })
   }, [])
 
   useEffect(() => {
     if (selectedStoreId && selectedCommodity) {
+      let cancelled = false
       setLoading(true)
+      setError(null)
       void adminApi.getAnalytics(selectedStoreId, selectedCommodity).then((res) => {
+        if (cancelled) return
         setAnalytics(res)
         setLoading(false)
+      }).catch(() => {
+        if (cancelled) return
+        setAnalytics(null)
+        setError('Validated analytics could not be loaded for the selected store and commodity.')
+        setLoading(false)
       })
+      return () => { cancelled = true }
     }
   }, [selectedStoreId, selectedCommodity])
 
@@ -67,7 +79,7 @@ export const TemporalVolatility: React.FC = () => {
       const d = new Date(r.date)
       return !isNaN(d.getTime()) ? d >= cutoff : true
     })
-    return dateFiltered.length > 0 ? dateFiltered : rows.slice(-days)
+    return dateFiltered
   }
 
   const activeRows = getFilteredRows()
@@ -100,17 +112,17 @@ export const TemporalVolatility: React.FC = () => {
     if (price > srp * 1.10) {
       return {
         type: 'danger',
-        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above prevailing SRP ceiling — Flagged for LOI dispatch`,
+        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the applicable SRP and above the 110% comparison line. No legal action is inferred.`,
       }
     } else if (price > srp) {
       return {
         type: 'warning',
-        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above prevailing SRP baseline — Within 10% regulatory allowance`,
+        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the applicable SRP and below the 110% comparison line.`,
       }
     } else {
       return {
         type: 'success',
-        text: `₱${diff.toFixed(2)} (${pct.toFixed(1)}%) variance — Fully compliant with prevailing SRP baseline`,
+        text: `₱${diff.toFixed(2)} (${pct.toFixed(1)}%) variance from the applicable SRP. This alone is not a complete compliance determination.`,
       }
     }
   }
@@ -228,7 +240,7 @@ export const TemporalVolatility: React.FC = () => {
         >
           <div>
             <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-              4-Week Temporal Price Volatility Analytics
+              Temporal Price Volatility Analytics
             </h3>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
               Compare historical field inspection shelf prices against flat baseline SRPs and 10% allowance ceilings.
@@ -272,7 +284,8 @@ export const TemporalVolatility: React.FC = () => {
                       (s) => s.store_name.toLowerCase() === e.target.value.toLowerCase() ||
                              `${s.store_name} (${s.address})`.toLowerCase() === e.target.value.toLowerCase()
                     )
-                    if (match) setSelectedStoreId(match.id)
+                    setSelectedStoreId(match?.id ?? null)
+                    if (!match) setAnalytics(null)
                   }}
                   style={{
                     width: '100%',
@@ -308,7 +321,8 @@ export const TemporalVolatility: React.FC = () => {
                   >
                     {filteredStores.length > 0 ? (
                       filteredStores.map((st) => (
-                        <div
+                        <button
+                          type="button"
                           key={st.id}
                           role="option"
                           aria-selected={selectedStoreId === st.id}
@@ -324,10 +338,15 @@ export const TemporalVolatility: React.FC = () => {
                             background: selectedStoreId === st.id ? '#eff6ff' : 'transparent',
                             cursor: 'pointer',
                             borderBottom: '1px solid #f1f5f9',
+                            borderTop: 0,
+                            borderLeft: 0,
+                            borderRight: 0,
+                            width: '100%',
+                            textAlign: 'left',
                           }}
                         >
                           {st.store_name} ({st.address})
-                        </div>
+                        </button>
                       ))
                     ) : (
                       <div style={{ padding: '0.65rem 0.85rem', fontSize: '0.82rem', color: '#64748b', textAlign: 'center' }}>
@@ -367,7 +386,8 @@ export const TemporalVolatility: React.FC = () => {
                       (c) => c.commodity_name.toLowerCase() === e.target.value.toLowerCase() ||
                              c.commodity_key.toLowerCase() === e.target.value.toLowerCase()
                     )
-                    if (match) setSelectedCommodity(match.commodity_key)
+                    setSelectedCommodity(match?.commodity_key ?? '')
+                    if (!match) setAnalytics(null)
                   }}
                   style={{
                     width: '100%',
@@ -403,7 +423,8 @@ export const TemporalVolatility: React.FC = () => {
                   >
                     {filteredCommodities.length > 0 ? (
                       filteredCommodities.map((c) => (
-                        <div
+                        <button
+                          type="button"
                           key={c.commodity_key}
                           role="option"
                           aria-selected={selectedCommodity === c.commodity_key}
@@ -419,10 +440,15 @@ export const TemporalVolatility: React.FC = () => {
                             background: selectedCommodity === c.commodity_key ? '#eff6ff' : 'transparent',
                             cursor: 'pointer',
                             borderBottom: '1px solid #f1f5f9',
+                            borderTop: 0,
+                            borderLeft: 0,
+                            borderRight: 0,
+                            width: '100%',
+                            textAlign: 'left',
                           }}
                         >
                           {c.commodity_name}
-                        </div>
+                        </button>
                       ))
                     ) : (
                       <div style={{ padding: '0.65rem 0.85rem', fontSize: '0.82rem', color: '#64748b', textAlign: 'center' }}>
@@ -454,7 +480,7 @@ export const TemporalVolatility: React.FC = () => {
             { id: '7d', label: 'Last 7 Days' },
             { id: '14d', label: 'Last 14 Days' },
             { id: '30d', label: 'Last 30 Days (4 Weeks)' },
-            { id: 'all', label: 'All Records' },
+            { id: 'all', label: 'All Returned Records (4 Weeks)' },
           ].map((pill) => (
             <button
               key={pill.id}
@@ -477,6 +503,8 @@ export const TemporalVolatility: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {error && <div role="alert" className="admin-alert admin-alert--error">{error}</div>}
 
       {/* Summary Metric Header Grid (Rendered when analytics loaded) */}
       {analytics && activeRows.length > 0 && (

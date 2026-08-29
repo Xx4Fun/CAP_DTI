@@ -3,8 +3,6 @@ import { Mail, Lock, Eye, EyeOff, LoaderCircle, ShieldCheck } from 'lucide-react
 import api from '../services/api'
 import { ensureApiReady } from '../services/apiReadiness'
 
-export type ServerStatus = 'checking' | 'starting' | 'ready' | 'unavailable'
-
 interface LoginProps {
   onLoginSuccess: (result: {
     token: string
@@ -15,11 +13,9 @@ interface LoginProps {
       absolute_timeout_seconds: number
     }
   }) => void
-  notice?: string
-  serverStatus?: ServerStatus
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice, serverStatus = 'checking' }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -67,7 +63,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice, serverStat
         }}
       >
         <img
-          src="/branding/login-artwork.png"
+          src="/branding/login-artwork.webp"
           alt="DTI fair trade and consumer protection illustration"
           style={{
             display: 'block',
@@ -139,59 +135,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, notice, serverStat
               <div style={{ flex: 1, height: '1px', background: '#cbd5e1' }} />
             </div>
           </div>
-
-          {notice && (
-            <div
-              role="status"
-              className="login-notice-badge"
-              style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderLeft: '4px solid #2563eb',
-                color: '#1e3a8a',
-                padding: '0.75rem 1rem',
-                borderRadius: '0 8px 8px 0',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-              }}
-            >
-              {notice}
-            </div>
-          )}
-
-          {serverStatus === 'starting' && (
-            <div
-              role="status"
-              style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1e40af',
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-              }}
-            >
-              Connecting to secure server&hellip;
-            </div>
-          )}
-
-          {serverStatus === 'unavailable' && (
-            <div
-              role="alert"
-              style={{
-                background: '#fff7ed',
-                border: '1px solid #fed7aa',
-                color: '#9a3412',
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-              }}
-            >
-              The secure server is taking longer than expected. You can retry sign-in.
-            </div>
-          )}
 
           {error && (
             <div

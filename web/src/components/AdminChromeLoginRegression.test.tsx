@@ -50,6 +50,12 @@ describe('DTI Admin chrome and login feedback', () => {
     )
   })
 
+  it('keeps the sidebar collapse hitbox centered while pressed', () => {
+    expect(adminCss).toMatch(
+      /\.sidebar-collapse-btn:active\s*\{[^}]*transform:\s*translateY\(-50%\)\s*!important;/s,
+    )
+  })
+
   it('keeps selected child navigation active while hovered', () => {
     expect(adminCss).toMatch(
       /\.admin-sidebar \.admin-nav-child:hover\s*\{[^}]*background:\s*var\(--sidebar-hover-bg\);[^}]*color:\s*#ffffff;/s,

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './services/api'
 import App from './App'
+import { AdminToastHost } from './components/admin/AdminToastHost'
 
 vi.mock('./services/api', () => ({
   default: {
@@ -42,7 +43,7 @@ describe('DTI Admin application session', () => {
       role: 'dti_evaluator',
     }))
 
-    render(<App />)
+    render(<><App /><AdminToastHost /></>)
 
     expect(await screen.findByRole('button', { name: /sign in/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /^dashboard$/i })).not.toBeInTheDocument()
@@ -68,11 +69,27 @@ describe('DTI Admin application session', () => {
       },
     })
 
-    render(<App />)
+    render(<><App /><AdminToastHost /></>)
 
     expect(screen.getByRole('status')).toHaveTextContent(/checking secure session/i)
     expect(await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/admin/session')
+  })
+
+  it('directs a field officer to the dedicated PWA instead of opening Admin', async () => {
+    sessionStorage.setItem('price-watch.admin.token', 'field-token')
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: { data: {
+        user: { id: 8, name: 'Field Officer', email: 'field@dti.test', role: 'field_officer' },
+        session: { expires_at: '2026-07-30T16:00:00+00:00', idle_timeout_seconds: 900, absolute_timeout_seconds: 28800 },
+      } },
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: /Use the Field Monitoring PWA/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1, name: /^dashboard$/i })).not.toBeInTheDocument()
+    expect(sessionStorage.getItem('price-watch.admin.token')).toBeNull()
   })
 
   it('revokes the server token before clearing the browser session on logout', async () => {
@@ -97,7 +114,7 @@ describe('DTI Admin application session', () => {
     })
     vi.mocked(api.post).mockResolvedValueOnce({ data: { message: 'Logged out successfully' } })
 
-    render(<App />)
+    render(<><App /><AdminToastHost /></>)
     await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
     await user.click(screen.getByRole('button', { name: /^logout$/i }))
     await user.click(screen.getByRole('button', { name: /log out/i }))
@@ -118,7 +135,7 @@ describe('DTI Admin application session', () => {
     })
     vi.mocked(api.post).mockResolvedValueOnce({ data: { data: { reauthenticated_until: '2026-07-30T10:05:00+00:00' } } })
 
-    render(<App />)
+    render(<><App /><AdminToastHost /></>)
     await screen.findByText('REGISTERED STORES')
     window.dispatchEvent(new Event('admin-reauthentication-required'))
 
@@ -150,15 +167,35 @@ describe('DTI Admin application session', () => {
     })
     vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
-    render(<App />)
+    render(<><App /><AdminToastHost /></>)
     await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
     await act(async () => {
       window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
     })
 
-    await waitFor(() => {
-      expect(screen.getByText('You were logged out due to inactivity. Sign in again to continue.')).toHaveAttribute('role', 'status')
-    }, { timeout: 10000 })
+    const notice = await screen.findByText('You were logged out due to inactivity. Sign in again to continue.', {}, { timeout: 10000 })
+    expect(notice.closest('[data-sonner-toast]')).toBeInTheDocument()
+    expect(screen.queryByText('You were logged out due to inactivity. Sign in again to continue.', { selector: '.login-notice-badge' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   }, 15000)
+
+  it('deduplicates repeated session-expiry notifications', async () => {
+    sessionStorage.setItem('price-watch.admin.token', 'valid-token')
+    vi.mocked(api.get).mockResolvedValue({
+      data: { data: {
+        user: { id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' },
+        session: { expires_at: '2026-07-30T16:00:00+00:00', idle_timeout_seconds: 900, absolute_timeout_seconds: 28800 },
+      } },
+    })
+    vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
+
+    render(<><App /><AdminToastHost /></>)
+    await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
+    await act(async () => {
+      window.dispatchEvent(new Event('admin-auth-expired'))
+      window.dispatchEvent(new Event('admin-auth-expired'))
+    })
+
+    expect(await screen.findAllByText('Your secure session expired. Sign in again to continue.')).toHaveLength(1)
+  })
 })

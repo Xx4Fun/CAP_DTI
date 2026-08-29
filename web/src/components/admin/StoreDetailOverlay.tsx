@@ -10,7 +10,7 @@ import {
   Legend,
 } from 'chart.js'
 import type { StoreRecord } from '../../types/admin'
-import { getStoreStatusInfo } from './StoreMap'
+import { getStoreStatusInfo } from './storeMapUtils'
 import { adminApi } from '../../services/adminApi'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
@@ -34,78 +34,24 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   const [analyticsData, setAnalyticsData] = useState<any>(null)
   const [loadingAnalytics, setLoadingAnalytics] = useState(false)
   const statusInfo = getStoreStatusInfo(store)
+  const storeId = store.id
 
   useEffect(() => {
     // Fetch store analytics when trends tab is selected or component mounts
-    if (store) {
-      setLoadingAnalytics(true)
-      // Fetch default commodity analytics for this store if available
-      adminApi.getAnalyticsOptions().then((opts) => {
-        const defaultCommodity = opts.commodities[0]?.commodity_key || 'rice_regular_milled'
-        return adminApi.getAnalytics(store.id, defaultCommodity)
+    setLoadingAnalytics(true)
+    adminApi.getAnalyticsOptions().then((opts) => {
+        const defaultCommodity = opts.commodities[0]?.commodity_key
+        if (!defaultCommodity) return null
+        return adminApi.getAnalytics(storeId, defaultCommodity)
       }).then((res) => {
         setAnalyticsData(res)
         setLoadingAnalytics(false)
       }).catch(() => {
         setLoadingAnalytics(false)
       })
-    }
-  }, [store.id])
+  }, [storeId])
 
-  // Mock legal history for demonstration of temporal legal engine feature
   const recidivism = store.recidivism_index || 0
-  const legalHistory = [
-    {
-      id: 1,
-      type: 'LOI',
-      title: 'Letter of Inquiry (LOI)',
-      date: '2026-07-28',
-      status: recidivism > 0 ? 'Escalated to SCO' : '48h Rebuttal Active',
-      statusBg: recidivism > 0 ? '#fef2f2' : '#fffbeb',
-      statusColor: recidivism > 0 ? '#dc2626' : '#d97706',
-      details: 'Flagged for 12.5% price variance on Regular Milled Rice.',
-    },
-    ...(recidivism > 0
-      ? [
-          {
-            id: 2,
-            type: 'SCO',
-            title: 'Show Cause Order (SCO)',
-            date: '2026-07-30',
-            status: 'Field Inspection Queued',
-            statusBg: '#fef2f2',
-            statusColor: '#dc2626',
-            details: 'Immediate administrative order issued due to unaddressed LOI window.',
-          },
-        ]
-      : []),
-  ]
-
-  // Mock citizen complaint tips for demonstration of temporal tipping history
-  const complaintHistory = [
-    {
-      id: 101,
-      date: '2026-07-27 14:32',
-      status: 'Validated',
-      statusBg: '#ecfdf5',
-      statusColor: '#059669',
-      item: 'Super Doña Maria Rice (5kg)',
-      recordedPrice: '₱310.00',
-      srpPrice: '₱275.00',
-      ocrConfidence: '98.4%',
-    },
-    {
-      id: 102,
-      date: '2026-07-20 09:15',
-      status: 'Dismissed',
-      statusBg: '#f1f5f9',
-      statusColor: '#64748b',
-      item: 'Refined Sugar 1kg',
-      recordedPrice: '₱85.00',
-      srpPrice: '₱85.00',
-      ocrConfidence: '95.1%',
-    },
-  ]
 
   // Prepare chart data for temporal trend tab
   const activeRows = analyticsData?.table_rows || []
@@ -395,19 +341,8 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
               Legal Notice & Action History
             </h4>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {legalHistory.map((item) => (
-                <div key={item.id} style={{ borderLeft: `3px solid ${item.statusColor}`, background: '#f8fafc', padding: '0.65rem 0.85rem', borderRadius: '0 8px 8px 0', border: '1px solid #e2e8f0', borderLeftWidth: '3px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-                    <strong style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 700 }}>{item.title}</strong>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '8px', background: item.statusBg, color: item.statusColor }}>
-                      {item.status}
-                    </span>
-                  </div>
-                  <p style={{ margin: '0 0 0.3rem', fontSize: '0.76rem', color: '#475569' }}>{item.details}</p>
-                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Issued: {item.date}</span>
-                </div>
-              ))}
+            <div role="status" style={{ padding: '1rem', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
+              No authoritative legal action records are available for this establishment.
             </div>
           </div>
         )}
@@ -419,25 +354,8 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
               Citizen OCR Receipt Scans & Tips
             </h4>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {complaintHistory.map((tip) => (
-                <div key={tip.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.65rem 0.85rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                    <strong style={{ fontSize: '0.82rem', color: '#0f172a' }}>{tip.item}</strong>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '8px', background: tip.statusBg, color: tip.statusColor }}>
-                      {tip.status}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.76rem', color: '#475569', marginBottom: '0.2rem' }}>
-                    <span>Recorded: <strong style={{ color: '#dc2626' }}>{tip.recordedPrice}</strong></span>
-                    <span>SRP Ceiling: <strong style={{ color: '#1d4ed8' }}>{tip.srpPrice}</strong></span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8' }}>
-                    <span>OCR Confidence: {tip.ocrConfidence}</span>
-                    <span>{tip.date}</span>
-                  </div>
-                </div>
-              ))}
+            <div role="status" style={{ padding: '1rem', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
+              No consumer report records are available for this establishment.
             </div>
           </div>
         )}

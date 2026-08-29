@@ -69,14 +69,11 @@ describe('AdminShell', () => {
     expect(screen.getByRole('button', { name: 'Emergency Protocol' })).toBeInTheDocument()
   })
 
-  it('limits a field officer to Dashboard and Field Monitoring', () => {
+  it('does not expose Admin navigation to a field officer', () => {
     render(<AdminShell user={{ id: 2, name: 'Officer', email: 'officer@dti.test', role: 'field_officer' }} />)
 
-    const navigation = screen.getByRole('navigation', { name: /DTI Admin modules/i })
-    expect(within(navigation).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
-      'Dashboard',
-      'Field Monitoring',
-    ])
+    expect(screen.getByRole('heading', { name: 'Use the Field Monitoring PWA' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: /DTI Admin modules/i })).not.toBeInTheDocument()
   })
 
   it('moves focus to the selected panel heading', async () => {

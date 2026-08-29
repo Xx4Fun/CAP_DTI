@@ -1,51 +1,24 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import {
   AlertCircle,
-  CheckCircle,
-  Clock,
   Scale,
-  Send,
   ShieldAlert,
 } from 'lucide-react'
 
 export const LegalNoticeManager: React.FC = () => {
   const [draft, setDraft] = useState('')
   const [noticeType, setNoticeType] = useState<'LOI' | 'SCO'>('LOI')
-  const [storeName, setStoreName] = useState('Grand Central Supermarket')
-  const [secNumber, setSecNumber] = useState('SEC-REG-2024-8849')
-  const [address, setAddress] = useState('General Fullon St, San Jose de Buenavista, Antique')
-  const [commodityName, setCommodityName] = useState('Premium Well-Milled Rice (1kg)')
-  const [srpBaseline, setSrpBaseline] = useState(52.00)
-  const [recordedPrice, setRecordedPrice] = useState(62.00)
-  const [authorized, setAuthorized] = useState(false)
-  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null)
-  const [countdownSeconds, setCountdownSeconds] = useState(172800) // 48 Hours
+  const [storeName, setStoreName] = useState('')
+  const [secNumber, setSecNumber] = useState('')
+  const [address, setAddress] = useState('')
+  const [commodityName, setCommodityName] = useState('')
+  const [srpBaseline, setSrpBaseline] = useState(0)
+  const [recordedPrice, setRecordedPrice] = useState(0)
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCountdownSeconds((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const formatCountdown = (totalSec: number) => {
-    const hours = Math.floor(totalSec / 3600)
-    const minutes = Math.floor((totalSec % 3600) / 60)
-    const seconds = totalSec % 60
-    return `${hours.toString().padStart(2, '0')}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`
-  }
-
-  const priceVariancePct = (((recordedPrice - srpBaseline) / srpBaseline) * 100).toFixed(1)
-
-  const handleDispatch = async () => {
-    try {
-      await adminApi.dispatchLegal()
-      setDispatchMessage(`Notice ${noticeType}-2026-0801-042 successfully authorized and dispatched to Vendor Portal & Field Dispatch Queue.`)
-    } catch {
-      setDispatchMessage(`Dispatch authorized locally for ${noticeType}-2026-0801-042. Formal record created in regulatory audit log.`)
-    }
-  }
+  const priceVariancePct = srpBaseline > 0
+    ? (((recordedPrice - srpBaseline) / srpBaseline) * 100).toFixed(1)
+    : null
 
   return (
     <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
@@ -194,15 +167,14 @@ export const LegalNoticeManager: React.FC = () => {
             {noticeType === 'SCO' ? <ShieldAlert size={18} style={{ color: '#e11d48' }} /> : <AlertCircle size={18} style={{ color: '#0284c7' }} />}
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: noticeType === 'SCO' ? '#9f1239' : '#0369a1' }}>
               {noticeType === 'SCO'
-                ? `Mandatory Emergency Escalation Triggered: +${priceVariancePct}% Price Variance under State of Calamity`
-                : `Standard Regulatory Inquiry Triggered: +${priceVariancePct}% Price Variance exceeds standard +10.0% SRP threshold`}
+                ? `Emergency draft context${priceVariancePct ? `: +${priceVariancePct}% entered price variance` : ': enter a verified baseline and observed price'}`
+                : `Draft inquiry context${priceVariancePct ? `: +${priceVariancePct}% entered price variance` : ': enter a verified baseline and observed price'}`}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#ffffff', padding: '0.25rem 0.65rem', borderRadius: '20px', border: '1px solid #cbd5e1' }}>
-            <Clock size={14} style={{ color: '#2563eb' }} />
-            <strong style={{ fontSize: '0.78rem', color: '#1e3a8a', fontFamily: 'monospace' }}>
-              48-Hour Rebuttal Window: {formatCountdown(countdownSeconds)}
+          <div style={{ background: '#ffffff', padding: '0.25rem 0.65rem', borderRadius: '20px', border: '1px solid #cbd5e1' }}>
+            <strong style={{ fontSize: '0.78rem', color: '#1e3a8a' }}>
+              Draft only — no rebuttal period starts from this preview.
             </strong>
           </div>
         </div>
@@ -229,7 +201,7 @@ export const LegalNoticeManager: React.FC = () => {
             userSelect: 'none',
           }}
         >
-          DTI ANTIQUE OFFICIAL DRAFT
+          DTI ANTIQUE UNOFFICIAL DRAFT
         </div>
 
         {/* Letterhead Header */}
@@ -263,7 +235,7 @@ export const LegalNoticeManager: React.FC = () => {
         {/* Notice Header Title */}
         <div style={{ textAlign: 'center', margin: '1.5rem 0' }}>
           <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: noticeType === 'SCO' ? '#991b1b' : '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            {noticeType === 'LOI' ? 'OFFICIAL NOTICE OF INQUIRY (LOI)' : 'FORMAL SHOW CAUSE ORDER (SCO)'}
+            {noticeType === 'LOI' ? 'DRAFT NOTICE OF INQUIRY (LOI)' : 'DRAFT SHOW CAUSE ORDER (SCO)'}
           </h3>
           <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
             Under R.A. 7581 (Price Act) & DTI Administrative Regulations
@@ -291,7 +263,7 @@ export const LegalNoticeManager: React.FC = () => {
                 <strong>WHEREAS</strong>, pursuant to Section 6 of Republic Act No. 7581 (The Price Act of the Philippines) and DTI Department Administrative Order No. 20-07, the Department of Trade and Industry Antique Provincial Office conducts regular temporal monitoring of prime commodities across establishments in San Jose de Buenavista;
               </p>
               <p style={{ margin: 0 }}>
-                <strong>TAKE NOTICE</strong> that official monitoring conducted on August 1, 2026 recorded a shelf price of <strong>₱{recordedPrice.toFixed(2)}</strong> for <strong>{commodityName}</strong>, representing a variance of <strong>+{priceVariancePct}%</strong> above the published Suggested Retail Price (SRP) baseline of <strong>₱{srpBaseline.toFixed(2)}</strong>;
+                <strong>DRAFT ONLY:</strong> Enter verified inspection evidence before using this text. The current draft fields contain a price of <strong>₱{recordedPrice.toFixed(2)}</strong> for <strong>{commodityName || 'an unspecified commodity'}</strong>{priceVariancePct ? <>, representing an entered variance of <strong>+{priceVariancePct}%</strong> above an entered SRP baseline of <strong>₱{srpBaseline.toFixed(2)}</strong></> : <>. No variance is calculated until a non-zero verified baseline is supplied</>}.
               </p>
               <p style={{ margin: 0 }}>
                 <strong>YOU ARE HEREBY DIRECTED</strong> to submit a formal written explanation and supporting invoices to the DTI Antique Provincial Office within <strong>forty-eight (48) hours</strong> from receipt of this notice, stating reasons why administrative proceedings should not be instituted against your establishment.
@@ -303,7 +275,7 @@ export const LegalNoticeManager: React.FC = () => {
                 PURSUANT TO REPUBLIC ACT NO. 7581 AND EMERGENCY REGULATORY CONTROLS, YOU ARE HEREBY ORDERED TO SHOW CAUSE WITHIN FORTY-EIGHT (48) HOURS WHY ADMINISTRATIVE PENALTIES, SEIZURE OF NON-COMPLIANT COMMODITIES, OR BUSINESS SUSPENSION SHOULD NOT BE EXECUTED.
               </p>
               <p style={{ margin: 0 }}>
-                Official regulatory inspection logged an unmitigated price anomaly for <strong>{commodityName}</strong> at <strong>₱{recordedPrice.toFixed(2)}</strong> against the mandatory price freeze / APC ceiling of <strong>₱{srpBaseline.toFixed(2)}</strong> (+{priceVariancePct}% variance).
+                This draft contains user-entered values only. Verify the regulatory inspection, commodity, observed price, and applicable price freeze or APC source before any official action. Current entered values: <strong>{commodityName || 'commodity not supplied'}</strong>, <strong>₱{recordedPrice.toFixed(2)}</strong>{priceVariancePct ? <> against <strong>₱{srpBaseline.toFixed(2)}</strong> (+{priceVariancePct}% entered variance)</> : <> with no valid baseline for a variance calculation</>}.
               </p>
               <p style={{ margin: 0 }}>
                 Failure to submit verified evidentiary justification within the prescribed 48-hour window shall constitute a waiver of your right to be heard, and immediate legal escalation to the DTI Adjudication Executive Board will proceed without further delay.
@@ -322,9 +294,9 @@ export const LegalNoticeManager: React.FC = () => {
 
           <div style={{ border: '2px solid #1d4ed8', borderRadius: '8px', padding: '0.5rem 1rem', background: '#eff6ff', textAlign: 'center' }}>
             <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 800, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              OFFICIAL REGULATORY DRAFT
+              UNOFFICIAL WATERMARKED DRAFT
             </span>
-            <small style={{ fontSize: '0.72rem', color: '#3b82f6', fontFamily: 'monospace' }}>Verified • Timestamp Encrypted</small>
+            <small style={{ fontSize: '0.72rem', color: '#3b82f6', fontFamily: 'monospace' }}>Not dispatched • Not legally effective</small>
           </div>
         </div>
       </section>
@@ -338,50 +310,14 @@ export const LegalNoticeManager: React.FC = () => {
         >
           Preview watermarked draft
         </button>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#0f172a', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={authorized}
-            onChange={(e) => setAuthorized(e.target.checked)}
-            style={{ width: '18px', height: '18px' }}
-          />
-          Certify evaluator review & dispatch authorization
-        </label>
-
-        <button
-          type="button"
-          disabled={!authorized}
-          onClick={() => void handleDispatch()}
-          style={{
-            padding: '0.6rem 1.1rem',
-            borderRadius: '8px',
-            border: 'none',
-            background: authorized ? '#1d4ed8' : '#94a3b8',
-            color: '#ffffff',
-            fontWeight: 700,
-            cursor: authorized ? 'pointer' : 'not-allowed',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-          }}
-        >
-          <Send size={16} /> Authorize & Issue Legal Notice
-        </button>
       </div>
 
       <p role="status" style={{ margin: 0, color: '#7f1d1d', fontWeight: 600 }}>
         Draft preview only. No notice, deadline, notification, or vendor state change will be created.
       </p>
 
-      {dispatchMessage && (
-        <div style={{ padding: '0.75rem 1rem', background: '#ecfdf5', border: '1px solid #6ee7b7', borderRadius: '8px', color: '#047857', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <CheckCircle size={18} /> {dispatchMessage}
-        </div>
-      )}
-
       {draft && (
-        <iframe className="draft-frame" title="Watermarked legal draft preview" srcDoc={draft} style={{ width: '100%', minHeight: '26rem', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }} />
+        <iframe sandbox="" className="draft-frame" title="Watermarked legal draft preview" srcDoc={draft} style={{ width: '100%', minHeight: '26rem', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }} />
       )}
     </div>
   )

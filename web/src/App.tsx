@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Login, type ServerStatus } from './components/Login';
+import { Login } from './components/Login';
 import { VendorPortal } from './components/VendorPortal';
 import { AdminShell } from './components/admin/AdminShell';
 import { VendorInvitationAccept } from './components/VendorInvitationAccept';
@@ -14,6 +14,7 @@ import {
 } from './services/adminSession';
 import api from './services/api';
 import { ensureApiReady } from './services/apiReadiness';
+import { adminToast } from './services/adminToast';
 import 'leaflet/dist/leaflet.css';
 import './admin-preflight.css';
 
@@ -30,29 +31,43 @@ interface SessionMetadata {
   absolute_timeout_seconds: number;
 }
 
+const fieldPwaUrl = (import.meta.env.VITE_FIELD_PWA_URL as string | undefined)?.trim()
+
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<SessionMetadata | null>(null);
   const [booting, setBooting] = useState(() => Boolean(getAdminToken()));
   const [sessionWarning, setSessionWarning] = useState(false);
+  const [sessionWarningError, setSessionWarningError] = useState('');
+  const [renewingSession, setRenewingSession] = useState(false);
   const [reauthenticationOpen, setReauthenticationOpen] = useState(false);
   const [reauthenticationError, setReauthenticationError] = useState('');
-  const [loginNotice, setLoginNotice] = useState('');
-  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+  const [fieldOfficerHandoff, setFieldOfficerHandoff] = useState(false);
   const logoutInProgress = useRef(false);
+  const sessionNoticeActive = useRef(false);
 
   useEffect(() => {
     let active = true;
     const startingTimer = window.setTimeout(() => {
-      if (active) setServerStatus('starting');
+      if (active) {
+        if (!sessionNoticeActive.current) {
+          adminToast.info('Connecting to secure server…', { id: 'admin-auth-readiness', duration: Infinity });
+        }
+      }
     }, 2_000);
 
     void ensureApiReady().then(() => {
       window.clearTimeout(startingTimer);
-      if (active) setServerStatus('ready');
+      if (active) {
+        adminToast.dismiss('admin-auth-readiness');
+      }
     }).catch(() => {
       window.clearTimeout(startingTimer);
-      if (active) setServerStatus('unavailable');
+      if (active) {
+        if (!sessionNoticeActive.current) {
+          adminToast.error('The secure server is taking longer than expected. You can retry sign-in.', { id: 'admin-auth-readiness' });
+        }
+      }
     });
 
     return () => {
@@ -65,17 +80,23 @@ function App() {
     const adminToken = getAdminToken();
     if (adminToken) {
       void ensureApiReady().then(() => api.get('/admin/session')).then((response) => {
+        if (response.data.data.user.role === 'field_officer') {
+          clearAdminSession();
+          setFieldOfficerHandoff(true);
+          return;
+        }
         setUser(response.data.data.user);
         setSession(response.data.data.session);
         touchAdminActivity();
       }).catch((error) => {
         if (error.response?.status === 401) {
           clearAdminSession();
-          setLoginNotice('Your secure session expired. Sign in again to continue.');
+          sessionNoticeActive.current = true;
+          adminToast.session('Your secure session expired. Sign in again to continue.');
           return;
         }
 
-        setLoginNotice('The secure server is temporarily unavailable. Your session was not changed.');
+        adminToast.error('The secure server is temporarily unavailable. Your session was not changed.', { id: 'admin-session-bootstrap' });
       }).finally(() => setBooting(false));
       return;
     }
@@ -100,7 +121,16 @@ function App() {
   }, []);
 
   const handleLoginSuccess = (result: { token: string; user: User; session?: SessionMetadata }) => {
-    const isDtiUser = ['super_admin', 'dti_evaluator', 'field_officer'].includes(result.user.role);
+    if (result.user.role === 'field_officer') {
+      clearAdminSession();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      setSession(null);
+      setFieldOfficerHandoff(true);
+      return;
+    }
+    const isDtiUser = ['super_admin', 'dti_evaluator'].includes(result.user.role);
     if (isDtiUser) {
       storeAdminToken(result.token);
       localStorage.removeItem('token');
@@ -110,7 +140,9 @@ function App() {
       localStorage.setItem('token', result.token);
       localStorage.setItem('user', JSON.stringify(result.user));
     }
-    setLoginNotice('');
+    sessionNoticeActive.current = false;
+    adminToast.dismiss('admin-session-ended');
+    setFieldOfficerHandoff(false);
     setUser(result.user);
   };
 
@@ -133,15 +165,16 @@ function App() {
       setUser(null);
       setSession(null);
       setSessionWarning(false);
-      setLoginNotice(
-        reason === 'inactivity'
-          ? 'You were logged out due to inactivity. Sign in again to continue.'
-          : reason === 'expired'
-            ? 'Your secure session expired. Sign in again to continue.'
-            : reason === 'remote'
-              ? 'Your session was closed in another tab.'
-              : '',
-      );
+      if (reason !== 'manual') {
+        sessionNoticeActive.current = true;
+        adminToast.session(
+          reason === 'inactivity'
+            ? 'You were logged out due to inactivity. Sign in again to continue.'
+            : reason === 'expired'
+              ? 'Your secure session expired. Sign in again to continue.'
+              : 'Your session was closed in another tab.',
+        );
+      }
       document.body.classList.remove('calamity-mode');
       if (broadcast === true && typeof BroadcastChannel !== 'undefined') {
         const channel = new BroadcastChannel('price-watch-auth');
@@ -153,7 +186,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const isDtiUser = user && ['super_admin', 'dti_evaluator', 'field_officer'].includes(user.role);
+    const isDtiUser = user && ['super_admin', 'dti_evaluator'].includes(user.role);
     if (!isDtiUser || !session) return;
 
     const noteActivity = () => {
@@ -221,12 +254,31 @@ function App() {
     return <div className='admin-session-boot' role='status'>Checking secure session...</div>;
   }
 
+  if (fieldOfficerHandoff) {
+    return (
+      <main className="admin-session-boot">
+        <section aria-labelledby="field-pwa-handoff-title">
+          <h1 id="field-pwa-handoff-title">Use the Field Monitoring PWA</h1>
+          <p>Field Officer accounts are not authorized for the DTI Admin portal.</p>
+          {fieldPwaUrl ? (
+            <a className="admin-button primary" href={fieldPwaUrl}>Open Field Monitoring PWA</a>
+          ) : (
+            <p role="alert">The Field Monitoring PWA address is not configured. Contact the system administrator.</p>
+          )}
+          <button type="button" className="admin-button secondary" onClick={() => setFieldOfficerHandoff(false)}>
+            Return to Admin sign in
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   if (!user) {
-    return <Login onLoginSuccess={handleLoginSuccess} notice={loginNotice} serverStatus={serverStatus} />;
+    return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
   // Determine view based on role
-  const isDTIUser = ['super_admin', 'dti_evaluator', 'field_officer'].includes(user.role);
+  const isDTIUser = ['super_admin', 'dti_evaluator'].includes(user.role);
 
   if (isDTIUser) {
     return (
@@ -245,7 +297,7 @@ function App() {
                 </div>
               </div>
               <p className="session-warning-body">
-                Your DTI Admin session will lock automatically after 15 minutes of inactivity to protect regulatory data.
+                Your DTI Admin session will lock automatically after {session ? `${Math.max(1, Math.round(session.idle_timeout_seconds / 60))} minutes` : 'the configured inactivity period'} to protect regulatory data.
               </p>
               <div className="session-warning-status">
                 <span className="warning-status-dot" />
@@ -255,13 +307,22 @@ function App() {
                 <button
                   type="button"
                   className="session-btn-primary"
-                  onClick={() => {
-                    touchAdminActivity();
-                    setSessionWarning(false);
-                    void api.get('/admin/session');
+                  disabled={renewingSession}
+                  onClick={async () => {
+                    setRenewingSession(true);
+                    setSessionWarningError('');
+                    try {
+                      await api.get('/admin/session');
+                      touchAdminActivity();
+                      setSessionWarning(false);
+                    } catch {
+                      setSessionWarningError('The session could not be renewed. Sign in again or retry while the warning is still open.');
+                    } finally {
+                      setRenewingSession(false);
+                    }
                   }}
                 >
-                  <i className="fa-solid fa-shield-halved" aria-hidden="true" /> Stay signed in
+                  <i className="fa-solid fa-shield-halved" aria-hidden="true" /> {renewingSession ? 'Renewing...' : 'Stay signed in'}
                 </button>
                 <button
                   type="button"
@@ -271,6 +332,7 @@ function App() {
                   <i className="fa-solid fa-lock" aria-hidden="true" /> Lock now
                 </button>
               </div>
+              {sessionWarningError && <p className="session-error-alert" role="alert">{sessionWarningError}</p>}
             </div>
           </div>
         )}
@@ -287,6 +349,7 @@ function App() {
                   setReauthenticationOpen(false);
                   setReauthenticationError('');
                   touchAdminActivity();
+                  (api as any).resumePendingAdminRequests?.();
                 } catch (error: any) {
                   setReauthenticationError(error.response?.data?.message || 'Password confirmation failed.');
                 }
@@ -321,7 +384,7 @@ function App() {
                 <button type="submit" className="session-btn-primary">
                   <i className="fa-solid fa-check" aria-hidden="true" /> Confirm identity
                 </button>
-                <button type="button" className="session-btn-secondary" onClick={() => setReauthenticationOpen(false)}>
+                <button type="button" className="session-btn-secondary" onClick={() => { (api as any).cancelPendingAdminRequests?.(); setReauthenticationOpen(false) }}>
                   Cancel
                 </button>
               </div>
