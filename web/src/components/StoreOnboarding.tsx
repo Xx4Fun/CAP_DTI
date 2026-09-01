@@ -244,14 +244,14 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
 
     try {
       await api.post('/admin/stores', {
-        dti_sec_number: secNumber.trim(),
+        dti_sec_number: secNumber.trim() || null,
         store_name: storeName.trim(),
-        owner_name: ownerName.trim(),
+        owner_name: ownerName.trim() || null,
         address: address.trim(),
         latitude,
         longitude,
       })
-      adminToast.success('Establishment registered privately. Ready for verification and vendor invite.', {
+      adminToast.success('Establishment registered and published.', {
         id: 'store-onboard-success',
       })
       onCreated?.()
@@ -301,19 +301,18 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
 
             <div className="field-officer-fields">
               <div className="admin-field-group">
-                <label htmlFor="store-sec-number" className="required-field">
+                <label htmlFor="store-sec-number">
                   SEC / DTI registration number
                 </label>
                 <input
                   id="store-sec-number"
-                  required
                   autoFocus
                   autoComplete="off"
                   placeholder="e.g. SEC-CS202612345"
                   value={secNumber}
                   onChange={(e) => setSecNumber(e.target.value)}
                 />
-                <small className="field-helper-text">Unique business registration or SEC certificate number.</small>
+                <small className="field-helper-text">Optional when the official record does not provide one.</small>
               </div>
 
               <div className="admin-field-group">
@@ -331,17 +330,17 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
               </div>
 
               <div className="admin-field-group">
-                <label htmlFor="store-owner-name" className="required-field">
+                <label htmlFor="store-owner-name">
                   Owner / proprietor full name
                 </label>
                 <input
                   id="store-owner-name"
-                  required
                   autoComplete="name"
                   placeholder="e.g. Maria Clara Santos"
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
                 />
+                <small className="field-helper-text">Optional when the official record does not provide one.</small>
               </div>
 
               <div className="admin-field-group" ref={suggestionContainerRef} style={{ position: 'relative' }}>
@@ -456,7 +455,7 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
         <footer className="field-officer-card-footer">
           <div className="field-officer-card-notice">
             <ShieldCheck size={18} />
-            <span>Store is registered in the official DTI registry with unverified status until inspected.</span>
+            <span>Manager-created stores are active, verified, and visible in the public directory immediately.</span>
           </div>
           <div className="field-officer-card-actions">
             {onBack && (

@@ -55,54 +55,32 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 5. Seed verified stores for San Jose de Buenavista, Antique
-        Store::updateOrCreate(
-            ['dti_sec_number' => 'SEC-CS202612345'],
-            [
-                'store_name' => 'Super Metro San Jose',
-                'owner_name' => 'Metro Retail Stores Group Inc.',
-                'latitude' => 10.742400,
-                'longitude' => 121.940600,
-                'address' => 'Tradetown, San Jose de Buenavista',
-                'image_path' => '/stores/store.webp',
-                'recidivism_index' => 0,
-                'is_active' => true,
-                'is_verified' => true,
-                'is_public' => true,
-            ]
-        );
+        // 5. Seed the official San Jose de Buenavista establishment list.
+        Store::where('dti_sec_number', 'SEC-CS202654321')->update(['store_name' => 'Gaisano Grand Mall']);
+        Store::where('dti_sec_number', 'SEC-CS202699999')->update(['store_name' => 'Robinsons Supermarket Corp.']);
 
-        Store::updateOrCreate(
-            ['dti_sec_number' => 'SEC-CS202654321'],
-            [
-                'store_name' => 'Gaisano Grand Antique',
-                'owner_name' => 'Gaisano Grand Malls Inc.',
-                'latitude' => 10.745000,
-                'longitude' => 121.942000,
-                'address' => 'San Jose de Buenavista',
-                'image_path' => '/stores/gaisano-grand.jpg',
-                'recidivism_index' => 0,
-                'is_active' => true,
-                'is_verified' => true,
-                'is_public' => true,
-            ]
-        );
+        $stores = [
+            ['store_name' => 'Super Metro San Jose', 'dti_sec_number' => 'SEC-CS202612345', 'owner_name' => 'Metro Retail Stores Group Inc.', 'address' => 'Tradetown, San Jose de Buenavista', 'latitude' => 10.74240000, 'longitude' => 121.94060000, 'image_path' => '/stores/store.webp', 'is_active' => false, 'is_public' => false],
+            ['store_name' => 'Robinsons Supermarket Corp.', 'dti_sec_number' => null, 'owner_name' => 'Robinsons Supermarket Corporation', 'address' => 'San Angel', 'latitude' => 10.73577800, 'longitude' => 121.95190790, 'image_path' => '/stores/robinsons.jpg'],
+            ['store_name' => 'Gaisano Grand Mall', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Bagumbayan Bridge', 'latitude' => 10.74350410, 'longitude' => 121.94868190, 'image_path' => '/stores/gaisano-grand.jpg'],
+            ['store_name' => 'Puregold Price Club Incorporated', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'T.A. Fornier Street', 'latitude' => 10.74778260, 'longitude' => 121.94086580, 'image_path' => '/stores/store.webp'],
+            ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Gov. Villavert St.', 'latitude' => 10.74420800, 'longitude' => 121.94285040, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'Merrymart Consumer Corp.', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'City Mall', 'latitude' => 10.74450380, 'longitude' => 121.94194850, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'Antique City Square', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier St.', 'latitude' => 10.75116050, 'longitude' => 121.94115710, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'Unitop General Merchandise', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier St.', 'latitude' => 10.75098230, 'longitude' => 121.94072350, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'HARO MART', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe', 'latitude' => 10.75787110, 'longitude' => 121.93553460, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'CPT Mart - Antique Branch', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias Fornier St.', 'latitude' => 10.74536990, 'longitude' => 121.94139040, 'image_path' => '/stores/store.webp'],
+            ['store_name' => "Licanda's Retail Chain Branch 1", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe', 'latitude' => 10.75341425, 'longitude' => 121.93786260, 'image_path' => '/stores/store.webp'],
+        ];
 
-        Store::updateOrCreate(
-            ['dti_sec_number' => 'SEC-CS202699999'],
-            [
-                'store_name' => 'Robinsons Superstore Antique',
-                'owner_name' => 'Robinsons Retail Holdings Inc.',
-                'latitude' => 10.741000,
-                'longitude' => 121.938000,
-                'address' => 'Atabay, San Jose de Buenavista',
-                'image_path' => '/stores/robinsons.jpg',
+        foreach ($stores as $store) {
+            Store::updateOrCreate(['store_name' => $store['store_name']], array_merge([
                 'recidivism_index' => 0,
                 'is_active' => true,
                 'is_verified' => true,
                 'is_public' => true,
-            ]
-        );
+            ], $store));
+        }
 
         // 6. Seed official DTI SRP Master List & Image Mappings
         $this->call(SrpMasterListSeeder::class);

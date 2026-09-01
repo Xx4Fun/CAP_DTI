@@ -10,6 +10,7 @@ use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 class StoreAdminController extends Controller
 {
@@ -23,15 +24,21 @@ class StoreAdminController extends Controller
     {
         $auth->requireManager($request->user());
         $data = $request->validate([
-            'dti_sec_number' => 'required|string|unique:stores',
+            'dti_sec_number' => 'nullable|string|unique:stores,dti_sec_number',
             'store_name' => 'required|string|max:255',
-            'owner_name' => 'required|string|max:255',
+            'owner_name' => 'nullable|string|max:255',
             'address' => 'required|string',
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
-            'is_active' => 'boolean', 'is_verified' => 'boolean', 'is_public' => 'boolean',
         ]);
-        $data = array_merge(['is_active' => true, 'is_verified' => false, 'is_public' => false], $data);
+        $data = array_merge($data, [
+            'image_path' => '/stores/store.webp',
+            'is_active' => true,
+            'is_verified' => true,
+            'is_public' => true,
+            'verified_at' => now(),
+            'verified_by' => $request->user()->id,
+        ]);
         $store = DB::transaction(function () use ($data, $request, $audit) {
             $store = Store::create($data);
             $audit->recordOrFail($request, 'store.created', $store, ['visibility' => [
@@ -46,7 +53,8 @@ class StoreAdminController extends Controller
     {
         $auth->requireManager($request->user());
         $data = $request->validate([
-            'store_name' => 'sometimes|string|max:255', 'owner_name' => 'sometimes|string|max:255',
+            'dti_sec_number' => ['sometimes', 'nullable', 'string', Rule::unique('stores')->ignore($store->id)],
+            'store_name' => 'sometimes|string|max:255', 'owner_name' => 'sometimes|nullable|string|max:255',
             'address' => 'sometimes|string', 'latitude' => 'sometimes|numeric|between:-90,90',
             'longitude' => 'sometimes|numeric|between:-180,180', 'is_active' => 'sometimes|boolean',
             'is_verified' => 'sometimes|boolean', 'is_public' => 'sometimes|boolean',

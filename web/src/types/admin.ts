@@ -18,9 +18,9 @@ export interface AdminOverviewRecord {
 
 export interface StoreRecord {
   id: number
-  dti_sec_number?: string
+  dti_sec_number?: string | null
   store_name: string
-  owner_name?: string
+  owner_name?: string | null
   address: string
   latitude: number
   longitude: number

@@ -260,7 +260,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
                   </span>
                 </div>
                 <div>
-                  <strong style={{ color: '#0f172a' }}>Registered Owner:</strong> {store.owner_name || 'Registered Owner'}
+                  <strong style={{ color: '#0f172a' }}>Registered Owner:</strong> {store.owner_name || 'N/A'}
                 </div>
                 <div>
                   <strong style={{ color: '#0f172a' }}>Address:</strong> {store.address}

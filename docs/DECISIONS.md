@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-01 — Admin establishment publication
+
+- Establishments created by a DTI manager are active, verified by that manager, and public immediately; there is no separate store-verification step.
+- Registration numbers and owner names remain null when the official source does not provide them. The system must not invent identifiers or proprietor data.
+- Stores without supplied artwork use `/stores/store.webp`.
+
 ## 2026-08-29 — DTI Admin regulatory integrity
 
 - Field Officer accounts use the dedicated Field Monitoring PWA and cannot open the DTI Admin portal or Admin analytics routes.

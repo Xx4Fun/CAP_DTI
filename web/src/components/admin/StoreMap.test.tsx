@@ -153,19 +153,19 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     expect(screen.getByText('Synchronized GIS Coordinates')).toBeInTheDocument()
     expect(screen.getByText('CartoDB Voyager Light')).toBeInTheDocument()
 
-    // Test form filling
-    await user.type(screen.getByLabelText(/SEC \/ DTI registration number/i), 'SEC-2026-TEST')
+    expect(screen.getByText(/active, verified, and visible/i)).toBeInTheDocument()
+
+    // Unknown registration metadata can be left blank.
     await user.type(screen.getByLabelText(/Store \/ business name/i), 'Antique Central Market')
-    await user.type(screen.getByLabelText(/Owner \/ proprietor full name/i), 'Juan Santos')
     await user.type(screen.getByLabelText(/Business address/i), 'Bantayan, San Jose de Buenavista')
 
     // Submit
     await user.click(screen.getByRole('button', { name: 'Register establishment' }))
 
     expect(api.post).toHaveBeenCalledWith('/admin/stores', expect.objectContaining({
-      dti_sec_number: 'SEC-2026-TEST',
+      dti_sec_number: null,
       store_name: 'Antique Central Market',
-      owner_name: 'Juan Santos',
+      owner_name: null,
       address: 'Bantayan, San Jose de Buenavista',
       latitude: 10.7424,
       longitude: 121.9406,

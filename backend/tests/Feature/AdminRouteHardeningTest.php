@@ -108,4 +108,33 @@ class AdminRouteHardeningTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['is_public']);
     }
+
+    public function test_manager_created_store_is_public_without_unknown_registration_metadata(): void
+    {
+        $admin = $this->user('dti_evaluator');
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/admin/stores', [
+            'store_name' => 'Official List Store',
+            'address' => 'San Jose de Buenavista, Antique',
+            'latitude' => 10.7424,
+            'longitude' => 121.9406,
+            'is_active' => false,
+            'is_verified' => false,
+            'is_public' => false,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.dti_sec_number', null)
+            ->assertJsonPath('data.owner_name', null)
+            ->assertJsonPath('data.image_path', '/stores/store.webp')
+            ->assertJsonPath('data.is_active', true)
+            ->assertJsonPath('data.is_verified', true)
+            ->assertJsonPath('data.is_public', true)
+            ->assertJsonPath('data.verified_by', $admin->id);
+
+        $this->assertDatabaseHas('audit_events', [
+            'actor_id' => $admin->id,
+            'action' => 'store.created',
+        ]);
+    }
 }
