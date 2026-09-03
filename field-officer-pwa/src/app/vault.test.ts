@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
   isBiometricUnlockAvailable, lockVault, readSecret, restoreVaultSession,
-  rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
+  requestPersistentStorage, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './vault'
 import type { VaultBiometricProvider } from './vault'
 
@@ -76,6 +76,19 @@ function biometricProvider(secret = new Uint8Array(32).fill(7)): VaultBiometricP
 describe('encrypted offline vault', () => {
   beforeEach(async () => { sessionStorage.clear(); await clearVault() })
   afterEach(() => { vi.unstubAllGlobals() })
+
+  it('requests durable browser storage when the platform supports it', async () => {
+    const persist = vi.fn().mockResolvedValue(true)
+    vi.stubGlobal('navigator', { storage: { persist } })
+
+    await expect(requestPersistentStorage()).resolves.toBe(true)
+    expect(persist).toHaveBeenCalledOnce()
+  })
+
+  it('continues when durable browser storage is unsupported', async () => {
+    vi.stubGlobal('navigator', {})
+    await expect(requestPersistentStorage()).resolves.toBeNull()
+  })
 
   it('does not persist plaintext and requires the correct PIN after locking', async () => {
     await createVault('4321')

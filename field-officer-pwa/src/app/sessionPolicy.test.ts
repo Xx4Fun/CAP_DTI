@@ -19,14 +19,12 @@ describe('field session policy', () => {
     expect(shouldLockAfterBackground(null, 999_999)).toBe(false)
   })
 
-  it('moves only an unfinished draft onto a renewed lease', () => {
+  it('moves every unfinished draft onto a renewed lease', () => {
     const renewed = { id: 'lease-new', expires_at: '2026-08-29T00:00:00Z' }
-    const result = applyRenewedLease(session({ id: 'lease-old', expires_at: '2026-08-28T00:00:00Z' }), draft(), renewed)
+    const finished = { ...draft(), client_uuid: 'finished', finalized_at: '2026-08-28T01:00:00Z' }
+    const result = applyRenewedLease(session({ id: 'lease-old', expires_at: '2026-08-28T00:00:00Z' }), [draft(), finished], renewed)
     expect(result.session.offline_lease).toEqual(renewed)
-    expect(result.draft?.offline_lease_id).toBe('lease-new')
-
-    const finished = { ...draft(), finalized_at: '2026-08-28T01:00:00Z' }
-    expect(applyRenewedLease(session(renewed), finished, renewed).draft?.offline_lease_id).toBe('lease-old')
+    expect(result.drafts.map((item) => item.offline_lease_id)).toEqual(['lease-new', 'lease-old'])
   })
 
   it('blocks new finalization when the lease is expired', () => {
@@ -35,8 +33,8 @@ describe('field session policy', () => {
   })
 
   it('blocks logout for queued evidence and requires draft discard otherwise', () => {
-    expect(logoutBlock([draft()], null)).toBe('queue')
-    expect(logoutBlock([], draft())).toBe('draft')
-    expect(logoutBlock([], null)).toBeNull()
+    expect(logoutBlock([draft()], [])).toBe('queue')
+    expect(logoutBlock([], [draft()])).toBe('draft')
+    expect(logoutBlock([], [])).toBeNull()
   })
 })

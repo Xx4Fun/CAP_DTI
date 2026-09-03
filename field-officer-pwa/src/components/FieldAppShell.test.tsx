@@ -7,7 +7,7 @@ import { FieldAppShell } from './FieldAppShell'
 describe('FieldAppShell', () => {
   afterEach(cleanup)
 
-  it('renders the official responsive shell with five destinations and current-page semantics', () => {
+  it('renders four flat destinations with profile and notifications outside navigation', () => {
     const navigate = vi.fn()
     const { container } = render(
       <FieldAppShell
@@ -15,7 +15,8 @@ describe('FieldAppShell', () => {
         officerName="Ana Officer"
         online
         queueCount={2}
-        hasActiveDraft={false}
+        draftCount={0}
+        unreadCount={3}
         authorizationValid
         onNavigate={navigate}
         onStartVisit={vi.fn()}
@@ -30,16 +31,18 @@ describe('FieldAppShell', () => {
 
     const sidebar = within(container.querySelector('[data-testid="field-sidebar"]') as HTMLElement)
     const bottomNav = within(container.querySelector('[data-testid="field-bottom-nav"]') as HTMLElement)
-    expect(within(sidebar.getByRole('navigation')).getAllByRole('button')).toHaveLength(5)
-    expect(bottomNav.getAllByRole('button')).toHaveLength(5)
+    expect(within(sidebar.getByRole('navigation')).getAllByRole('button')).toHaveLength(4)
+    expect(bottomNav.getAllByRole('button')).toHaveLength(4)
     expect(sidebar.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(bottomNav.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
+    expect(bottomNav.getByRole('button', { name: 'Start a new monitoring visit' })).not.toHaveClass('raised')
+    expect(screen.getAllByRole('button', { name: 'Notifications, 3 unread' })).toHaveLength(2)
 
-    fireEvent.click(bottomNav.getByRole('button', { name: 'Profile' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open profile' })[0])
     expect(navigate).toHaveBeenCalledWith('profile')
   })
 
-  it('routes Add to Activity when a draft exists without starting another visit', () => {
+  it('keeps Add as a direct new-visit action when drafts exist', () => {
     const navigate = vi.fn()
     const startVisit = vi.fn()
     const { container } = render(
@@ -48,7 +51,8 @@ describe('FieldAppShell', () => {
         officerName="Ana Officer"
         online={false}
         queueCount={0}
-        hasActiveDraft
+        draftCount={2}
+        unreadCount={0}
         authorizationValid={false}
         onNavigate={navigate}
         onStartVisit={startVisit}
@@ -59,12 +63,11 @@ describe('FieldAppShell', () => {
     )
 
     const bottomNav = within(container.querySelector('[data-testid="field-bottom-nav"]') as HTMLElement)
-    const add = bottomNav.getByRole('button', { name: 'View active visit in Activity' })
+    const add = bottomNav.getByRole('button', { name: 'Start a new monitoring visit' })
     expect(add).not.toBeDisabled()
     fireEvent.click(add)
 
-    expect(navigate).toHaveBeenCalledWith('activity')
-    expect(startVisit).not.toHaveBeenCalled()
+    expect(startVisit).toHaveBeenCalledTimes(1)
   })
 
   it('disables starting a visit when authorization is expired and no draft exists', () => {
@@ -74,7 +77,8 @@ describe('FieldAppShell', () => {
         officerName="Ana Officer"
         online={false}
         queueCount={0}
-        hasActiveDraft={false}
+        draftCount={0}
+        unreadCount={0}
         authorizationValid={false}
         onNavigate={vi.fn()}
         onStartVisit={vi.fn()}
@@ -86,5 +90,32 @@ describe('FieldAppShell', () => {
 
     const bottomNav = within(container.querySelector('[data-testid="field-bottom-nav"]') as HTMLElement)
     expect(bottomNav.getByRole('button', { name: 'Start a new monitoring visit' })).toBeDisabled()
+  })
+
+  it('shows New Visit in the regular shell and marks Add active on Choose Store', () => {
+    const { container } = render(
+      <FieldAppShell
+        activeView="visit"
+        officerName="Ana Officer"
+        online
+        queueCount={0}
+        draftCount={1}
+        unreadCount={0}
+        authorizationValid
+        onNavigate={vi.fn()}
+        onStartVisit={vi.fn()}
+        onLock={vi.fn()}
+      >
+        <h1>Choose a store</h1>
+      </FieldAppShell>,
+    )
+
+    expect(screen.getByTestId('field-sidebar')).toBeInTheDocument()
+    expect(screen.getByTestId('field-bottom-nav')).toBeInTheDocument()
+    expect(screen.getByText('New Visit')).toBeInTheDocument()
+    const sidebar = within(container.querySelector('[data-testid="field-sidebar"]') as HTMLElement)
+    const bottomNav = within(container.querySelector('[data-testid="field-bottom-nav"]') as HTMLElement)
+    expect(sidebar.getByRole('button', { name: 'Start a new monitoring visit' })).toHaveAttribute('aria-current', 'page')
+    expect(bottomNav.getByRole('button', { name: 'Start a new monitoring visit' })).toHaveAttribute('aria-current', 'page')
   })
 })

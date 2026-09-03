@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\SrpBulletin;
 use App\Models\User;
+use App\Services\FieldNotificationService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +14,8 @@ class SrpRevisionService
 {
     public function __construct(
         private readonly SrpCatalogService $catalog,
-        private readonly AuditTrailService $audit
+        private readonly AuditTrailService $audit,
+        private readonly FieldNotificationService $notifications
     ) {}
 
     public function preview(SrpBulletin $original, array $data): array
@@ -54,6 +56,7 @@ class SrpRevisionService
                 'source_reference' => $revision->source_reference,
                 'change_reason' => $data['change_reason'],
             ]);
+            $this->notifications->broadcast('srp_revised', ['srp_id' => $revision->id, 'effective_date' => $revision->effective_date?->toDateString()]);
 
             return $revision;
         });

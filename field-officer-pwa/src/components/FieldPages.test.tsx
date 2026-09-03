@@ -2,12 +2,12 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ActivityPage, HistoryPage, HomePage, ProfilePage } from './FieldPages'
+import { HistoryPage, HomePage, MonitoringPage, ProfilePage } from './FieldPages'
 import type { BootstrapData, FieldSession, VisitDraft } from '../types'
 
-const fixtures = vi.hoisted(() => ({ history: vi.fn() }))
+const fixtures = vi.hoisted(() => ({ history: vi.fn(), historyDetail: vi.fn() }))
 vi.mock('../services/fieldApi', () => ({
-  fieldApi: { history: fixtures.history },
+  fieldApi: { history: fixtures.history, historyDetail: fixtures.historyDetail },
   apiError: (_error: unknown, fallback: string) => fallback,
 }))
 
@@ -21,7 +21,7 @@ const bootstrap: BootstrapData = {
   version: 'v1',
   is_delta: false,
   stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 0, longitude: 0, is_active: true }],
-  srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }],
+  srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, source_reference: 'SRP-2026', effective_date: '2026-08-01' }],
   recent_prices: [],
 }
 
@@ -35,30 +35,149 @@ const draft: VisitDraft = {
 describe('Field top-level pages', () => {
   afterEach(cleanup)
 
-  it('keeps Home focused on readiness and sends an existing draft to Activity', () => {
+  it('routes each Home summary to the matching Monitoring tab', () => {
     const viewActivity = vi.fn()
-    render(<HomePage name="Ana Officer" bootstrap={bootstrap} queueCount={2} activeDraft={draft} online authorizationValid onStart={vi.fn()} onViewActivity={viewActivity} />)
+    const storesWithCoords: BootstrapData = {
+      ...bootstrap,
+      stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }],
+    }
+    render(
+      <HomePage
+        name="Ana Officer"
+        bootstrap={storesWithCoords}
+        queue={[draft, { ...draft, client_uuid: 'draft-2' }]}
+        completedToday={1}
+        officerPosition={{ latitude: 10.741, longitude: 121.981, accuracy_meters: 10 }}
+        activeDraft={draft}
+        online
+        authorizationValid
+        onStart={vi.fn()}
+        onViewActivity={viewActivity}
+      />
+    )
 
     expect(screen.getByRole('heading', { name: 'Good day, Ana' })).toBeInTheDocument()
     expect(screen.getByText('1 active store')).toBeInTheDocument()
     expect(screen.getByText('2 pending sync')).toBeInTheDocument()
+    expect(screen.getByText('3 visited')).toBeInTheDocument()
+    expect(screen.getByText('Nearest establishments')).toBeInTheDocument()
+    expect(screen.getByText('Recent activity')).toBeInTheDocument()
+    expect(screen.queryByText(/R\.A\. 7581/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/biometric/i)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'View current activity' }))
-    expect(viewActivity).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'View current monitoring' }))
+    expect(viewActivity).toHaveBeenCalledWith('work')
+    fireEvent.click(screen.getByRole('button', { name: /0 verification/ }))
+    expect(viewActivity).toHaveBeenCalledWith('work')
+    fireEvent.click(screen.getByRole('button', { name: 'View all' }))
+    expect(viewActivity).toHaveBeenCalledWith('sync')
   })
 
-  it('owns the active draft and encrypted sync queue on Activity', () => {
-    const resume = vi.fn()
-    const sync = vi.fn()
-    render(<ActivityPage activeDraft={draft} queue={[{ ...draft, client_uuid: 'queued-1', finalized_at: '2026-08-28T01:00:00Z' }]} bootstrap={bootstrap} online syncing={false} authorizationValid onResume={resume} onStart={vi.fn()} onSync={sync} />)
+  it('renders location not enabled fallback when officer position is null', () => {
+    const startVisit = vi.fn()
+    render(
+      <HomePage
+        name="Ana Officer"
+        bootstrap={bootstrap}
+        queue={[]}
+        completedToday={0}
+        officerPosition={null}
+        activeDraft={null}
+        online
+        authorizationValid
+        onStart={startVisit}
+        onViewActivity={vi.fn()}
+      />
+    )
 
-    expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument()
-    expect(screen.getAllByText('Market One')).toHaveLength(2)
-    expect(screen.getByText('Encrypted and waiting to sync')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Resume visit' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Synchronize now' }))
-    expect(resume).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Location access not enabled')).toBeInTheDocument()
+    expect(screen.getByText('0 visited')).toBeInTheDocument()
+    expect(screen.getByText('All visits synchronized')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Start new visit' }))
+    expect(startVisit).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists unfinished visits newest-first with independent resume and discard actions', () => {
+    const resume = vi.fn()
+    const discard = vi.fn()
+    const start = vi.fn()
+    const sync = vi.fn()
+    render(
+      <MonitoringPage
+        drafts={[draft, { ...draft, client_uuid: 'draft-2', store_id: null, started_at: '2026-08-29T00:00:00Z' }]}
+        queue={[{ ...draft, client_uuid: 'queued-1', finalized_at: '2026-08-28T01:00:00Z' }]}
+        bootstrap={bootstrap}
+        online
+        syncing={false}
+        authorizationValid
+        requests={[{ id: 8, status: 'open', reason: 'Consumer price report requires a store visit.', requested_at: '2026-08-30T00:00:00Z', claimed_at: null, claimed_by: null, store: bootstrap.stores[0] }]}
+        requestsState="ready"
+        onClaim={vi.fn()}
+        onRelease={vi.fn()}
+        onRetry={vi.fn()}
+        onResume={resume}
+        onStart={start}
+        onDiscard={discard}
+        onSync={sync}
+      />
+    )
+
+    expect(screen.getByRole('heading', { name: 'Monitoring' })).toHaveClass('sr-only')
+    expect(screen.queryByText('Handle verification work, resume encrypted drafts, and synchronize completed visits.')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Field Verification 1' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Current Work 2' }))
+    expect(screen.getAllByText('Market One').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Inspection Draft')).toHaveLength(2)
+    expect(screen.getAllByText('1 line')).toHaveLength(2)
+    expect(screen.queryByText('Establishment Directory')).not.toBeInTheDocument()
+
+    // Test resume
+    fireEvent.click(screen.getAllByRole('button', { name: 'Resume inspection' })[0])
+    expect(resume).toHaveBeenCalledWith('draft-2')
+
+    // Test discard confirmation flow
+    fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[0])
+    expect(screen.getByText('Discard this draft?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, discard' }))
+    expect(discard).toHaveBeenCalledWith('draft-2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start another visit' }))
+    expect(start).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Sync Queue 1' }))
+    expect(screen.getByText('Pending upload')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sync all now' }))
     expect(sync).toHaveBeenCalledTimes(1)
+
+    // Test expanding queue details
+    fireEvent.click(screen.getByRole('button', { name: 'View recorded items' }))
+    expect(screen.getByText('Active Reference')).toBeInTheDocument()
+    expect(screen.getByText('₱50.00')).toBeInTheDocument()
+  })
+
+  it('keeps saved verification requests visible when they cannot be refreshed', () => {
+    render(
+      <MonitoringPage
+        drafts={[]}
+        queue={[]}
+        bootstrap={bootstrap}
+        online={false}
+        syncing={false}
+        authorizationValid
+        requests={[{ id: 8, status: 'open', reason: 'Check the reported shelf price.', requested_at: '2026-08-30T00:00:00Z', claimed_at: null, claimed_by: null, store: bootstrap.stores[0] }]}
+        requestsState="unavailable"
+        onClaim={vi.fn()}
+        onRelease={vi.fn()}
+        onRetry={vi.fn()}
+        onResume={vi.fn()}
+        onStart={vi.fn()}
+        onDiscard={vi.fn()}
+        onSync={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Showing saved verification requests')).toBeInTheDocument()
+    expect(screen.getByText('Market One')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Claim and start' })).toBeDisabled()
   })
 
   it('shows accepted server records in History without a local queue section', async () => {
@@ -66,11 +185,20 @@ describe('Field top-level pages', () => {
       data: [{ id: 9, client_uuid: 'accepted-1', status: 'accepted', finalized_at: '2026-08-28T01:00:00Z', received_at: '2026-08-28T01:02:00Z', representative_name: 'Ben', sync_source: 'online', items_count: 3, anomaly_count: 0, store: { id: 7, store_name: 'Market One', address: 'San Jose' }, items: [] }],
       current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1,
     })
+    fixtures.historyDetail.mockResolvedValue({
+      id: 9, client_uuid: 'accepted-1', status: 'accepted', started_at: '2026-08-28T00:00:00Z', finalized_at: '2026-08-28T01:00:00Z', received_at: '2026-08-28T01:02:00Z', sync_source: 'online', field_verification_request_id: 8,
+      store: { ...bootstrap.stores[0] }, location: { latitude: 10.7, longitude: 121.9, accuracy_meters: 20, captured_at: '2026-08-28T01:00:00Z' }, representative: { name: 'Ben', title: 'Manager' }, signatures: { officer_present: true, representative_present: true },
+      items: [{ id: 1, srp_id: 3, commodity_name: 'Rice', unit: 'kg', recorded_price: 52, previous_price: null, variance_percent: 4, is_anomaly: false, reference_status: 'available', reference_type: 'standard_srp', reference_label: 'SRP', reference_value: 50, reference_source: 'Bulletin', reference_effective_date: '2026-08-01' }],
+    })
     render(<HistoryPage session={session} online />)
 
     expect(await screen.findByText('Market One')).toBeInTheDocument()
     expect(screen.queryByText(/waiting to synchronize/i)).not.toBeInTheDocument()
     expect(fixtures.history).toHaveBeenCalledWith('token', 1)
+    fireEvent.click(screen.getByRole('button', { name: 'View Market One visit details' }))
+    expect(await screen.findByRole('heading', { name: 'Market One' })).toBeInTheDocument()
+    expect(screen.getByText('Both signatures captured')).toBeInTheDocument()
+    expect(screen.getByText('Verification request #8')).toBeInTheDocument()
   })
 
   it('moves account and biometric security controls into Profile', async () => {
@@ -79,7 +207,7 @@ describe('Field top-level pages', () => {
     const logout = vi.fn()
     render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={toggle} onLock={lock} onLogout={logout} />)
 
-    expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ana Officer' })).toBeInTheDocument()
     expect(screen.getByText('ana@dti.test')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enable biometric unlock' }))
     await waitFor(() => expect(toggle).toHaveBeenCalledTimes(1))

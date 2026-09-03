@@ -180,6 +180,10 @@ export async function restoreVaultSession(): Promise<boolean> {
 
 export async function hasVault(): Promise<boolean> { return Boolean(await getRaw(METADATA_KEY) || await getRaw('salt')) }
 export async function getVaultPinLength(): Promise<number | null> { return (await getRaw<VaultMetadata>(METADATA_KEY))?.pinLength ?? null }
+export async function requestPersistentStorage(): Promise<boolean | null> {
+  if (typeof navigator === 'undefined' || !navigator.storage?.persist) return null
+  try { return await navigator.storage.persist() } catch { return false }
+}
 
 export async function createVault(pin: string): Promise<void> {
   if (!/^\d{4,8}$/.test(pin)) throw new Error('Use a 4 to 8 digit PIN.')

@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\SrpBulletin;
 use App\Models\User;
+use App\Services\FieldNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -11,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class SrpImportService
 {
-    public function __construct(private readonly AuditTrailService $audit) {}
+    public function __construct(private readonly AuditTrailService $audit, private readonly FieldNotificationService $notifications) {}
 
     public function preview(array $payload): array
     {
@@ -58,6 +59,11 @@ class SrpImportService
                 'effective_date' => $preview['effective_date'],
                 'source_reference' => $preview['source_reference'],
             ]);
+            if ($count > 0) {
+                $this->notifications->broadcast('srp_published', [
+                    'effective_date' => $preview['effective_date'], 'item_count' => $count,
+                ]);
+            }
             return $count;
         });
         return $preview + ['inserted' => $inserted];

@@ -14,7 +14,7 @@ class EmergencyPriceResolver
                 ->whereDate('starts_on', '<=', $observedAt)
                 ->where(fn ($dates) => $dates->whereNull('ends_on')->orWhereDate('ends_on', '>=', $observedAt))
             )
-            ->where('commodity_key', $commodityKey)->whereRaw('LOWER(location) = ?', [strtolower($location)])
+            ->where('commodity_key', $commodityKey)
             ->whereDate('effective_from', '<=', $observedAt)
             ->where(fn ($q) => $q->whereNull('effective_until')->orWhereDate('effective_until', '>=', $observedAt))
             ->latest('effective_from')->first();

@@ -9,6 +9,7 @@ use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\Admin\SrpRevisionService;
+use App\Services\FieldNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -36,7 +37,8 @@ class SrpManagementController extends Controller
     public function store(
         Request $request,
         AdminAuthorizationService $auth,
-        AuditTrailService $audit
+        AuditTrailService $audit,
+        FieldNotificationService $notifications
     ) {
         $auth->requireManager($request->user());
 
@@ -53,7 +55,7 @@ class SrpManagementController extends Controller
 
         $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
 
-        $bulletin = DB::transaction(function () use ($commodityKey, $data, $request, $audit) {
+        $bulletin = DB::transaction(function () use ($commodityKey, $data, $request, $audit, $notifications) {
             $bulletin = SrpBulletin::create([
                 'commodity_key' => $commodityKey,
                 'commodity_name' => $data['commodity_name'],
@@ -72,6 +74,7 @@ class SrpManagementController extends Controller
                 'baseline_price' => $bulletin->baseline_price,
                 'effective_date' => $bulletin->effective_date?->toDateString(),
             ]);
+            $notifications->broadcast('srp_published', ['srp_id' => $bulletin->id, 'effective_date' => $bulletin->effective_date?->toDateString()]);
             return $bulletin;
         });
 

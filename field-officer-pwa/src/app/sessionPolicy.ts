@@ -6,10 +6,10 @@ export function shouldLockAfterBackground(hiddenAt: number | null, now: number):
   return hiddenAt !== null && now - hiddenAt >= BACKGROUND_LOCK_MS
 }
 
-export function applyRenewedLease(session: FieldSession, draft: VisitDraft | null, lease: OfflineLease) {
+export function applyRenewedLease(session: FieldSession, drafts: VisitDraft[], lease: OfflineLease) {
   return {
     session: { ...session, offline_lease: lease },
-    draft: draft && !draft.finalized_at ? { ...draft, offline_lease_id: lease.id } : draft,
+    drafts: drafts.map((draft) => !draft.finalized_at ? { ...draft, offline_lease_id: lease.id } : draft),
   }
 }
 
@@ -17,8 +17,8 @@ export function canFinalizeWithLease(lease: OfflineLease, now = Date.now()): boo
   return new Date(lease.expires_at).getTime() > now
 }
 
-export function logoutBlock(queue: VisitDraft[], draft: VisitDraft | null): 'queue' | 'draft' | null {
+export function logoutBlock(queue: VisitDraft[], drafts: VisitDraft[]): 'queue' | 'draft' | null {
   if (queue.length) return 'queue'
-  if (draft) return 'draft'
+  if (drafts.length) return 'draft'
   return null
 }

@@ -25,10 +25,12 @@ export default defineConfig({
       },
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        skipWaiting: false,
+        clientsClaim: false,
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
-        globPatterns: ['**/*.{js,css,ico,png,svg,webmanifest}']
+        globPatterns: ['**/*.{html,js,css,ico,jpg,jpeg,png,svg,webp,webmanifest,woff2}']
       }
     })
   ],

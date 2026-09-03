@@ -69,7 +69,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/lease/renew', [FieldAuthController::class, 'renewLease']);
         Route::post('/logout', [FieldAuthController::class, 'logout']);
         Route::get('/bootstrap', [FieldDataController::class, 'bootstrap']);
+        Route::get('/verification-requests', [FieldDataController::class, 'verificationRequests']);
+        Route::post('/verification-requests/{verificationRequest}/claim', [FieldDataController::class, 'claim']);
+        Route::post('/verification-requests/{verificationRequest}/release', [FieldDataController::class, 'release']);
+        Route::get('/notifications', [FieldDataController::class, 'notifications']);
+        Route::post('/notifications/read-all', [FieldDataController::class, 'readAllNotifications']);
+        Route::post('/notifications/{notification}/read', [FieldDataController::class, 'readNotification']);
         Route::get('/monitoring-records', [FieldMonitoringController::class, 'index']);
+        Route::get('/monitoring-records/{monitoringRecord}', [FieldMonitoringController::class, 'show']);
         Route::post('/monitoring-records/sync', [FieldMonitoringController::class, 'sync']);
     });
     Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {
@@ -100,6 +107,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/srp/{srp}/revisions/preview', [SrpManagementController::class, 'previewRevision']);
         Route::post('/srp/{srp}/revisions', [SrpManagementController::class, 'storeRevision']);
         Route::get('/reports', [ReportReviewController::class, 'index']);
+        Route::post('/reports/{report}/verification-request', [ReportReviewController::class, 'requestVerification']);
+        Route::post('/verification-requests/{verificationRequest}/cancel', [ReportReviewController::class, 'cancelVerification']);
+        Route::post('/verification-requests/{verificationRequest}/reopen', [ReportReviewController::class, 'reopenVerification']);
         Route::post('/reports/{report}/decision', [ReportReviewController::class, 'decision']);
         Route::get('/reports/{report}/evidence', [ReportReviewController::class, 'evidence']);
         Route::get('/reports/{report}/evidence-manifest', [ReportReviewController::class, 'evidenceManifest']);

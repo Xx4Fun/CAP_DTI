@@ -1,28 +1,74 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowRight, BadgeCheck, Building2, CheckCircle2, ClipboardList, CloudOff, Fingerprint,
-  History, LockKeyhole, PackageSearch, RefreshCw, ShieldCheck, UserRound, Wifi, WifiOff,
+  ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, CheckCircle2, ChevronDown, ChevronUp,
+  ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
+  History, LockKeyhole, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, UserRound, Wifi, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import type { BiometricAvailability } from '../app/vault'
+import { analyzeWithReference, resolveClientReference } from '../app/workflow'
 import { apiError, fieldApi } from '../services/fieldApi'
-import type { BootstrapData, FieldSession, MonitoringRecord, Page, VisitDraft } from '../types'
+import type { BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
 
 interface HomePageProps {
   name: string
   bootstrap: BootstrapData
-  queueCount: number
+  queue: VisitDraft[]
+  completedToday: number
+  officerPosition: GeoPosition | null
   activeDraft: VisitDraft | null
   online: boolean
   authorizationValid: boolean
-  onStart: () => void
-  onViewActivity: () => void
+  verificationCount?: number
+  draftCount?: number
+  onStart: (storeId?: number) => void
+  onViewActivity: (tab: 'verification' | 'work' | 'sync') => void
 }
 
-export function HomePage({ name, bootstrap, queueCount, activeDraft, online, authorizationValid, onStart, onViewActivity }: HomePageProps) {
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (degrees: number) => (degrees * Math.PI) / 180
+  const radiusKm = 6371
+  const latitudeDelta = toRad(lat2 - lat1)
+  const longitudeDelta = toRad(lon2 - lon1)
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(longitudeDelta / 2) ** 2
+  return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+export function formatDistance(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`
+}
+
+export function HomePage({
+  name,
+  bootstrap,
+  queue,
+  completedToday,
+  officerPosition,
+  activeDraft,
+  online,
+  authorizationValid,
+  verificationCount = 0,
+  draftCount = 0,
+  onStart,
+  onViewActivity,
+}: HomePageProps) {
   const firstName = name.split(/\s+/)[0]
   const storeCount = bootstrap.stores.length
   const srpCount = bootstrap.srp_bulletins.length
+  const queueCount = queue.length
+  const totalToday = completedToday + queueCount
+  const nearestStores = useMemo(() => {
+    if (!officerPosition) return []
+    return bootstrap.stores
+      .filter((store) => store.is_active && (store.latitude !== 0 || store.longitude !== 0))
+      .map((store) => ({
+        ...store,
+        distanceKm: haversineKm(officerPosition.latitude, officerPosition.longitude, store.latitude, store.longitude),
+      }))
+      .sort((left, right) => left.distanceKm - right.distanceKm)
+      .slice(0, 3)
+  }, [bootstrap.stores, officerPosition])
 
   return <div className="page field-page field-home-page">
     <div className="field-page-heading">
@@ -31,9 +77,11 @@ export function HomePage({ name, bootstrap, queueCount, activeDraft, online, aut
         <p>Your field workspace is ready for today’s monitoring work.</p>
       </div>
       <div className="field-header-badge-group">
-        <span className={`network-chip ${online ? 'online' : ''}`}>
+        <span className={`network-chip ${online ? 'online' : ''} ${!authorizationValid ? 'lease-warn' : ''}`}>
           {online ? <Wifi size={14} /> : <WifiOff size={14} />}
-          {online ? 'Online · Live Sync' : 'Working offline · Vault Active'}
+          {online
+            ? (authorizationValid ? 'Online · Authorized' : 'Online · Lease Expired')
+            : (authorizationValid ? 'Working offline · Vault Active' : 'Offline · Lease Expired')}
         </span>
       </div>
     </div>
@@ -52,9 +100,9 @@ export function HomePage({ name, bootstrap, queueCount, activeDraft, online, aut
         </h2>
         <p>
           {activeDraft
-            ? `${activeDraft.items.length} commodity line${activeDraft.items.length === 1 ? '' : 's'} saved securely. Open Activity to continue without losing work.`
+            ? `${activeDraft.items.length} commodity line${activeDraft.items.length === 1 ? '' : 's'} saved securely. Open Monitoring to continue without losing work.`
             : authorizationValid
-              ? 'Choose an active registered establishment, record shelf prices against official SRP baselines, and secure tamper-proof evidence.'
+              ? 'Choose an active registered establishment, record shelf prices against official references, and secure signed evidence.'
               : 'Existing evidence remains protected on device. Reconnect and unlock before starting or finalizing a visit.'}
         </p>
         <div className="field-hero-actions">
@@ -62,9 +110,9 @@ export function HomePage({ name, bootstrap, queueCount, activeDraft, online, aut
             type="button"
             className="primary-button field-hero-cta"
             disabled={!activeDraft && !authorizationValid}
-            onClick={activeDraft ? onViewActivity : onStart}
+            onClick={activeDraft ? () => onViewActivity('work') : () => onStart()}
           >
-            {activeDraft ? 'View current activity' : 'Start new visit'}
+            {activeDraft ? 'View current monitoring' : 'Start new visit'}
             <ArrowRight size={18} />
           </button>
           <div className="field-hero-meta">
@@ -78,130 +126,404 @@ export function HomePage({ name, bootstrap, queueCount, activeDraft, online, aut
       </div>
     </section>
 
+    <section className={`field-protocol-strip ${bootstrap.protocol?.mode === 'emergency' ? 'emergency' : ''}`} aria-label="Active monitoring protocol">
+      <div><ShieldCheck /><span><strong>{bootstrap.protocol?.mode === 'emergency' ? 'Emergency price protocol active' : 'Standard price monitoring'}</strong><small>{bootstrap.protocol?.mode === 'emergency' ? (bootstrap.protocol.declaration_reference || 'Use current regulatory ceilings') : 'Prices more than 10% above SRP are marked For review.'}</small></span></div>
+      <button type="button" className="text-button" onClick={() => onViewActivity(verificationCount ? 'verification' : 'work')}>{verificationCount} verification · {draftCount} draft{draftCount === 1 ? '' : 's'}</button>
+    </section>
+
     <section className="field-bento-section" aria-label="Field operation statistics">
       <dl className="field-bento-grid field-status-strip">
         <div className="field-bento-card bento-stores">
-          <div className="bento-icon-wrap bento-icon-blue">
-            <Building2 size={22} />
-          </div>
+          <div className="bento-icon-wrap bento-icon-blue"><Building2 size={22} /></div>
           <dt>Store directory</dt>
-          <dd className="bento-value">
-            {storeCount} active store{storeCount === 1 ? '' : 's'}
-          </dd>
+          <dd className="bento-value">{storeCount} active store{storeCount === 1 ? '' : 's'}</dd>
           <span className="bento-subtext">Monitored outlets</span>
         </div>
-
         <div className="field-bento-card bento-srp">
-          <div className="bento-icon-wrap bento-icon-teal">
-            <PackageSearch size={22} />
-          </div>
+          <div className="bento-icon-wrap bento-icon-teal"><PackageSearch size={22} /></div>
           <dt>Price references</dt>
-          <dd className="bento-value">
-            {srpCount} current reference{srpCount === 1 ? '' : 's'}
-          </dd>
+          <dd className="bento-value">{srpCount} current reference{srpCount === 1 ? '' : 's'}</dd>
           <span className="bento-subtext">Active DTI SRP baselines</span>
         </div>
-
         <div className="field-bento-card bento-sync">
-          <div className="bento-icon-wrap bento-icon-amber">
-            <CloudOff size={22} />
-          </div>
+          <div className="bento-icon-wrap bento-icon-amber"><CloudOff size={22} /></div>
           <dt>Synchronization</dt>
-          <dd className="bento-value">
-            {queueCount} pending sync
-          </dd>
-          <span className="bento-subtext">{queueCount > 0 ? 'Encrypted on device' : 'All visits up to date'}</span>
+          <dd className="bento-value">{queueCount} pending sync</dd>
+          <span className="bento-subtext">{queueCount ? 'Encrypted on device' : 'All visits up to date'}</span>
         </div>
-
         <div className="field-bento-card bento-access">
-          <div className="bento-icon-wrap bento-icon-indigo">
-            <BadgeCheck size={22} />
-          </div>
-          <dt>Device access</dt>
-          <dd className={`bento-value ${authorizationValid ? 'status-ok' : 'status-warn'}`}>
-            {authorizationValid ? 'Authorized' : 'Renew online'}
-          </dd>
-          <span className="bento-subtext">{authorizationValid ? 'Cryptographic lease active' : 'Connect to refresh'}</span>
+          <div className="bento-icon-wrap bento-icon-indigo"><CalendarCheck size={22} /></div>
+          <dt>Today’s visits</dt>
+          <dd className="bento-value">{totalToday} visited</dd>
+          <span className="bento-subtext">{totalToday ? 'Outlets visited today' : 'No visits recorded today'}</span>
         </div>
       </dl>
     </section>
 
-    <section className="field-pipeline-card field-process" aria-label="Monitoring visit process">
-      <div className="field-pipeline-header">
-        <div className="field-pipeline-title-group">
-          <span className="field-pipeline-indicator" />
-          <div>
-            <h3>R.A. 7581 Monitoring Process</h3>
-            <p>Standard regulatory procedure for on-site commodity inspection</p>
-          </div>
-        </div>
-        <span className="field-pipeline-tag">Price Act Compliance</span>
-      </div>
-      <div className="field-pipeline-steps">
-        <div className="pipeline-step">
-          <span className="pipeline-step-num">1</span>
-          <div className="pipeline-step-icon"><Building2 size={18} /></div>
-          <div className="pipeline-step-info">
-            <strong>Choose store</strong>
-            <small>Verified outlet</small>
-          </div>
-        </div>
-        <div className="pipeline-connector" aria-hidden="true" />
-        <div className="pipeline-step">
-          <span className="pipeline-step-num">2</span>
-          <div className="pipeline-step-icon"><PackageSearch size={18} /></div>
-          <div className="pipeline-step-info">
-            <strong>Record prices</strong>
-            <small>Shelf inspection</small>
-          </div>
-        </div>
-        <div className="pipeline-connector" aria-hidden="true" />
-        <div className="pipeline-step">
-          <span className="pipeline-step-num">3</span>
-          <div className="pipeline-step-icon"><ClipboardList size={18} /></div>
-          <div className="pipeline-step-info">
-            <strong>Review visit</strong>
-            <small>Variance check</small>
-          </div>
-        </div>
-        <div className="pipeline-connector" aria-hidden="true" />
-        <div className="pipeline-step">
-          <span className="pipeline-step-num">4</span>
-          <div className="pipeline-step-icon"><ShieldCheck size={18} /></div>
-          <div className="pipeline-step-info">
-            <strong>Lock evidence</strong>
-            <small>Signatures & GPS</small>
-          </div>
+    <section className="field-card-section" aria-label="Nearest establishments">
+      <div className="field-section-card-header">
+        <div className="field-section-title-wrap">
+          <div className="field-section-icon bento-icon-blue"><Compass size={18} /></div>
+          <div><h3>Nearest establishments</h3><p>Active registered stores based on your current location.</p></div>
         </div>
       </div>
+      {nearestStores.length ? <div className="field-nearby-list">
+        {nearestStores.map((store) => <article key={store.id} className="field-nearby-item">
+          <div className="field-nearby-info">
+            <div className="field-nearby-name-row">
+              <strong>{store.store_name}</strong>
+              <span className="field-distance-pill"><MapPin size={12} />{formatDistance(store.distanceKm)}</span>
+            </div>
+            <span className="field-nearby-address">{store.address}</span>
+          </div>
+          <button type="button" className="secondary-button field-nearby-action" disabled={!authorizationValid} onClick={() => onStart(store.id)}>
+            Start visit <ArrowRight size={15} />
+          </button>
+        </article>)}
+      </div> : <div className="field-nearby-empty">
+        <MapPin className="empty-icon" />
+        <strong>Location access not enabled</strong>
+        <span>Enable location access to see the closest registered establishments.</span>
+      </div>}
     </section>
+
+    <section className="field-card-section" aria-label="Recent activity">
+      <div className="field-section-card-header">
+        <div className="field-section-title-wrap">
+          <div className="field-section-icon bento-icon-amber"><Clock size={18} /></div>
+          <div><h3>Recent activity</h3><p>Completed visits currently protected on this device.</p></div>
+        </div>
+        {queueCount > 0 && <button type="button" className="field-link-action" onClick={() => onViewActivity('sync')}>View all</button>}
+      </div>
+      {queueCount ? <div className="field-recent-list">
+        {queue.slice(0, 3).map((visit) => {
+          const store = bootstrap.stores.find((candidate) => candidate.id === visit.store_id)
+          return <article key={visit.client_uuid} className="field-recent-item">
+            <div className="field-recent-info">
+              <div className="field-recent-name-row">
+                <strong>{store?.store_name || 'Store not selected'}</strong>
+                <span className="field-sync-pill pending"><CloudOff size={11} />Queued locally</span>
+              </div>
+              <span className="field-recent-meta">{visit.items.length} recorded item{visit.items.length === 1 ? '' : 's'} · {formatDate(visit.finalized_at || visit.started_at)}</span>
+            </div>
+          </article>
+        })}
+      </div> : <div className="field-recent-empty">
+        <CheckCircle2 className="empty-icon" />
+        <strong>All visits synchronized</strong>
+        <span>Completed offline visits will appear here until the server accepts them.</span>
+      </div>}
+    </section>
+
   </div>
 }
 
-interface ActivityPageProps {
-  activeDraft: VisitDraft | null
-  queue: VisitDraft[]
+interface MonitoringPageProps {
+  drafts: VisitDraft[]
+  queue: QueuedVisit[]
   bootstrap: BootstrapData
   online: boolean
   syncing: boolean
   authorizationValid: boolean
-  onResume: () => void
-  onStart: () => void
+  requests: FieldVerificationRequest[]
+  requestsState: 'loading' | 'ready' | 'unavailable'
+  initialTab?: 'verification' | 'work' | 'sync'
+  officerPosition?: GeoPosition | null
+  onResume: (draftId: string) => void
+  onStart: (storeId?: number) => void
+  onDiscard: (draftId: string) => void
   onSync: () => void
+  onRetry: (clientUuid: string) => void
+  onClaim: (request: FieldVerificationRequest) => void
+  onRelease: (request: FieldVerificationRequest) => void
 }
 
-export function ActivityPage({ activeDraft, queue, bootstrap, online, syncing, authorizationValid, onResume, onStart, onSync }: ActivityPageProps) {
-  const storeName = (item: VisitDraft) => bootstrap.stores.find((store) => store.id === item.store_id)?.store_name || 'Store not yet selected'
-  return <div className="page field-page field-activity-page">
-    <div className="field-page-heading"><div><h1 tabIndex={-1}>Activity</h1><p>Resume current work and synchronize finalized visits protected on this device.</p></div></div>
-    {activeDraft ? <section className="field-active-work"><div className="field-active-work-mark"><ClipboardList /></div><div><span className="field-state-label">Active draft</span><h2>{storeName(activeDraft)}</h2><p>{activeDraft.items.length} commodity line{activeDraft.items.length === 1 ? '' : 's'} saved · Started {formatDate(activeDraft.started_at)}</p></div><button type="button" className="primary-button" onClick={onResume}>Resume visit<ArrowRight /></button></section> : <section className="field-activity-empty"><CheckCircle2 /><div><h2>No visit in progress</h2><p>Start a monitoring visit when you arrive at an active registered establishment.</p></div><button type="button" className="secondary-button" disabled={!authorizationValid} onClick={onStart}>New visit</button></section>}
-    <section className="field-sync-section">
-      <div className="field-section-heading"><div><h2>Waiting to synchronize</h2><p>Finalized records stay encrypted here until the server accepts them.</p></div><span>{queue.length}</span></div>
-      {queue.length ? <div className="field-sync-list">{queue.map((item) => <article key={item.client_uuid}><CloudOff /><div><strong>{storeName(item)}</strong><span>{item.items.length} recorded item{item.items.length === 1 ? '' : 's'} · {item.finalized_at ? formatDate(item.finalized_at) : 'Finalized locally'}</span></div><em>Encrypted and waiting to sync</em></article>)}</div> : <div className="field-quiet-state"><ShieldCheck /><strong>Nothing waiting to sync</strong><span>Finalized offline visits will appear here until accepted.</span></div>}
-      {queue.length > 0 && <button type="button" className="primary-button field-sync-action" disabled={!online || syncing} onClick={onSync}><RefreshCw className={syncing ? 'spin' : ''} />{syncing ? 'Synchronizing…' : 'Synchronize now'}</button>}
-      {!online && queue.length > 0 && <p className="field-inline-note"><WifiOff />Reconnect to synchronize. Your records remain encrypted.</p>}
-    </section>
-  </div>
+export function MonitoringPage({
+  drafts,
+  queue,
+  bootstrap,
+  online,
+  syncing,
+  authorizationValid,
+  requests,
+  requestsState,
+  initialTab = 'verification',
+  onResume,
+  onStart,
+  onDiscard,
+  onSync,
+  onRetry,
+  onClaim,
+  onRelease,
+}: MonitoringPageProps) {
+  const [tab, setTab] = useState<'verification' | 'work' | 'sync'>(initialTab)
+  const [expandedQueue, setExpandedQueue] = useState<string | null>(null)
+  const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
+  const sortedDrafts = [...drafts].sort((a, b) => b.started_at.localeCompare(a.started_at))
+
+  const toggleQueueItem = (uuid: string) => {
+    setExpandedQueue((prev) => (prev === uuid ? null : uuid))
+  }
+
+  return (
+    <div className="page field-page field-activity-page">
+      <h1 className="sr-only" tabIndex={-1}>Monitoring</h1>
+      <div className="field-monitoring-tabs" role="tablist" aria-label="Monitoring work">
+        <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Field Verification <span>{requests.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span>{drafts.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span>{queue.length}</span></button>
+      </div>
+
+      {tab === 'verification' && <section className="field-card-section field-verification-section" role="tabpanel">
+        {requestsState === 'unavailable' && <div className="field-offline-state"><WifiOff /><div><h2>Showing saved verification requests</h2><p>Reconnect to refresh or claim requests. Already claimed drafts remain available in Current Work.</p></div></div>}
+        {requestsState === 'loading' && requests.length === 0 ? <div role="status">Loading field verification requests…</div>
+          : requests.length ? <div className="field-verification-list">{requests.map((request) => <article key={request.id}>
+              <div><strong>{request.store.store_name}</strong><small>{request.store.address}</small></div>
+              <p>{request.reason}</p>
+              <small>Requested {formatDate(request.requested_at)}</small>
+              <div className="field-verification-actions">
+                <button type="button" className="primary-button" disabled={!online} onClick={() => onClaim(request)}>{request.status === 'claimed' ? 'Start verification' : 'Claim and start'}</button>
+                {request.status === 'claimed' && !drafts.some((draft) => draft.verification_request_id === request.id) && <button type="button" className="secondary-button" disabled={!online} onClick={() => onRelease(request)}>Release</button>}
+              </div>
+            </article>)}</div> : requestsState === 'ready' ? <div className="field-quiet-state"><CheckCircle2 /><strong>No verification requests</strong><span>New requests that need a store visit will appear here.</span></div> : null}
+      </section>}
+
+      {tab === 'work' && <div role="tabpanel">
+      {sortedDrafts.length > 0 && <div className="field-tab-action"><button type="button" className="primary-button field-start-another" disabled={!authorizationValid} onClick={() => onStart()}><Plus size={18} /><span>Start another visit</span></button></div>}
+      {sortedDrafts.length ? sortedDrafts.map((activeDraft) => {
+        const activeStore = bootstrap.stores.find((store) => store.id === activeDraft.store_id)
+        const activeStoreName = activeStore?.store_name || (activeDraft.store_id ? `Store #${activeDraft.store_id}` : 'Store not yet chosen')
+        const activeStoreAddress = activeStore?.address || 'Establishment selection pending'
+        const activeAnomalies = activeDraft.items.reduce((count, item) => {
+          const srp = bootstrap.srp_bulletins.find((bulletin) => bulletin.id === item.srp_id)
+          if (!srp) return count
+          return analyzeWithReference(item, resolveClientReference(srp, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [])).is_anomaly ? count + 1 : count
+        }, 0)
+        return (
+        <section key={activeDraft.client_uuid} className="field-active-work-card" aria-label={`Unfinished visit for ${activeStoreName}`}>
+          <div className="field-draft-banner">
+            <span className="field-draft-badge">
+              <span className="field-draft-pulse" />
+              Inspection Draft
+            </span>
+            <span className="field-draft-timestamp">Started {formatDate(activeDraft.started_at)}</span>
+          </div>
+
+          <div className="field-draft-body">
+            <div className="field-draft-store-info">
+              <div className="field-draft-store-icon">
+                <Building2 size={24} />
+              </div>
+              <div>
+                <h2>{activeStoreName}</h2>
+                <p>{activeStoreAddress}</p>
+              </div>
+            </div>
+
+            <div className="field-draft-stats-grid">
+              <div className="field-draft-stat">
+                <small>Prices Encoded</small>
+                <strong>{activeDraft.items.length} line{activeDraft.items.length === 1 ? '' : 's'}</strong>
+              </div>
+              <div className="field-draft-stat">
+                <small>SRP Assessment</small>
+                <strong className={activeAnomalies > 0 ? 'stat-warn' : 'stat-ok'}>
+                  {activeAnomalies > 0 ? `${activeAnomalies} for review` : 'Within reference range'}
+                </strong>
+              </div>
+              <div className="field-draft-stat">
+                <small>Signatures</small>
+                <strong>
+                  {activeDraft.signatures.officer_png_base64 && activeDraft.signatures.representative_png_base64
+                    ? 'Both signed'
+                    : 'Signatures pending'}
+                </strong>
+              </div>
+              <div className="field-draft-stat">
+                <small>GPS Location</small>
+                <strong>{activeDraft.location ? `±${Math.round(activeDraft.location.accuracy_meters)} m locked` : 'GPS pending'}</strong>
+              </div>
+            </div>
+
+            <div className="field-draft-actions-bar">
+              <button type="button" className="primary-button field-draft-resume" onClick={() => onResume(activeDraft.client_uuid)}>
+                <ArrowRight size={18} />
+                <span>Resume inspection</span>
+              </button>
+
+              {confirmDiscard !== activeDraft.client_uuid ? (
+                <button
+                  type="button"
+                  className="secondary-button field-draft-discard-trigger"
+                  onClick={() => setConfirmDiscard(activeDraft.client_uuid)}
+                >
+                  <Trash2 size={16} />
+                  <span>Discard draft</span>
+                </button>
+              ) : (
+                <div className="field-discard-confirm">
+                  <span>Discard this draft?</span>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => {
+                      setConfirmDiscard(null)
+                      onDiscard(activeDraft.client_uuid)
+                    }}
+                  >
+                    Yes, discard
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setConfirmDiscard(null)}>
+                    Keep
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+        )
+      }) : (
+        <section className="field-card-section field-activity-empty-card">
+          <div className="field-empty-visual">
+            <CheckCircle2 size={36} />
+          </div>
+          <div className="field-empty-text">
+            <h2>No active monitoring visit</h2>
+            <p>Start a new official inspection when you arrive at a registered retail establishment.</p>
+          </div>
+          <button
+            type="button"
+            className="primary-button field-empty-cta"
+            disabled={!authorizationValid}
+            onClick={() => onStart()}
+          >
+            <Plus size={18} />
+            <span>Start new visit</span>
+          </button>
+        </section>
+      )}
+      </div>}
+
+      {tab === 'sync' && <section className="field-card-section field-sync-section" aria-label="Queued offline visits" role="tabpanel">
+        <div className="field-section-card-header">
+          <div className="field-section-title-wrap">
+            <div className="field-section-icon bento-icon-amber">
+              <CloudOff size={18} />
+            </div>
+            <div>
+              <h3>Pending uploads</h3>
+              <p>Completed visits remain protected on this device until accepted by the server.</p>
+            </div>
+          </div>
+          <div className="field-sync-header-controls">
+            <span className="field-queue-counter-badge">{queue.length} pending</span>
+            {queue.length > 0 && (
+              <button
+                type="button"
+                className="primary-button field-sync-btn"
+                disabled={!online || syncing}
+                onClick={onSync}
+              >
+                <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+                <span>{syncing ? 'Synchronizing…' : 'Sync all now'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {queue.length > 0 ? (
+          <div className="field-queue-accordion-list">
+            {queue.map((item) => {
+              const store = bootstrap.stores.find((s) => s.id === item.store_id)
+              const storeName = store?.store_name || 'Store not selected'
+              const isExpanded = expandedQueue === item.client_uuid
+
+              return (
+                <article key={item.client_uuid} className={`field-queue-card ${isExpanded ? 'expanded' : ''}`}>
+                  <div className="field-queue-card-summary" onClick={() => toggleQueueItem(item.client_uuid)}>
+                    <div className="field-queue-summary-left">
+                      <div className="field-queue-store-name-row">
+                        <strong>{storeName}</strong>
+                        <span className="field-sync-pill pending">
+                          <CloudOff size={11} />
+                          Pending upload
+                        </span>
+                      </div>
+                      <small className="field-queue-meta-text">
+                        {item.items.length} item{item.items.length === 1 ? '' : 's'} recorded · Finalized {item.finalized_at ? formatDate(item.finalized_at) : 'locally'}
+                        {item.representative?.name ? ` · Rep: ${item.representative.name}` : ''}
+                      </small>
+                      {item.sync_error && <p className="form-error" role="alert">{item.sync_error}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      className="field-queue-toggle-btn"
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? 'Hide recorded items' : 'View recorded items'}
+                    >
+                      <span>{isExpanded ? 'Hide' : 'Details'}</span>
+                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="field-queue-expanded-content">
+                      <div className="field-queue-evidence-strip">
+                        <span>✍️ Officer & Representative Signatures Captured</span>
+                        {item.location && (
+                          <span>📍 GPS Lock ±{Math.round(item.location.accuracy_meters)}m ({item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)})</span>
+                        )}
+                      </div>
+
+                      <div className="field-queue-items-table">
+                        <div className="field-queue-table-head">
+                          <span>Commodity</span>
+                          <span>Active Reference</span>
+                          <span>Recorded Price</span>
+                          <span>Variance</span>
+                        </div>
+                        {item.items.map((line) => {
+                          const bulletin = bootstrap.srp_bulletins.find((b) => b.id === line.srp_id)
+                          const reference = bulletin ? resolveClientReference(bulletin, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || []) : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
+                          const analysis = analyzeWithReference(line, reference)
+                          return (
+                            <div key={line.srp_id} className="field-queue-table-row">
+                              <span><strong>{bulletin?.commodity_name || `Item #${line.srp_id}`}</strong></span>
+                              <span>{reference.value === null ? 'Unavailable' : `₱${reference.value.toFixed(2)}`}</span>
+                              <span><strong>₱{line.recorded_price.toFixed(2)}</strong></span>
+                              <span>
+                                <em className={analysis.is_anomaly ? 'variance-anomaly' : 'variance-ok'}>
+                                  {analysis.label === 'Regulatory reference unavailable' ? 'Unavailable' : analysis.is_anomaly ? `+${analysis.variance_percent}%` : 'Within reference'}
+                                </em>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {item.sync_error && <button type="button" className="secondary-button field-retry-sync" disabled={!online || syncing} onClick={() => onRetry(item.client_uuid)}>Retry this visit</button>}
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="field-quiet-state">
+            <ShieldCheck size={32} />
+            <strong>All visits synchronized</strong>
+            <span>Completed visits are encrypted locally and automatically dispatched once online.</span>
+          </div>
+        )}
+
+        {!online && queue.length > 0 && (
+          <p className="field-inline-note">
+            <WifiOff size={16} />
+            Connect to the internet to upload {queue.length} secured inspection record{queue.length === 1 ? '' : 's'}.
+          </p>
+        )}
+      </section>}
+    </div>
+  )
 }
 
 export function HistoryPage({ session, online }: { session: FieldSession; online: boolean }) {
@@ -209,17 +531,29 @@ export function HistoryPage({ session, online }: { session: FieldSession; online
   const [current, setCurrent] = useState(1)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [detail, setDetail] = useState<MonitoringRecordDetail | null>(null)
   useEffect(() => {
     if (!online) return
     setLoading(true); setError('')
     void fieldApi.history(session.token, current).then(setPage).catch((reason) => setError(apiError(reason, 'Monitoring history could not load.'))).finally(() => setLoading(false))
   }, [current, online, session.token])
+  const openDetail = (record: MonitoringRecord) => {
+    setLoading(true); setError('')
+    void fieldApi.historyDetail(session.token, record.id).then(setDetail).catch((reason) => setError(apiError(reason, 'Visit details could not load.'))).finally(() => setLoading(false))
+  }
+  if (detail) return <div className="page field-page field-history-page">
+    <button type="button" className="text-button field-history-back" onClick={() => setDetail(null)}><ArrowLeft />Back to history</button>
+    <section className="field-history-detail">
+      <div className="field-page-heading"><div><h1 tabIndex={-1}>{detail.store.store_name}</h1><p>{detail.store.address}</p></div><em className="accepted">Accepted · View only</em></div>
+      <dl><div><dt>Finalized</dt><dd>{formatDate(detail.finalized_at)}</dd></div><div><dt>Synchronization</dt><dd>{detail.sync_source === 'offline_queue' ? 'Uploaded from offline queue' : 'Accepted online'}</dd></div><div><dt>Store representative</dt><dd>{detail.representative.name}{detail.representative.title ? ` · ${detail.representative.title}` : ''}</dd></div><div><dt>Signatures</dt><dd>{detail.signatures.officer_present && detail.signatures.representative_present ? 'Both signatures captured' : 'Signature evidence incomplete'}</dd></div><div><dt>Locked GPS</dt><dd>{detail.location.latitude.toFixed(5)}, {detail.location.longitude.toFixed(5)} · ±{Math.round(detail.location.accuracy_meters)} m</dd></div>{detail.field_verification_request_id && <div><dt>Field verification</dt><dd>Verification request #{detail.field_verification_request_id}</dd></div>}</dl>
+      <div className="field-history-detail-items"><h2>Recorded products</h2>{detail.items.map((item) => <article key={item.id}><div><strong>{item.commodity_name || `Item #${item.srp_id}`}</strong><small>{item.unit}</small></div><span>₱{Number(item.recorded_price).toFixed(2)}</span><em className={item.reference_status === 'unavailable' || item.is_anomaly ? 'attention' : 'within'}>{item.reference_status === 'unavailable' ? 'Regulatory reference unavailable' : item.is_anomaly ? 'For review' : 'Within reference'}</em><small>{item.reference_label || item.reference_source || 'Reference unavailable'}{item.reference_effective_date ? ` · ${item.reference_effective_date}` : ''}</small></article>)}</div>
+    </section>
+  </div>
   return <div className="page field-page field-history-page">
-    <div className="field-page-heading"><div><h1 tabIndex={-1}>History</h1><p>Accepted monitoring visits are read-only and available to authorized DTI review.</p></div></div>
     <section className="field-history-section">
-      {!online && <div className="field-offline-state"><WifiOff /><div><h2>History needs a connection</h2><p>Current drafts and pending synchronization remain available in Activity.</p></div></div>}
+      {!online && <div className="field-offline-state"><WifiOff /><div><h2>History needs a connection</h2><p>Current drafts and pending synchronization remain available in Monitoring.</p></div></div>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loading ? <div className="field-history-loading" role="status">Loading accepted visits…</div> : online && page?.data.length ? <div className="field-history-records"><div className="field-history-head"><span>Establishment</span><span>Officer visit</span><span>Items</span><span>Observations</span><span>Status</span></div>{page.data.map((record) => <article key={record.id}><div data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></div><span data-label="Officer visit">{formatDate(record.finalized_at)}</span><span data-label="Items">{record.items_count}</span><span data-label="Observations"><em className={record.anomaly_count ? 'attention' : 'within'}>{record.anomaly_count || 'None'}</em></span><span data-label="Status"><em className="accepted">Accepted</em></span></article>)}</div> : online && !loading && <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>Server-accepted monitoring records will appear here.</span></div>}
+      {loading ? <div className="field-history-loading" role="status">Loading accepted visits…</div> : online && page?.data.length ? <div className="field-history-records"><div className="field-history-head"><span>Establishment</span><span>Officer visit</span><span>Items</span><span>Observations</span><span>Status</span><span /></div>{page.data.map((record) => <article key={record.id}><div data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></div><span data-label="Officer visit">{formatDate(record.finalized_at)}</span><span data-label="Items">{record.items_count}</span><span data-label="Observations"><em className={record.anomaly_count ? 'attention' : 'within'}>{record.anomaly_count || 'None'}</em></span><span data-label="Status"><em className="accepted">Accepted</em></span><button type="button" className="text-button" aria-label={`View ${record.store.store_name} visit details`} onClick={() => openDetail(record)}>View details</button></article>)}</div> : online && !loading && <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>Server-accepted monitoring records will appear here.</span></div>}
       {page && page.last_page > 1 && <div className="pagination"><span>Showing {page.from}–{page.to} of {page.total}</span><div><button type="button" disabled={current <= 1} onClick={() => setCurrent(current - 1)}>Previous</button><strong>Page {current} of {page.last_page}</strong><button type="button" disabled={current >= page.last_page} onClick={() => setCurrent(current + 1)}>Next</button></div></div>}
     </section>
   </div>
@@ -231,11 +565,12 @@ interface ProfilePageProps {
   biometricAvailability: BiometricAvailability
   biometricEnabled: boolean
   onToggleBiometric: () => Promise<void>
+  onReplayGuide?: () => void
   onLock: () => void
   onLogout: () => void
 }
 
-export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onLock, onLogout }: ProfilePageProps) {
+export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onReplayGuide, onLock, onLogout }: ProfilePageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const authorizationValid = canFinalizeWithLease(session.offline_lease)
@@ -253,11 +588,11 @@ export function ProfilePage({ session, online, biometricAvailability, biometricE
   }
 
   return <div className="page field-page field-profile-page">
-    <div className="field-page-heading"><div><h1 tabIndex={-1}>Profile</h1><p>Review your officer account, device authorization, and workspace security.</p></div></div>
     <section className="field-profile-identity"><span className="field-profile-avatar"><UserRound /></span><div><h2>{session.user.name}</h2><p>{session.user.email}</p><span>DTI Field Monitoring Officer</span></div></section>
     <div className="field-profile-grid">
       <section><div className="field-settings-heading"><span><BadgeCheck /></span><div><h2>Device authorization</h2><p>Authority to work with downloaded field data.</p></div></div><dl><div><dt>Connection</dt><dd className={online ? 'positive' : ''}>{online ? 'Online' : 'Offline'}</dd></div><div><dt>Offline authorization</dt><dd className={authorizationValid ? 'positive' : 'attention'}>{authorizationValid ? 'Active' : 'Expired'}</dd></div><div><dt>Valid until</dt><dd>{formatDate(session.offline_lease.expires_at)}</dd></div></dl></section>
       <section><div className="field-settings-heading"><span><Fingerprint /></span><div><h2>Biometric unlock</h2><p>{biometricDetail}</p></div></div>{biometricAvailability === 'available' && <button type="button" className="secondary-button" disabled={busy} onClick={() => void toggleBiometric()}>{busy ? 'Updating…' : biometricEnabled ? 'Disable biometric unlock' : 'Enable biometric unlock'}</button>}{error && <p className="form-error" role="alert">{error}</p>}</section>
+      {onReplayGuide && <section><div className="field-settings-heading"><span><Eye /></span><div><h2>App guide</h2><p>Review what each section does and how to complete a visit.</p></div></div><button type="button" className="secondary-button" onClick={onReplayGuide}>Replay app guide</button></section>}
     </div>
     <section className="field-security-actions"><div><LockKeyhole /><span><h2>Workspace access</h2><p>Lock this device without deleting drafts, queued evidence, or downloaded field data.</p></span></div><div><button type="button" className="secondary-button" onClick={onLock}>Lock now</button><button type="button" className="field-signout-button" onClick={onLogout}>Sign out</button></div></section>
   </div>

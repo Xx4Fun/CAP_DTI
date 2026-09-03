@@ -77,4 +77,9 @@ class ConsumerReport extends Model
     {
         return $this->belongsToMany(WebPushSubscription::class, 'consumer_report_push_subscriptions')->withTimestamps();
     }
+
+    public function verificationRequest()
+    {
+        return $this->hasOne(FieldVerificationRequest::class);
+    }
 }

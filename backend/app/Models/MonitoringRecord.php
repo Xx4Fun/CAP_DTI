@@ -15,7 +15,7 @@ class MonitoringRecord extends Model
         'representative_title', 'officer_signature_disk', 'officer_signature_path',
         'officer_signature_sha256', 'representative_signature_disk',
         'representative_signature_path', 'representative_signature_sha256',
-        'sync_source', 'client_version',
+        'sync_source', 'client_version', 'field_verification_request_id',
     ];
 
     protected $hidden = [
@@ -33,4 +33,5 @@ class MonitoringRecord extends Model
     public function store(): BelongsTo { return $this->belongsTo(Store::class); }
     public function items(): HasMany { return $this->hasMany(MonitoringRecordItem::class); }
     public function lease(): BelongsTo { return $this->belongsTo(FieldOfflineLease::class, 'offline_lease_id'); }
+    public function verificationRequest(): BelongsTo { return $this->belongsTo(FieldVerificationRequest::class, 'field_verification_request_id'); }
 }
