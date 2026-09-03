@@ -26,10 +26,22 @@ import type { BiometricAvailability, VaultUnlockResult } from './app/vault'
 import { applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldLockAfterBackground } from './app/sessionPolicy'
 import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, VisitDraft } from './types'
 
-type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'migration' | 'attention' | 'ready'
+type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'repair-login' | 'repair-unlock' | 'migration' | 'attention' | 'recovery' | 'ready'
 type View = TopLevelView | 'visit'
 type Completion = { status: 'accepted' | 'queued'; storeName: string }
 type FieldNotice = { kind: 'success' | 'info' | 'warning' | 'error'; title: string; message: string }
+type RecoveryIssue = { code: string; detail: string }
+class WorkspaceIntegrityError extends Error {
+  constructor(readonly issue: RecoveryIssue) { super(issue.detail) }
+}
+const readRequiredSecret = async <T,>(key: string, issue: RecoveryIssue) => {
+  try { return await readSecret<T>(key) }
+  catch { throw new WorkspaceIntegrityError(issue) }
+}
+const readCachedSecret = async <T,>(key: string) => {
+  try { return { value: await readSecret<T>(key), failed: false } }
+  catch { return { value: undefined, failed: true } }
+}
 export const fieldNoticeDuration = (kind: FieldNotice['kind']) => kind === 'success' ? 4_000 : kind === 'info' ? 6_000 : 0
 const GUIDE_VERSION = 'v1'
 const guideKey = (userId: number) => `field-guide:${userId}:${GUIDE_VERSION}`
@@ -44,6 +56,8 @@ const EMPTY_BOOTSTRAP: BootstrapData = {
 export default function App() {
   const [gate, setGate] = useState<Gate>('checking')
   const [session, setSession] = useState<FieldSession | null>(null)
+  const [repairingSession, setRepairingSession] = useState(false)
+  const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue | null>(null)
   const [bootstrap, setBootstrap] = useState(EMPTY_BOOTSTRAP)
   const [queue, setQueue] = useState<QueuedVisit[]>([])
   const [view, setView] = useState<View>('home')
@@ -81,6 +95,12 @@ export default function App() {
     draftWrite.current = write
     await write
   }, [])
+  const requestSessionRepair = useCallback(() => {
+    lockVault()
+    setSession(null)
+    setRepairingSession(true)
+    setGate('repair-login')
+  }, [])
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine)
@@ -117,19 +137,21 @@ export default function App() {
 
   const hydrate = useCallback(async (next: FieldSession, renewOnline = true) => {
     lockingRef.current = false
-    const [cached, cachedQueue, cachedDrafts, legacyDraft, cachedRequests, cachedNotifications] = await Promise.all([
-      readSecret<BootstrapData>('bootstrap'),
-      readSecret<QueuedVisit[]>('queue'),
-      readSecret<VisitDraft[]>('drafts'),
-      readSecret<VisitDraft>('active-draft'),
-      readSecret<FieldVerificationRequest[]>('verification-requests'),
-      readSecret<FieldNotification[]>('notifications'),
+    const [cached, cachedQueue, cachedDrafts, cachedRequests, cachedNotifications] = await Promise.all([
+      readCachedSecret<BootstrapData>('bootstrap'),
+      readRequiredSecret<QueuedVisit[]>('queue', { code: 'PW-WORK-QUEUE', detail: 'The encrypted upload queue could not be opened.' }),
+      readRequiredSecret<VisitDraft[]>('drafts', { code: 'PW-WORK-DRAFTS', detail: 'Encrypted unfinished visits could not be opened.' }),
+      readCachedSecret<FieldVerificationRequest[]>('verification-requests'),
+      readCachedSecret<FieldNotification[]>('notifications'),
     ])
+    const legacyDraft = cachedDrafts === undefined
+      ? await readRequiredSecret<VisitDraft>('active-draft', { code: 'PW-WORK-LEGACY', detail: 'An encrypted unfinished visit from an earlier version could not be opened.' })
+      : undefined
     let effectiveSession = next
     let effectiveDrafts = cachedDrafts ?? (legacyDraft ? [legacyDraft] : [])
     if (cachedDrafts === undefined && legacyDraft) {
       await persistDrafts(effectiveDrafts)
-      await deleteSecret('active-draft')
+      try { await deleteSecret('active-draft') } catch { /* canonical copy is already secured */ }
     }
     const queuedIds = new Set((cachedQueue ?? []).map((item) => item.client_uuid))
     const reconciledDrafts = effectiveDrafts.filter((item) => !queuedIds.has(item.client_uuid))
@@ -139,13 +161,18 @@ export default function App() {
     }
     const openWorkspace = () => {
       setSession(effectiveSession)
-      if (cached) setBootstrap(cached)
+      if (cached.value) setBootstrap(cached.value)
       if (cachedQueue) { queueRef.current = cachedQueue; setQueue(cachedQueue) }
-      if (cachedRequests) { setVerificationRequests(cachedRequests); setRequestState('ready') }
-      if (cachedNotifications) { setNotifications(cachedNotifications); setNotificationState('ready') }
+      if (cachedRequests.value) { setVerificationRequests(cachedRequests.value); setRequestState('ready') }
+      else if (cachedRequests.failed) setRequestState('unavailable')
+      if (cachedNotifications.value) { setNotifications(cachedNotifications.value); setNotificationState('ready') }
+      else if (cachedNotifications.failed) setNotificationState('unavailable')
       setDrafts(effectiveDrafts)
       try { setGuideOpen(localStorage.getItem(guideKey(effectiveSession.user.id)) !== 'complete') }
       catch { setGuideOpen(true) }
+      if (cached.failed || cachedRequests.failed || cachedNotifications.failed) {
+        setNotice({ kind: 'warning', title: 'Downloaded data needs refresh', message: 'Protected field work is available. Connect to refresh downloaded reference data.' })
+      }
       setGate('ready')
     }
     openWorkspace()
@@ -192,6 +219,15 @@ export default function App() {
     })()
   }, [persistDrafts, refreshOperationalData])
 
+  const showRecovery = useCallback((error: unknown) => {
+    lockVault()
+    setSession(null)
+    setRecoveryIssue(error instanceof WorkspaceIntegrityError
+      ? error.issue
+      : { code: 'PW-WORK-STORAGE', detail: 'The encrypted field workspace could not be opened safely.' })
+    setGate('recovery')
+  }, [])
+
   // Auto-bind accurate background GPS position to active draft with zero delay
   useEffect(() => {
     if (draft && officerPosition && officerPosition.accuracy_meters <= 150) {
@@ -215,14 +251,14 @@ export default function App() {
       if (!await restoreVaultSession()) { setGate('unlock'); return }
       try {
         const saved = await readSecret<FieldSession>('session')
-        if (!saved) { lockVault(); setGate('attention'); return }
+        if (!saved) { requestSessionRepair(); return }
         await hydrate(saved)
       } catch {
         lockVault()
         setGate('unlock')
       }
     })()
-  }, [hydrate])
+  }, [hydrate, requestSessionRepair])
 
   const lockWorkspace = useCallback(async () => {
     if (gate !== 'ready' || !session) return
@@ -347,16 +383,31 @@ export default function App() {
   }, [gate, online, refreshOperationalData, session])
 
   const completeUnlock = useCallback(async (result: VaultUnlockResult) => {
+    let saved: FieldSession | undefined
     try {
-      const saved = await readSecret<FieldSession>('session')
-      if (!saved) { lockVault(); setGate('attention'); return }
-      if (result.requiresPinMigration) { setSession(saved); setGate('migration'); return }
-      await hydrate(saved)
+      saved = await readSecret<FieldSession>('session')
     } catch {
-      lockVault()
-      throw new Error('Device verified, but the encrypted workspace could not be opened. Reload the app and try again.')
+      requestSessionRepair()
+      return
     }
-  }, [hydrate])
+    if (!saved) {
+      requestSessionRepair()
+      return
+    }
+    if (result.requiresPinMigration) { setSession(saved); setGate('migration'); return }
+    try { await hydrate(saved) }
+    catch (error) { showRecovery(error) }
+  }, [hydrate, requestSessionRepair, showRecovery])
+
+  const completeSessionRepair = useCallback(async (result: VaultUnlockResult) => {
+    if (!session) return
+    if (result.requiresPinMigration) { setGate('migration'); return }
+    try {
+      await writeSecret('session', session)
+      setRepairingSession(false)
+      await hydrate(session)
+    } catch (error) { showRecovery(error) }
+  }, [hydrate, session, showRecovery])
 
   const leaseValid = session ? canFinalizeWithLease(session.offline_lease) : false
   const startVisit = (storeId?: number, verificationRequestId?: number) => {
@@ -456,7 +507,8 @@ export default function App() {
       <PwaUpdatePrompt />
       {gate === 'checking' ? <StartupGate /> : gate !== 'ready' ? (
         <AuthShell contentKey={gate}>
-          {gate === 'login' && <LoginForm onAuthenticated={(next) => { setSession(next); setGate('pin') }} />}
+          {gate === 'login' && <LoginForm onAuthenticated={(next) => { setRepairingSession(false); setSession(next); setGate('pin') }} />}
+          {gate === 'repair-login' && <SecurityMessage title="Repair device session" detail="Sign in online to replace only the unreadable device session. Encrypted drafts and pending uploads will remain on this device." icon={<ShieldCheck />}><LoginForm onAuthenticated={(next) => { setSession(next); setGate('repair-unlock') }} /></SecurityMessage>}
           {gate === 'pin' && session && <PinSetup onDone={async (pin) => {
             await createVault(pin); await writeSecret('session', session)
             setBiometricAvailability(await getBiometricUnlockAvailability())
@@ -464,8 +516,10 @@ export default function App() {
           }} />}
           {gate === 'biometric' && session && <BiometricSetup availability={biometricAvailability} onEnable={async () => { await enableBiometricUnlock(); await hydrate(session, false) }} onSkip={() => void hydrate(session, false)} />}
           {gate === 'unlock' && <Unlock onUnlocked={completeUnlock} />}
-          {gate === 'migration' && session && <PinSetup migration onDone={async (pin) => { await rewrapVaultPin(pin); await hydrate(session) }} />}
+          {gate === 'repair-unlock' && <Unlock onUnlocked={completeSessionRepair} />}
+          {gate === 'migration' && session && <PinSetup migration onDone={async (pin) => { await rewrapVaultPin(pin); if (repairingSession) { await writeSecret('session', session); setRepairingSession(false) } await hydrate(session) }} />}
           {gate === 'attention' && <SecurityMessage title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device." icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
+          {gate === 'recovery' && recoveryIssue && <SecurityMessage title="Encrypted field work needs recovery" detail={`${recoveryIssue.detail} Do not clear site data or reinstall the app. Support code: ${recoveryIssue.code}`} icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => { setRecoveryIssue(null); setGate('unlock') }}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
         </AuthShell>
       ) : session ? (
         <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={drafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>

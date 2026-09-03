@@ -216,6 +216,17 @@ describe('field workspace security flow', () => {
     expect(screen.queryByText('Super Metro San Jose')).not.toBeInTheDocument()
   })
 
+  it('requests session repair when an auto-restored vault has no readable session', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Repair device session' })).toBeInTheDocument()
+    expect(fixtures.vault.lockVault).toHaveBeenCalled()
+    expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+  })
+
   it('persists a finalized visit before attempting an online upload', async () => {
     const queueWrite = deferred<void>()
     fixtures.vault.hasVault.mockResolvedValue(true)
@@ -925,19 +936,96 @@ describe('field workspace security flow', () => {
     leaseRefresh.resolve({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
   })
 
-  it('distinguishes a verified PIN from a local workspace storage failure', async () => {
+  it.each(['bootstrap', 'verification-requests', 'notifications'])('opens protected field work when the %s cache is unreadable', async (failedKey) => {
     fixtures.vault.hasVault.mockResolvedValue(true)
+    localStorage.setItem('field-guide:1:v1', 'complete')
     fixtures.vault.readSecret.mockImplementation(async (key: string) => {
       if (key === 'session') return fixtures.session
-      if (key === 'bootstrap') throw new Error('IndexedDB unavailable')
+      if (key === failedKey) throw new Error('IndexedDB record unreadable')
       return undefined
     })
     render(<App />)
 
     fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Device verified, but the encrypted workspace could not be opened')
-    expect(fixtures.vault.lockVault).toHaveBeenCalled()
+    expect(await screen.findByText(/Good day, Ana/i)).toBeInTheDocument()
+    expect(screen.getByText('Downloaded data needs refresh')).toBeInTheDocument()
+    expect(fixtures.vault.lockVault).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['queue', 'PW-WORK-QUEUE'],
+    ['drafts', 'PW-WORK-DRAFTS'],
+  ])('preserves unreadable protected %s data and shows support code %s', async (failedKey, supportCode) => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === failedKey) throw new Error('IndexedDB record unreadable')
+      return undefined
+    })
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByRole('heading', { name: 'Encrypted field work needs recovery' })).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(supportCode))).toBeInTheDocument()
+    expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+    expect(fixtures.vault.createVault).not.toHaveBeenCalled()
+  })
+
+  it('does not read the legacy active draft when canonical drafts exist', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    localStorage.setItem('field-guide:1:v1', 'complete')
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === 'drafts') return [fixtures.draft]
+      if (key === 'active-draft') throw new Error('stale legacy record unreadable')
+      return undefined
+    })
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByText(/Good day, Ana/i)).toBeInTheDocument()
+    expect(fixtures.vault.readSecret).not.toHaveBeenCalledWith('active-draft')
+  })
+
+  it('preserves an unreadable legacy draft when canonical drafts are absent', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === 'active-draft') throw new Error('legacy record unreadable')
+      return undefined
+    })
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByRole('heading', { name: 'Encrypted field work needs recovery' })).toBeInTheDocument()
+    expect(screen.getByText(/PW-WORK-LEGACY/)).toBeInTheDocument()
+    expect(fixtures.vault.deleteSecret).not.toHaveBeenCalledWith('active-draft')
+  })
+
+  it('repairs only an unreadable session after online login and another device unlock', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    localStorage.setItem('field-guide:1:v1', 'complete')
+    let sessionReads = 0
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session' && sessionReads++ === 0) throw new Error('session record unreadable')
+      return undefined
+    })
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+    expect(await screen.findByRole('heading', { name: 'Repair device session' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }))
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByText(/Good day, Ana/i)).toBeInTheDocument()
+    expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('session', fixtures.session)
+    expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+    expect(fixtures.vault.createVault).not.toHaveBeenCalled()
   })
 
   it('shows when the PIN is verified while local workspace data opens', async () => {
