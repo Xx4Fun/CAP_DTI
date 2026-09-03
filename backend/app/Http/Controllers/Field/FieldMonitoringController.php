@@ -257,9 +257,12 @@ class FieldMonitoringController extends Controller
         $finalizedDate = Carbon::parse($payload['finalized_at'])->setTimezone('Asia/Manila')->toDateString();
         $items = collect($payload['items'])->map(function ($item) use ($submitted, $finalizedDate, $index) {
             $source = $submitted->get($item['srp_id']);
-            $effective = SrpBulletin::query()->where('commodity_key', $source->commodity_key)
-                ->where('is_active', true)->whereDate('effective_date', '<=', $finalizedDate)
-                ->latest('effective_date')->latest('id')->first();
+            // ponytail: unkeyed rows are current-only identities; add lineage resolution when historical SRP keys exist.
+            $effective = $source->commodity_key
+                ? SrpBulletin::query()->where('commodity_key', $source->commodity_key)
+                    ->where('is_active', true)->whereDate('effective_date', '<=', $finalizedDate)
+                    ->latest('effective_date')->latest('id')->first()
+                : ($source->effective_date?->toDateString() <= $finalizedDate ? $source : null);
             if (! $effective) {
                 throw ValidationException::withMessages([
                     "records.{$index}.items" => ['Every commodity must have an effective SRP bulletin for the finalized visit. Refresh field data and try again.'],

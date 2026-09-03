@@ -141,6 +141,29 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonCount(0, 'data.stores')->assertJsonCount(0, 'data.srp_bulletins');
     }
 
+    public function test_bootstrap_keeps_current_unkeyed_srp_rows_distinct_by_id(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $first = SrpBulletin::create([
+            'commodity_name' => 'Argentina (150g)', 'commodity_key' => null,
+            'category' => 'Meat Loaf', 'unit' => '150g', 'baseline_price' => 23.75,
+            'effective_date' => now('Asia/Manila')->subDay()->toDateString(), 'is_active' => true,
+        ]);
+        $second = SrpBulletin::create([
+            'commodity_name' => 'Argentina (150g)', 'commodity_key' => null,
+            'category' => 'Corned Beef', 'unit' => '150g', 'baseline_price' => 36.75,
+            'effective_date' => now('Asia/Manila')->subDay()->toDateString(), 'is_active' => true,
+        ]);
+
+        $response = $this->withToken($token)->getJson('/api/field/bootstrap')
+            ->assertOk()->assertJsonCount(2, 'data.srp_bulletins');
+
+        $this->assertEqualsCanonicalizing(
+            [$first->id, $second->id],
+            collect($response->json('data.srp_bulletins'))->pluck('id')->all(),
+        );
+    }
+
     public function test_sync_rejects_missing_dual_signature_or_an_inaccurate_location(): void
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
@@ -214,20 +237,22 @@ class FieldMonitoringRecordTest extends TestCase
         $this->assertSame([], Storage::disk('receipt_evidence')->allFiles('field-monitoring'));
     }
 
-    public function test_sync_persists_an_unavailable_reference_when_the_effective_srp_lacks_a_source(): void
+    public function test_sync_uses_an_unsourced_unkeyed_current_srp_as_a_provisional_baseline(): void
     {
         Storage::fake('receipt_evidence');
         [, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
         $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
-        $bulletins[0]->update(['source_reference' => null]);
+        $bulletins[0]->update(['commodity_key' => null, 'source_reference' => null]);
 
         $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
             ->assertCreated()->json('data.results.0.record_id');
 
         $this->assertDatabaseHas('monitoring_record_items', [
             'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
-            'reference_status' => 'unavailable', 'reference_value' => null, 'is_anomaly' => false,
+            'reference_status' => 'available', 'reference_type' => 'standard_srp',
+            'reference_label' => 'SRP baseline (provisional)', 'reference_value' => 100,
+            'reference_source' => null, 'is_anomaly' => true,
         ]);
     }
 

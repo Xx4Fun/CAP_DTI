@@ -41,11 +41,11 @@ class FieldReferenceResolver
             ? SrpBulletin::query()->where('commodity_key', $submittedBulletin->commodity_key)
                 ->where('is_active', true)->whereDate('effective_date', '<=', $observedAt)
                 ->latest('effective_date')->latest('id')->first()
-            : null;
+            : $submittedBulletin;
 
-        return $bulletin && $bulletin->source_reference && $bulletin->effective_date ? [
+        return $bulletin && $bulletin->baseline_price > 0 && $bulletin->effective_date ? [
             'status' => 'available', 'type' => 'standard_srp',
-            'label' => 'SRP reference (provisional)', 'value' => (float) $bulletin->baseline_price,
+            'label' => 'SRP baseline (provisional)', 'value' => (float) $bulletin->baseline_price,
             'source' => $bulletin->source_reference, 'effective_date' => $bulletin->effective_date?->toDateString(),
         ] : [
             'status' => 'unavailable', 'type' => 'standard_srp',

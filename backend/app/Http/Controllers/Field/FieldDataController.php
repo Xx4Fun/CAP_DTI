@@ -62,9 +62,10 @@ class FieldDataController extends Controller
                 ],
                 'stores' => $isCurrent ? [] : Store::query()->where('is_active', true)->orderBy('store_name')->get(),
                 'srp_bulletins' => $isCurrent ? [] : SrpBulletin::query()->where('is_active', true)
-                    ->whereNotNull('commodity_key')->whereDate('effective_date', '<=', $today)
+                    ->whereDate('effective_date', '<=', $today)
                     ->orderBy('commodity_key')->latest('effective_date')->latest('id')->get()
-                    ->unique('commodity_key')->sortBy('commodity_name')->values(),
+                    ->unique(fn ($bulletin) => $bulletin->commodity_key ?: 'id:'.$bulletin->id)
+                    ->sortBy('commodity_name')->values(),
                 'regulatory_prices' => $isCurrent ? [] : RegulatoryPriceRecord::query()
                     ->whereDate('effective_from', '<=', $today)
                     ->where(fn ($query) => $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $today))
