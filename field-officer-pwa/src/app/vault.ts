@@ -187,6 +187,7 @@ export async function requestPersistentStorage(): Promise<boolean | null> {
 
 export async function createVault(pin: string): Promise<void> {
   if (!/^\d{4,8}$/.test(pin)) throw new Error('Use a 4 to 8 digit PIN.')
+  if (await hasVault()) throw new Error('A secure vault already exists on this device.')
   const pinSalt = crypto.getRandomValues(new Uint8Array(16))
   const pinKey = await derivePinKey(pin, pinSalt)
   const dataKey = await generateDataKey()
@@ -300,6 +301,27 @@ export async function readSecret<T>(key: string): Promise<T | undefined> {
 export async function deleteSecret(key: string): Promise<void> {
   if (!activeKey) throw new Error('Unlock this device before changing field data.')
   await deleteRaw(`secret:${key}`)
+}
+
+export async function archiveUnreadableDrafts(): Promise<void> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite')
+    const store = transaction.objectStore(STORE)
+    const timestamp = new Date().toISOString()
+    ;(['drafts', 'active-draft'] as const).forEach((key) => {
+      const source = `secret:${key}`
+      const request = store.get(source)
+      request.onsuccess = () => {
+        if (request.result === undefined) return
+        store.put(request.result, `recovery:${key}:${timestamp}`)
+        store.delete(source)
+      }
+    })
+    transaction.oncomplete = () => { db.close(); resolve() }
+    transaction.onerror = () => { db.close(); reject(transaction.error) }
+    transaction.onabort = () => { db.close(); reject(transaction.error || new Error('Draft archive was interrupted.')) }
+  })
 }
 
 async function detectBrowserBiometricAvailability(): Promise<BiometricAvailability> {

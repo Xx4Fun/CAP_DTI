@@ -12,7 +12,7 @@ const fixtures = vi.hoisted(() => ({
     offline_lease: { id: 'lease-old', expires_at: '2099-08-29T00:00:00Z' },
   },
   vault: {
-    clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
+    archiveUnreadableDrafts: vi.fn(), clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
     getBiometricUnlockAvailability: vi.fn().mockResolvedValue('prf-unsupported'),
     getVaultPinLength: vi.fn().mockResolvedValue(null), hasBiometricUnlock: vi.fn().mockResolvedValue(false), hasVault: vi.fn().mockResolvedValue(false),
     isBiometricUnlockAvailable: vi.fn().mockResolvedValue(false), lockVault: vi.fn(),
@@ -84,6 +84,7 @@ describe('field workspace security flow', () => {
     fixtures.vault.isBiometricUnlockAvailable.mockResolvedValue(false)
     fixtures.vault.restoreVaultSession.mockResolvedValue(false)
     fixtures.vault.unlockVault.mockResolvedValue({ requiresPinMigration: false })
+    fixtures.vault.archiveUnreadableDrafts.mockResolvedValue(undefined)
     fixtures.vault.readSecret.mockResolvedValue(undefined)
     fixtures.vault.writeSecret.mockResolvedValue(undefined)
     fixtures.api.bootstrap.mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] })
@@ -1004,6 +1005,29 @@ describe('field workspace security flow', () => {
     expect(await screen.findByRole('heading', { name: 'Encrypted field work needs recovery' })).toBeInTheDocument()
     expect(screen.getByText(/PW-WORK-LEGACY/)).toBeInTheDocument()
     expect(fixtures.vault.deleteSecret).not.toHaveBeenCalledWith('active-draft')
+  })
+
+  it('archives unreadable drafts only after confirmation and returns to device unlock', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === 'drafts') throw new Error('draft record unreadable')
+      return undefined
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+    const recover = await screen.findByRole('button', { name: 'Archive unreadable drafts and continue' })
+    fireEvent.click(recover)
+    expect(fixtures.vault.archiveUnreadableDrafts).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(recover)
+    expect(await screen.findByRole('heading', { name: 'Unlock field workspace' })).toBeInTheDocument()
+    expect(fixtures.vault.archiveUnreadableDrafts).toHaveBeenCalledOnce()
+    expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+    expect(fixtures.vault.createVault).not.toHaveBeenCalled()
   })
 
   it('repairs only an unreadable session after online login and another device unlock', async () => {

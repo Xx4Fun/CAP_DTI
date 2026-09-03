@@ -18,7 +18,7 @@ import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
 import { canFinalizeVisit, createDraft, isBlankDraft } from './app/workflow'
 import {
-  clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
+  archiveUnreadableDrafts, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
   requestPersistentStorage, restoreVaultSession, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './app/vault'
@@ -58,6 +58,7 @@ export default function App() {
   const [session, setSession] = useState<FieldSession | null>(null)
   const [repairingSession, setRepairingSession] = useState(false)
   const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue | null>(null)
+  const [recoveringDrafts, setRecoveringDrafts] = useState(false)
   const [bootstrap, setBootstrap] = useState(EMPTY_BOOTSTRAP)
   const [queue, setQueue] = useState<QueuedVisit[]>([])
   const [view, setView] = useState<View>('home')
@@ -409,6 +410,18 @@ export default function App() {
     } catch (error) { showRecovery(error) }
   }, [hydrate, session, showRecovery])
 
+  const recoverUnreadableDrafts = async () => {
+    if (!window.confirm('Archive the unreadable unfinished drafts and continue? These drafts will no longer appear in Current Work.')) return
+    setRecoveringDrafts(true)
+    try {
+      await archiveUnreadableDrafts()
+      setRecoveryIssue(null)
+      setGate('unlock')
+    } catch {
+      setRecoveryIssue({ code: 'PW-WORK-ARCHIVE', detail: 'The unreadable drafts could not be archived safely.' })
+    } finally { setRecoveringDrafts(false) }
+  }
+
   const leaseValid = session ? canFinalizeWithLease(session.offline_lease) : false
   const startVisit = (storeId?: number, verificationRequestId?: number) => {
     if (!session) return
@@ -519,7 +532,10 @@ export default function App() {
           {gate === 'repair-unlock' && <Unlock onUnlocked={completeSessionRepair} />}
           {gate === 'migration' && session && <PinSetup migration onDone={async (pin) => { await rewrapVaultPin(pin); if (repairingSession) { await writeSecret('session', session); setRepairingSession(false) } await hydrate(session) }} />}
           {gate === 'attention' && <SecurityMessage title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device." icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
-          {gate === 'recovery' && recoveryIssue && <SecurityMessage title="Encrypted field work needs recovery" detail={`${recoveryIssue.detail} Do not clear site data or reinstall the app. Support code: ${recoveryIssue.code}`} icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => { setRecoveryIssue(null); setGate('unlock') }}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
+          {gate === 'recovery' && recoveryIssue && <SecurityMessage title="Encrypted field work needs recovery" detail={`${recoveryIssue.detail} Do not clear site data or reinstall the app. Support code: ${recoveryIssue.code}`} icon={<TriangleAlert />}>
+            {(recoveryIssue.code === 'PW-WORK-DRAFTS' || recoveryIssue.code === 'PW-WORK-LEGACY') && <button type="button" className="primary-button" disabled={recoveringDrafts} onClick={() => void recoverUnreadableDrafts()}>{recoveringDrafts ? 'Archiving drafts…' : 'Archive unreadable drafts and continue'}</button>}
+            <button type="button" className="secondary-button" disabled={recoveringDrafts} onClick={() => { setRecoveryIssue(null); setGate('unlock') }}>Try device unlock again<LockKeyhole size={18} /></button>
+          </SecurityMessage>}
         </AuthShell>
       ) : session ? (
         <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={drafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>

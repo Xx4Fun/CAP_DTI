@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
+  archiveUnreadableDrafts, clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
   isBiometricUnlockAvailable, lockVault, readSecret, restoreVaultSession,
   requestPersistentStorage, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './vault'
@@ -65,6 +65,19 @@ async function rawRecord(key: string) {
   })
 }
 
+async function rawKeys() {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(LEGACY_DB, 1)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  return new Promise<IDBValidKey[]>((resolve, reject) => {
+    const request = db.transaction(LEGACY_STORE).objectStore(LEGACY_STORE).getAllKeys()
+    request.onsuccess = () => { db.close(); resolve(request.result) }
+    request.onerror = () => { db.close(); reject(request.error) }
+  })
+}
+
 function biometricProvider(secret = new Uint8Array(32).fill(7)): VaultBiometricProvider {
   return {
     isAvailable: async () => true,
@@ -98,6 +111,41 @@ describe('encrypted offline vault', () => {
     await expect(unlockVault('1111')).rejects.toThrow('PIN')
     await unlockVault('4321')
     expect(await readSecret<{ token: string }>('session')).toEqual({ token: 'private-token' })
+  })
+
+  it('archives only draft records while preserving the locked vault and queued evidence', async () => {
+    await createVault('4321')
+    await writeSecret('session', { token: 'current-session' })
+    await writeSecret('queue', [{ client_uuid: 'queued-1' }])
+    await writeSecret('drafts', [{ client_uuid: 'draft-1' }])
+    await writeSecret('active-draft', { client_uuid: 'legacy-draft' })
+    const draftsEnvelope = await rawRecord('secret:drafts')
+    const legacyEnvelope = await rawRecord('secret:active-draft')
+    lockVault()
+
+    await archiveUnreadableDrafts()
+
+    expect(await rawRecord('secret:drafts')).toBeUndefined()
+    expect(await rawRecord('secret:active-draft')).toBeUndefined()
+    const keys = (await rawKeys()).map(String)
+    const archivedDrafts = keys.find((key) => key.startsWith('recovery:drafts:'))
+    const archivedLegacy = keys.find((key) => key.startsWith('recovery:active-draft:'))
+    expect(archivedDrafts && await rawRecord(archivedDrafts)).toEqual(draftsEnvelope)
+    expect(archivedLegacy && await rawRecord(archivedLegacy)).toEqual(legacyEnvelope)
+    await unlockVault('4321')
+    expect(await readSecret('session')).toEqual({ token: 'current-session' })
+    expect(await readSecret('queue')).toEqual([{ client_uuid: 'queued-1' }])
+  })
+
+  it('refuses to replace an existing vault and its encrypted records', async () => {
+    await createVault('4321')
+    await writeSecret('drafts', [{ client_uuid: 'preserved-draft' }])
+
+    await expect(createVault('9876')).rejects.toThrow('already exists')
+
+    lockVault()
+    await unlockVault('4321')
+    expect(await readSecret('drafts')).toEqual([{ client_uuid: 'preserved-draft' }])
   })
 
   it('uses PIN and biometric verification to unwrap the same vault data key', async () => {
