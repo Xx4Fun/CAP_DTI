@@ -131,6 +131,32 @@ describe('encrypted offline vault', () => {
     expect(await readSecret('queue')).toEqual([{ client_uuid: 'queued-1' }])
   })
 
+  it('explains biometric cancellation or timeout while preserving PIN recovery', async () => {
+    const provider = biometricProvider()
+    await createVault('4321')
+    await enableBiometricUnlock(provider)
+    lockVault()
+
+    await expect(unlockVaultWithBiometrics({
+      ...provider,
+      verify: async () => { throw new DOMException('cancelled', 'NotAllowedError') },
+    })).rejects.toThrow('canceled or timed out')
+
+    await expect(readSecret('session')).rejects.toThrow('Unlock this device')
+  })
+
+  it('explains when the saved biometric credential is no longer available', async () => {
+    const provider = biometricProvider()
+    await createVault('4321')
+    await enableBiometricUnlock(provider)
+    lockVault()
+
+    await expect(unlockVaultWithBiometrics({
+      ...provider,
+      verify: async () => { throw new DOMException('missing', 'NotFoundError') },
+    })).rejects.toThrow('re-enable biometric unlock')
+  })
+
   it('reports biometric unlock unavailable when platform verification or PRF is missing', async () => {
     expect(await isBiometricUnlockAvailable({ ...biometricProvider(), isAvailable: async () => false })).toBe(false)
   })

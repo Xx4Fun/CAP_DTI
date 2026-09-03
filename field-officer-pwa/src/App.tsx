@@ -117,7 +117,6 @@ export default function App() {
 
   const hydrate = useCallback(async (next: FieldSession, renewOnline = true) => {
     lockingRef.current = false
-    await requestPersistentStorage()
     const [cached, cachedQueue, cachedDrafts, legacyDraft, cachedRequests, cachedNotifications] = await Promise.all([
       readSecret<BootstrapData>('bootstrap'),
       readSecret<QueuedVisit[]>('queue'),
@@ -128,7 +127,6 @@ export default function App() {
     ])
     let effectiveSession = next
     let effectiveDrafts = cachedDrafts ?? (legacyDraft ? [legacyDraft] : [])
-    let refreshedBootstrap = false
     if (cachedDrafts === undefined && legacyDraft) {
       await persistDrafts(effectiveDrafts)
       await deleteSecret('active-draft')
@@ -139,10 +137,9 @@ export default function App() {
       effectiveDrafts = reconciledDrafts
       await persistDrafts(effectiveDrafts)
     }
-    const canOpenCached = Boolean(cached && canFinalizeWithLease(next.offline_lease))
-    const openWorkspace = (useCachedBootstrap = true) => {
+    const openWorkspace = () => {
       setSession(effectiveSession)
-      if (useCachedBootstrap && cached) setBootstrap(cached)
+      if (cached) setBootstrap(cached)
       if (cachedQueue) { queueRef.current = cachedQueue; setQueue(cachedQueue) }
       if (cachedRequests) { setVerificationRequests(cachedRequests); setRequestState('ready') }
       if (cachedNotifications) { setNotifications(cachedNotifications); setNotificationState('ready') }
@@ -151,35 +148,48 @@ export default function App() {
       catch { setGuideOpen(true) }
       setGate('ready')
     }
-    if (canOpenCached) openWorkspace()
-    if (navigator.onLine && renewOnline) {
-      try {
-        const lease = await fieldApi.renewLease(next.token)
-        const renewed = applyRenewedLease(next, effectiveDrafts, lease)
-        effectiveSession = renewed.session
-        effectiveDrafts = renewed.drafts
-        await writeSecret('session', effectiveSession)
-        await persistDrafts(effectiveDrafts)
-      } catch (error) {
-        const status = (error as { response?: { status?: number } }).response?.status
-        if (status === 401 || status === 403) {
-          lockVault(); setGate('attention'); return
+    openWorkspace()
+    void requestPersistentStorage()
+    void Promise.all([getBiometricUnlockAvailability(), hasBiometricUnlock()]).then(([availability, enabled]) => {
+      if (lockingRef.current) return
+      setBiometricAvailability(availability)
+      setBiometricEnabled(enabled)
+    })
+    if (!navigator.onLine) return
+    void (async () => {
+      if (renewOnline) {
+        try {
+          const lease = await fieldApi.renewLease(next.token)
+          if (lockingRef.current) return
+          const renewed = applyRenewedLease(next, effectiveDrafts, lease)
+          effectiveSession = renewed.session
+          effectiveDrafts = renewed.drafts
+          setSession(effectiveSession)
+          setDrafts(effectiveDrafts)
+          await writeSecret('session', effectiveSession)
+          await persistDrafts(effectiveDrafts)
+        } catch (error) {
+          const status = (error as { response?: { status?: number } }).response?.status
+          if (status === 401 || status === 403) {
+            lockingRef.current = true
+            lockVault(); setGate('attention'); return
+          }
+          if (!lockingRef.current) setNotice({ kind: 'warning', title: 'Online refresh unavailable', message: 'Saved field data is open. Reconnect to refresh authorization and reference data.' })
+          return
         }
-        if (!cached || !canFinalizeWithLease(next.offline_lease)) throw error
       }
-    }
-    setSession(effectiveSession)
-    setDrafts(effectiveDrafts)
-    if (navigator.onLine) {
+      if (lockingRef.current) return
       try {
         const downloaded = await fieldApi.bootstrap(effectiveSession.token)
-        setBootstrap(downloaded); refreshedBootstrap = true; await writeSecret('bootstrap', downloaded)
-      } catch (error) { if (!cached) throw error }
-      await refreshOperationalData(effectiveSession.token)
-    }
-    setBiometricAvailability(await getBiometricUnlockAvailability())
-    setBiometricEnabled(await hasBiometricUnlock())
-    if (!canOpenCached) openWorkspace(!refreshedBootstrap && Boolean(cached))
+        if (lockingRef.current) return
+        setBootstrap(downloaded)
+        await writeSecret('bootstrap', downloaded)
+      } catch {
+        if (!lockingRef.current) setNotice({ kind: 'warning', title: 'Online refresh unavailable', message: 'Saved field data is open. Reconnect to refresh authorization and reference data.' })
+        return
+      }
+      if (!lockingRef.current) await refreshOperationalData(effectiveSession.token)
+    })()
   }, [persistDrafts, refreshOperationalData])
 
   // Auto-bind accurate background GPS position to active draft with zero delay
@@ -337,10 +347,15 @@ export default function App() {
   }, [gate, online, refreshOperationalData, session])
 
   const completeUnlock = useCallback(async (result: VaultUnlockResult) => {
-    const saved = await readSecret<FieldSession>('session')
-    if (!saved) { lockVault(); setGate('attention'); return }
-    if (result.requiresPinMigration) { setSession(saved); setGate('migration'); return }
-    await hydrate(saved)
+    try {
+      const saved = await readSecret<FieldSession>('session')
+      if (!saved) { lockVault(); setGate('attention'); return }
+      if (result.requiresPinMigration) { setSession(saved); setGate('migration'); return }
+      await hydrate(saved)
+    } catch {
+      lockVault()
+      throw new Error('Device verified, but the encrypted workspace could not be opened. Reload the app and try again.')
+    }
   }, [hydrate])
 
   const leaseValid = session ? canFinalizeWithLease(session.offline_lease) : false
@@ -709,12 +724,12 @@ function BiometricSetup({ availability, onEnable, onSkip }: { availability: Biom
 }
 
 function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Promise<void> }) {
-  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [compatibilityNote, setCompatibilityNote] = useState(''); const [busy, setBusy] = useState(false); const [canReturnToChoices, setCanReturnToChoices] = useState(false); const [mode, setMode] = useState<'checking' | 'biometric' | 'choices' | 'pin'>('checking')
+  const [pin, setPin] = useState(''); const [error, setError] = useState(''); const [compatibilityNote, setCompatibilityNote] = useState(''); const [busy, setBusy] = useState(false); const [opening, setOpening] = useState<'pin' | 'biometric' | null>(null); const [canReturnToChoices, setCanReturnToChoices] = useState(false); const [mode, setMode] = useState<'checking' | 'biometric' | 'choices' | 'pin'>('checking')
   const biometricAttempt = useRef<Promise<void> | null>(null); const automaticAttempted = useRef(false)
   const finishBiometric = useCallback(() => {
     if (biometricAttempt.current) return biometricAttempt.current
     setMode('biometric'); setBusy(true); setError('')
-    const attempt = (async () => { try { await onUnlocked(await unlockVaultWithBiometrics()) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Biometric unlock failed. Use the device PIN.'); setMode('choices') } finally { setBusy(false) } })()
+    const attempt = (async () => { try { const result = await unlockVaultWithBiometrics(); setOpening('biometric'); await onUnlocked(result) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Biometric unlock failed. Use the device PIN.'); setMode('choices') } finally { setBusy(false); setOpening(null) } })()
     biometricAttempt.current = attempt
     void attempt.finally(() => { if (biometricAttempt.current === attempt) biometricAttempt.current = null })
     return attempt
@@ -732,12 +747,13 @@ function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Pro
     })
     return () => { cancelled = true }
   }, [finishBiometric])
-  const finishPin = async (nextPin: string) => { if (!/^\d{4}$/.test(nextPin) || busy) return; setBusy(true); setError(''); try { await onUnlocked(await unlockVault(nextPin)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.'); setPin('') } finally { setBusy(false) } }
+  const finishPin = async (nextPin: string) => { if (!/^\d{4}$/.test(nextPin) || busy) return; setBusy(true); setError(''); try { const result = await unlockVault(nextPin); setOpening('pin'); await onUnlocked(result) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.'); setPin('') } finally { setBusy(false); setOpening(null) } }
   return <SecurityMessage title="Unlock field workspace" detail={mode === 'biometric' || mode === 'checking' ? 'Confirm your identity using this device.' : undefined} icon={mode === 'biometric' || mode === 'checking' ? <Fingerprint /> : <LockKeyhole />}>
-    {(mode === 'biometric' || mode === 'checking') && <div className="biometric-wait" role="status"><span className="biometric-pulse"><Fingerprint /></span><strong>{busy ? 'Waiting for device verification…' : 'Checking biometric enrollment…'}</strong></div>}
+    {(mode === 'biometric' || mode === 'checking') && <div className="biometric-wait" role="status"><span className="biometric-pulse"><Fingerprint /></span><strong>{opening === 'biometric' ? 'Device verified. Opening secure workspace…' : busy ? 'Waiting for device verification…' : 'Checking biometric enrollment…'}</strong></div>}
     {mode === 'choices' && <div className="auth-form unlock-choices-container"><div className="unlock-choices-card"><button type="button" className="unlock-choice-btn unlock-choice-bio" disabled={busy} onClick={() => void finishBiometric()}><span className="unlock-choice-icon-wrap"><Fingerprint size={28} /></span><span className="unlock-choice-label">Try biometric again</span></button><div className="unlock-choices-divider" /><button type="button" className="unlock-choice-btn unlock-choice-pin" onClick={() => { setPin(''); setError(''); setCanReturnToChoices(true); setMode('pin') }}><span className="unlock-choice-icon-wrap"><LockKeyhole size={28} /></span><span className="unlock-choice-label">Use device PIN</span></button></div>{error && <p className="form-error" role="alert">{error}</p>}</div>}
     {mode === 'pin' && <div className="auth-form pin-form">
       <DevicePinInput autoFocus disabled={busy} length={4} label="4-digit device PIN" value={pin} onChange={(next) => { setError(''); setPin(next); if (next.length === 4) void finishPin(next) }} />
+      {opening === 'pin' && <p className="compatibility-note" role="status">PIN verified. Opening secure workspace…</p>}
       {canReturnToChoices && <button type="button" className="text-button pin-back-button" disabled={busy} onClick={() => { setPin(''); setError(''); setCanReturnToChoices(false); setMode('choices') }}><ArrowLeft size={17} />Back to unlock options</button>}
       {compatibilityNote && <p className="compatibility-note" role="status">{compatibilityNote}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}

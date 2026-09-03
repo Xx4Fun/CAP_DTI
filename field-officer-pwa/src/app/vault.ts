@@ -365,7 +365,10 @@ export async function unlockVaultWithBiometrics(provider: VaultBiometricProvider
     const result = { requiresPinMigration: metadata.pinLength !== 4 }
     if (!result.requiresPinMigration) await rememberVaultSession(dataKey)
     return result
-  } catch {
+  } catch (error) {
+    const name = error && typeof error === 'object' && 'name' in error ? String(error.name) : ''
+    if (name === 'NotAllowedError') throw new Error('Biometric verification was canceled or timed out. Try again or use the device PIN.')
+    if (name === 'NotFoundError' || name === 'InvalidStateError') throw new Error('The saved biometric credential is no longer available. Use the device PIN, then re-enable biometric unlock in Profile.')
     throw new Error('Biometric verification was not completed. Use the device PIN.')
   }
 }

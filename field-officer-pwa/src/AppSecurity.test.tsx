@@ -151,7 +151,8 @@ describe('field workspace security flow', () => {
     await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('bootstrap', expect.objectContaining({ version: 'fresh' })))
   })
 
-  it('waits for renewal when cached authorization expired and opens with refreshed data', async () => {
+  it('opens cached data immediately when authorization expired while renewal continues', async () => {
+    const leaseRefresh = deferred<typeof fixtures.session.offline_lease>()
     const expiredSession = { ...fixtures.session, offline_lease: { id: 'lease-old', expires_at: '2020-01-01T00:00:00Z' } }
     fixtures.vault.hasVault.mockResolvedValue(true)
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
@@ -172,10 +173,14 @@ describe('field workspace security flow', () => {
       ],
       srp_bulletins: [], recent_prices: [],
     })
+    fixtures.api.renewLease.mockReturnValue(leaseRefresh.promise)
     render(<App />)
 
     fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
 
+    expect(await screen.findByText('1 active store')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Offline authorization expired')
+    leaseRefresh.resolve({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
     expect(await screen.findByText('2 active stores')).toBeInTheDocument()
     expect(screen.queryByText('1 active store')).not.toBeInTheDocument()
   })
@@ -896,6 +901,55 @@ describe('field workspace security flow', () => {
     expect(fixtures.vault.unlockVaultWithBiometrics).toHaveBeenCalledTimes(1)
     rejectBiometric(new Error('Biometric verification was not completed.'))
     expect(await screen.findByRole('button', { name: /Try biometric again/i })).toBeInTheDocument()
+  })
+
+  it('does not report a stalled online refresh as a biometric failure', async () => {
+    const leaseRefresh = deferred<typeof fixtures.session.offline_lease>()
+    const expiredSession = { ...fixtures.session, offline_lease: { id: 'lease-old', expires_at: '2020-01-01T00:00:00Z' } }
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.hasBiometricUnlock.mockResolvedValue(true)
+    fixtures.vault.getVaultPinLength.mockResolvedValue(4)
+    fixtures.vault.getBiometricUnlockAvailability.mockResolvedValue('available')
+    fixtures.vault.unlockVaultWithBiometrics.mockResolvedValue({ requiresPinMigration: false })
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
+      session: expiredSession,
+      bootstrap: { version: 'cached', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] },
+    })[key])
+    fixtures.api.renewLease.mockReturnValue(leaseRefresh.promise)
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
+
+    render(<App />)
+
+    expect(await screen.findByText(/Good day, Ana/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Try biometric again/i })).not.toBeInTheDocument()
+    leaseRefresh.resolve({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
+  })
+
+  it('distinguishes a verified PIN from a local workspace storage failure', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === 'bootstrap') throw new Error('IndexedDB unavailable')
+      return undefined
+    })
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Device verified, but the encrypted workspace could not be opened')
+    expect(fixtures.vault.lockVault).toHaveBeenCalled()
+  })
+
+  it('shows when the PIN is verified while local workspace data opens', async () => {
+    const savedSession = deferred<typeof fixtures.session>()
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => key === 'session' ? savedSession.promise : undefined)
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+    expect(await screen.findByRole('status')).toHaveTextContent('PIN verified. Opening secure workspace')
+    savedSession.resolve(fixtures.session)
   })
 
   it('treats missing PIN-length metadata as four digits and auto-unlocks without a submit button', async () => {
