@@ -45,9 +45,13 @@ describe('field visit workflow', () => {
     expect(resolveClientReference(bulletin, 'standard', [])).toEqual({ status: 'available', type: 'standard_srp', value: 50 })
   })
 
-  it('fails closed when authoritative reference provenance is incomplete', () => {
+  it('fails closed when authoritative emergency reference provenance is incomplete', () => {
     const bulletin = { id: 1, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, commodity_key: 'rice', source_reference: 'SRP-2026', effective_date: '2026-08-01' }
     expect(resolveClientReference(bulletin, 'emergency', [{ id: 1, commodity_key: 'rice', price_type: 'PRICE_FREEZE', authoritative_price: 55, effective_from: '2026-08-15', effective_until: null, source_reference: null }])).toEqual({ status: 'unavailable', type: 'emergency_ceiling', value: null })
-    expect(resolveClientReference({ ...bulletin, source_reference: null }, 'standard', [])).toEqual({ status: 'unavailable', type: 'standard_srp', value: null })
+  })
+
+  it('uses an effective standard baseline when its source reference is missing', () => {
+    const bulletin = { id: 1, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, commodity_key: null, source_reference: null, effective_date: '2026-08-01' }
+    expect(resolveClientReference(bulletin, 'standard', [])).toEqual({ status: 'available', type: 'standard_srp', value: 50 })
   })
 })

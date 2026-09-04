@@ -85,7 +85,7 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('Gaisano Grand Antique')).toBeInTheDocument()
     expect(screen.getByText('DTI Verified')).toBeInTheDocument()
     expect(screen.getByText(/prices recorded/i)).toHaveTextContent('2 prices recorded')
-    expect(screen.getByText(/Enter prices only for commodities checked in this store/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Enter prices only for commodities checked in this store/i)).not.toBeInTheDocument()
     expect(screen.getByText(/1 for review/i)).toBeInTheDocument()
 
     // 4 Review Filter Pills in Row 2
@@ -124,7 +124,7 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('Review visit evidence')).toBeInTheDocument()
   })
 
-  it('shows a listed SRP while keeping comparison unavailable when its source is missing', () => {
+  it('compares against a listed provisional SRP when its source is missing', () => {
     const bulletin = { ...mockBulletins[0], source_reference: null }
     render(
       <DtiMonitoringSheet
@@ -136,7 +136,8 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     )
 
     expect(screen.getByText('₱12.00')).toBeInTheDocument()
-    expect(screen.getByText('Reference unavailable')).toBeInTheDocument()
+    expect(screen.getByText('+8.3%')).toBeInTheDocument()
+    expect(screen.queryByText('Reference unavailable')).not.toBeInTheDocument()
   })
 
   it('filters items correctly using the 4 review filter pills', () => {

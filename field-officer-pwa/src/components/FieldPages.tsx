@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, CheckCircle2, ChevronDown, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
-  History, LockKeyhole, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, UserRound, Wifi, WifiOff,
+  History, LockKeyhole, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, UserRound, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import type { BiometricAvailability } from '../app/vault'
@@ -46,7 +46,6 @@ export function HomePage({
   completedToday,
   officerPosition,
   activeDraft,
-  online,
   authorizationValid,
   verificationCount = 0,
   draftCount = 0,
@@ -75,14 +74,6 @@ export function HomePage({
       <div>
         <h1 tabIndex={-1}>Good day, {firstName}</h1>
         <p>Your field workspace is ready for today’s monitoring work.</p>
-      </div>
-      <div className="field-header-badge-group">
-        <span className={`network-chip ${online ? 'online' : ''} ${!authorizationValid ? 'lease-warn' : ''}`}>
-          {online ? <Wifi size={14} /> : <WifiOff size={14} />}
-          {online
-            ? (authorizationValid ? 'Online · Authorized' : 'Online · Lease Expired')
-            : (authorizationValid ? 'Working offline · Vault Active' : 'Offline · Lease Expired')}
-        </span>
       </div>
     </div>
 
@@ -128,7 +119,7 @@ export function HomePage({
 
     <section className={`field-protocol-strip ${bootstrap.protocol?.mode === 'emergency' ? 'emergency' : ''}`} aria-label="Active monitoring protocol">
       <div><ShieldCheck /><span><strong>{bootstrap.protocol?.mode === 'emergency' ? 'Emergency price protocol active' : 'Standard price monitoring'}</strong><small>{bootstrap.protocol?.mode === 'emergency' ? (bootstrap.protocol.declaration_reference || 'Use current regulatory ceilings') : 'Prices more than 10% above SRP are marked For review.'}</small></span></div>
-      <button type="button" className="text-button" onClick={() => onViewActivity(verificationCount ? 'verification' : 'work')}>{verificationCount} verification · {draftCount} draft{draftCount === 1 ? '' : 's'}</button>
+      <button type="button" className="text-button" onClick={() => onViewActivity(verificationCount ? 'verification' : 'work')}>{verificationCount} verification{verificationCount === 1 ? '' : 's'} · {draftCount} draft{draftCount === 1 ? '' : 's'}</button>
     </section>
 
     <section className="field-bento-section" aria-label="Field operation statistics">
@@ -146,7 +137,9 @@ export function HomePage({
           <span className="bento-subtext">Active DTI SRP baselines</span>
         </div>
         <div className="field-bento-card bento-sync">
-          <div className="bento-icon-wrap bento-icon-amber"><CloudOff size={22} /></div>
+          <div className={`bento-icon-wrap ${queueCount ? 'bento-icon-amber' : 'bento-icon-teal'}`}>
+            {queueCount ? <CloudOff size={22} /> : <CheckCircle2 size={22} />}
+          </div>
           <dt>Synchronization</dt>
           <dd className="bento-value">{queueCount} pending sync</dd>
           <span className="bento-subtext">{queueCount ? 'Encrypted on device' : 'All visits up to date'}</span>
@@ -259,7 +252,8 @@ export function MonitoringPage({
   const [tab, setTab] = useState<'verification' | 'work' | 'sync'>(initialTab)
   const [expandedQueue, setExpandedQueue] = useState<string | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
-  const sortedDrafts = [...drafts].sort((a, b) => b.started_at.localeCompare(a.started_at))
+  const actionableDrafts = drafts.filter((d) => d.store_id !== null || d.items.length > 0)
+  const sortedDrafts = [...actionableDrafts].sort((a, b) => b.started_at.localeCompare(a.started_at))
 
   const toggleQueueItem = (uuid: string) => {
     setExpandedQueue((prev) => (prev === uuid ? null : uuid))
@@ -270,7 +264,7 @@ export function MonitoringPage({
       <h1 className="sr-only" tabIndex={-1}>Monitoring</h1>
       <div className="field-monitoring-tabs" role="tablist" aria-label="Monitoring work">
         <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Field Verification <span>{requests.length}</span></button>
-        <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span>{drafts.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span>{actionableDrafts.length}</span></button>
         <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span>{queue.length}</span></button>
       </div>
 
@@ -289,7 +283,6 @@ export function MonitoringPage({
       </section>}
 
       {tab === 'work' && <div role="tabpanel">
-      {sortedDrafts.length > 0 && <div className="field-tab-action"><button type="button" className="primary-button field-start-another" disabled={!authorizationValid} onClick={() => onStart()}><Plus size={18} /><span>Start another visit</span></button></div>}
       {sortedDrafts.length ? sortedDrafts.map((activeDraft) => {
         const activeStore = bootstrap.stores.find((store) => store.id === activeDraft.store_id)
         const activeStoreName = activeStore?.store_name || (activeDraft.store_id ? `Store #${activeDraft.store_id}` : 'Store not yet chosen')
@@ -351,33 +344,14 @@ export function MonitoringPage({
                 <span>Resume inspection</span>
               </button>
 
-              {confirmDiscard !== activeDraft.client_uuid ? (
-                <button
-                  type="button"
-                  className="secondary-button field-draft-discard-trigger"
-                  onClick={() => setConfirmDiscard(activeDraft.client_uuid)}
-                >
-                  <Trash2 size={16} />
-                  <span>Discard draft</span>
-                </button>
-              ) : (
-                <div className="field-discard-confirm">
-                  <span>Discard this draft?</span>
-                  <button
-                    type="button"
-                    className="danger-button"
-                    onClick={() => {
-                      setConfirmDiscard(null)
-                      onDiscard(activeDraft.client_uuid)
-                    }}
-                  >
-                    Yes, discard
-                  </button>
-                  <button type="button" className="secondary-button" onClick={() => setConfirmDiscard(null)}>
-                    Keep
-                  </button>
-                </div>
-              )}
+              <button
+                type="button"
+                className="secondary-button field-draft-discard-trigger"
+                onClick={() => setConfirmDiscard(activeDraft.client_uuid)}
+              >
+                <Trash2 size={16} />
+                <span>Discard draft</span>
+              </button>
             </div>
           </div>
         </section>
@@ -402,6 +376,47 @@ export function MonitoringPage({
           </button>
         </section>
       )}
+
+      {confirmDiscard && (() => {
+        const targetDraft = drafts.find((d) => d.client_uuid === confirmDiscard)
+        const targetStore = bootstrap.stores.find((s) => s.id === targetDraft?.store_id)
+        const storeName = targetStore?.store_name || (targetDraft?.store_id ? `Store #${targetDraft.store_id}` : 'Store not yet chosen')
+        return (
+          <div className="field-dialog-backdrop" role="presentation" onClick={() => setConfirmDiscard(null)}>
+            <section
+              className="field-dialog field-discard-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="field-discard-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="field-discard-dialog-icon" aria-hidden="true">
+                <Trash2 size={24} />
+              </div>
+              <h2 id="field-discard-title">Discard this draft?</h2>
+              <p>
+                The unfinished monitoring visit for <strong>{storeName}</strong> will be permanently deleted from this device. Any recorded prices will be lost.
+              </p>
+              <div className="field-dialog-actions">
+                <button type="button" className="secondary-button" onClick={() => setConfirmDiscard(null)}>
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => {
+                    const uuid = confirmDiscard
+                    setConfirmDiscard(null)
+                    onDiscard(uuid)
+                  }}
+                >
+                  Yes, discard
+                </button>
+              </div>
+            </section>
+          </div>
+        )
+      })()}
       </div>}
 
       {tab === 'sync' && <section className="field-card-section field-sync-section" aria-label="Queued offline visits" role="tabpanel">

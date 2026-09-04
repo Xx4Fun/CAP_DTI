@@ -16,7 +16,7 @@ import { NotificationDrawer } from './components/NotificationDrawer'
 import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, isBlankDraft } from './app/workflow'
+import { canFinalizeVisit, createDraft, hasDraftActivity, isBlankDraft } from './app/workflow'
 import {
   archiveUnreadableDrafts, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
@@ -427,7 +427,12 @@ export default function App() {
     if (!session) return
     if (!leaseValid) { setNotice({ kind: 'warning', title: 'Authorization expired', message: 'Connect and unlock again before starting another official visit.' }); return }
     const next = createDraft(session.offline_lease.id, verificationRequestId)
-    if (storeId) next.store_id = storeId
+    if (storeId) {
+      next.store_id = storeId
+      next.current_step = 1
+    } else {
+      next.current_step = 0
+    }
     setDrafts((current) => [...current, next])
     setActiveDraftId(next.client_uuid)
     setVisitStep(storeId ? 1 : 0)
@@ -497,7 +502,7 @@ export default function App() {
     startVisit(storeId)
   }
   const navigate = (next: TopLevelView) => {
-    if (view === 'visit' && visitStep === 0 && draft && isBlankDraft(draft)) {
+    if (view === 'visit' && draft && isBlankDraft(draft)) {
       setDrafts((current) => current.filter((item) => item.client_uuid !== draft.client_uuid))
       setActiveDraftId(null)
     }
@@ -507,12 +512,20 @@ export default function App() {
   const chooseAnotherStore = (deleteCurrent: boolean) => {
     if (!session || !draft) return
     const next = createDraft(session.offline_lease.id)
-    setDrafts((current) => [...(deleteCurrent ? current.filter((item) => item.client_uuid !== draft.client_uuid) : current), next])
+    next.current_step = 0
+    const keepCurrent = !deleteCurrent && hasDraftActivity(draft)
+    setDrafts((current) => [...(keepCurrent ? current : current.filter((item) => item.client_uuid !== draft.client_uuid)), next])
     setActiveDraftId(next.client_uuid)
     setVisitStep(0)
   }
   const shellView: TopLevelView = view
   const unreadCount = notifications.filter((item) => !item.read_at).length
+  const actionableDrafts = drafts.filter((d) => {
+    if (view === 'visit' && d.client_uuid === activeDraftId && isBlankDraft(d)) {
+      return false
+    }
+    return d.store_id !== null || d.items.length > 0
+  })
 
   return (
     <>
@@ -538,14 +551,14 @@ export default function App() {
           </SecurityMessage>}
         </AuthShell>
       ) : session ? (
-        <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={drafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>
+        <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={actionableDrafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>
           {notice && <FieldToast notice={notice} onDismiss={dismissNotice} />}
           {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
           {view === 'home' && (completion
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
-            : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={drafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={drafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} />)}
-          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={drafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); setVisitStep(resumed.items.length ? 2 : resumed.store_id ? 1 : 0); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onClaim={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
-          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={setVisitStep} draft={draft} bootstrap={bootstrap} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
+            : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} />)}
+          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onClaim={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
+          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); updateDraft({ ...draft, current_step: nextStep }) }} draft={draft} bootstrap={bootstrap} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
             const queuedVisit = { ...finished, sync_source: navigator.onLine ? finished.sync_source : 'offline_queue' as const }
@@ -818,7 +831,7 @@ function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Pro
     return () => { cancelled = true }
   }, [finishBiometric])
   const finishPin = async (nextPin: string) => { if (!/^\d{4}$/.test(nextPin) || busy) return; setBusy(true); setError(''); try { const result = await unlockVault(nextPin); setOpening('pin'); await onUnlocked(result) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unlock failed.'); setPin('') } finally { setBusy(false); setOpening(null) } }
-  return <SecurityMessage title="Unlock field workspace" detail={mode === 'biometric' || mode === 'checking' ? 'Confirm your identity using this device.' : undefined} icon={mode === 'biometric' || mode === 'checking' ? <Fingerprint /> : <LockKeyhole />}>
+  return <SecurityMessage title="Unlock field workspace" detail={mode === 'biometric' || mode === 'checking' ? 'Confirm your identity using this device.' : undefined} icon={mode === 'biometric' || mode === 'checking' ? <Fingerprint /> : <LockKeyhole />} hideIcon={mode !== 'pin'}>
     {(mode === 'biometric' || mode === 'checking') && <div className="biometric-wait" role="status"><span className="biometric-pulse"><Fingerprint /></span><strong>{opening === 'biometric' ? 'Device verified. Opening secure workspace…' : busy ? 'Waiting for device verification…' : 'Checking biometric enrollment…'}</strong></div>}
     {mode === 'choices' && <div className="auth-form unlock-choices-container"><div className="unlock-choices-card"><button type="button" className="unlock-choice-btn unlock-choice-bio" disabled={busy} onClick={() => void finishBiometric()}><span className="unlock-choice-icon-wrap"><Fingerprint size={28} /></span><span className="unlock-choice-label">Try biometric again</span></button><div className="unlock-choices-divider" /><button type="button" className="unlock-choice-btn unlock-choice-pin" onClick={() => { setPin(''); setError(''); setCanReturnToChoices(true); setMode('pin') }}><span className="unlock-choice-icon-wrap"><LockKeyhole size={28} /></span><span className="unlock-choice-label">Use device PIN</span></button></div>{error && <p className="form-error" role="alert">{error}</p>}</div>}
     {mode === 'pin' && <div className="auth-form pin-form">
@@ -831,7 +844,7 @@ function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Pro
   </SecurityMessage>
 }
 
-function SecurityMessage({ title, detail, icon, children }: { title: string; detail?: string; icon: React.ReactNode; children?: React.ReactNode }) { return <div className="security-content"><span className="security-icon" aria-hidden="true">{icon}</span><h2>{title}</h2>{detail && <p>{detail}</p>}{children}</div> }
+function SecurityMessage({ title, detail, icon, children, hideIcon }: { title: string; detail?: string; icon: React.ReactNode; children?: React.ReactNode; hideIcon?: boolean }) { return <div className="security-content"><span className={`security-icon ${hideIcon ? 'security-icon-hidden' : ''}`} aria-hidden="true">{hideIcon ? null : icon}</span><h2>{title}</h2>{detail && <p>{detail}</p>}{children}</div> }
 interface VisitWizardProps {
   step: number
   onStep: (step: number) => void
@@ -989,7 +1002,18 @@ function VisitWizard({
   return (
     <div className="visit-page">
       {step > 0 && <div className="visit-top-bar">
-        <button type="button" className="visit-back-btn" aria-label="Back to Choose Store" onClick={() => setConfirmExit(true)}>
+        <button
+          type="button"
+          className="visit-back-btn"
+          aria-label="Back to Choose Store"
+          onClick={() => {
+            if (hasDraftActivity(draft)) {
+              setConfirmExit(true)
+            } else {
+              onStep(0)
+            }
+          }}
+        >
           <ArrowLeft size={16} />
           <span>Back to Choose Store</span>
         </button>
@@ -1042,7 +1066,7 @@ function VisitWizard({
                     key={store.id}
                     aria-label={`Choose ${store.store_name} to record prices`}
                     onClick={() => {
-                      onDraft({ ...draft, store_id: store.id })
+                      onDraft({ ...draft, store_id: store.id, current_step: 1 })
                       setError('')
                       onStep(1)
                     }}
@@ -1090,7 +1114,11 @@ function VisitWizard({
               onUpdatePrice={handleUpdatePrice}
               onPrevious={() => {
                 setError('')
-                setConfirmExit(true)
+                if (hasDraftActivity(draft)) {
+                  setConfirmExit(true)
+                } else {
+                  onStep(0)
+                }
               }}
               onProceedToReview={() => {
                 if (!draft.items.length) {
@@ -1107,6 +1135,8 @@ function VisitWizard({
         {/* Step 3: Review and sign */}
         {step === 2 && (
           <div className="step-content">
+            <h2>Store Representative & Dual Signatures</h2>
+            <p>Enter on-duty personnel details and secure dual official signatures.</p>
             <div className="representative-fields">
               <label>
                 Store representative name

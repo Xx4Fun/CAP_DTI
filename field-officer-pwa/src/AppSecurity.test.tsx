@@ -684,9 +684,7 @@ describe('field workspace security flow', () => {
     expect(screen.queryByTestId('field-sidebar')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Back to Choose Store' })[0])
-    expect(screen.getByRole('heading', { name: 'Choose another store?' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue editing' }))
-    expect(screen.getByText('DTI Verified')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Choose a store' })).toBeInTheDocument()
   })
 
   it('shows and clears the Step 1 no-results state while preserving alphabetical fallback order', async () => {

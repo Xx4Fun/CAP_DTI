@@ -140,9 +140,6 @@ describe('Field top-level pages', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Yes, discard' }))
     expect(discard).toHaveBeenCalledWith('draft-2')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start another visit' }))
-    expect(start).toHaveBeenCalledTimes(1)
-
     fireEvent.click(screen.getByRole('tab', { name: 'Sync Queue 1' }))
     expect(screen.getByText('Pending upload')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Sync all now' }))

@@ -50,6 +50,7 @@ export interface VisitDraft {
   representative: { name: string; title: string }
   signatures: { officer_png_base64: string; representative_png_base64: string }
   location: VisitLocation | null
+  current_step?: number
   sync_source: 'online' | 'offline_queue'
   client_version: string
 }

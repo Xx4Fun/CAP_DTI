@@ -336,6 +336,11 @@ html, body, #root {
   height: 28px;
 }
 
+.security-icon.security-icon-hidden {
+  visibility: hidden;
+  background: transparent;
+}
+
 .security-content h2 {
   font-size: 1.65rem;
   font-weight: 850;
@@ -1293,31 +1298,57 @@ html, body, #root {
   border-color: #ef4444;
 }
 
-.field-discard-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+.field-discard-dialog {
+  max-width: 440px;
+  padding: 24px;
+  border-radius: 18px;
+  text-align: left;
+}
+
+.field-discard-dialog-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 10px;
-  font-size: 0.82rem;
+  color: #dc2626;
+  display: grid;
+  place-items: center;
+  margin-bottom: 14px;
 }
 
-.danger-button {
-  background: #dc2626;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 0.78rem;
-  font-weight: 750;
-  cursor: pointer;
-  transition: background 0.15s ease;
+.field-discard-dialog h2 {
+  font-size: 1.25rem;
+  font-weight: 850;
+  color: #0f172a;
+  margin: 0 0 8px;
 }
 
-.danger-button:hover {
-  background: #b91c1c;
+.field-discard-dialog p {
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.field-discard-dialog .field-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 1px solid #f1f5f9;
+}
+
+@media (max-width: 480px) {
+  .field-discard-dialog .field-dialog-actions {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .field-discard-dialog .field-dialog-actions button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
 }
 
 .field-activity-empty-card {
@@ -2947,28 +2978,371 @@ html, body, #root {
   cursor: not-allowed;
 }
 
-@media (max-width: 600px) {
+/* ==========================================================================
+   Mobile-First Transformation: Step 2 DTI Price Monitoring Sheet
+   Converts rigid 5-col table into touch-friendly cards on phones & tablets
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* 1. Compact Store Identity Strip */
+  .dti-store-strip {
+    padding: 6px 12px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dti-store-address {
+    display: none;
+  }
+  .dti-store-name {
+    font-size: 0.88rem;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 2. Stacked Full-Width Search & Category Toolbar */
   .dti-matrix-toolbar {
-    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+    flex-direction: column;
   }
   .dti-search-pair {
     width: 100%;
+    flex-direction: column;
+    gap: 6px;
   }
+  .dti-matrix-search-box {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+  .dti-matrix-category-select {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  /* 3. Option B: Clean Snapped Horizontal Filter Pills */
   .dti-matrix-filter-pills {
     width: 100%;
-    justify-content: stretch;
+    display: flex;
+    gap: 6px;
+    padding: 4px 6px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .dti-matrix-filter-pills::-webkit-scrollbar {
+    display: none;
   }
   .dti-matrix-filter-pills button {
-    flex: 1;
+    flex: 0 0 auto;
+    min-width: 120px;
+    scroll-snap-align: start;
+    white-space: nowrap;
+    padding: 6px 12px;
+    font-size: 0.76rem;
+    font-weight: 750;
     text-align: center;
+    border-radius: 999px;
   }
+
+  /* 4. Canvas Container (Reclaimed Screen Real Estate) */
+  .dti-matrix-table-container {
+    height: auto;
+    max-height: calc(100vh - 195px);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: none;
+  }
+
+  /* 5. Hide Cramped Desktop 5-Column Headers */
+  .dti-matrix-table thead {
+    display: none;
+  }
+
+  .dti-matrix-table,
+  .dti-matrix-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  /* 6. Section & Classification Banners (Slim & Elegant) */
+  .dti-classification-banner {
+    display: block;
+    width: 100%;
+    margin: 10px 0 4px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #facc15;
+    background: #fef9c3 !important;
+    box-sizing: border-box;
+  }
+  .dti-classification-banner td {
+    display: block;
+    width: 100%;
+    padding: 5px 10px;
+    background: transparent !important;
+    color: #713f12;
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    border: none;
+    box-sizing: border-box;
+  }
+
+  .dti-category-banner {
+    display: block;
+    width: 100%;
+    margin: 4px 0 6px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc !important;
+    border-left: 3px solid #eab308;
+    box-sizing: border-box;
+  }
+  .dti-category-banner td {
+    display: block;
+    width: 100%;
+    padding: 5px 10px;
+    background: transparent !important;
+    color: #475569 !important;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    border: none;
+    box-sizing: border-box;
+  }
+
+  /* 7. Individual Touch-Friendly Commodity Cards */
+  .dti-item-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "desc unit"
+      "srp input"
+      "status status";
+    gap: 8px 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .dti-item-row:nth-child(even) {
+    background-color: #ffffff;
+  }
+
+  .dti-item-row.is-recorded {
+    background-color: #f0fdf4;
+    border-color: #86efac;
+    box-shadow: 0 2px 6px rgba(34, 197, 94, 0.08);
+  }
+
+  .dti-item-row.is-anomaly {
+    background-color: #fef2f2;
+    border-color: #fca5a5;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.08);
+  }
+
+  /* Row Area 1: Commodity Name */
+  .dti-item-desc {
+    grid-area: desc;
+    padding: 0;
+    vertical-align: top;
+    display: block;
+  }
+  .dti-item-name {
+    font-size: 0.92rem;
+    font-weight: 750;
+    color: #0f172a;
+    line-height: 1.35;
+  }
+
+  /* Row Area 2: Unit Badge */
+  .dti-item-unit {
+    grid-area: unit;
+    padding: 0;
+    text-align: right;
+    align-self: flex-start;
+    display: block;
+  }
+  .unit-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  /* Row Area 3: Reference SRP */
+  .dti-item-srp {
+    grid-area: srp;
+    padding: 0;
+    display: flex;
+    align-items: center;
+  }
+  .dti-item-srp .srp-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #334155;
+    font-size: 0.86rem;
+    font-weight: 800;
+  }
+  .dti-item-srp .srp-value::before {
+    content: "SRP";
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    padding-right: 2px;
+  }
+  .dti-item-srp .srp-none {
+    display: inline-flex;
+    padding: 4px 8px;
+    font-size: 0.74rem;
+    color: #94a3b8;
+  }
+
+  /* Row Area 4: Monitored Price Input (Seamless Single 44px Pill) */
+  .dti-item-input-cell {
+    grid-area: input;
+    padding: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .dti-price-entry-group {
+    width: auto;
+  }
+  .dti-price-input-box {
+    height: 44px;
+    padding: 0 10px;
+    min-width: 110px;
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .dti-price-input-box.has-value {
+    background: #ffffff;
+    border-color: #0284c7;
+  }
+  .dti-price-input-box.is-anomaly-input {
+    background: #fff5f5;
+    border-color: #ef4444;
+  }
+  .dti-price-input-box:focus-within {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+    background: #ffffff;
+  }
+  .dti-price-input-box .currency-symbol {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #64748b;
+    margin-right: 4px;
+    position: static;
+  }
+  .dti-price-input-box input {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    padding: 0 !important;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #0f172a;
+    width: 75px;
+    height: 40px;
+    text-align: right;
+  }
+
+  /* Row Area 5: Variance & Status Pill */
+  .dti-item-status-cell {
+    grid-area: status;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .dti-item-status-cell .dti-unrecorded-dash {
+    display: none;
+  }
+  .dti-variance-pill {
+    font-size: 0.74rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 750;
+  }
+
+  /* 8. Empty State */
+  .dti-matrix-empty {
+    display: block;
+    width: 100%;
+    padding: 24px 12px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  /* 9. Asymmetric Floating Bottom Bar */
   .dti-floating-bottom-bar {
-    gap: 8px;
-    padding: 6px 12px calc(6px + env(safe-area-inset-bottom)) 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px calc(8px + env(safe-area-inset-bottom)) 14px;
   }
-  .bottom-prev-btn, .proceed-review-btn {
-    flex: 1;
+  .bottom-prev-btn {
+    flex: 0 0 auto;
+    min-width: 90px;
+    padding: 0 10px;
+    height: 44px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  .proceed-review-btn {
+    flex: 1 1 auto;
+    height: 44px;
     justify-content: center;
+    font-size: 0.86rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  /* 10. Draft Actions Bar on Mobile */
+  .field-draft-actions-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .field-draft-resume {
+    justify-content: center;
+    width: 100%;
+  }
+  .field-draft-discard-trigger {
+    justify-content: center;
+    width: 100%;
   }
 }
 

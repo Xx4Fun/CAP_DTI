@@ -186,8 +186,6 @@ export function DtiMonitoringSheet({
         </div>
       </div>
 
-      <p className="dti-entry-guidance">Enter prices only for commodities checked in this store. Leave other rows blank.</p>
-
       {/* 2. 2-Row Sticky Search & Filter Toolbar */}
       <div className="dti-matrix-toolbar">
         {/* Row 1: Search + Category side-by-side */}

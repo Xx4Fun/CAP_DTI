@@ -18,6 +18,10 @@ export function isBlankDraft(draft: VisitDraft): boolean {
     && !draft.signatures.representative_png_base64
 }
 
+export function hasDraftActivity(draft: VisitDraft): boolean {
+  return !isBlankDraft(draft)
+}
+
 export function analyzeLine(line: VisitItem, baseline: number) {
   const variance = baseline > 0 ? ((line.recorded_price - baseline) / baseline) * 100 : 0
   return { variance_percent: Number(variance.toFixed(2)), is_anomaly: baseline > 0 && line.recorded_price > baseline * 1.1 }
@@ -46,7 +50,7 @@ export function resolveClientReference(bulletin: Bulletin, mode: 'standard' | 'e
       : { status: 'unavailable' as const, type: 'emergency_ceiling' as const, value: null }
   }
   const value = Number(bulletin.baseline_price)
-  return value > 0 && Boolean(bulletin.source_reference && bulletin.effective_date)
+  return value > 0 && Boolean(bulletin.effective_date)
     ? { status: 'available' as const, type: 'standard_srp' as const, value }
     : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
 }
