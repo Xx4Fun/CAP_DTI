@@ -54,9 +54,9 @@ describe('DTI Admin safeguards', () => {
     render(<ReportReviewPanel />)
     await user.click(await screen.findByRole('button', { name: /RPT-00042/i }))
 
-    expect(screen.getByRole('heading', { name: 'Original OCR values' })).toBeInTheDocument()
-    expect(screen.getByText(/Orig Rice/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Evaluator corrections' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Raw OCR payload' })).toBeInTheDocument()
+    expect(screen.getAllByText(/Orig Rice/)).toHaveLength(2)
+    expect(screen.getByRole('heading', { name: 'DTI evaluator findings' })).toBeInTheDocument()
     expect(screen.getAllByText(/49.50/)).toHaveLength(2)
     expect(screen.getByText(/Formal receipt \| Consumer report/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download private receipt evidence' })).toBeInTheDocument()

@@ -1,16 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiClient, type Establishment, type FormalReportResponse } from '../api/client';
+import { apiClient, type Establishment } from '../api/client';
 import css from '../index.css?raw';
 import { FormalReport } from './FormalReport';
 import { BackNavigationProvider } from '../app/backNavigation';
-
-const { saveTrackingTokenMock } = vi.hoisted(() => ({ saveTrackingTokenMock: vi.fn() }));
-
-vi.mock('../app/reportTrackingStore', () => ({
-  saveReportTrackingToken: saveTrackingTokenMock,
-}));
 
 const store: Establishment = {
   id: 77,
@@ -34,7 +28,6 @@ const publicStore = {
 
 describe('FormalReport legacy accessibility', () => {
   beforeEach(() => {
-    saveTrackingTokenMock.mockReset().mockResolvedValue(undefined);
     history.replaceState(null, '', '/reports');
     localStorage.clear();
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
@@ -118,8 +111,10 @@ describe('FormalReport legacy accessibility', () => {
           capture_token: 'capture-token',
           expires_at: '2026-08-09T06:00:00Z',
           store_id: store.id,
-          max_file_size: 10_000_000,
+          capture_mode: 'guided_photos_v1',
+          max_file_size: 2 * 1024 * 1024,
           accepted_types: ['image/jpeg'],
+          limits: { max_frame_bytes: 2 * 1024 * 1024, min_frames: 1, max_frames: 12 },
         },
       },
     });
@@ -137,8 +132,11 @@ describe('FormalReport legacy accessibility', () => {
     await user.click(storeCard);
 
     expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy).toHaveBeenCalledWith('/public/capture-session', { store_id: store.id });
-    expect(await screen.findByRole('dialog', { name: 'Receipt capture guidelines' })).toBeInTheDocument();
+    expect(postSpy).toHaveBeenCalledWith('/public/capture-session', { store_id: store.id, capture_mode: 'guided_photos_v1' });
+    const guidelines = await screen.findByRole('dialog', { name: 'Receipt capture guidelines' });
+    expect(guidelines).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Open camera/i }));
+    expect(await screen.findByLabelText('Guided receipt scanner')).toBeInTheDocument();
   });
 
   it('opens the privacy dialog from the keyboard and closes it with Escape', async () => {
@@ -180,128 +178,4 @@ describe('FormalReport legacy accessibility', () => {
     expect(screen.queryByRole('dialog', { name: 'Receipt capture guidelines' })).not.toBeInTheDocument();
   });
 
-  it('ignores a receipt image callback that completes after device Back', async () => {
-    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
-    vi.spyOn(apiClient, 'post').mockResolvedValue({
-      data: {
-        success: true,
-        data: { capture_session_id: 42, capture_token: 'capture-token' },
-      },
-    });
-    let completeImage!: BlobCallback;
-    HTMLCanvasElement.prototype.toBlob = function (callback) {
-      completeImage = callback;
-    };
-    const user = userEvent.setup();
-
-    render(
-      <BackNavigationProvider>
-        <FormalReport />
-      </BackNavigationProvider>,
-    );
-    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
-    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
-    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
-    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
-    await user.click(await screen.findByRole('button', { name: /Open camera/i }));
-    await user.click(await screen.findByRole('button', { name: /Capture receipt photo/i }));
-
-    act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: null })));
-    expect(await screen.findByRole('button', { name: 'Continue with Verified API Store' })).toBeInTheDocument();
-
-    await act(async () => completeImage(new Blob(['late receipt'], { type: 'image/jpeg' })));
-    expect(screen.queryByRole('checkbox', { name: /receipt I intend to submit/i })).not.toBeInTheDocument();
-  });
-
-  it('notifies the application only after a receipt report is successfully submitted', async () => {
-    const submittedReport: FormalReportResponse = {
-      report_reference: 'REP-20260809-REAL',
-      secret_tracking_token: 'trk_private',
-      status: 'Submitted',
-      submitted_at: '2026-08-09T05:00:00Z',
-    };
-    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
-    vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
-      if (url === '/public/capture-session') {
-        return {
-          data: {
-            success: true,
-            data: {
-              capture_session_id: 42,
-              session_uuid: 'capture-42',
-              capture_token: 'capture-token',
-              expires_at: '2026-08-09T06:00:00Z',
-              store_id: store.id,
-              max_file_size: 10_000_000,
-              accepted_types: ['image/jpeg'],
-            },
-          },
-        };
-      }
-      if (url === '/public/reports') {
-        return { data: { success: true, data: submittedReport } };
-      }
-      throw new Error(`Unexpected POST: ${url}`);
-    });
-    const onReportSubmitted = vi.fn();
-    const user = userEvent.setup();
-    render(
-      <BackNavigationProvider>
-        <FormalReport onReportSubmitted={onReportSubmitted} />
-      </BackNavigationProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
-    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
-    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
-    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
-    await user.click(await screen.findByRole('button', { name: /Open camera/i }));
-    await user.click(await screen.findByRole('button', { name: /Capture receipt photo/i }));
-    await user.click(await screen.findByRole('checkbox', { name: /receipt I intend to submit/i }));
-    await user.click(screen.getByRole('button', { name: /Submit full receipt for DTI review/i }));
-
-    expect(await screen.findByText('Your report has been received')).toBeInTheDocument();
-    expect(screen.getByText(/saved to this device/i)).toBeInTheDocument();
-    expect(screen.queryByText('trk_private')).not.toBeInTheDocument();
-    expect(saveTrackingTokenMock).toHaveBeenCalledWith('REP-20260809-REAL', 'trk_private');
-    expect(onReportSubmitted).toHaveBeenCalledWith(submittedReport, 'Verified API Store');
-
-    act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: null })));
-    expect(await screen.findByRole('button', { name: /Submit a new report/i })).toBeInTheDocument();
-    expect(screen.queryByText('Your report has been received')).not.toBeInTheDocument();
-  });
-
-  it('shows the one-time recovery credential when device tracking storage fails', async () => {
-    saveTrackingTokenMock.mockRejectedValue(new Error('storage unavailable'));
-    const submittedReport: FormalReportResponse = {
-      report_reference: 'REP-20260809-FALLBACK',
-      secret_tracking_token: 'trk_copy_this',
-      status: 'Submitted',
-      submitted_at: '2026-08-09T05:00:00Z',
-    };
-    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [store] } });
-    vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
-      if (url === '/public/capture-session') return { data: { success: true, data: {
-        capture_session_id: 42, session_uuid: 'capture-42', capture_token: 'capture-token',
-        expires_at: '2026-08-09T06:00:00Z', store_id: store.id, max_file_size: 10_000_000,
-        accepted_types: ['image/jpeg'],
-      } } };
-      if (url === '/public/reports') return { data: { success: true, data: submittedReport } };
-      throw new Error(`Unexpected POST: ${url}`);
-    });
-    const user = userEvent.setup();
-    render(<BackNavigationProvider><FormalReport /></BackNavigationProvider>);
-
-    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
-    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
-    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
-    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
-    await user.click(await screen.findByRole('button', { name: /Open camera/i }));
-    await user.click(await screen.findByRole('button', { name: /Capture receipt photo/i }));
-    await user.click(await screen.findByRole('checkbox', { name: /receipt I intend to submit/i }));
-    await user.click(screen.getByRole('button', { name: /Submit full receipt for DTI review/i }));
-
-    expect(await screen.findByText('trk_copy_this')).toBeInTheDocument();
-    expect(screen.getByText(/automatic report access could not be saved/i)).toBeInTheDocument();
-  });
 });

@@ -67,6 +67,8 @@ class ProcessReceiptEvidence implements ShouldQueue
                     'merchant' => $result['merchant'] ?? null,
                     'detected_total' => $result['detected_total'] ?? null,
                     'reason_code' => $result['reason_code'] ?? null,
+                    'warnings' => $result['warnings'] ?? [],
+                    'manual_review_required' => (bool) ($result['manual_review_required'] ?? false),
                 ],
             ]);
             $report->evidenceBundle?->update([
@@ -81,7 +83,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'previous_status' => 'Processing receipt',
                 'new_status' => $publicStatus,
                 'public_message' => match ($publicStatus) {
-                    'Ready for confirmation' => 'Receipt processing is complete. Review and confirm the detected items.',
+                    'Ready for confirmation' => 'Receipt processing is complete. Review the original evidence and read-only system extraction.',
                     'Needs recapture' => $this->safeReasonMessage($reasonCode),
                     default => 'Receipt processing could not be completed. Please try again.',
                 },
@@ -95,9 +97,9 @@ class ProcessReceiptEvidence implements ShouldQueue
     private function safeReasonMessage(string $reasonCode): string
     {
         return match ($reasonCode) {
-            'INSUFFICIENT_FRAMES' => 'The recording was too short or did not contain enough usable receipt views.',
+            'INSUFFICIENT_FRAMES' => 'No usable receipt image was captured.',
             'TEXT_UNREADABLE' => 'The receipt text was not clear enough to read. Keep it flat, well lit, and in focus.',
-            'INCOMPLETE_SCAN' => 'The recording did not show one continuous receipt from top to bottom.',
+            'INCOMPLETE_SCAN' => 'Adjacent receipt sections do not overlap enough to verify that the receipt is complete.',
             'STORE_NOT_CONFIRMED' => 'The store name could not be matched to the selected establishment.',
             'ITEMS_NOT_FOUND' => 'No complete receipt item lines could be verified.',
             'TOTAL_NOT_FOUND' => 'The receipt total was not visible or readable.',

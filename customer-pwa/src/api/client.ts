@@ -36,6 +36,7 @@ export interface SystemConfig {
   effective_date?: string;
   total_commodities?: number;
   receipt_continuous_capture_enabled?: boolean;
+  receipt_guided_capture_enabled?: boolean;
   receipt_web_push_enabled?: boolean;
   vapid_public_key?: string | null;
 }
@@ -46,6 +47,7 @@ export const defaultConfig: SystemConfig = {
   privacy_notice_version: '1.0',
   max_upload_size_mb: 5,
   allowed_mime_types: ['image/jpeg', 'image/png'],
+  receipt_guided_capture_enabled: true,
   last_updated_at: new Date().toISOString()
 };
 
@@ -216,10 +218,13 @@ export interface CaptureSessionResponse {
   capture_mode?: 'single_image_v1' | 'continuous_video_v1' | 'guided_photos_v1';
   max_file_size: number;
   accepted_types: string[];
+  capture_action?: 'full' | 'replace' | 'append';
+  upload_sequence?: number;
+  carried_sequences?: number[];
   limits?: {
-    max_duration_seconds: number;
-    max_video_bytes: number;
-    max_frame_bytes: number;
+    max_duration_seconds?: number;
+    max_video_bytes?: number;
+    max_frame_bytes?: number;
     min_frames: number;
     max_frames: number;
   };

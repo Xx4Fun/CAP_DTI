@@ -67,6 +67,17 @@ class AdminReceiptEvidenceTest extends TestCase
         $this->assertDatabaseHas('consumer_reports', ['id' => $draft->id, 'status' => 'Ready for confirmation']);
     }
 
+    public function test_admin_queue_reports_missing_legacy_files_as_unavailable(): void
+    {
+        $report = $this->createReport('MISSING', 'Submitted', true);
+        $report->update(['image_vault_path' => 'receipt_vault/missing.jpg']);
+
+        $this->getJson('/api/admin/reports')
+            ->assertOk()
+            ->assertJsonPath('data.0.report_reference', $report->report_reference)
+            ->assertJsonPath('data.0.evidence_available', false);
+    }
+
     public function test_admin_evidence_manifest_hides_paths_and_audits_authorized_asset_download(): void
     {
         $report = $this->createReport('EVIDENCE', 'Submitted', true);
@@ -117,6 +128,41 @@ class AdminReceiptEvidenceTest extends TestCase
         $this->get("/api/admin/reports/{$report->id}/evidence-assets/{$asset->id}")
             ->assertStatus(503)
             ->assertJsonPath('message', 'Audit trail is unavailable. Private evidence cannot be accessed safely.');
+    }
+
+    public function test_admin_can_review_original_assets_from_preserved_recapture_attempts(): void
+    {
+        $report = $this->createReport('ATTEMPTS', 'Submitted', true);
+        $report->evidenceBundle->update(['consumer_report_id' => $report->id, 'attempt_number' => 2]);
+        $oldSession = CaptureSession::create([
+            'session_uuid' => 'cs_'.Str::uuid(), 'store_id' => $this->store->id,
+            'capture_mode' => 'guided_photos_v1', 'processing_status' => 'finalized',
+            'token_hash' => hash('sha256', 'old-attempt'), 'expires_at' => now()->addHour(), 'is_used' => true,
+        ]);
+        $oldBundle = ReceiptEvidenceBundle::create([
+            'evidence_uuid' => (string) Str::uuid(),
+            'capture_session_id' => $oldSession->id,
+            'consumer_report_id' => $report->id,
+            'store_id' => $this->store->id,
+            'capture_mode' => 'guided_photos_v1',
+            'attempt_number' => 1,
+            'processing_status' => 'needs_recapture',
+        ]);
+        $path = "receipt-evidence/{$oldBundle->evidence_uuid}/source-0.jpg";
+        Storage::disk('receipt_evidence')->put($path, 'preserved-original');
+        $oldAsset = ReceiptEvidenceAsset::create([
+            'receipt_evidence_bundle_id' => $oldBundle->id,
+            'kind' => 'source_frame', 'sequence' => 0, 'disk' => 'receipt_evidence',
+            'path' => $path, 'mime_type' => 'image/jpeg', 'size_bytes' => 18,
+            'sha256' => hash('sha256', 'preserved-original'),
+        ]);
+
+        $this->getJson("/api/admin/reports/{$report->id}/evidence-manifest")
+            ->assertOk()
+            ->assertJsonPath('data.assets.0.id', $oldAsset->id)
+            ->assertJsonPath('data.assets.0.attempt_number', 1)
+            ->assertJsonPath('data.assets.0.is_current', false);
+        $this->get("/api/admin/reports/{$report->id}/evidence-assets/{$oldAsset->id}")->assertOk();
     }
 
     public function test_per_item_decisions_create_findings_but_count_one_receipt_incident(): void

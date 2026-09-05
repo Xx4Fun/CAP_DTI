@@ -22,7 +22,6 @@ class ReceiptEvidencePipeline
         private readonly ReceiptTextAggregator $textAggregator,
         private readonly ReceiptItemExtractor $itemExtractor,
         private readonly ReceiptFrameQualityEvaluator $qualityEvaluator,
-        private readonly ReceiptPreviewStitcher $previewStitcher,
         private readonly ReceiptFrameSampler $frameSampler,
         private readonly ReceiptOcrResultSelector $ocrResultSelector,
         private readonly ReceiptMerchantMatcher $merchantMatcher,
@@ -45,7 +44,8 @@ class ReceiptEvidencePipeline
                 ? $this->prepareVideoFrames($report, $temporaryDirectory)
                 : $this->prepareUploadedFrames($report, $temporaryDirectory);
 
-            if (count($frameCandidates) < 2) {
+            $minimumFrames = $report->capture_mode === 'continuous_video_v1' ? 2 : 1;
+            if (count($frameCandidates) < $minimumFrames) {
                 return $this->recaptureResult('INSUFFICIENT_FRAMES');
             }
 
@@ -74,6 +74,7 @@ class ReceiptEvidencePipeline
                     'sequence' => $frame['source_sequence'],
                     'timestamp_seconds' => $frame['timestamp_seconds'],
                     'status' => $ocr['status'] ?? 'OCR_FAILED',
+                    'quality' => $frame['quality'] ?? null,
                 ];
                 $lines = array_values(array_filter($ocr['lines'] ?? [], 'is_string'));
                 if ($lines === []) {
@@ -87,46 +88,61 @@ class ReceiptEvidencePipeline
                 ];
             }
 
-            if (count($frames) < 2) {
-                $technicalStatuses = ['OCR_UNAVAILABLE', 'OCR_TIMEOUT', 'OCR_FAILED'];
-                $statuses = array_column($ocrDiagnostics, 'status');
-                if ($statuses !== [] && array_diff($statuses, $technicalStatuses) === []) {
-                    return $this->failureResult((string) ($statuses[0] ?? 'OCR_FAILED'), $ocrDiagnostics);
-                }
+            $technicalStatuses = ['OCR_UNAVAILABLE', 'OCR_TIMEOUT', 'OCR_FAILED'];
+            $technicalFailure = collect($ocrDiagnostics)->first(
+                fn (array $diagnostic) => in_array($diagnostic['status'], $technicalStatuses, true),
+            );
+            if ($technicalFailure) {
+                return $this->failureResult((string) $technicalFailure['status'], $ocrDiagnostics);
+            }
 
+            $readableSequences = array_column($frames, 'sequence');
+            $unreadable = array_filter($frameCandidates, fn (array $frame) =>
+                ! in_array($frame['source_sequence'], $readableSequences, true)
+                && ! (bool) data_get($frame, 'quality.acceptable', false)
+            );
+            if ($unreadable !== []) {
                 return $this->recaptureResult('TEXT_UNREADABLE', ['ocr' => $ocrDiagnostics]);
             }
 
-            $continuity = $this->continuityAnalyzer->analyze($frames);
-            if ($continuity['status'] !== 'ready') {
-                return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
+            $warnings = [];
+            if (count($frames) < count($frameCandidates)) {
+                $warnings[] = $this->warning('OCR_INCOMPLETE');
             }
 
-            $headerLines = array_merge(...array_map(fn (array $frame) => $frame['lines'], array_slice($frames, 0, 2)));
-            $merchant = $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines);
+            if (count($frameCandidates) === 1) {
+                $continuity = ['status' => 'not_required', 'continuity_score' => 1.0, 'reasons' => []];
+            } elseif (count($frames) < count($frameCandidates)) {
+                $continuity = ['status' => 'unverified', 'continuity_score' => null, 'reasons' => ['ocr_incomplete']];
+            } else {
+                $continuity = $this->continuityAnalyzer->analyze($frames);
+                if ($continuity['status'] !== 'ready') {
+                    return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
+                }
+            }
+
+            $headerFrames = array_map(fn (array $frame) => $frame['lines'], array_slice($frames, 0, 2));
+            $headerLines = $headerFrames === [] ? [] : array_merge(...$headerFrames);
+            $merchant = $headerLines === []
+                ? ['status' => 'unverified']
+                : $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines);
             if ($merchant['status'] !== 'matched') {
-                return $this->recaptureResult('STORE_NOT_CONFIRMED', [
-                    'continuity' => $continuity, 'merchant' => $merchant, 'ocr' => $ocrDiagnostics,
-                ]);
+                $warnings[] = $this->warning('STORE_NOT_CONFIRMED');
             }
-
-            $this->vaultStitchedPreview($report, array_column($frameCandidates, 'path'), $temporaryDirectory);
 
             $lines = $this->textAggregator->merge(array_column($frames, 'lines'));
             $items = $this->itemExtractor->extract($lines);
             $total = $this->totalExtractor->extract($lines);
             if ($items === []) {
-                return $this->recaptureResult('ITEMS_NOT_FOUND', compact('continuity', 'merchant') + ['ocr' => $ocrDiagnostics]);
+                $warnings[] = $this->warning('ITEMS_NOT_FOUND');
             }
             if ($total === null) {
-                return $this->recaptureResult('TOTAL_NOT_FOUND', compact('continuity', 'merchant') + ['ocr' => $ocrDiagnostics]);
+                $warnings[] = $this->warning('TOTAL_NOT_FOUND');
             }
 
-            $itemSum = round(array_sum(array_column($items, 'observed_price')), 2);
-            if (abs($itemSum - $total) > 0.05) {
-                return $this->recaptureResult('TOTAL_MISMATCH', compact('continuity', 'merchant') + [
-                    'ocr' => $ocrDiagnostics, 'detected_total' => $total, 'item_sum' => $itemSum,
-                ]);
+            $itemSum = $items === [] ? null : round(array_sum(array_column($items, 'observed_price')), 2);
+            if ($itemSum !== null && $total !== null && abs($itemSum - $total) > 0.05) {
+                $warnings[] = $this->warning('TOTAL_MISMATCH');
             }
 
             return [
@@ -137,6 +153,9 @@ class ReceiptEvidencePipeline
                 'detected_total' => $total,
                 'continuity' => $continuity,
                 'merchant' => $merchant,
+                'warnings' => $warnings,
+                'manual_review_required' => $warnings !== [],
+                'item_sum' => $itemSum,
                 'frames_processed' => count($frames),
                 'ocr' => $ocrDiagnostics,
             ];
@@ -183,7 +202,7 @@ class ReceiptEvidencePipeline
                 'path' => $path,
                 'source_sequence' => (int) $asset->sequence,
                 'timestamp_seconds' => null,
-                'quality' => $asset->metadata_json['quality'] ?? null,
+                'quality' => $asset->metadata_json['quality'] ?? $this->qualityEvaluator->evaluate($path),
             ];
         }
 
@@ -229,25 +248,6 @@ class ReceiptEvidencePipeline
         );
     }
 
-    private function vaultStitchedPreview(ConsumerReport $report, array $framePaths, string $temporaryDirectory): void
-    {
-        $localPath = $temporaryDirectory.DIRECTORY_SEPARATOR.'stitched-preview.jpg';
-        $this->previewStitcher->stitch($framePaths, $localPath);
-        $bundle = $report->evidenceBundle;
-        $sha256 = hash_file('sha256', $localPath);
-        $path = "receipt-evidence/{$bundle->evidence_uuid}/stitched-preview-{$sha256}.jpg";
-        $disk = (string) config('filesystems.receipt_evidence_disk', 'receipt_evidence');
-        Storage::disk($disk)->put($path, File::get($localPath), ['visibility' => 'private']);
-        ReceiptEvidenceAsset::updateOrCreate(
-            ['receipt_evidence_bundle_id' => $bundle->id, 'kind' => 'stitched_preview', 'sequence' => 0],
-            [
-                'disk' => $disk, 'path' => $path, 'original_filename' => null,
-                'mime_type' => 'image/jpeg', 'size_bytes' => File::size($localPath),
-                'sha256' => $sha256, 'metadata_json' => ['frame_count' => count($framePaths)],
-            ],
-        );
-    }
-
     private function recaptureResult(string $reasonCode, array $diagnostics = []): array
     {
         return [
@@ -259,6 +259,8 @@ class ReceiptEvidencePipeline
                 'status' => 'needs_recapture', 'continuity_score' => 0.0, 'reasons' => [strtolower($reasonCode)],
             ],
             'merchant' => $diagnostics['merchant'] ?? ['status' => 'unverified'],
+            'warnings' => [],
+            'manual_review_required' => false,
             'diagnostics' => $diagnostics,
         ];
     }
@@ -272,7 +274,21 @@ class ReceiptEvidencePipeline
             'items' => [],
             'continuity' => null,
             'merchant' => ['status' => 'unverified'],
+            'warnings' => [],
+            'manual_review_required' => false,
             'diagnostics' => ['ocr' => $ocrDiagnostics],
         ];
+    }
+
+    private function warning(string $code): array
+    {
+        return ['code' => $code, 'message' => match ($code) {
+            'OCR_INCOMPLETE' => 'One or more clear receipt sections could not be fully extracted by OCR.',
+            'STORE_NOT_CONFIRMED' => 'The store name could not be confidently matched by OCR.',
+            'ITEMS_NOT_FOUND' => 'No complete receipt item lines were extracted.',
+            'TOTAL_NOT_FOUND' => 'The receipt total was not extracted.',
+            'TOTAL_MISMATCH' => 'The extracted item amounts do not match the extracted total.',
+            default => 'The system extraction requires DTI review.',
+        }];
     }
 }

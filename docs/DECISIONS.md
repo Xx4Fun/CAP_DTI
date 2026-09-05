@@ -8,6 +8,16 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-05 — Receipt evidence capture and OCR trust boundary
+
+- New Customer receipt reports use one or more guided still images; continuous video remains supported only for historical evidence.
+- Original source images are canonical evidence. Long receipts use ordered overlapping sections, and new captures do not create stitched evidence derivatives.
+- New report sessions reject the legacy single-image submission path and prohibit Customer-supplied OCR payloads; stored originals must match their server-recorded SHA-256 when used or served.
+- A section retake, added section, or full restart creates a new immutable evidence attempt and preserves prior attempts for Admin inspection.
+- Customers may review evidence and system extraction but cannot edit any merchant, date, item, quantity, price, total, or other OCR-derived value. Customer correction columns remain unused for new reports and retained only for historical compatibility.
+- Poor or incomplete images require recapture. Clear images with uncertain extraction proceed with warnings for DTI review. Technical OCR failures use processing retry against the same evidence.
+- Admin review separates original evidence, raw OCR/system extraction, and DTI evaluator findings. Missing evidence is shown explicitly and never replaced by simulated receipt content.
+
 ## 2026-09-01 — Admin establishment publication
 
 - Establishments created by a DTI manager are active, verified by that manager, and public immediately; there is no separate store-verification step.

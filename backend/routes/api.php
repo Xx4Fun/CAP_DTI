@@ -52,9 +52,11 @@ Route::prefix('public')->group(function () {
         Route::delete('/capture-sessions/{session}', [ReceiptEvidenceController::class, 'destroy']);
         Route::post('/reports', [PublicPwaController::class, 'submitReport']);
         Route::get('/reports/{reference}/processing', [ReceiptReportController::class, 'processing']);
+        Route::post('/reports/{reference}/retry-processing', [ReceiptReportController::class, 'retryProcessing']);
         Route::post('/reports/{reference}/recapture-session', [ReceiptReportController::class, 'startRecapture']);
         Route::post('/reports/{reference}/recapture', [ReceiptReportController::class, 'finalizeRecapture']);
         Route::get('/reports/{reference}/review', [ReceiptReportController::class, 'review']);
+        Route::get('/reports/{reference}/evidence-assets/{asset}', [ReceiptReportController::class, 'evidenceAsset']);
         Route::post('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'subscribe']);
         Route::delete('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'unsubscribe']);
         Route::post('/reports/{reference}/confirm-ocr', [ReceiptReportController::class, 'confirm']);

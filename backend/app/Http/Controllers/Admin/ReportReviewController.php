@@ -25,13 +25,13 @@ class ReportReviewController extends Controller
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:50',
         ]);
-        $paginator = ConsumerReport::with(['store', 'items.srp', 'evidenceBundle.assets', 'verificationRequest'])
+        $paginator = ConsumerReport::with(['store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'verificationRequest'])
             ->whereNotIn('status', ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'])
             ->latest()->paginate($filters['per_page'] ?? 20);
         $reports = $paginator->getCollection()->map(fn ($report) => [
             'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
             'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
-            'raw_ocr_json' => $report->raw_ocr_json, 'consumer_confirmed_json' => $report->consumer_confirmed_json,
+            'raw_ocr_json' => $report->raw_ocr_json,
             'evaluator_confirmed_json' => $report->evaluator_confirmed_json,
             'verification_request' => $report->verificationRequest ? [
                 'id' => $report->verificationRequest->id,
@@ -44,7 +44,9 @@ class ReportReviewController extends Controller
                 'completed_at' => $report->verificationRequest->completed_at,
                 'cancelled_at' => $report->verificationRequest->cancelled_at,
             ] : null,
-            'evidence_available' => (bool) $report->image_vault_path || (bool) $report->evidenceBundle?->assets->isNotEmpty(),
+            'evidence_available' => ($report->image_vault_path && Storage::disk('local')->exists($report->image_vault_path))
+                || (bool) $report->evidenceBundle?->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path))
+                || $report->evidenceAttempts->flatMap->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path)),
             'evidence_summary' => $report->evidenceBundle ? [
                 'capture_mode' => $report->evidenceBundle->capture_mode,
                 'processing_status' => $report->evidenceBundle->processing_status,
@@ -64,8 +66,6 @@ class ReportReviewController extends Controller
                 'srp_id' => $item->srp_id,
                 'commodity_key' => $item->srp?->commodity_key,
                 'commodity_name' => $item->srp?->commodity_name ?? $item->item_name,
-                'consumer_correction_json' => $item->consumer_correction_json,
-                'consumer_confirmed' => $item->consumer_confirmed,
                 'evaluator_decision_json' => $item->evaluator_decision_json,
             ])->values(),
         ]);
@@ -242,23 +242,35 @@ class ReportReviewController extends Controller
     public function evidenceManifest(Request $request, ConsumerReport $report, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-        $report->load('evidenceBundle.assets');
+        $report->load(['evidenceBundle.assets', 'evidenceAttempts.assets']);
         abort_unless($report->evidenceBundle, 404);
+        $bundles = $report->evidenceAttempts;
+        if (! $bundles->contains('id', $report->evidenceBundle->id)) {
+            $bundles->push($report->evidenceBundle);
+        }
+        $assets = $bundles->flatMap(fn ($bundle) => $bundle->assets->map(fn ($asset) => [
+            'id' => $asset->id,
+            'kind' => $asset->kind,
+            'sequence' => $asset->sequence,
+            'mime_type' => $asset->mime_type,
+            'size_bytes' => $asset->size_bytes,
+            'sha256' => $asset->sha256,
+            'metadata' => $asset->metadata_json,
+            'attempt_number' => (int) ($bundle->attempt_number ?? 1),
+            'is_current' => $bundle->id === $report->receipt_evidence_bundle_id,
+        ]))->sortBy(fn (array $asset) => sprintf('%04d-%02d-%04d', $asset['attempt_number'], match ($asset['kind']) {
+            'source_frame' => 0,
+            'original_video' => 1,
+            'stitched_preview' => 2,
+            default => 3,
+        }, $asset['sequence']))->values();
 
         return response()->json(['data' => [
             'capture_mode' => $report->evidenceBundle->capture_mode,
             'processing_status' => $report->evidenceBundle->processing_status,
             'continuity' => data_get($report->evidenceBundle->processing_result_json, 'continuity'),
             'merchant' => data_get($report->evidenceBundle->processing_result_json, 'merchant'),
-            'assets' => $report->evidenceBundle->assets->map(fn ($asset) => [
-                'id' => $asset->id,
-                'kind' => $asset->kind,
-                'sequence' => $asset->sequence,
-                'mime_type' => $asset->mime_type,
-                'size_bytes' => $asset->size_bytes,
-                'sha256' => $asset->sha256,
-                'metadata' => $asset->metadata_json,
-            ])->values(),
+            'assets' => $assets,
         ]]);
     }
 
@@ -270,8 +282,14 @@ class ReportReviewController extends Controller
         AuditTrailService $audit
     ) {
         $auth->requireManager($request->user());
-        abort_unless($report->receipt_evidence_bundle_id && $asset->receipt_evidence_bundle_id === $report->receipt_evidence_bundle_id, 404);
+        $asset->load('bundle');
+        abort_unless(
+            $asset->receipt_evidence_bundle_id === $report->receipt_evidence_bundle_id
+                || $asset->bundle?->consumer_report_id === $report->id,
+            404,
+        );
         abort_unless(Storage::disk($asset->disk)->exists($asset->path), 404);
+        abort_unless($asset->hasValidContent(), 409, 'Receipt evidence failed its integrity check.');
         $audit->recordOrFail($request, 'report.evidence_asset_accessed', $report, [
             'asset_id' => $asset->id,
             'kind' => $asset->kind,

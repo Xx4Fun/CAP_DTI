@@ -1,60 +1,63 @@
-# Receipt OCR remediation report
+# Receipt OCR remediation
 
-## Incident summary
+## Current capture contract
 
-Continuous receipt reports were repeatedly ending in `Needs recapture` because the processing pipeline sampled only the first six seconds of a recording, rejected frames before OCR using rigid image thresholds, and required exact text overlap between adjacent frames. OCR infrastructure failures were also presented to customers as capture failures.
+New Customer receipt reports use `guided_photos_v1`:
 
-## Corrected processing contract
+1. open the rear camera without gallery import;
+2. capture one clear full-receipt image when it fits;
+3. add ordered, overlapping sections for a long receipt;
+4. preview or retake a section before upload;
+5. store each original image privately with its server-computed SHA-256;
+6. preprocess and OCR only the submitted still images;
+7. show the originals and system extraction read-only;
+8. submit the unchanged evidence and extraction for DTI evaluation.
 
-The original continuous video is the canonical evidence source. The server now:
+Continuous WebM capture is no longer selected for new Customer reports. The video pipeline and existing video, extracted-frame, and stitched-preview assets remain available for historical reports.
+Legacy `single_image_v1` session creation is rejected; new session requests default to guided stills, and Customer-supplied OCR JSON is prohibited at the report boundary.
 
-1. validates and stores one video at sequence zero;
-2. extracts two frames per second across the full recording, with no six-second cap;
-3. selects the best frame from each chronological window while retaining quality diagnostics;
-4. records source sequence and video timestamp on every vaulted extracted frame;
-5. runs primary and fallback OCR passes and selects the stronger usable result;
-6. distinguishes technical OCR failure from evidence uncertainty;
-7. verifies fuzzy adjacent-frame continuity independently from merchant identity;
-8. matches the receipt header against the selected store name or registered owner;
-9. requires parsed items, an explicit total, and centavo-level item/discount reconciliation;
-10. exposes read-only OCR results for customer confirmation.
+## Evidence and recapture
 
-## Public outcomes and reason codes
+- One source image is sufficient; up to 12 ordered images are accepted.
+- Multi-image captures require adjacent OCR overlap only when every section produced OCR text.
+- Retaking one section or adding a section creates a new evidence bundle and attempt number. Unchanged sections are copied with provenance metadata, while prior bundles remain intact.
+- Restarting capture creates a fresh guided-photo attempt under the same report reference.
+- Admin can inspect original assets from current and prior attempts. Derived legacy assets are labeled separately.
+- Customer evidence endpoints expose only current original source images and require the report resume credential.
+- An original must still exist and match its server-recorded SHA-256 before it can be carried into a new attempt, displayed, downloaded, or submitted.
 
-Only evidence uncertainty becomes `Needs recapture`:
+## Outcome rules
 
-| Code | Cause | Customer action |
+`Needs recapture` is limited to evidence defects:
+
+| Code | Meaning | Customer action |
 | --- | --- | --- |
-| `INSUFFICIENT_FRAMES` | Too little decodable video evidence | Record at least three seconds and show the whole receipt |
-| `TEXT_UNREADABLE` | OCR ran but could not read enough text | Improve focus, lighting, and receipt flatness |
-| `INCOMPLETE_SCAN` | Adjacent views do not prove top-to-bottom continuity | Move slowly and keep overlapping text visible |
-| `STORE_NOT_CONFIRMED` | Header does not match the selected store or owner | Capture the store header clearly or choose the correct store |
-| `ITEMS_NOT_FOUND` | No complete item lines were parsed | Capture item names and prices clearly |
-| `TOTAL_NOT_FOUND` | No explicit payable total was parsed | Include the receipt footer and total |
-| `TOTAL_MISMATCH` | Parsed items and discounts do not reconcile to the total | Recapture all item and discount lines |
+| `INSUFFICIENT_FRAMES` | No usable receipt image exists | Capture at least one receipt image |
+| `TEXT_UNREADABLE` | An image is unreadable or too poor for OCR | Improve focus, lighting, and receipt flatness |
+| `INCOMPLETE_SCAN` | Multiple sections do not overlap enough to prove continuity | Retake the affected section with visible overlap |
 
-`OCR_UNAVAILABLE`, `OCR_TIMEOUT`, `OCR_FAILED`, and unexpected processing errors become `Processing failed`; they do not blame the customer or request recapture.
+Clear evidence with uncertain OCR remains `Ready for confirmation` with `manual_review_required` and warnings such as `OCR_INCOMPLETE`, `STORE_NOT_CONFIRMED`, `ITEMS_NOT_FOUND`, `TOTAL_NOT_FOUND`, or `TOTAL_MISMATCH`. The raw OCR result is preserved for Admin review.
 
-## Recovery and evidence integrity
+`OCR_UNAVAILABLE`, `OCR_TIMEOUT`, `OCR_FAILED`, and unexpected processing errors become `Processing failed`. The Customer can retry processing against the same immutable evidence; technical failures are not described as bad captures.
 
-- The browser uploads only the original video for continuous mode; browser-generated JPEGs are no longer treated as duplicate evidence.
-- Tracking and resume credentials are generated before report submission and reused on idempotent retries, so a lost HTTP response does not lose access to the draft.
-- A completed upload can retry report creation without uploading or scanning again.
-- Recapture creates a new immutable evidence bundle and attempt number but retains the same report reference and prior attempt history.
-- Confirmation accepts only a boolean acknowledgement. Customers cannot type, replace, or correct OCR item values.
-- Drafts expose `created_at`; `submitted_at` remains null until confirmation.
+## No Customer correction layer
+
+- Customer review contains no editable OCR fields or item-row controls.
+- Confirmation accepts only an acknowledgement and rejects all receipt-value fields.
+- New reports keep `consumer_confirmed_json` and item `consumer_correction_json` null and do not set item `consumer_confirmed`.
+- `consumer_confirmed_at` is retained as the evidence-review/submission timestamp for schema compatibility.
+- The legacy correction columns remain in the schema only to preserve historical data; active Customer and Admin API responses do not use them.
+- DTI evaluator findings remain a separate, audited layer.
 
 ## Production gates
 
-Do not deploy the continuous scanner until all of these are configured and verified:
+Before release, verify:
 
-- `RECEIPT_EVIDENCE_DRIVER=s3` with a private durable bucket and valid endpoint credentials;
-- FFmpeg and FFprobe available in the web and queue runtime;
-- Tesseract available to the receipt-processing queue;
-- database migration `2026_08_23_000001_add_receipt_processing_attempts.php` applied;
-- queue timeout/retry settings remain longer than the receipt job timeout;
-- 25 MiB Laravel/PHP and 30 MiB reverse-proxy upload contracts remain effective;
-- an end-to-end 30-second long-receipt fixture reaches `Ready for confirmation`, and forced OCR outage reaches `Processing failed`.
+- `RECEIPT_EVIDENCE_DRIVER=s3` (or equivalent durable private object storage) and valid credentials;
+- Tesseract is available to the receipt-processing worker;
+- receipt queue timeout and retry settings exceed the job timeout;
+- the receipt-processing-attempt migration is applied;
+- a real Android Chrome capture covers a one-image receipt, overlapping long receipt, one-section retake, OCR outage retry, and Admin review of all originals;
+- historical video evidence remains downloadable. FFmpeg and FFprobe are needed only while legacy video processing or reprocessing is supported.
 
-This change set does not deploy, migrate production, or reprocess existing reports automatically.
-
+This implementation does not deploy, migrate production, or reprocess existing reports automatically.

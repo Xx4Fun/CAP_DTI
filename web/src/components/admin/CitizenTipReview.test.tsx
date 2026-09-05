@@ -106,7 +106,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(await screen.findByText('RPT-2026-001'))
 
     // Left column vaulted evidence & image control buttons
-    expect(screen.getByRole('heading', { name: /Vaulted Receipt Evidence/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Original captured receipt evidence' })).toBeInTheDocument()
     const zoomInBtn = screen.getByRole('button', { name: /Zoom In/i })
     const zoomOutBtn = screen.getByRole('button', { name: /Zoom Out/i })
     const rotateBtn = screen.getByRole('button', { name: /Rotate/i })
@@ -126,13 +126,27 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
     // Right column OCR breakdown & action buttons
     expect(screen.getByText(/Formal receipt \| Consumer report/i)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Original OCR values' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Raw OCR and system-extracted information' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'DTI evaluator findings and decision' })).toBeInTheDocument()
     expect(screen.getAllByText(/Super Extra Rice 1kg/i).length).toBeGreaterThan(0)
     expect(screen.getByText('OCR FLAG — REVIEW')).toBeInTheDocument()
 
     // DTI Evaluator Single-Click Action Buttons
     expect(screen.getByRole('button', { name: /Validate findings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Dismiss Report/i })).toBeInTheDocument()
+  })
+
+  it('shows an honest missing-evidence state without fabricating a receipt', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    await user.click(await screen.findByText('RPT-2026-002'))
+    expect(screen.getByText('Receipt evidence unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('[Receipt Image Recorded]')).not.toBeInTheDocument()
+    expect(screen.queryByText('OFFICIAL DTI RECORD')).not.toBeInTheDocument()
+    expect(screen.queryByText('Gaisano Grand Antique')).not.toBeInTheDocument()
+    expect(screen.queryByText('₱28.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('₱25.00')).not.toBeInTheDocument()
   })
 
   it('submits single-click DTI Evaluator action decision', async () => {
@@ -158,7 +172,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     )
   })
 
-  it('reviews continuous-capture evidence and submits one decision per receipt item', async () => {
+  it('shows original guided images before legacy derivatives and submits one decision per receipt item', async () => {
     const receiptReport = {
       ...mockReports[0],
       evidence_summary: {
@@ -198,6 +212,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
       assets: [
         { id: 701, kind: 'original_video', sequence: 0, mime_type: 'video/webm', size_bytes: 1000, sha256: 'video-hash', metadata: null },
         { id: 702, kind: 'stitched_preview', sequence: 0, mime_type: 'image/jpeg', size_bytes: 500, sha256: 'preview-hash', metadata: null },
+        { id: 703, kind: 'source_frame', sequence: 0, mime_type: 'image/jpeg', size_bytes: 800, sha256: 'source-hash', metadata: null },
       ],
     })
     vi.mocked(adminApi.getReportEvidenceAsset).mockResolvedValue(new Blob(['preview'], { type: 'image/jpeg' }))
@@ -208,7 +223,8 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(await screen.findByText('RPT-2026-001'))
 
     expect(await screen.findByRole('button', { name: /Stitched preview/i })).toBeInTheDocument()
-    expect(adminApi.getReportEvidenceAsset).toHaveBeenCalledWith(101, 702)
+    expect(await screen.findByRole('button', { name: /source frame/i })).toBeInTheDocument()
+    expect(adminApi.getReportEvidenceAsset).toHaveBeenCalledWith(101, 703)
     expect(screen.getByText(/Continuity: ready/i)).toBeInTheDocument()
 
     const findings = screen.getAllByRole('combobox', { name: /Finding for/i })

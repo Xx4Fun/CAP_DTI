@@ -25,8 +25,8 @@ import { matchesPublicStoreSearch } from '../app/storeSearch';
 import { StoreSelectionCard } from './StoreSelectionCard';
 import { StoreSelectionView, type StoreDirectoryFilter } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
-import { preferredReceiptVideoMime, receiptCaptureSupport } from '../app/receiptCapture';
-import { ContinuousReceiptCapture } from './ContinuousReceiptCapture';
+import { receiptCaptureSupport } from '../app/receiptCapture';
+import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 import { navigate } from '../app/routing';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
 
@@ -34,7 +34,7 @@ interface FormalReportProps {
   setActiveTab?: (tab: string) => void;
   onTrackReport?: (reference: string) => void;
   onReportSubmitted?: (report: FormalReportResponse, storeName: string) => void;
-  continuousCaptureEnabled?: boolean;
+  guidedCaptureEnabled?: boolean;
   vapidPublicKey?: string;
   location?: GeoPosition | null;
   locationError?: string;
@@ -44,7 +44,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   setActiveTab,
   onTrackReport,
   onReportSubmitted,
-  continuousCaptureEnabled = false,
+  guidedCaptureEnabled = true,
   vapidPublicKey = '',
   location = null,
   locationError = '',
@@ -94,7 +94,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
   const [affirmationChecked, setAffirmationChecked] = useState<boolean>(false);
   const [ocrItems, setOcrItems] = useState<Array<{ commodity_name: string; receipt_price: string; baseline_price: number }>>([]);
   const [ocrMetadata, setOcrMetadata] = useState({
-    transactionDate: new Date().toISOString().split('T')[0],
+    transactionDate: 'Not detected',
     receiptNumber: 'Not detected',
     linesDetected: 0,
   });
@@ -234,22 +234,16 @@ export const FormalReport: React.FC<FormalReportProps> = ({
     setSelectedStore(store);
     setError('');
     try {
-      const captureMode = continuousCaptureEnabled
-        ? receiptCaptureSupport({
-            camera: Boolean(navigator.mediaDevices?.getUserMedia),
-            mediaRecorder: typeof MediaRecorder !== 'undefined',
-            supportedVideoMime: typeof MediaRecorder !== 'undefined'
-              ? preferredReceiptVideoMime(MediaRecorder.isTypeSupported.bind(MediaRecorder))
-              : null,
-          })
-        : 'unsupported';
-      if (continuousCaptureEnabled && captureMode === 'unsupported') {
+      if (!guidedCaptureEnabled) {
+        throw new Error('Secure receipt reporting is temporarily unavailable.');
+      }
+      const captureMode = receiptCaptureSupport({
+        camera: Boolean(navigator.mediaDevices?.getUserMedia),
+      });
+      if (captureMode === 'unsupported') {
         throw new Error('This device does not provide a supported live camera for receipt reporting.');
       }
-      const payload = continuousCaptureEnabled
-        ? { store_id: store.id, capture_mode: captureMode }
-        : { store_id: store.id };
-      const res = await apiClient.post('/public/capture-session', payload);
+      const res = await apiClient.post('/public/capture-session', { store_id: store.id, capture_mode: captureMode });
       if (generation !== reportGenerationRef.current) return;
       if (res.data && res.data.success) {
         setCaptureSession(res.data.data);
@@ -257,11 +251,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       setShowGuidelinesModal(true);
     } catch (err) {
       if (generation !== reportGenerationRef.current) return;
-      if (continuousCaptureEnabled) {
-        setError(err instanceof Error ? err.message : 'Unable to start a secure receipt capture session.');
-      } else {
-        setShowGuidelinesModal(true);
-      }
+      setError(err instanceof Error ? err.message : 'Unable to start a secure receipt capture session.');
     } finally {
       if (generation === reportGenerationRef.current) {
         openingStoreRef.current = null;
@@ -277,7 +267,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
     setCurrentView('camera-viewport');
     setError('');
 
-    if (continuousCaptureEnabled && captureSession?.capture_mode !== 'single_image_v1') {
+    if (captureSession?.capture_mode === 'guided_photos_v1') {
       return;
     }
 
@@ -294,7 +284,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
-    } catch (err) {
+    } catch {
       if (requestId !== cameraRequestRef.current || generation !== reportGenerationRef.current) return;
       setError('Camera access is unavailable or permission was denied. No receipt was captured.');
       setStream(null);
@@ -366,30 +356,12 @@ export const FormalReport: React.FC<FormalReportProps> = ({
             setPreviewUrl(URL.createObjectURL(blob));
             stopCamera();
 
-            // Calculate SHA-256 Hash
-            const arrayBuffer = await blob.arrayBuffer();
-            if (generation !== reportGenerationRef.current) return;
-            const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-            if (generation !== reportGenerationRef.current) return;
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-            setImageHash(hashHex);
-
             setOcrMetadata({
-              transactionDate: new Date().toISOString().split('T')[0],
-              receiptNumber: 'Not specified',
-              linesDetected: handoffRef.current?.kind === 'scan-to-report' ? 1 : 0,
+              transactionDate: 'Not detected',
+              receiptNumber: 'Not detected',
+              linesDetected: 0,
             });
-
-            if (handoffRef.current?.kind === 'scan-to-report') {
-              setOcrItems([{
-                commodity_name: `Commodity #${handoffRef.current.commodityId}`,
-                receipt_price: (handoffRef.current.displayedPrice || 0).toFixed(2),
-                baseline_price: handoffRef.current.baselinePrice || 0
-              }]);
-            } else {
-              setOcrItems([]);
-            }
+            setOcrItems([]);
 
             setCurrentView('review-submit');
           }
@@ -727,7 +699,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                       </div>
                       <div className="report-step-content">
                         <div className="report-step-title">2. Live Receipt Capture</div>
-                        <div className="report-step-desc">Scan from the store name to the final total in one slow pass. If continuous capture is unavailable, take overlapping photos.</div>
+                        <div className="report-step-desc">Take one clear full-receipt photo, or overlapping section photos when the receipt is long.</div>
                       </div>
                     </div>
                     <div className="report-step-item">
@@ -835,7 +807,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                   <div className="report-faq-list">
                     <div className="report-faq-item">
                       <div className="report-faq-q">Why are gallery uploads disabled?</div>
-                      <div className="report-faq-a">To ensure a tamper-evident evidence trail and prevent manipulated photos under DTI regulatory guidelines.</div>
+                      <div className="report-faq-a">To keep each submitted original tied to the live capture session and its server-recorded fingerprint.</div>
                     </div>
                     <div className="report-faq-item">
                       <div className="report-faq-q">Does reporting auto-issue a violation?</div>
@@ -974,8 +946,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({
             <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px' }}>DTI Consumer Evidence Vault Privacy Policy (v1.0)</h3>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '10px', lineHeight: 1.5 }}>
               <p>1. <strong>Scope:</strong> Pursuant to R.A. 7581 (Price Act) and Data Privacy Act of 2012, all receipt evidence uploaded via PRICE-Watch is sealed in private DTI storage (<code>storage/app/private/receipt_vault</code>).</p>
-              <p>2. <strong>Redaction & PII:</strong> Personal identity numbers, credit card tokens, and cashier signatures are automatically masked during administrative workflow processing.</p>
-              <p>3. <strong>Tamper-Evident Verification:</strong> Live camera frames generate an immediate SHA-256 cryptographic hash on client devices prior to transmission.</p>
+              <p>2. <strong>Restricted access:</strong> Authorized DTI personnel can inspect the submitted originals during evaluation.</p>
+              <p>3. <strong>Tamper-Evident Verification:</strong> The server records a SHA-256 fingerprint for every original image it receives so later changes can be detected.</p>
             </div>
             <button className="btn-primary" style={{ marginTop: '16px' }} onClick={() => setShowFullNoticeModal(false)}>
               Close Notice
@@ -1056,7 +1028,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 <CheckCircle2 size={18} color="var(--accent-green)" /> Place the receipt on a flat surface.
               </li>
               <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Start at the store name, move down slowly, and keep part of the previous section visible.
+                <CheckCircle2 size={18} color="var(--accent-green)" /> Capture the whole receipt if it fits. For a long receipt, take sections from top to bottom with visible overlap.
               </li>
               <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
                 <CheckCircle2 size={18} color="var(--accent-green)" /> Make the store name and transaction date visible.
@@ -1096,8 +1068,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       {/* ========================================================================= */}
       {/* 5. STEP 2 OF 3: LIVE RECEIPT CAMERA VIEWPORT (Fixed Zero-Scroll Viewport) */}
       {/* ========================================================================= */}
-      {currentView === 'camera-viewport' && continuousCaptureEnabled && captureSession && captureSession.capture_mode !== 'single_image_v1' && (
-        <ContinuousReceiptCapture
+      {currentView === 'camera-viewport' && guidedCaptureEnabled && captureSession?.capture_mode === 'guided_photos_v1' && (
+        <GuidedReceiptCapture
           session={captureSession}
           storeName={selectedStore?.store_name || 'Selected store'}
           submissionUuid={submissionUuid}
@@ -1112,7 +1084,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
         />
       )}
 
-      {currentView === 'camera-viewport' && (!continuousCaptureEnabled || !captureSession || captureSession.capture_mode === 'single_image_v1') && (
+      {currentView === 'camera-viewport' && (!guidedCaptureEnabled || !captureSession || captureSession.capture_mode !== 'guided_photos_v1') && (
         <div data-app-fullscreen-layer style={{ position: 'fixed', inset: 0, width: '100vw', height: '100dvh', background: '#000000', zIndex: 1000, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           
           {/* Top Control Bar */}

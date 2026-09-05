@@ -112,8 +112,11 @@ export const CitizenTipReview: React.FC = () => {
       void adminApi.getReportEvidenceManifest(report.id)
         .then((manifest) => {
           setEvidenceManifest(manifest)
-          const preferred = manifest.assets.find((asset) => asset.kind === 'stitched_preview')
+          const preferred = manifest.assets.find((asset) => asset.kind === 'source_frame' && asset.is_current !== false)
+            || manifest.assets.find((asset) => asset.kind === 'original_video' && asset.is_current !== false)
+            || manifest.assets.find((asset) => asset.kind === 'source_frame')
             || manifest.assets.find((asset) => asset.kind === 'original_video')
+            || manifest.assets.find((asset) => asset.kind === 'stitched_preview')
             || manifest.assets[0]
           if (!preferred) return
           setSelectedAsset(preferred)
@@ -298,10 +301,18 @@ export const CitizenTipReview: React.FC = () => {
 
   // Primary item extraction values for structured display
   const primaryItem = ocrItems[0] || (selected?.raw_ocr_json as Record<string, unknown>) || null
-  const detectedProduct = String(primaryItem?.name || primaryItem?.product || selected?.items?.[0]?.item_name || 'Commodity')
-  const rawReceiptPrice = Number(primaryItem?.price || selected?.items?.[0]?.observed_price || 0)
-  const rawSrpPrice = Number(primaryItem?.srp || 0)
-  const priceDifference = rawSrpPrice > 0 ? rawReceiptPrice - rawSrpPrice : null
+  const detectedProduct = String(primaryItem?.name || primaryItem?.product || selected?.items?.[0]?.item_name || 'Not detected')
+  const receiptPriceValue = primaryItem?.price ?? selected?.items?.[0]?.observed_price
+  const srpPriceValue = primaryItem?.srp
+  const rawReceiptPrice = receiptPriceValue !== undefined && receiptPriceValue !== null && Number.isFinite(Number(receiptPriceValue)) ? Number(receiptPriceValue) : null
+  const rawSrpPrice = srpPriceValue !== undefined && srpPriceValue !== null && Number.isFinite(Number(srpPriceValue)) ? Number(srpPriceValue) : null
+  const priceDifference = rawReceiptPrice !== null && rawSrpPrice !== null ? rawReceiptPrice - rawSrpPrice : null
+  const detectedQuantity = primaryItem?.quantity ?? selected?.items?.[0]?.quantity ?? null
+  const detectedTransactionDate = primaryItem?.transaction_date ?? selected?.raw_ocr_json?.transaction_date ?? null
+  const merchantResult = selected?.raw_ocr_json?.merchant as { observed?: unknown } | undefined
+  const detectedMerchant = Array.isArray(merchantResult?.observed)
+    ? merchantResult.observed.filter((line): line is string => typeof line === 'string').join(' / ')
+    : null
 
   return (
     <div className="citizen-tip-review-workspace" style={{ display: 'grid', gap: '1.25rem', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
@@ -569,14 +580,11 @@ export const CitizenTipReview: React.FC = () => {
               <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <h3
-                      aria-label="Receipt Evidence — Vaulted Receipt Evidence"
-                      style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}
-                    >
-                      Receipt Evidence
+                    <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
+                      Original captured receipt evidence
                     </h3>
                     <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', marginTop: '0.15rem' }}>
-                      {selected.store_name || 'Gaisano Grand Antique'}
+                      {selected.store_name || 'Store unavailable'}
                     </div>
                   </div>
                   <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
@@ -609,7 +617,8 @@ export const CitizenTipReview: React.FC = () => {
                           cursor: 'pointer',
                         }}
                       >
-                        {asset.kind.replaceAll('_', ' ')} {asset.sequence + 1}
+                        {asset.kind === 'source_frame' ? `Original section ${asset.sequence + 1}` : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
+                        {asset.attempt_number ? ` · attempt ${asset.attempt_number}${asset.is_current ? ' (current)' : ''}` : ''}
                       </button>
                     ))}
                   </div>
@@ -786,77 +795,43 @@ export const CitizenTipReview: React.FC = () => {
                       transition: 'transform 0.2s ease',
                     }}
                   />
-                ) : (
-                  /* Fallback Simulated Receipt Canvas */
-                  <div
-                    className="simulated-receipt-card"
-                    style={{
-                      background: '#ffffff',
-                      color: '#0f172a',
-                      padding: '1.25rem',
-                      borderRadius: '6px',
-                      width: '85%',
-                      maxWidth: '260px',
-                      boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
-                      fontFamily: 'monospace',
-                      fontSize: '0.78rem',
-                      transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                      transition: 'transform 0.2s ease',
-                    }}
-                  >
-                    <div style={{ textAlign: 'center', borderBottom: '1px dashed #cbd5e1', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-                      <strong style={{ fontSize: '0.84rem' }}>{selected.store_name || 'OFFICIAL RECEIPT'}</strong>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b' }}>REF: {selected.report_reference}</div>
-                    </div>
-                    {ocrItems.length > 0 ? (
-                      ocrItems.map((item, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0' }}>
-                          <span>{String(item.name || item.product || 'ITEM')}</span>
-                          <span style={{ fontWeight: 700 }}>₱{String(item.price || '0.00')}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div style={{ color: '#64748b', fontSize: '0.72rem', textAlign: 'center', padding: '0.4rem 0' }}>
-                        [Receipt Image Recorded]
-                      </div>
-                    )}
-                    <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.5rem', marginTop: '0.5rem', textAlign: 'center', fontSize: '0.65rem', color: '#059669', fontWeight: 700 }}>
-                      OFFICIAL DTI RECORD
-                    </div>
-                  </div>
-                )}
+                ) : <div style={{ color: '#cbd5e1', padding: '1.25rem', display: 'grid', justifyItems: 'center', gap: '0.5rem', textAlign: 'center' }}>
+                  <Lock size={26} />
+                  <strong>Receipt evidence unavailable</strong>
+                  <span style={{ fontSize: '0.76rem' }}>No stored original can be displayed for this report.</span>
+                </div>}
               </div>
 
               {/* Extracted Receipt Details Section */}
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
                 <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
-                  Extracted Receipt Details
+                  Raw OCR and system-extracted information
                 </h4>
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem', display: 'grid', gap: '0.4rem', fontSize: '0.8rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Store:</span>
-                    <strong style={{ color: '#0f172a' }}>{selected.store_name || 'Gaisano Grand Antique'}</strong>
+                    <span style={{ color: '#64748b' }}>Merchant OCR:</span>
+                    <strong style={{ color: '#0f172a' }}>{detectedMerchant || 'Not detected'}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#64748b' }}>Transaction Date:</span>
                     <strong style={{ color: '#0f172a' }}>
-                      {selected.submitted_at ? new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
+                      {detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}
                     </strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#64748b' }}>Product:</span>
                     <strong style={{ color: '#0f172a' }}>
-                      {String(selected.evaluator_confirmed_json?.product || detectedProduct)}
+                      {detectedProduct}
                     </strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: '#64748b' }}>Quantity:</span>
-                    <strong style={{ color: '#0f172a' }}>1</strong>
+                    <strong style={{ color: '#0f172a' }}>{detectedQuantity !== null ? String(detectedQuantity) : 'Not detected'}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #e2e8f0', paddingTop: '0.35rem' }}>
                     <span style={{ color: '#64748b' }}>Receipt Price:</span>
                     <strong style={{ color: '#1e3a8a', fontSize: '0.9rem' }}>
-                      ₱{rawReceiptPrice > 0 ? rawReceiptPrice.toFixed(2) : String(primaryItem?.price || '28.00')}
+                      {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Not detected'}
                     </strong>
                   </div>
                 </div>
@@ -916,7 +891,7 @@ export const CitizenTipReview: React.FC = () => {
               <div style={{ display: 'grid', gap: '0.65rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    System Finding
+                    System extraction status
                   </h3>
                   <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fed7aa' }}>
                     OCR FLAG — REVIEW
@@ -927,28 +902,28 @@ export const CitizenTipReview: React.FC = () => {
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
                     <AlertCircle size={16} />
-                    <span>Possible Price Anomaly Detected</span>
+                    <span>{priceDifference !== null ? 'Automated price comparison available' : 'No automated price comparison available'}</span>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
                     <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Receipt Price</div>
                       <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
-                        ₱{rawReceiptPrice > 0 ? rawReceiptPrice.toFixed(2) : String(primaryItem?.price || '28.00')}
+                        {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Unavailable'}
                       </div>
                     </div>
 
                     <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Applicable SRP</div>
                       <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
-                        ₱{rawSrpPrice > 0 ? rawSrpPrice.toFixed(2) : '25.00'}
+                        {rawSrpPrice !== null ? `₱${rawSrpPrice.toFixed(2)}` : 'Unavailable'}
                       </div>
                     </div>
 
                     <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Difference</div>
                       <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#dc2626' }}>
-                        {priceDifference !== null && priceDifference > 0 ? `+₱${priceDifference.toFixed(2)}` : '+₱3.00'}
+                        {priceDifference !== null ? `${priceDifference > 0 ? '+' : ''}₱${priceDifference.toFixed(2)}` : 'Unavailable'}
                       </div>
                     </div>
                   </div>
@@ -973,13 +948,13 @@ export const CitizenTipReview: React.FC = () => {
                         {ocrItems.map((item, idx) => (
                           <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '0.4rem 0.55rem', fontWeight: 600, color: '#0f172a' }}>
-                              {String(item.name || item.product || 'Commodity')}
+                              {String(item.name || item.product || 'Not detected')}
                             </td>
                             <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', fontWeight: 700 }}>
-                              ₱{String(item.price || '0.00')}
+                              {item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Unavailable'}
                             </td>
                             <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#059669', fontWeight: 600 }}>
-                              ₱{String(item.srp || '0.00')}
+                              {item.srp !== undefined && item.srp !== null ? `₱${String(item.srp)}` : 'Unavailable'}
                             </td>
                           </tr>
                         ))}
@@ -993,7 +968,7 @@ export const CitizenTipReview: React.FC = () => {
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'grid', gap: '0.85rem' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    DTI Review
+                    DTI evaluator findings and decision
                   </h3>
                   <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: '#64748b' }}>
                     What should happen to this report?
@@ -1282,7 +1257,7 @@ export const CitizenTipReview: React.FC = () => {
 
                     <div>
                       <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
-                        Original OCR values
+                        Raw OCR payload
                       </h4>
                       <pre
                         className="admin-code"
@@ -1306,7 +1281,7 @@ export const CitizenTipReview: React.FC = () => {
                     {selected.evaluator_confirmed_json && (
                       <div>
                         <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
-                          Evaluator corrections
+                          DTI evaluator findings
                         </h4>
                         <pre
                           className="admin-code"

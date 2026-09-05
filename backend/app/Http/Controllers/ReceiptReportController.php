@@ -6,11 +6,13 @@ use App\Models\CitizenTip;
 use App\Jobs\ProcessReceiptEvidence;
 use App\Models\CaptureSession;
 use App\Models\ConsumerReport;
+use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
 use App\Models\ReportStatusHistory;
 use App\Models\WebPushSubscription;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ReceiptReportController extends Controller
@@ -18,20 +20,81 @@ class ReceiptReportController extends Controller
     public function startRecapture(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        if ($report->status !== 'Needs recapture' || $report->capture_mode !== 'continuous_video_v1') {
+        if (! in_array($report->status, ['Ready for confirmation', 'Needs recapture'], true)) {
             return response()->json(['success' => false, 'message' => 'This report is not eligible for receipt recapture.'], 409);
         }
+        $validated = $request->validate([
+            'replace_sequence' => 'nullable|integer|min:0|max:11',
+            'append' => 'nullable|boolean',
+            'restart' => 'nullable|boolean',
+        ]);
+        $replaceSequence = array_key_exists('replace_sequence', $validated) ? (int) $validated['replace_sequence'] : null;
+        $append = (bool) ($validated['append'] ?? false);
+        $restart = (bool) ($validated['restart'] ?? false);
+        abort_if((int) ($replaceSequence !== null) + (int) $append + (int) $restart > 1, 422, 'Choose one receipt recapture action.');
+
+        $report->load('evidenceBundle.assets');
+        $sourceAssets = $report->evidenceBundle?->assets->where('kind', 'source_frame')->sortBy('sequence')->values() ?? collect();
+        if ($report->status === 'Ready for confirmation') {
+            abort_unless($replaceSequence !== null || $append || $restart, 422, 'Choose a receipt section to retake, add, or restart.');
+        }
+        if ($replaceSequence !== null) {
+            abort_unless($sourceAssets->contains('sequence', $replaceSequence), 422, 'That original receipt section is unavailable.');
+        }
+        $uploadSequence = $append ? ((int) ($sourceAssets->max('sequence') ?? -1) + 1) : ($replaceSequence ?? 0);
+        abort_if($uploadSequence > 11, 422, 'This receipt already has the maximum number of sections.');
 
         $rawToken = 'ct_sec_'.Str::random(32);
         $session = CaptureSession::create([
             'session_uuid' => 'cs_'.Str::uuid(),
             'store_id' => $report->store_id,
-            'capture_mode' => 'continuous_video_v1',
+            'capture_mode' => 'guided_photos_v1',
             'processing_status' => 'open',
             'token_hash' => hash('sha256', $rawToken),
             'expires_at' => now()->addMinutes(15),
             'is_used' => false,
         ]);
+        $bundle = ReceiptEvidenceBundle::create([
+            'evidence_uuid' => (string) Str::uuid(),
+            'capture_session_id' => $session->id,
+            'store_id' => $report->store_id,
+            'capture_mode' => 'guided_photos_v1',
+            'processing_status' => 'collecting',
+            'processing_result_json' => ['required_upload_sequence' => $uploadSequence],
+        ]);
+        $carriedSequences = [];
+        if (! $restart && ($append || $replaceSequence !== null)) {
+            foreach ($sourceAssets as $asset) {
+                if ($asset->sequence === $replaceSequence) {
+                    continue;
+                }
+                abort_unless($asset->hasValidContent(), 422, 'An original receipt section is unavailable or failed its integrity check.');
+                $extension = pathinfo($asset->path, PATHINFO_EXTENSION) ?: 'jpg';
+                $path = "receipt-evidence/{$bundle->evidence_uuid}/source_frame-{$asset->sequence}-{$asset->sha256}.{$extension}";
+                $disk = (string) config('filesystems.receipt_evidence_disk', 'receipt_evidence');
+                abort_unless(
+                    Storage::disk($disk)->put($path, Storage::disk($asset->disk)->get($asset->path), ['visibility' => 'private']),
+                    503,
+                    'Receipt evidence storage is unavailable. Try again later.',
+                );
+                ReceiptEvidenceAsset::create([
+                    'receipt_evidence_bundle_id' => $bundle->id,
+                    'kind' => 'source_frame',
+                    'sequence' => $asset->sequence,
+                    'disk' => $disk,
+                    'path' => $path,
+                    'original_filename' => $asset->original_filename,
+                    'mime_type' => $asset->mime_type,
+                    'size_bytes' => $asset->size_bytes,
+                    'sha256' => $asset->sha256,
+                    'metadata_json' => array_merge($asset->metadata_json ?? [], [
+                        'carried_from_asset_id' => $asset->id,
+                        'carried_from_bundle_id' => $asset->receipt_evidence_bundle_id,
+                    ]),
+                ]);
+                $carriedSequences[] = (int) $asset->sequence;
+            }
+        }
 
         return response()->json([
             'success' => true,
@@ -44,13 +107,14 @@ class ReceiptReportController extends Controller
                 'expires_at' => $session->expires_at->toIso8601String(),
                 'capture_mode' => $session->capture_mode,
                 'store_id' => $report->store_id,
-                'max_file_size' => 25 * 1024 * 1024,
-                'accepted_types' => ['video/webm', 'video/mp4'],
+                'max_file_size' => 2 * 1024 * 1024,
+                'accepted_types' => ['image/jpeg', 'image/png', 'image/webp'],
+                'capture_action' => $append ? 'append' : ($replaceSequence !== null ? 'replace' : 'full'),
+                'upload_sequence' => $uploadSequence,
+                'carried_sequences' => $carriedSequences,
                 'limits' => [
-                    'max_duration_seconds' => 30,
-                    'max_video_bytes' => 25 * 1024 * 1024,
                     'max_frame_bytes' => 2 * 1024 * 1024,
-                    'min_frames' => 2,
+                    'min_frames' => 1,
                     'max_frames' => 12,
                 ],
             ],
@@ -74,19 +138,22 @@ class ReceiptReportController extends Controller
         if (! $session || $session->is_used || $session->expires_at->isPast()) {
             return response()->json(['success' => false, 'message' => 'The recapture session is invalid or expired.'], 422);
         }
-        if ($session->store_id !== $report->store_id || $session->capture_mode !== 'continuous_video_v1') {
+        if ($session->store_id !== $report->store_id || $session->capture_mode !== 'guided_photos_v1') {
             abort(403, 'The recapture session does not belong to this report.');
         }
         $bundle = $session->evidenceBundle;
-        if (! $bundle || ! $bundle->assets->contains(fn ($asset) => $asset->kind === 'original_video' && $asset->sequence === 0)) {
-            return response()->json(['success' => false, 'message' => 'Upload the continuous receipt video before retrying processing.'], 422);
+        $requiredSequence = (int) data_get($bundle?->processing_result_json, 'required_upload_sequence', 0);
+        $requiredAsset = $bundle?->assets->first(fn ($asset) => $asset->kind === 'source_frame' && $asset->sequence === $requiredSequence);
+        if (! $bundle || ! $requiredAsset || data_get($requiredAsset->metadata_json, 'carried_from_asset_id')) {
+            return response()->json(['success' => false, 'message' => 'Capture the required original receipt section before retrying processing.'], 422);
         }
 
         DB::transaction(function () use ($report, $session, $bundle) {
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
-            if ($locked->status !== 'Needs recapture') {
-                abort(409, 'Only a report that needs recapture can be retried.');
+            if (! in_array($locked->status, ['Ready for confirmation', 'Needs recapture'], true)) {
+                abort(409, 'This report is no longer eligible for receipt recapture.');
             }
+            $previousStatus = $locked->status;
 
             if ($locked->receipt_evidence_bundle_id) {
                 ReceiptEvidenceBundle::whereKey($locked->receipt_evidence_bundle_id)
@@ -105,6 +172,7 @@ class ReceiptReportController extends Controller
             $locked->update([
                 'capture_session_id' => $session->id,
                 'receipt_evidence_bundle_id' => $bundle->id,
+                'capture_mode' => 'guided_photos_v1',
                 'processing_status' => 'queued',
                 'status' => 'Processing receipt',
                 'raw_ocr_json' => null,
@@ -115,7 +183,7 @@ class ReceiptReportController extends Controller
             $session->update(['is_used' => true, 'processing_status' => 'finalized']);
             ReportStatusHistory::create([
                 'consumer_report_id' => $locked->id,
-                'previous_status' => 'Needs recapture',
+                'previous_status' => $previousStatus,
                 'new_status' => 'Processing receipt',
                 'public_message' => 'New receipt evidence received and queued for processing.',
                 'actor_type' => 'system',
@@ -127,6 +195,39 @@ class ReceiptReportController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'New receipt evidence queued for processing under the same report reference.',
+            'data' => ['report_reference' => $report->report_reference, 'status' => 'Processing receipt'],
+        ]);
+    }
+
+    public function retryProcessing(Request $request, string $reference)
+    {
+        $report = $this->authorizedReport($request, $reference);
+        if ($report->status !== 'Processing failed' || ! $report->evidenceBundle) {
+            return response()->json(['success' => false, 'message' => 'Only a failed receipt process can be retried.'], 409);
+        }
+
+        DB::transaction(function () use ($report) {
+            $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+            $report->evidenceBundle->update([
+                'processing_status' => 'queued',
+                'processing_result_json' => null,
+                'processing_started_at' => null,
+                'processing_completed_at' => null,
+                'failure_code' => null,
+            ]);
+            ReportStatusHistory::create([
+                'consumer_report_id' => $report->id,
+                'previous_status' => 'Processing failed',
+                'new_status' => 'Processing receipt',
+                'public_message' => 'Receipt processing retry queued using the original evidence.',
+                'actor_type' => 'system',
+            ]);
+        });
+        ProcessReceiptEvidence::dispatch($report->report_reference)->afterCommit();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt processing retry queued.',
             'data' => ['report_reference' => $report->report_reference, 'status' => 'Processing receipt'],
         ]);
     }
@@ -182,7 +283,7 @@ class ReceiptReportController extends Controller
     public function processing(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        $report->loadMissing(['evidenceBundle', 'store']);
+        $report->loadMissing(['evidenceBundle.assets', 'store']);
         $latestHistory = $report->statusHistories()->latest('id')->first();
         $reasonCode = $report->evidenceBundle?->failure_code
             ?? data_get($report->evidenceBundle?->processing_result_json, 'reason_code');
@@ -206,6 +307,7 @@ class ReceiptReportController extends Controller
                 'recapture_reason' => $report->status === 'Needs recapture' && $reasonCode
                     ? ['code' => $reasonCode, 'message' => $this->safeReasonMessage($reasonCode)]
                     : null,
+                'evidence' => $this->sourceEvidence($report),
             ],
         ]);
     }
@@ -220,7 +322,7 @@ class ReceiptReportController extends Controller
             ], 409);
         }
 
-        $report->load(['store', 'items', 'evidenceBundle']);
+        $report->load(['store', 'items', 'evidenceBundle.assets']);
         $processingResult = $report->evidenceBundle?->processing_result_json ?? [];
 
         return response()->json([
@@ -245,19 +347,44 @@ class ReceiptReportController extends Controller
                 ])->values(),
                 'continuity' => $processingResult['continuity'] ?? ($report->raw_ocr_json['continuity'] ?? null),
                 'merchant' => $processingResult['merchant'] ?? ($report->raw_ocr_json['merchant'] ?? null),
-                'manual_review_required' => $report->processing_status === 'ready_manual_review',
+                'detected_total' => $processingResult['detected_total'] ?? ($report->raw_ocr_json['detected_total'] ?? null),
+                'warnings' => $processingResult['warnings'] ?? ($report->raw_ocr_json['warnings'] ?? []),
+                'manual_review_required' => (bool) ($processingResult['manual_review_required'] ?? false),
+                'evidence' => $this->sourceEvidence($report),
             ],
+        ]);
+    }
+
+    public function evidenceAsset(Request $request, string $reference, ReceiptEvidenceAsset $asset)
+    {
+        $report = $this->authorizedReport($request, $reference);
+        abort_unless(
+            $report->receipt_evidence_bundle_id
+                && $asset->receipt_evidence_bundle_id === $report->receipt_evidence_bundle_id
+                && $asset->kind === 'source_frame',
+            404,
+        );
+        abort_unless(Storage::disk($asset->disk)->exists($asset->path), 404);
+        abort_unless($asset->hasValidContent(), 409, 'Receipt evidence failed its integrity check.');
+
+        return response(Storage::disk($asset->disk)->get($asset->path), 200, [
+            'Content-Type' => $asset->mime_type,
+            'Cache-Control' => 'no-store, private',
+            'Content-Disposition' => 'inline',
         ]);
     }
 
     public function confirm(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        $rules = ['confirmed_items' => 'prohibited'];
-        if ($report->capture_mode !== 'single_image_v1') {
-            $rules['consumer_confirmed'] = 'accepted';
+        $rules = [
+            'consumer_confirmed' => 'required|accepted',
+            'tracking_token' => 'sometimes|string',
+        ];
+        foreach (array_keys($request->except(['consumer_confirmed', 'tracking_token'])) as $field) {
+            $rules[$field] = 'prohibited';
         }
-        $validated = $request->validate($rules);
+        $request->validate($rules);
 
         if ($report->status === 'Submitted') {
             return response()->json([
@@ -272,33 +399,31 @@ class ReceiptReportController extends Controller
                 'message' => 'Only a receipt that is ready for confirmation can be submitted.',
             ], 409);
         }
-        if (! $report->items()->exists()) {
+        $report->loadMissing('evidenceBundle.assets');
+        $originals = $report->capture_mode === 'continuous_video_v1'
+            ? $report->evidenceBundle?->assets->where('kind', 'original_video') ?? collect()
+            : $report->evidenceBundle?->assets->where('kind', 'source_frame') ?? collect();
+        if ($originals->isEmpty() || $originals->contains(fn ($asset) => ! $asset->hasValidContent())) {
             return response()->json([
                 'success' => false,
-                'message' => 'No verified OCR items are available to confirm.',
+                'message' => 'The original receipt evidence is unavailable. This report cannot be submitted.',
             ], 409);
         }
-
         DB::transaction(function () use ($report) {
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
             if ($locked->status === 'Submitted') {
                 return;
             }
 
-            $confirmedItems = $locked->items()->orderBy('sequence')->get()->map(fn ($item) => [
+            $systemItems = $locked->items()->orderBy('sequence')->get()->map(fn ($item) => [
                 'sequence' => $item->sequence,
                 'item_name' => $item->item_name,
                 'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
                 'unit' => $item->unit,
                 'observed_price' => $item->observed_price !== null ? (float) $item->observed_price : null,
             ])->values()->all();
-            $locked->items()->update([
-                'consumer_correction_json' => null,
-                'consumer_confirmed' => true,
-            ]);
-
             $locked->update([
-                'consumer_confirmed_json' => $confirmedItems,
+                'consumer_confirmed_json' => null,
                 'consumer_confirmed_at' => now(),
                 'submitted_at' => now(),
                 'resume_token_hash' => null,
@@ -310,18 +435,19 @@ class ReceiptReportController extends Controller
                 'consumer_report_id' => $locked->id,
                 'previous_status' => 'Ready for confirmation',
                 'new_status' => 'Submitted',
-                'public_message' => 'Consumer confirmed the receipt details. Report submitted for DTI evaluation.',
+                'public_message' => 'Consumer reviewed the captured receipt and system extraction. Report submitted for DTI evaluation.',
                 'actor_type' => 'system',
             ]);
 
-            $evidencePath = $locked->evidenceBundle?->assets()->where('kind', 'original_video')->value('path')
+            $evidencePath = $locked->evidenceBundle?->assets()->where('kind', 'source_frame')->orderBy('sequence')->value('path')
+                ?? $locked->evidenceBundle?->assets()->where('kind', 'original_video')->value('path')
                 ?? $locked->image_vault_path
                 ?? 'receipt-evidence/'.($locked->evidenceBundle?->evidence_uuid ?? $locked->report_reference);
             CitizenTip::create([
                 'store_id' => $locked->store_id,
                 'extracted_text_json' => [
                     'lines' => $locked->raw_ocr_json['lines'] ?? [],
-                    'confirmed_items' => $confirmedItems,
+                    'system_extracted_items' => $systemItems,
                     'report_reference' => $locked->report_reference,
                 ],
                 'image_hash_path' => $evidencePath,
@@ -334,7 +460,7 @@ class ReceiptReportController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Receipt details confirmed and submitted to DTI for evaluation.',
+            'message' => 'Receipt evidence reviewed and submitted to DTI for evaluation.',
             'data' => [
                 'report_reference' => $report->report_reference,
                 'status' => $report->status,
@@ -363,14 +489,27 @@ class ReceiptReportController extends Controller
     private function safeReasonMessage(string $reasonCode): string
     {
         return match ($reasonCode) {
-            'INSUFFICIENT_FRAMES' => 'The recording was too short or did not contain enough usable receipt views.',
+            'INSUFFICIENT_FRAMES' => 'No usable receipt image was captured.',
             'TEXT_UNREADABLE' => 'The receipt text was not clear enough to read. Keep it flat, well lit, and in focus.',
-            'INCOMPLETE_SCAN' => 'The recording did not show one continuous receipt from top to bottom.',
+            'INCOMPLETE_SCAN' => 'Adjacent receipt sections do not overlap enough to verify that the receipt is complete.',
             'STORE_NOT_CONFIRMED' => 'The store name on the receipt could not be matched to the selected establishment.',
             'ITEMS_NOT_FOUND' => 'No complete receipt item lines could be verified.',
             'TOTAL_NOT_FOUND' => 'The receipt total was not visible or readable.',
             'TOTAL_MISMATCH' => 'The detected item amounts did not match the receipt total.',
             default => 'The receipt could not be verified. Please capture it again.',
         };
+    }
+
+    private function sourceEvidence(ConsumerReport $report): array
+    {
+        return $report->evidenceBundle?->assets
+            ->where('kind', 'source_frame')
+            ->sortBy('sequence')
+            ->map(fn ($asset) => [
+                'id' => $asset->id,
+                'sequence' => (int) $asset->sequence,
+                'mime_type' => $asset->mime_type,
+                'size_bytes' => (int) $asset->size_bytes,
+            ])->values()->all() ?? [];
     }
 }

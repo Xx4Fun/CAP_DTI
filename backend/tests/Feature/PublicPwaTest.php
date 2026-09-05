@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\CaptureSession;
 use App\Models\ConsumerReport;
+use App\Jobs\ProcessReceiptEvidence;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class PublicPwaTest extends TestCase
@@ -40,6 +42,7 @@ class PublicPwaTest extends TestCase
         ]);
 
         Storage::fake('local');
+        Storage::fake('receipt_evidence');
     }
 
     public function test_can_get_public_config()
@@ -73,6 +76,8 @@ class PublicPwaTest extends TestCase
         ]);
 
         $response->assertStatus(201)
+                 ->assertJsonPath('data.capture_mode', 'guided_photos_v1')
+                 ->assertJsonPath('data.limits.min_frames', 1)
                  ->assertJsonStructure([
                      'data' => ['capture_session_id', 'session_uuid', 'capture_token', 'expires_at']
                  ]);
@@ -81,6 +86,14 @@ class PublicPwaTest extends TestCase
             'store_id' => $this->store->id,
             'is_used' => false,
         ]);
+    }
+
+    public function test_legacy_single_image_capture_cannot_be_started(): void
+    {
+        $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'single_image_v1',
+        ])->assertUnprocessable();
     }
 
     public function test_can_create_store_locked_continuous_receipt_capture_session()
@@ -109,6 +122,8 @@ class PublicPwaTest extends TestCase
 
     public function test_can_submit_formal_report_and_enforce_idempotency()
     {
+        Queue::fake([ProcessReceiptEvidence::class]);
+
         // 1. Request Capture Session
         $sessionRes = $this->postJson('/api/public/capture-session', ['store_id' => $this->store->id]);
         $token = $sessionRes->json('data.capture_token');
@@ -117,14 +132,27 @@ class PublicPwaTest extends TestCase
         $submissionUuid = 'sub-uuid-123456';
         $fakeFile = UploadedFile::fake()->create('receipt.jpg', 100, 'image/jpeg');
 
+        $this->withHeader('X-Capture-Token', $token)
+            ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
+                'kind' => 'source_frame',
+                'sequence' => 0,
+                'asset' => $fakeFile,
+            ])->assertCreated();
+
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => $submissionUuid,
+            'capture_token' => $token,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '1.0',
+            'extracted_text_json' => json_encode(['lines' => ['Rice 45.00']]),
+        ])->assertUnprocessable();
+
         // 2. Submit Report
         $response = $this->postJson('/api/public/reports', [
             'submission_uuid' => $submissionUuid,
             'capture_token' => $token,
             'store_id' => $this->store->id,
-            'image' => $fakeFile,
             'privacy_notice_version' => '1.0',
-            'extracted_text_json' => json_encode(['lines' => ['Rice 45.00']]),
         ]);
 
         $response->assertStatus(201)
@@ -140,7 +168,6 @@ class PublicPwaTest extends TestCase
             'submission_uuid' => $submissionUuid,
             'capture_token' => $token,
             'store_id' => $this->store->id,
-            'image' => $fakeFile,
             'privacy_notice_version' => '1.0',
         ]);
 
@@ -156,6 +183,6 @@ class PublicPwaTest extends TestCase
         $trackRes = $this->getJson("/api/public/reports/track?reference={$ref}&token={$trkToken}");
         $trackRes->assertStatus(200)
                  ->assertJsonPath('data.report_reference', $ref)
-                 ->assertJsonPath('data.current_status', 'Submitted');
+                 ->assertJsonPath('data.current_status', 'Processing receipt');
     }
 }

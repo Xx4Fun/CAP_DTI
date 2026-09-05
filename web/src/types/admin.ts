@@ -131,8 +131,6 @@ export interface ConsumerReportItemRecord {
   srp_id?: number | null
   commodity_key?: string | null
   commodity_name?: string | null
-  consumer_correction_json?: Record<string, unknown> | null
-  consumer_confirmed: boolean
   evaluator_decision_json?: Record<string, unknown> | null
 }
 
@@ -144,6 +142,8 @@ export interface ReceiptEvidenceAssetRecord {
   size_bytes: number
   sha256: string
   metadata: Record<string, unknown> | null
+  attempt_number?: number
+  is_current?: boolean
 }
 
 export interface ReceiptEvidenceManifest {

@@ -431,7 +431,7 @@ export const App: React.FC = () => {
             setActiveTab={setActiveTab}
             onTrackReport={(reference) => openTrackedReport(reference)}
             onReportSubmitted={recordSubmittedReport}
-            continuousCaptureEnabled={config?.receipt_continuous_capture_enabled === true}
+            guidedCaptureEnabled={config?.receipt_guided_capture_enabled !== false}
             vapidPublicKey={config?.receipt_web_push_enabled ? config.vapid_public_key || '' : ''}
             location={location}
             locationError={locationError}

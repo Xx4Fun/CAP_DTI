@@ -73,7 +73,12 @@ class ReceiptEvidenceController extends Controller
         $sha256 = hash_file('sha256', $file->getRealPath());
         $extension = $file->guessExtension() ?: ($isVideo ? 'bin' : 'jpg');
         $path = "receipt-evidence/{$bundle->evidence_uuid}/{$validated['kind']}-{$validated['sequence']}-{$sha256}.{$extension}";
-        Storage::disk('receipt_evidence')->put($path, $file->getContent(), ['visibility' => 'private']);
+        $disk = (string) config('filesystems.receipt_evidence_disk', 'receipt_evidence');
+        abort_unless(
+            Storage::disk($disk)->put($path, $file->getContent(), ['visibility' => 'private']),
+            503,
+            'Receipt evidence storage is unavailable. Try again without leaving this page.',
+        );
 
         $asset = ReceiptEvidenceAsset::firstOrNew([
             'receipt_evidence_bundle_id' => $bundle->id,
@@ -84,12 +89,13 @@ class ReceiptEvidenceController extends Controller
         $previousDisk = $asset->disk;
         $previousPath = $asset->path;
         $asset->fill([
-            'disk' => 'receipt_evidence',
+            'disk' => $disk,
             'path' => $path,
             'original_filename' => $file->getClientOriginalName(),
             'mime_type' => $mimeType,
             'size_bytes' => $file->getSize(),
             'sha256' => $sha256,
+            'metadata_json' => null,
         ])->save();
         if (! $wasCreated && $previousPath && $previousPath !== $path) {
             Storage::disk($previousDisk ?: 'receipt_evidence')->delete($previousPath);
