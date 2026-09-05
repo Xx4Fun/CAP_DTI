@@ -679,7 +679,8 @@ describe('field workspace security flow', () => {
     expect(screen.queryByRole('button', { name: 'Continue to Record Prices' })).not.toBeInTheDocument()
 
     fireEvent.click(storeCards[0])
-    expect(screen.getByText('DTI Verified')).toBeInTheDocument()
+    expect(screen.getAllByText('Near Market').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('DTI Verified')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Choose .* to record prices/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('field-sidebar')).not.toBeInTheDocument()
 
@@ -859,9 +860,40 @@ describe('field workspace security flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Save or discard every unfinished visit')
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Current Work' }))
     expect(screen.getByRole('heading', { name: 'Monitoring' })).toBeInTheDocument()
     expect(fixtures.api.logout).not.toHaveBeenCalled()
     expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+  })
+
+  it('prompts for confirmation and allows signing out when all visits and queues are clear', async () => {
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
+    fixtures.vault.readSecret.mockResolvedValue(undefined)
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Authenticate' }))
+    fireEvent.change(screen.getByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.change(screen.getByLabelText('Confirm 4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue with PIN' }))
+    await screen.findByText(/Good day, Ana/i)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open profile' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+
+    expect(await screen.findByRole('heading', { name: 'Sign out of PRICE-Watch?' })).toBeInTheDocument()
+    expect(screen.getByText(/offline authorization lease and cached data will be cleared/i)).toBeInTheDocument()
+
+    // Test dismiss/stay signed in
+    fireEvent.click(screen.getByRole('button', { name: 'Stay signed in' }))
+    expect(screen.queryByRole('heading', { name: 'Sign out of PRICE-Watch?' })).not.toBeInTheDocument()
+    expect(fixtures.api.logout).not.toHaveBeenCalled()
+
+    // Test confirmed sign out
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    expect(await screen.findByRole('heading', { name: 'Sign out of PRICE-Watch?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, sign out' }))
+
+    await waitFor(() => expect(fixtures.api.logout).toHaveBeenCalledTimes(1))
+    expect(fixtures.vault.clearVault).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('button', { name: 'Authenticate' })).toBeInTheDocument()
   })
 
   it('automatically attempts enrolled biometrics, then offers retry and PIN after cancellation', async () => {

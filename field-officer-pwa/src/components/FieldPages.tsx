@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, CheckCircle2, ChevronDown, ChevronUp,
+  ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
-  History, LockKeyhole, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, UserRound, WifiOff,
+  History, LogOut, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import type { BiometricAvailability } from '../app/vault'
@@ -47,8 +47,6 @@ export function HomePage({
   officerPosition,
   activeDraft,
   authorizationValid,
-  verificationCount = 0,
-  draftCount = 0,
   onStart,
   onViewActivity,
 }: HomePageProps) {
@@ -115,11 +113,6 @@ export function HomePage({
       <div className="field-hero-badge-visual" aria-hidden="true">
         {activeDraft ? <ClipboardList size={44} /> : <Building2 size={44} />}
       </div>
-    </section>
-
-    <section className={`field-protocol-strip ${bootstrap.protocol?.mode === 'emergency' ? 'emergency' : ''}`} aria-label="Active monitoring protocol">
-      <div><ShieldCheck /><span><strong>{bootstrap.protocol?.mode === 'emergency' ? 'Emergency price protocol active' : 'Standard price monitoring'}</strong><small>{bootstrap.protocol?.mode === 'emergency' ? (bootstrap.protocol.declaration_reference || 'Use current regulatory ceilings') : 'Prices more than 10% above SRP are marked For review.'}</small></span></div>
-      <button type="button" className="text-button" onClick={() => onViewActivity(verificationCount ? 'verification' : 'work')}>{verificationCount} verification{verificationCount === 1 ? '' : 's'} · {draftCount} draft{draftCount === 1 ? '' : 's'}</button>
     </section>
 
     <section className="field-bento-section" aria-label="Field operation statistics">
@@ -240,7 +233,7 @@ export function MonitoringPage({
   authorizationValid,
   requests,
   requestsState,
-  initialTab = 'verification',
+  initialTab = 'work',
   onResume,
   onStart,
   onDiscard,
@@ -249,7 +242,7 @@ export function MonitoringPage({
   onClaim,
   onRelease,
 }: MonitoringPageProps) {
-  const [tab, setTab] = useState<'verification' | 'work' | 'sync'>(initialTab)
+  const [tab, setTab] = useState<'work' | 'verification' | 'sync'>(initialTab)
   const [expandedQueue, setExpandedQueue] = useState<string | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
   const actionableDrafts = drafts.filter((d) => d.store_id !== null || d.items.length > 0)
@@ -263,9 +256,9 @@ export function MonitoringPage({
     <div className="page field-page field-activity-page">
       <h1 className="sr-only" tabIndex={-1}>Monitoring</h1>
       <div className="field-monitoring-tabs" role="tablist" aria-label="Monitoring work">
-        <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Field Verification <span>{requests.length}</span></button>
-        <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span>{actionableDrafts.length}</span></button>
-        <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span>{queue.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span className="tab-badge">{actionableDrafts.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Verification <span className="tab-badge">{requests.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span className="tab-badge">{queue.length}</span></button>
       </div>
 
       {tab === 'verification' && <section className="field-card-section field-verification-section" role="tabpanel">
@@ -503,10 +496,10 @@ export function MonitoringPage({
                           const analysis = analyzeWithReference(line, reference)
                           return (
                             <div key={line.srp_id} className="field-queue-table-row">
-                              <span><strong>{bulletin?.commodity_name || `Item #${line.srp_id}`}</strong></span>
-                              <span>{reference.value === null ? 'Unavailable' : `₱${reference.value.toFixed(2)}`}</span>
-                              <span><strong>₱{line.recorded_price.toFixed(2)}</strong></span>
-                              <span>
+                              <span className="queue-col-name"><strong>{bulletin?.commodity_name || `Item #${line.srp_id}`}</strong></span>
+                              <span className="queue-col-ref">{reference.value === null ? 'Unavailable' : `₱${reference.value.toFixed(2)}`}</span>
+                              <span className="queue-col-price"><strong>₱{line.recorded_price.toFixed(2)}</strong></span>
+                              <span className="queue-col-variance">
                                 <em className={analysis.is_anomaly ? 'variance-anomaly' : 'variance-ok'}>
                                   {analysis.label === 'Regulatory reference unavailable' ? 'Unavailable' : analysis.is_anomaly ? `+${analysis.variance_percent}%` : 'Within reference'}
                                 </em>
@@ -559,7 +552,7 @@ export function HistoryPage({ session, online }: { session: FieldSession; online
   if (detail) return <div className="page field-page field-history-page">
     <button type="button" className="text-button field-history-back" onClick={() => setDetail(null)}><ArrowLeft />Back to history</button>
     <section className="field-history-detail">
-      <div className="field-page-heading"><div><h1 tabIndex={-1}>{detail.store.store_name}</h1><p>{detail.store.address}</p></div><em className="accepted">Accepted · View only</em></div>
+      <div className="field-page-heading"><div><h1 tabIndex={-1}>{detail.store.store_name}</h1><p>{detail.store.address}</p></div></div>
       <dl><div><dt>Finalized</dt><dd>{formatDate(detail.finalized_at)}</dd></div><div><dt>Synchronization</dt><dd>{detail.sync_source === 'offline_queue' ? 'Uploaded from offline queue' : 'Accepted online'}</dd></div><div><dt>Store representative</dt><dd>{detail.representative.name}{detail.representative.title ? ` · ${detail.representative.title}` : ''}</dd></div><div><dt>Signatures</dt><dd>{detail.signatures.officer_present && detail.signatures.representative_present ? 'Both signatures captured' : 'Signature evidence incomplete'}</dd></div><div><dt>Locked GPS</dt><dd>{detail.location.latitude.toFixed(5)}, {detail.location.longitude.toFixed(5)} · ±{Math.round(detail.location.accuracy_meters)} m</dd></div>{detail.field_verification_request_id && <div><dt>Field verification</dt><dd>Verification request #{detail.field_verification_request_id}</dd></div>}</dl>
       <div className="field-history-detail-items"><h2>Recorded products</h2>{detail.items.map((item) => <article key={item.id}><div><strong>{item.commodity_name || `Item #${item.srp_id}`}</strong><small>{item.unit}</small></div><span>₱{Number(item.recorded_price).toFixed(2)}</span><em className={item.reference_status === 'unavailable' || item.is_anomaly ? 'attention' : 'within'}>{item.reference_status === 'unavailable' ? 'Regulatory reference unavailable' : item.is_anomaly ? 'For review' : 'Within reference'}</em><small>{item.reference_label || item.reference_source || 'Reference unavailable'}{item.reference_effective_date ? ` · ${item.reference_effective_date}` : ''}</small></article>)}</div>
     </section>
@@ -568,7 +561,52 @@ export function HistoryPage({ session, online }: { session: FieldSession; online
     <section className="field-history-section">
       {!online && <div className="field-offline-state"><WifiOff /><div><h2>History needs a connection</h2><p>Current drafts and pending synchronization remain available in Monitoring.</p></div></div>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loading ? <div className="field-history-loading" role="status">Loading accepted visits…</div> : online && page?.data.length ? <div className="field-history-records"><div className="field-history-head"><span>Establishment</span><span>Officer visit</span><span>Items</span><span>Observations</span><span>Status</span><span /></div>{page.data.map((record) => <article key={record.id}><div data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></div><span data-label="Officer visit">{formatDate(record.finalized_at)}</span><span data-label="Items">{record.items_count}</span><span data-label="Observations"><em className={record.anomaly_count ? 'attention' : 'within'}>{record.anomaly_count || 'None'}</em></span><span data-label="Status"><em className="accepted">Accepted</em></span><button type="button" className="text-button" aria-label={`View ${record.store.store_name} visit details`} onClick={() => openDetail(record)}>View details</button></article>)}</div> : online && !loading && <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>Server-accepted monitoring records will appear here.</span></div>}
+      {loading ? (
+        <div className="field-history-loading" role="status">Loading accepted visits…</div>
+      ) : online && page?.data.length ? (
+        <div className="field-history-records">
+          {page.data.map((record) => (
+            <button
+              key={record.id}
+              type="button"
+              className="field-history-card"
+              aria-label={`View ${record.store.store_name} visit details`}
+              onClick={() => openDetail(record)}
+            >
+              <div className="field-history-card-header">
+                <strong className="field-history-store-name">{record.store.store_name}</strong>
+                <span className="field-history-status">
+                  {record.anomaly_count > 0 ? (
+                    <em className="attention">
+                      <TriangleAlert className="fa-status-icon" aria-hidden="true" />
+                      <span>{record.anomaly_count} {record.anomaly_count === 1 ? 'anomaly' : 'anomalies'}</span>
+                    </em>
+                  ) : (
+                    <em className="accepted">
+                      <Check className="fa-status-icon" aria-hidden="true" />
+                      <span>Accepted</span>
+                    </em>
+                  )}
+                </span>
+              </div>
+
+              <small className="field-history-store-address">{record.store.address}</small>
+
+              <div className="field-history-card-footer">
+                <span className="field-history-date">
+                  <Clock className="fa-date-icon" aria-hidden="true" />
+                  <span>{formatDate(record.finalized_at)}</span>
+                </span>
+                <span className="field-history-chevron" aria-hidden="true">
+                  <ChevronRight />
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : online && !loading ? (
+        <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>Server-accepted monitoring records will appear here.</span></div>
+      ) : null}
       {page && page.last_page > 1 && <div className="pagination"><span>Showing {page.from}–{page.to} of {page.total}</span><div><button type="button" disabled={current <= 1} onClick={() => setCurrent(current - 1)}>Previous</button><strong>Page {current} of {page.last_page}</strong><button type="button" disabled={current >= page.last_page} onClick={() => setCurrent(current + 1)}>Next</button></div></div>}
     </section>
   </div>
@@ -581,11 +619,11 @@ interface ProfilePageProps {
   biometricEnabled: boolean
   onToggleBiometric: () => Promise<void>
   onReplayGuide?: () => void
-  onLock: () => void
+  onLock?: () => void
   onLogout: () => void
 }
 
-export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onReplayGuide, onLock, onLogout }: ProfilePageProps) {
+export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onReplayGuide, onLogout }: ProfilePageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const authorizationValid = canFinalizeWithLease(session.offline_lease)
@@ -609,7 +647,12 @@ export function ProfilePage({ session, online, biometricAvailability, biometricE
       <section><div className="field-settings-heading"><span><Fingerprint /></span><div><h2>Biometric unlock</h2><p>{biometricDetail}</p></div></div>{biometricAvailability === 'available' && <button type="button" className="secondary-button" disabled={busy} onClick={() => void toggleBiometric()}>{busy ? 'Updating…' : biometricEnabled ? 'Disable biometric unlock' : 'Enable biometric unlock'}</button>}{error && <p className="form-error" role="alert">{error}</p>}</section>
       {onReplayGuide && <section><div className="field-settings-heading"><span><Eye /></span><div><h2>App guide</h2><p>Review what each section does and how to complete a visit.</p></div></div><button type="button" className="secondary-button" onClick={onReplayGuide}>Replay app guide</button></section>}
     </div>
-    <section className="field-security-actions"><div><LockKeyhole /><span><h2>Workspace access</h2><p>Lock this device without deleting drafts, queued evidence, or downloaded field data.</p></span></div><div><button type="button" className="secondary-button" onClick={onLock}>Lock now</button><button type="button" className="field-signout-button" onClick={onLogout}>Sign out</button></div></section>
+    <div className="field-profile-signout-section">
+      <button type="button" className="field-signout-button" onClick={onLogout}>
+        <LogOut size={18} aria-hidden="true" />
+        <span>Sign out</span>
+      </button>
+    </div>
   </div>
 }
 

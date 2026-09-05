@@ -43,6 +43,8 @@ export interface VisitDraft {
   client_uuid: string
   verification_request_id?: number
   store_id: number | null
+  store_name?: string
+  store_address?: string
   offline_lease_id: string
   started_at: string
   finalized_at?: string

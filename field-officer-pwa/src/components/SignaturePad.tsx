@@ -9,13 +9,25 @@ export function SignaturePad({ label, value, onChange }: { label: string; value:
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ratio = window.devicePixelRatio || 1
-    const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width * ratio
-    canvas.height = rect.height * ratio
-    const context = canvas.getContext('2d')
-    context?.scale(ratio, ratio)
-    if (context) { context.lineCap = 'round'; context.lineJoin = 'round'; context.lineWidth = 2.4; context.strokeStyle = '#082f5d' }
+    const initCanvas = () => {
+      const ratio = window.devicePixelRatio || 1
+      const rect = canvas.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        canvas.width = rect.width * ratio
+        canvas.height = rect.height * ratio
+        const context = canvas.getContext('2d')
+        context?.scale(ratio, ratio)
+        if (context) {
+          context.lineCap = 'round'
+          context.lineJoin = 'round'
+          context.lineWidth = 2.4
+          context.strokeStyle = '#082f5d'
+        }
+      }
+    }
+    initCanvas()
+    window.addEventListener('resize', initCanvas)
+    return () => window.removeEventListener('resize', initCanvas)
   }, [])
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -46,7 +58,13 @@ export function SignaturePad({ label, value, onChange }: { label: string; value:
 
   return <div className="signature-field">
     <div className="signature-label"><strong>{label}</strong><button type="button" onClick={clear}><RotateCcw size={15} /> Clear</button></div>
-    <canvas ref={canvasRef} aria-label={`${label} signature area`} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} />
+    <div className="signature-canvas-wrap">
+      <canvas ref={canvasRef} aria-label={`${label} signature area`} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} />
+      <div className="signature-baseline-guide" aria-hidden="true">
+        <span className="signature-guide-x">✕</span>
+        <span className="signature-guide-line" />
+      </div>
+    </div>
     <span>{value ? 'Signature captured' : 'Sign inside the box'}</span>
   </div>
 }

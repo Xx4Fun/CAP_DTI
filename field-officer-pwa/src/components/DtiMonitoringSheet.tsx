@@ -168,9 +168,8 @@ export function DtiMonitoringSheet({
         <div className="dti-store-identity">
           <Building2 size={18} className="dti-store-icon" aria-hidden="true" />
           <div className="dti-store-header-title">
-            <strong className="dti-store-name">{store?.store_name || 'Selected Establishment'}</strong>
-            <span className="dti-official-badge">DTI Verified</span>
-            <span className="dti-store-address">· {store?.address || 'San Jose de Buenavista, Antique'}</span>
+            <strong className="dti-store-name">{store?.store_name || draft.store_name || (draft.store_id ? `Store #${draft.store_id}` : 'Selected Establishment')}</strong>
+            <span className="dti-store-address">· {store?.address || draft.store_address || 'San Jose de Buenavista, Antique'}</span>
           </div>
         </div>
 
@@ -233,37 +232,49 @@ export function DtiMonitoringSheet({
               type="button"
               role="tab"
               aria-selected={filterMode === 'all'}
+              aria-label={`All (${bulletins.length})`}
               className={filterMode === 'all' ? 'active' : ''}
               onClick={() => setFilterMode('all')}
             >
-              All ({bulletins.length})
+              <span className="dti-pill-label-desktop">All</span>
+              <span className="dti-pill-label-mobile">All</span>
+              <span className="tab-badge">{bulletins.length}</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={filterMode === 'encoded'}
+              aria-label={`Recorded (${encodedCount})`}
               className={filterMode === 'encoded' ? 'active' : ''}
               onClick={() => setFilterMode('encoded')}
             >
-              Recorded ({encodedCount})
+              <span className="dti-pill-label-desktop">Recorded</span>
+              <span className="dti-pill-label-mobile">Done</span>
+              <span className="tab-badge">{encodedCount}</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={filterMode === 'compliant'}
+              aria-label={`Within reference (${compliantCount})`}
               className={`compliant-tab ${filterMode === 'compliant' ? 'active' : ''}`}
               onClick={() => setFilterMode('compliant')}
             >
-              Within reference ({compliantCount})
+              <span className="dti-pill-label-desktop">Within reference</span>
+              <span className="dti-pill-label-mobile">OK</span>
+              <span className="tab-badge">{compliantCount}</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={filterMode === 'anomalies'}
+              aria-label={`For review (${anomalyCount})`}
               className={`anomaly-tab ${filterMode === 'anomalies' ? 'active' : ''}`}
               onClick={() => setFilterMode('anomalies')}
             >
-              For review ({anomalyCount})
+              <span className="dti-pill-label-desktop">For review</span>
+              <span className="dti-pill-label-mobile">Review</span>
+              <span className="tab-badge">{anomalyCount}</span>
             </button>
           </div>
         </div>
@@ -413,10 +424,11 @@ export function DtiMonitoringSheet({
           <button
             type="button"
             className="secondary-button bottom-prev-btn"
+            aria-label="Back to Choose Store"
             onClick={onPrevious}
           >
             <ArrowLeft size={16} />
-            <span>Back to Choose Store</span>
+            <span>Previous</span>
           </button>
         ) : (
           <div />
@@ -427,9 +439,10 @@ export function DtiMonitoringSheet({
             type="button"
             className="primary-button proceed-review-btn"
             disabled={encodedCount === 0}
+            aria-label="Review visit evidence"
             onClick={onProceedToReview}
           >
-            <span>Review visit evidence</span>
+            <span>Next</span>
             <ArrowRight size={16} />
           </button>
         )}

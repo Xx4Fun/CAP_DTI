@@ -66,8 +66,7 @@ describe('Field top-level pages', () => {
     expect(screen.queryByText(/biometric/i)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View current monitoring' }))
     expect(viewActivity).toHaveBeenCalledWith('work')
-    fireEvent.click(screen.getByRole('button', { name: /0 verification/ }))
-    expect(viewActivity).toHaveBeenCalledWith('work')
+    expect(screen.queryByText(/Standard price monitoring/i)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View all' }))
     expect(viewActivity).toHaveBeenCalledWith('sync')
   })
@@ -123,8 +122,8 @@ describe('Field top-level pages', () => {
 
     expect(screen.getByRole('heading', { name: 'Monitoring' })).toHaveClass('sr-only')
     expect(screen.queryByText('Handle verification work, resume encrypted drafts, and synchronize completed visits.')).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Field Verification 1' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Current Work 2' }))
+    expect(screen.getByRole('tab', { name: /Verification 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Current Work 2' })).toBeInTheDocument()
     expect(screen.getAllByText('Market One').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Inspection Draft')).toHaveLength(2)
     expect(screen.getAllByText('1 line')).toHaveLength(2)
@@ -154,6 +153,7 @@ describe('Field top-level pages', () => {
   it('keeps saved verification requests visible when they cannot be refreshed', () => {
     render(
       <MonitoringPage
+        initialTab="verification"
         drafts={[]}
         queue={[]}
         bootstrap={bootstrap}
@@ -198,19 +198,16 @@ describe('Field top-level pages', () => {
     expect(screen.getByText('Verification request #8')).toBeInTheDocument()
   })
 
-  it('moves account and biometric security controls into Profile', async () => {
+  it('renders profile details and sign out action', async () => {
     const toggle = vi.fn().mockResolvedValue(undefined)
-    const lock = vi.fn()
     const logout = vi.fn()
-    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={toggle} onLock={lock} onLogout={logout} />)
+    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={toggle} onLogout={logout} />)
 
     expect(screen.getByRole('heading', { name: 'Ana Officer' })).toBeInTheDocument()
     expect(screen.getByText('ana@dti.test')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Enable biometric unlock' }))
     await waitFor(() => expect(toggle).toHaveBeenCalledTimes(1))
-    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }))
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
-    expect(lock).toHaveBeenCalledTimes(1)
     expect(logout).toHaveBeenCalledTimes(1)
   })
 })

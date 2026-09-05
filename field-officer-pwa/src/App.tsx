@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, Building2, Check, CheckCircle2, ChevronLeft, Info,
-  CloudOff, LocateFixed, LockKeyhole, MapPin,
+  CloudOff, LocateFixed, LockKeyhole, LogOut, MapPin,
   Fingerprint, Search, ShieldCheck,
   TriangleAlert, Wifi, WifiOff, X
 } from 'lucide-react'
@@ -31,6 +31,12 @@ type View = TopLevelView | 'visit'
 type Completion = { status: 'accepted' | 'queued'; storeName: string }
 type FieldNotice = { kind: 'success' | 'info' | 'warning' | 'error'; title: string; message: string }
 type RecoveryIssue = { code: string; detail: string }
+type SignOutDialogState =
+  | { type: 'draft-block'; count: number }
+  | { type: 'queue-block'; count: number }
+  | { type: 'offline-block' }
+  | { type: 'confirm' }
+  | null
 class WorkspaceIntegrityError extends Error {
   constructor(readonly issue: RecoveryIssue) { super(issue.detail) }
 }
@@ -80,7 +86,8 @@ export default function App() {
   const [notifications, setNotifications] = useState<FieldNotification[]>([])
   const [notificationState, setNotificationState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [monitoringTab, setMonitoringTab] = useState<'verification' | 'work' | 'sync'>('verification')
+  const [monitoringTab, setMonitoringTab] = useState<'work' | 'verification' | 'sync'>('work')
+  const [signOutDialog, setSignOutDialog] = useState<SignOutDialogState>(null)
   const [, setLeaseClock] = useState(0)
   const hiddenAt = useRef<number | null>(null)
   const previousOnline = useRef(online)
@@ -428,7 +435,12 @@ export default function App() {
     if (!leaseValid) { setNotice({ kind: 'warning', title: 'Authorization expired', message: 'Connect and unlock again before starting another official visit.' }); return }
     const next = createDraft(session.offline_lease.id, verificationRequestId)
     if (storeId) {
+      const store = bootstrap.stores.find((item) => String(item.id) === String(storeId))
       next.store_id = storeId
+      if (store) {
+        next.store_name = store.store_name
+        next.store_address = store.address
+      }
       next.current_step = 1
     } else {
       next.current_step = 0
@@ -446,16 +458,42 @@ export default function App() {
     setMonitoringTab('work'); setView('monitoring')
   }
 
-  const logoutWorkspace = async () => {
+  const logoutWorkspace = () => {
     if (!session) return
     const blocked = logoutBlock(queue, drafts)
-    if (blocked === 'queue') { setNotice({ kind: 'warning', title: 'Uploads still pending', message: 'Synchronize all completed visits before signing out.' }); return }
-    if (blocked === 'draft') { setNotice({ kind: 'warning', title: 'Unfinished visits remain', message: 'Save or discard every unfinished visit in Current Work before signing out.' }); setMonitoringTab('work'); setView('monitoring'); return }
-    if (!navigator.onLine) { setNotice({ kind: 'warning', title: 'Internet connection required', message: 'Connect to the internet to revoke this device session before signing out.' }); return }
+    if (blocked === 'queue') {
+      setSignOutDialog({ type: 'queue-block', count: queue.length })
+      return
+    }
+    if (blocked === 'draft') {
+      const count = drafts.filter((d) => d.store_id !== null || d.items.length > 0).length || drafts.length
+      setSignOutDialog({ type: 'draft-block', count })
+      return
+    }
+    if (!navigator.onLine) {
+      setSignOutDialog({ type: 'offline-block' })
+      return
+    }
+    setSignOutDialog({ type: 'confirm' })
+  }
+
+  const executeLogout = async () => {
+    setSignOutDialog(null)
+    if (!session) return
     try {
       await fieldApi.logout(session.token)
-      await clearVault(); queueRef.current = []; setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDrafts([]); setActiveDraftId(null); setView('home'); setGate('login')
-    } catch (error) { setNotice({ kind: 'error', title: 'Sign out failed', message: apiError(error, 'Sign out could not revoke this device session. Try again while online.') }) }
+      await clearVault()
+      queueRef.current = []
+      setSession(null)
+      setBootstrap(EMPTY_BOOTSTRAP)
+      setQueue([])
+      setDrafts([])
+      setActiveDraftId(null)
+      setView('home')
+      setGate('login')
+    } catch (error) {
+      setNotice({ kind: 'error', title: 'Sign out failed', message: apiError(error, 'Sign out could not revoke this device session. Try again while online.') })
+    }
   }
 
   const toggleBiometric = async () => {
@@ -506,7 +544,7 @@ export default function App() {
       setDrafts((current) => current.filter((item) => item.client_uuid !== draft.client_uuid))
       setActiveDraftId(null)
     }
-    if (next === 'monitoring') setMonitoringTab('verification')
+    if (next === 'monitoring') setMonitoringTab('work')
     setView(next)
   }
   const chooseAnotherStore = (deleteCurrent: boolean) => {
@@ -558,7 +596,7 @@ export default function App() {
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
             : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} />)}
           {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onClaim={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
-          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); updateDraft({ ...draft, current_step: nextStep }) }} draft={draft} bootstrap={bootstrap} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
+          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
             const queuedVisit = { ...finished, sync_source: navigator.onLine ? finished.sync_source : 'offline_queue' as const }
@@ -585,6 +623,122 @@ export default function App() {
           {view === 'profile' && <ProfilePage session={session} online={online} biometricAvailability={biometricAvailability} biometricEnabled={biometricEnabled} onToggleBiometric={toggleBiometric} onReplayGuide={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()} onLogout={() => void logoutWorkspace()} />}
           {guideOpen && <FirstUseGuide step={guideStep} onStep={setGuideStep} onClose={closeGuide} />}
           <NotificationDrawer open={notificationsOpen} online={online} state={notificationState} notifications={notifications} onClose={() => setNotificationsOpen(false)} onRead={(id) => void readNotification(id)} onReadAll={() => void readAllNotifications()} />
+          {signOutDialog && (
+            <div className="field-dialog-backdrop" role="presentation" onClick={() => setSignOutDialog(null)}>
+              <section
+                className="field-dialog field-signout-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="field-signout-dialog-title"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {signOutDialog.type === 'draft-block' && (
+                  <>
+                    <div className="field-signout-dialog-icon warning" aria-hidden="true">
+                      <TriangleAlert size={26} />
+                    </div>
+                    <h2 id="field-signout-dialog-title">Cannot Sign Out</h2>
+                    <div className="field-signout-dialog-body" role="alert">
+                      <p>
+                        Save or discard every unfinished visit in Current Work before signing out. You have <strong>{signOutDialog.count} unfinished {signOutDialog.count === 1 ? 'visit draft' : 'visit drafts'}</strong> on this device that must be resolved to prevent evidence loss.
+                      </p>
+                    </div>
+                    <div className="field-dialog-actions">
+                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => {
+                          setSignOutDialog(null)
+                          setMonitoringTab('work')
+                          setView('monitoring')
+                        }}
+                      >
+                        Go to Current Work
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {signOutDialog.type === 'queue-block' && (
+                  <>
+                    <div className="field-signout-dialog-icon warning" aria-hidden="true">
+                      <TriangleAlert size={26} />
+                    </div>
+                    <h2 id="field-signout-dialog-title">Cannot Sign Out</h2>
+                    <div className="field-signout-dialog-body" role="alert">
+                      <p>
+                        Synchronize all completed visits before signing out. You have <strong>{signOutDialog.count} completed {signOutDialog.count === 1 ? 'visit' : 'visits'}</strong> queued for upload on this device.
+                      </p>
+                    </div>
+                    <div className="field-dialog-actions">
+                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => {
+                          setSignOutDialog(null)
+                          setMonitoringTab('sync')
+                          setView('monitoring')
+                        }}
+                      >
+                        Go to Sync Queue
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {signOutDialog.type === 'offline-block' && (
+                  <>
+                    <div className="field-signout-dialog-icon info" aria-hidden="true">
+                      <WifiOff size={26} />
+                    </div>
+                    <h2 id="field-signout-dialog-title">Internet Connection Required</h2>
+                    <div className="field-signout-dialog-body" role="alert">
+                      <p>
+                        Connect to the internet to revoke this device session before signing out.
+                      </p>
+                    </div>
+                    <div className="field-dialog-actions">
+                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                        Understood
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {signOutDialog.type === 'confirm' && (
+                  <>
+                    <div className="field-signout-dialog-icon danger" aria-hidden="true">
+                      <LogOut size={26} />
+                    </div>
+                    <h2 id="field-signout-dialog-title">Sign out of PRICE-Watch?</h2>
+                    <div className="field-signout-dialog-body">
+                      <p>
+                        Are you sure you want to sign out? Your offline authorization lease and cached data will be cleared from this device. You will need internet access and your credentials to sign in again.
+                      </p>
+                    </div>
+                    <div className="field-dialog-actions">
+                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                        Stay signed in
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => void executeLogout()}
+                      >
+                        Yes, sign out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
+          )}
         </FieldAppShell>
       ) : null}
     </>
@@ -900,7 +1054,7 @@ function VisitWizard({
         return left.store_name.localeCompare(right.store_name)
       })
   }, [bootstrap.stores, officerPosition, query])
-  const selectedStore = bootstrap.stores.find((store) => store.id === draft.store_id)
+  const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
 
   const handleUpdatePrice = (srpId: number, recordedPrice: number | null) => {
@@ -1002,21 +1156,28 @@ function VisitWizard({
   return (
     <div className="visit-page">
       {step > 0 && <div className="visit-top-bar">
-        <button
-          type="button"
-          className="visit-back-btn"
-          aria-label="Back to Choose Store"
-          onClick={() => {
-            if (hasDraftActivity(draft)) {
-              setConfirmExit(true)
-            } else {
-              onStep(0)
-            }
-          }}
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Choose Store</span>
-        </button>
+        <div className="visit-top-left">
+          <button
+            type="button"
+            className="visit-back-btn"
+            aria-label="Back to Choose Store"
+            onClick={() => {
+              if (hasDraftActivity(draft)) {
+                setConfirmExit(true)
+              } else {
+                onStep(0)
+              }
+            }}
+          >
+            <ArrowLeft size={16} />
+            <span>Back to Choose Store</span>
+          </button>
+          <div className="visit-top-store-title">
+            <strong title={selectedStore?.store_name || draft.store_name || 'Store Visit'}>
+              {selectedStore?.store_name || draft.store_name || 'Store Visit'}
+            </strong>
+          </div>
+        </div>
         <div className="visit-top-actions">
           <span className={`network-chip ${online ? 'online' : ''}`}>
             {online ? <Wifi size={14} /> : <WifiOff size={14} />}
@@ -1066,7 +1227,13 @@ function VisitWizard({
                     key={store.id}
                     aria-label={`Choose ${store.store_name} to record prices`}
                     onClick={() => {
-                      onDraft({ ...draft, store_id: store.id, current_step: 1 })
+                      onDraft({
+                        ...draft,
+                        store_id: store.id,
+                        store_name: store.store_name,
+                        store_address: store.address,
+                        current_step: 1,
+                      })
                       setError('')
                       onStep(1)
                     }}
@@ -1097,6 +1264,15 @@ function VisitWizard({
                 <Building2 aria-hidden="true" />
                 <strong>No stores found</strong>
                 <p>Try another establishment name or address.</p>
+                {query && (
+                  <button
+                    type="button"
+                    className="secondary-button store-empty-clear-btn"
+                    onClick={() => setQuery('')}
+                  >
+                    Clear search filter
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1260,23 +1436,22 @@ function VisitWizard({
               }}
             >
               <ChevronLeft size={17} />
-              <span>Previous (Prices)</span>
+              <span>Back</span>
             </button>
             <span />
             <button
-                type="button"
-                className="primary-button"
-                disabled={finishing || !authorizationValid}
-                onClick={() => void requestFinish()}
-              >
-                {!authorizationValid
-                  ? 'Authorization expired'
-                  : finishing
-                    ? 'Securing visit…'
-                    : online
-                      ? 'Finalize and submit'
-                      : 'Finalize and save offline'}
-                <ShieldCheck size={18} />
+              type="button"
+              className="primary-button"
+              aria-label={!authorizationValid ? 'Authorization expired' : finishing ? 'Securing visit…' : online ? 'Finalize and submit' : 'Finalize and save offline'}
+              disabled={finishing || !authorizationValid}
+              onClick={() => void requestFinish()}
+            >
+              {!authorizationValid
+                ? 'Authorization expired'
+                : finishing
+                  ? 'Securing visit…'
+                  : 'Submit'}
+              <ShieldCheck size={18} />
             </button>
           </div>
         )}
@@ -1287,10 +1462,32 @@ function VisitWizard({
             <h2 id="exit-visit-title">Choose another store?</h2>
             <p>Keep this visit unchanged in Current Work, delete it, or continue editing.</p>
             <div className="field-dialog-actions visit-exit-actions">
-              <button type="button" className="secondary-button" onClick={() => setConfirmExit(false)}>Continue editing</button>
-              <span />
-              <button type="button" className="danger-button" onClick={() => onChooseStore(true)}>Delete draft and choose store</button>
-              <button type="button" className="primary-button" onClick={() => onChooseStore(false)}>Save draft and choose store</button>
+              <button
+                type="button"
+                className="secondary-button visit-exit-continue"
+                aria-label="Continue editing"
+                onClick={() => setConfirmExit(false)}
+              >
+                Continue
+              </button>
+              <div className="visit-exit-right-group">
+                <button
+                  type="button"
+                  className="primary-button"
+                  aria-label="Save draft and choose store"
+                  onClick={() => onChooseStore(false)}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  aria-label="Delete draft and choose store"
+                  onClick={() => onChooseStore(true)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </section>
         </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { Bell, CircleHelp, ClipboardList, History, Home, LockKeyhole, Plus, Wifi, WifiOff } from 'lucide-react'
+import { Bell, CircleHelp, ClipboardList, History, Home, LockKeyhole, Plus, UserRound, Wifi, WifiOff } from 'lucide-react'
 
 export type TopLevelView = 'home' | 'monitoring' | 'history' | 'profile' | 'visit'
 
@@ -24,6 +24,7 @@ const destinations = [
   { id: 'home' as const, label: 'Dashboard', phoneLabel: 'Home', icon: Home },
   { id: 'monitoring' as const, label: 'Monitoring', phoneLabel: 'Monitoring', icon: ClipboardList },
   { id: 'history' as const, label: 'History', phoneLabel: 'History', icon: History },
+  { id: 'profile' as const, label: 'Profile', phoneLabel: 'Profile', icon: UserRound },
 ]
 
 export function FieldAppShell({
@@ -139,8 +140,8 @@ export function FieldAppShell({
               <button type="button" className="field-header-icon" aria-label={notificationLabel(unreadCount)} onClick={onNotifications}>
                 <Bell />{unreadCount > 0 && <span className="field-icon-count">{unreadCount}</span>}
               </button>
-              <button type="button" className="field-header-avatar" aria-label="Open profile" onClick={() => onNavigate('profile')}>
-                {initials(officerName)}
+              <button type="button" className="field-header-icon field-header-lock" aria-label="Lock workspace" onClick={onLock}>
+                <LockKeyhole />
               </button>
             </header>
 
@@ -175,10 +176,11 @@ export function FieldAppShell({
             aria-label={addLabel}
             onClick={activateAdd}
           >
-            <Plus aria-hidden="true" />
+            <span><Plus aria-hidden="true" /></span>
             <small>Add</small>
           </button>
           {navigationButton(destinations[2], true)}
+          {navigationButton(destinations[3], true)}
         </nav>
       )}
     </div>

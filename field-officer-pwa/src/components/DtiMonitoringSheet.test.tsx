@@ -83,7 +83,7 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
 
     // Store Header with Restored Live Stats
     expect(screen.getByText('Gaisano Grand Antique')).toBeInTheDocument()
-    expect(screen.getByText('DTI Verified')).toBeInTheDocument()
+    expect(screen.queryByText('DTI Verified')).not.toBeInTheDocument()
     expect(screen.getByText(/prices recorded/i)).toHaveTextContent('2 prices recorded')
     expect(screen.queryByText(/Enter prices only for commodities checked in this store/i)).not.toBeInTheDocument()
     expect(screen.getByText(/1 for review/i)).toBeInTheDocument()
@@ -120,8 +120,8 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('+17.6%')).toBeInTheDocument()
 
     // Bottom Action Buttons
-    expect(screen.getByText('Back to Choose Store')).toBeInTheDocument()
-    expect(screen.getByText('Review visit evidence')).toBeInTheDocument()
+    expect(screen.getByText('Previous')).toBeInTheDocument()
+    expect(screen.getByText('Next')).toBeInTheDocument()
   })
 
   it('compares against a listed provisional SRP when its source is missing', () => {
@@ -183,8 +183,27 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
       />
     )
 
-    fireEvent.click(screen.getByText('Back to Choose Store'))
+    fireEvent.click(screen.getByText('Previous'))
     expect(onPrev).toHaveBeenCalled()
+  })
+
+  it('falls back to draft store_name and address when store record is not directly found', () => {
+    render(
+      <DtiMonitoringSheet
+        store={undefined}
+        draft={{
+          ...mockDraft,
+          store_name: 'Antique Supermart Branch 2',
+          store_address: 'Bantayan, San Jose de Buenavista',
+        }}
+        bulletins={mockBulletins}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Antique Supermart Branch 2')).toBeInTheDocument()
+    expect(screen.getByText(/Bantayan, San Jose de Buenavista/i)).toBeInTheDocument()
+    expect(screen.queryByText('Selected Establishment')).not.toBeInTheDocument()
   })
 
   it('allows direct price input and triggers onUpdatePrice', () => {
