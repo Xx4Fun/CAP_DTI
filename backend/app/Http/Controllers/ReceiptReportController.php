@@ -284,7 +284,7 @@ class ReceiptReportController extends Controller
     {
         $report = $this->authorizedReport($request, $reference);
         $report->loadMissing(['evidenceBundle.assets', 'store']);
-        $latestHistory = $report->statusHistories()->latest('id')->first();
+        $latestHistory = $report->statusHistories()->reorder()->latest('id')->first();
         $reasonCode = $report->evidenceBundle?->failure_code
             ?? data_get($report->evidenceBundle?->processing_result_json, 'reason_code');
 

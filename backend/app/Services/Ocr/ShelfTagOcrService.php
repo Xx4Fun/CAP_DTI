@@ -69,6 +69,8 @@ class ShelfTagOcrService
     protected function runProcess(array $command, int $timeout): string
     {
         $process = new Process($command);
+        // Limit the OCR child only; extra OpenMP threads contend on small workers.
+        $process->setEnv(['OMP_THREAD_LIMIT' => '1']);
         $process->setTimeout($timeout);
         $process->run();
 

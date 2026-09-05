@@ -30,6 +30,10 @@ class ReceiptEvidencePipeline
 
     public function process(ConsumerReport $report): array
     {
+        // Leave time for cleanup and persistence before the 360-second job timeout.
+        $budget = max(1, min(300, (int) config('services.tesseract.receipt_processing_budget_seconds', 300)));
+        $deadline = hrtime(true) / 1e9 + $budget;
+        $passTimeout = max(1, min($budget, (int) config('services.tesseract.receipt_pass_timeout_seconds', 60)));
         $report->loadMissing(['store', 'evidenceBundle.assets']);
         $bundle = $report->evidenceBundle;
         if (! $bundle) {
@@ -44,6 +48,10 @@ class ReceiptEvidencePipeline
                 ? $this->prepareVideoFrames($report, $temporaryDirectory)
                 : $this->prepareUploadedFrames($report, $temporaryDirectory);
 
+            if (hrtime(true) / 1e9 >= $deadline) {
+                return $this->failureResult('OCR_TIMEOUT', [], true);
+            }
+
             $minimumFrames = $report->capture_mode === 'continuous_video_v1' ? 2 : 1;
             if (count($frameCandidates) < $minimumFrames) {
                 return $this->recaptureResult('INSUFFICIENT_FRAMES');
@@ -52,30 +60,49 @@ class ReceiptEvidencePipeline
             $frames = [];
             $ocrDiagnostics = [];
             foreach ($frameCandidates as $frame) {
+                if (hrtime(true) / 1e9 >= $deadline) {
+                    return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
+                }
+                $index = count($ocrDiagnostics);
+                $ocrDiagnostics[] = [
+                    'sequence' => $frame['source_sequence'],
+                    'timestamp_seconds' => $frame['timestamp_seconds'],
+                    'status' => 'OCR_TIMEOUT',
+                    'quality' => $frame['quality'] ?? null,
+                    'passes' => [],
+                ];
                 $preprocessed = $this->preprocessor->preprocess($frame['path']);
                 try {
-                    $primary = $this->ocr->scan($preprocessed['full_path'], [
-                        'psm' => 6,
-                        'minimum_confidence' => 45,
-                        'timeout_seconds' => 20,
-                    ]);
-                    $fallback = $this->ocr->scan($preprocessed['fallback_full_path'], [
-                        'psm' => 11,
-                        'minimum_confidence' => 35,
-                        'timeout_seconds' => 20,
-                    ]);
-                    $ocr = $this->ocrResultSelector->select($primary, $fallback);
+                    $results = [];
+                    foreach (['primary' => ['full_path', 6, 45], 'fallback' => ['fallback_full_path', 11, 35]] as $pass => [$pathKey, $psm, $confidence]) {
+                        $remaining = (int) floor($deadline - hrtime(true) / 1e9);
+                        if ($remaining < 1) {
+                            return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
+                        }
+                        $timeout = min($passTimeout, $remaining);
+                        $started = hrtime(true);
+                        $results[$pass] = $this->ocr->scan($preprocessed[$pathKey], [
+                            'psm' => $psm,
+                            'minimum_confidence' => $confidence,
+                            'timeout_seconds' => $timeout,
+                        ]);
+                        $ocrDiagnostics[$index]['passes'][] = [
+                            'pass' => $pass,
+                            'status' => $results[$pass]['status'] ?? 'OCR_FAILED',
+                            'duration_ms' => round((hrtime(true) - $started) / 1e6, 1),
+                            'timeout_seconds' => $timeout,
+                        ];
+                        if (hrtime(true) / 1e9 >= $deadline) {
+                            return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
+                        }
+                    }
+                    $ocr = $this->ocrResultSelector->select($results['primary'], $results['fallback']);
                 } finally {
                     $this->preprocessor->cleanup($preprocessed['path']);
                     $this->preprocessor->cleanup($preprocessed['fallback_path']);
                 }
 
-                $ocrDiagnostics[] = [
-                    'sequence' => $frame['source_sequence'],
-                    'timestamp_seconds' => $frame['timestamp_seconds'],
-                    'status' => $ocr['status'] ?? 'OCR_FAILED',
-                    'quality' => $frame['quality'] ?? null,
-                ];
+                $ocrDiagnostics[$index]['status'] = $ocr['status'] ?? 'OCR_FAILED';
                 $lines = array_values(array_filter($ocr['lines'] ?? [], 'is_string'));
                 if ($lines === []) {
                     continue;
@@ -143,6 +170,10 @@ class ReceiptEvidencePipeline
             $itemSum = $items === [] ? null : round(array_sum(array_column($items, 'observed_price')), 2);
             if ($itemSum !== null && $total !== null && abs($itemSum - $total) > 0.05) {
                 $warnings[] = $this->warning('TOTAL_MISMATCH');
+            }
+
+            if (hrtime(true) / 1e9 >= $deadline) {
+                return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
             }
 
             return [
@@ -265,7 +296,7 @@ class ReceiptEvidencePipeline
         ];
     }
 
-    private function failureResult(string $failureCode, array $ocrDiagnostics): array
+    private function failureResult(string $failureCode, array $ocrDiagnostics, bool $budgetExhausted = false): array
     {
         return [
             'status' => 'failed',
@@ -276,7 +307,7 @@ class ReceiptEvidencePipeline
             'merchant' => ['status' => 'unverified'],
             'warnings' => [],
             'manual_review_required' => false,
-            'diagnostics' => ['ocr' => $ocrDiagnostics],
+            'diagnostics' => ['ocr' => $ocrDiagnostics, 'budget_exhausted' => $budgetExhausted],
         ];
     }
 

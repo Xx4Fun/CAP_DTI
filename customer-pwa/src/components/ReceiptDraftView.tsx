@@ -289,7 +289,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
             {submitting ? 'Starting camera…' : 'Scan receipt again'}
           </button>
         )}
-        {failed && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture; refresh to retry the status check.</div>}
+        {failed && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture. Retry processing runs OCR again on the same receipt evidence. Refresh status only checks progress.</div>}
         {failed && <button type="button" className="btn-primary" disabled={submitting} onClick={() => void retryProcessing()}>
           {submitting ? 'Retrying processing…' : 'Retry processing'}
         </button>}

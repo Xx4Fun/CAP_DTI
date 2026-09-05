@@ -464,6 +464,24 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_processing_message_uses_latest_history_without_reordering_the_timeline(): void
+    {
+        [$report, $token] = $this->createReadyReport('STATUSORDER');
+        $report->update(['status' => 'Processing failed', 'processing_status' => 'failed']);
+        foreach ([['Processing receipt', 'Receipt uploaded and queued.', now()->subMinute()],
+            ['Processing failed', 'Receipt processing failed. Please retry.', now()]] as [$status, $message, $createdAt]) {
+            $history = $report->statusHistories()->create([
+                'new_status' => $status, 'public_message' => $message,
+                'actor_type' => 'system',
+            ]);
+            $history->forceFill(['created_at' => $createdAt])->save();
+        }
+        $this->withHeader('X-Report-Resume-Token', $token)
+            ->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertOk()->assertJsonPath('data.message', 'Receipt processing failed. Please retry.');
+        $this->assertSame(['Processing receipt', 'Processing failed'], $report->statusHistories()->pluck('new_status')->all());
+    }
+
     public function test_customer_confirmation_is_read_only_submits_ready_items_once_and_revokes_device_resume_token(): void
     {
         [$report, $resumeToken] = $this->createReadyReport('CONFIRM1');

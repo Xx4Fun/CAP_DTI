@@ -56,6 +56,8 @@ return [
     ],
 
     'tesseract' => [
+        'receipt_pass_timeout_seconds' => (int) env('TESSERACT_RECEIPT_PASS_TIMEOUT_SECONDS', 60),
+        'receipt_processing_budget_seconds' => (int) env('TESSERACT_RECEIPT_PROCESSING_BUDGET_SECONDS', 300),
         'path' => env('TESSERACT_PATH'),
         'language' => env('TESSERACT_LANGUAGE', 'eng'),
         'timeout_seconds' => (int) env('TESSERACT_TIMEOUT_SECONDS', 15),

@@ -27,6 +27,25 @@ describe('ReceiptDraftView', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
   });
 
+  it('explains that refresh only checks status and retry reruns OCR on the same evidence', async () => {
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
+      report_reference: 'REP-20260816-READY', status: 'Processing failed', processing_status: 'failed',
+      message: 'Receipt processing could not be completed.', ready_for_review: false, can_recapture: false,
+      attempt_number: 1, store: null, recapture_reason: null, evidence: [],
+    } } });
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { success: true } });
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="processing" />);
+    expect(await screen.findByText(/Refresh status only checks progress/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Refresh status' }));
+    expect(getSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(postSpy).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Retry processing' }));
+    expect(postSpy).toHaveBeenCalledWith('/public/reports/REP-20260816-READY/retry-processing', {}, {
+      headers: { 'X-Report-Resume-Token': 'rsm_device' },
+    });
+  });
+
   it('shows OCR items read-only and submits only customer confirmation', async () => {
     vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
       if (String(url).includes('/evidence-assets/')) return { data: new Blob(['receipt'], { type: 'image/jpeg' }) };

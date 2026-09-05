@@ -51,6 +51,17 @@ Clear evidence with uncertain OCR remains `Ready for confirmation` with `manual_
 
 ## Production gates
 
+### OCR runtime and diagnostics
+
+- The shared Tesseract launcher sets `OMP_THREAD_LIMIT=1` only for its child process.
+- Receipt primary and fallback passes use `TESSERACT_RECEIPT_PASS_TIMEOUT_SECONDS` (default 60 seconds).
+- A monotonic processing deadline uses `TESSERACT_RECEIPT_PROCESSING_BUDGET_SECONDS` (default and maximum 300 seconds). Each pass is limited to the remaining whole seconds; no new pass starts with less than one second remaining. Storage/preprocessing calls are checked at stage boundaries, not forcibly interrupted. The queue job retains its 360-second hard timeout.
+- Budget exhaustion is `OCR_TIMEOUT` / `Processing failed`, with `diagnostics.budget_exhausted=true`. Original evidence remains unchanged for retry.
+- Bundle processing results retain each pass's status, duration in milliseconds, and timeout. These diagnostics contain no OCR text or credentials and are not added to the public status response.
+- Processing status reads the latest history entry without changing the chronological audit timeline. Customer guidance distinguishes retrying OCR from refreshing status.
+- Run real-engine checks explicitly with `php artisan test tests/Integration/ReceiptOcrIntegrationTest.php tests/Integration/TesseractIntegrationTest.php`. Receipt samples require GD FreeType and a system Consolas, DejaVu Sans Mono, or Liberation Mono font; missing prerequisites are reported as skipped. These generate isolated synthetic short/overlapping receipts; they do not replace Android captures or Render-worker verification.
+- Extraction accuracy is unchanged by this runtime fix: separated product/price columns may still produce incomplete parsed items or totals. Preserve the OCR text and uncertainty warnings for DTI review; successful processing is not proof of complete extraction.
+
 Before release, verify:
 
 - `RECEIPT_EVIDENCE_DRIVER=s3` (or equivalent durable private object storage) and valid credentials;

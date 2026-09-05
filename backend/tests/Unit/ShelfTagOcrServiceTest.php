@@ -9,6 +9,24 @@ use Tests\TestCase;
 
 class ShelfTagOcrServiceTest extends TestCase
 {
+    public function test_process_launcher_limits_threads_without_changing_parent_environment(): void
+    {
+        $service = new class extends ShelfTagOcrService {
+            public function threadLimit(): string
+            {
+                return $this->runProcess([PHP_BINARY, '-r', 'echo getenv("OMP_THREAD_LIMIT");'], 5);
+            }
+        };
+        $previous = getenv('OMP_THREAD_LIMIT');
+        putenv('OMP_THREAD_LIMIT=4');
+        try {
+            $this->assertSame('1', $service->threadLimit());
+            $this->assertSame('4', getenv('OMP_THREAD_LIMIT'));
+        } finally {
+            putenv($previous === false ? 'OMP_THREAD_LIMIT' : 'OMP_THREAD_LIMIT='.$previous);
+        }
+    }
+
     public function test_ocr_unavailable_when_tesseract_config_missing(): void
     {
         config(['services.tesseract.path' => null]);
