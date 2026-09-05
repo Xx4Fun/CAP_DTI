@@ -26,6 +26,17 @@ class ReceiptMerchantMatcherTest extends TestCase
         ]);
 
         $this->assertSame('unverified', $result['status']);
+        $this->assertNull($result['display_name']);
+    }
+
+    public function test_exposes_only_one_actual_unambiguous_matching_header_line(): void
+    {
+        $matcher = new ReceiptMerchantMatcher;
+
+        $matched = $matcher->match('Juan Grocery Store', null, ['JUAN GROCERY - SAN JOSE BRANCH', 'OFFICIAL RECEIPT']);
+        $ambiguous = $matcher->match('Juan Grocery Store', null, ['JUAN GROCERY', 'JUAN STORE']);
+
+        $this->assertSame('JUAN GROCERY - SAN JOSE BRANCH', $matched['display_name']);
+        $this->assertNull($ambiguous['display_name']);
     }
 }
-

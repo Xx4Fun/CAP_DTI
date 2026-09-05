@@ -329,15 +329,16 @@ export const App: React.FC = () => {
     };
   }, [isOnline, refreshRecentReports]);
 
-  const updateRecentReportStatus = (reference: string, status: string, submittedAt?: string | null) => {
+  const updateRecentReportStatus = useCallback((reference: string, status: string, submittedAt?: string | null) => {
     const stored = getRecentReports().find((report) => report.reportReference === reference);
     if (!stored) return;
+    if (stored.status === status && (submittedAt == null || stored.submittedAt === submittedAt)) return;
     setRecentReports(saveRecentReport({
       ...stored,
       status,
       submittedAt: submittedAt ?? stored.submittedAt,
     }));
-  };
+  }, []);
 
   const recentReportTickets = recentReports.map((report) => {
     const ticket = toRecentReportTicket(report);
@@ -474,6 +475,7 @@ export const App: React.FC = () => {
 
         {(route.name === 'receipt-processing' || route.name === 'receipt-review') && (
           <ReceiptDraftView
+            key={`${route.name}:${route.reference}`}
             reference={route.reference}
             mode={route.name === 'receipt-review' ? 'review' : 'processing'}
             onStatus={(status) => updateRecentReportStatus(route.reference, status)}
@@ -482,7 +484,7 @@ export const App: React.FC = () => {
         )}
         </Suspense>
       </main>
-      <BackToTop hidden={routeChunkPending} />
+      <BackToTop hidden={routeChunkPending || route.name === 'receipt-processing' || route.name === 'receipt-review'} />
     </div>
     </BackNavigationProvider>
   );

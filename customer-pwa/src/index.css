@@ -3933,8 +3933,8 @@ body {
 
 .receipt-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 20px;
 }
 
 .receipt-evidence-card {
@@ -3942,16 +3942,13 @@ body {
   margin: 0;
   display: grid;
   gap: 7px;
-  padding: 9px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: #f8fafc;
+  padding: 0;
 }
 
 .receipt-evidence-card img {
   width: 100%;
-  aspect-ratio: 3 / 4;
-  object-fit: contain;
+  height: auto;
+  display: block;
   border-radius: 8px;
   background: #0f172a;
 }
@@ -3968,28 +3965,35 @@ body {
   gap: 8px;
 }
 
-.receipt-raw-ocr {
-  width: 100%;
-  font-size: 0.82rem;
-}
-
-.receipt-raw-ocr pre {
-  max-height: 220px;
-  overflow: auto;
-  padding: 10px;
-  border-radius: 8px;
-  background: #f1f5f9;
-  white-space: pre-wrap;
-}
-
 .receipt-review-item {
   min-width: 0;
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 13px;
-  background: #fbfdff;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.receipt-review-page { padding-bottom: 24px; }
+.receipt-review-page > h1 { font-size: 1.5rem; }
+.receipt-review-page > p { margin: 0; }
+.receipt-review-page .receipt-review-store { padding: 12px 0; border: 0; border-radius: 0; background: transparent; }
+.receipt-review-page .receipt-review-section { margin-top: 12px; }
+.receipt-summary { margin: 0; display: grid; gap: 10px; }
+.receipt-summary > div { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: 12px; }
+.receipt-summary dt { color: var(--text-muted); }
+.receipt-summary dd { margin: 0; overflow-wrap: anywhere; }
+.receipt-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.receipt-photo-actions button { flex: 1; min-height: 44px; }
+.receipt-photo-dialog { width: min(96vw, 900px); max-width: 96vw; max-height: 90dvh; padding: 12px; border: 0; border-radius: 12px; background: white; color: var(--text-main); }
+.receipt-photo-dialog::backdrop { background: rgb(15 23 42 / 75%); }
+.receipt-photo-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.receipt-photo-toolbar strong { margin-right: auto; }
+.receipt-photo-toolbar button { min-width: 44px; min-height: 44px; padding: 10px; }
+.receipt-photo-scroll { overflow: auto; max-height: 72dvh; }
+.receipt-photo-scroll img { display: block; height: auto; }
+.receipt-form-error p { margin: 0 0 6px; }
+@media (min-width: 700px) {
+  .receipt-evidence-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .receipt-review-item legend {

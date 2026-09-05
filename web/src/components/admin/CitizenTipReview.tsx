@@ -299,20 +299,26 @@ export const CitizenTipReview: React.FC = () => {
     }
   }
 
-  // Primary item extraction values for structured display
-  const primaryItem = ocrItems[0] || (selected?.raw_ocr_json as Record<string, unknown>) || null
-  const detectedProduct = String(primaryItem?.name || primaryItem?.product || selected?.items?.[0]?.item_name || 'Not detected')
-  const receiptPriceValue = primaryItem?.price ?? selected?.items?.[0]?.observed_price
+  const persistedOcrItems: Array<Record<string, unknown>> = (selected?.items ?? []).map((item) => ({
+    name: item.item_name,
+    quantity: item.quantity,
+    price: item.observed_price,
+    ocr_confidence: item.ocr_confidence,
+  }))
+  const rawOcr = selected?.raw_ocr_json
+  const legacyOcrItem = rawOcr && (rawOcr.name !== undefined || rawOcr.product !== undefined || rawOcr.price !== undefined || rawOcr.quantity !== undefined)
+    ? rawOcr
+    : null
+  const structuredOcrItems = persistedOcrItems.length > 0 ? persistedOcrItems : ocrItems.length > 0 ? ocrItems : legacyOcrItem ? [legacyOcrItem] : []
+  const primaryItem = structuredOcrItems[0] ?? null
+  const receiptPriceValue = primaryItem?.price
   const srpPriceValue = primaryItem?.srp
   const rawReceiptPrice = receiptPriceValue !== undefined && receiptPriceValue !== null && Number.isFinite(Number(receiptPriceValue)) ? Number(receiptPriceValue) : null
   const rawSrpPrice = srpPriceValue !== undefined && srpPriceValue !== null && Number.isFinite(Number(srpPriceValue)) ? Number(srpPriceValue) : null
   const priceDifference = rawReceiptPrice !== null && rawSrpPrice !== null ? rawReceiptPrice - rawSrpPrice : null
-  const detectedQuantity = primaryItem?.quantity ?? selected?.items?.[0]?.quantity ?? null
   const detectedTransactionDate = primaryItem?.transaction_date ?? selected?.raw_ocr_json?.transaction_date ?? null
-  const merchantResult = selected?.raw_ocr_json?.merchant as { observed?: unknown } | undefined
-  const detectedMerchant = Array.isArray(merchantResult?.observed)
-    ? merchantResult.observed.filter((line): line is string => typeof line === 'string').join(' / ')
-    : null
+  const merchantResult = selected?.raw_ocr_json?.merchant as { display_name?: unknown } | undefined
+  const detectedMerchant = typeof merchantResult?.display_name === 'string' ? merchantResult.display_name : null
 
   return (
     <div className="citizen-tip-review-workspace" style={{ display: 'grid', gap: '1.25rem', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
@@ -818,22 +824,6 @@ export const CitizenTipReview: React.FC = () => {
                       {detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}
                     </strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Product:</span>
-                    <strong style={{ color: '#0f172a' }}>
-                      {detectedProduct}
-                    </strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Quantity:</span>
-                    <strong style={{ color: '#0f172a' }}>{detectedQuantity !== null ? String(detectedQuantity) : 'Not detected'}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #e2e8f0', paddingTop: '0.35rem' }}>
-                    <span style={{ color: '#64748b' }}>Receipt Price:</span>
-                    <strong style={{ color: '#1e3a8a', fontSize: '0.9rem' }}>
-                      {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Not detected'}
-                    </strong>
-                  </div>
                 </div>
 
                 {selected.evidence_available && (
@@ -933,31 +923,31 @@ export const CitizenTipReview: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Multi-Item Line Table (if multiple OCR items present) */}
-                {ocrItems.length > 1 && (
+                {/* Structured OCR line items, including uncertain and legacy values. */}
+                {structuredOcrItems.length > 0 && (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', fontSize: '0.76rem', borderCollapse: 'collapse' }}>
                       <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                         <tr>
                           <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Item</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>Receipt</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>SRP</th>
+                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Quantity</th>
+                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>Price</th>
+                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>OCR confidence</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {ocrItems.map((item, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '0.4rem 0.55rem', fontWeight: 600, color: '#0f172a' }}>
-                              {String(item.name || item.product || 'Not detected')}
-                            </td>
-                            <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', fontWeight: 700 }}>
-                              {item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Unavailable'}
-                            </td>
-                            <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#059669', fontWeight: 600 }}>
-                              {item.srp !== undefined && item.srp !== null ? `₱${String(item.srp)}` : 'Unavailable'}
-                            </td>
-                          </tr>
-                        ))}
+                        {structuredOcrItems.map((item, idx) => {
+                          const confidence = Number(item.ocr_confidence)
+                          const measuredConfidence = item.ocr_confidence !== null && item.ocr_confidence !== undefined && Number.isFinite(confidence) && confidence !== 0.8
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.4rem 0.55rem', fontWeight: 600, color: '#0f172a' }}>{String(item.name || item.product || 'Item label not detected')}</td>
+                              <td style={{ padding: '0.4rem 0.55rem' }}>{item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : 'Quantity unavailable'}</td>
+                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', fontWeight: 700 }}>{item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Price unavailable'}</td>
+                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right' }}>{measuredConfidence ? `${Math.round(confidence * 100)}% measured` : 'Confidence unavailable'}</td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1277,6 +1267,17 @@ export const CitizenTipReview: React.FC = () => {
                         {JSON.stringify(selected.raw_ocr_json, null, 2)}
                       </pre>
                     </div>
+
+                    {evidenceManifest?.processing_result && (
+                      <div>
+                        <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                          OCR processing diagnostics
+                        </h4>
+                        <pre className="admin-code" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.5rem', color: '#0f172a', fontFamily: 'monospace', fontSize: '0.72rem', maxHeight: '140px', overflow: 'auto', margin: 0 }}>
+                          {JSON.stringify(evidenceManifest.processing_result, null, 2)}
+                        </pre>
+                      </div>
+                    )}
 
                     {selected.evaluator_confirmed_json && (
                       <div>

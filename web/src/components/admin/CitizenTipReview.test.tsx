@@ -209,6 +209,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
       processing_status: 'confirmed',
       continuity: { status: 'ready' },
       merchant: { status: 'matched' },
+      processing_result: {
+        selection: { selected_pass: 'primary' },
+        passes: { primary: { raw_text: 'PRIMARY SAVED PASS' }, alternate: { raw_text: 'ALTERNATE SAVED PASS' } },
+      },
       assets: [
         { id: 701, kind: 'original_video', sequence: 0, mime_type: 'video/webm', size_bytes: 1000, sha256: 'video-hash', metadata: null },
         { id: 702, kind: 'stitched_preview', sequence: 0, mime_type: 'image/jpeg', size_bytes: 500, sha256: 'preview-hash', metadata: null },
@@ -226,6 +230,9 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(await screen.findByRole('button', { name: /source frame/i })).toBeInTheDocument()
     expect(adminApi.getReportEvidenceAsset).toHaveBeenCalledWith(101, 703)
     expect(screen.getByText(/Continuity: ready/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'OCR processing diagnostics' })).toBeInTheDocument()
+    expect(screen.getByText(/PRIMARY SAVED PASS/)).toBeInTheDocument()
+    expect(screen.getByText(/ALTERNATE SAVED PASS/)).toBeInTheDocument()
 
     const findings = screen.getAllByRole('combobox', { name: /Finding for/i })
     await user.selectOptions(findings[0], 'confirmed_violation')
@@ -241,5 +248,61 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         expect.objectContaining({ item_id: 502, commodity_key: 'sugar-1kg', regulatory_finding: 'no_violation' }),
       ],
     })
+  })
+
+  it('shows every structured OCR item without presenting legacy confidence as measured', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      raw_ocr_json: {
+        merchant: {
+          display_name: 'San Jose Grand Market',
+          observed: ['SAN JOSE', 'GRAND MARKET'],
+        },
+        items: [
+          { name: 'Rice 1kg', quantity: '2', price: '55.00', ocr_confidence: 0.93 },
+          { name: null, quantity: null, price: null, ocr_confidence: null, raw_text: '???' },
+          { name: 'Legacy sugar', quantity: '1', price: '80.00', ocr_confidence: 0.8 },
+        ],
+      },
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getAllByText('San Jose Grand Market').length).toBeGreaterThan(1)
+    expect(screen.queryByText('SAN JOSE / GRAND MARKET')).not.toBeInTheDocument()
+    expect(screen.getByText('Rice 1kg')).toBeInTheDocument()
+    expect(screen.getByText('Item label not detected')).toBeInTheDocument()
+    expect(screen.getByText('Legacy sugar')).toBeInTheDocument()
+    expect(screen.getByText('93% measured')).toBeInTheDocument()
+    expect(screen.getAllByText('Confidence unavailable')).toHaveLength(2)
+    expect(screen.getAllByText(/"raw_text": "\?\?\?"/).length).toBeGreaterThan(0)
+  })
+
+  it('uses persisted guided receipt items instead of inventing an item from raw OCR metadata', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      raw_ocr_json: {
+        text: 'SAN JOSE GRAND MARKET\nRICE 2 55.00\nSUGAR 1 80.00',
+        merchant: { display_name: 'San Jose Grand Market', observed: ['SAN JOSE GRAND MARKET'] },
+        selected_pass: 'primary',
+      },
+      items: [
+        { id: 501, sequence: 0, item_name: 'Rice 1kg', quantity: '2', observed_price: '55.00', ocr_confidence: 0.93 },
+        { id: 502, sequence: 1, item_name: null, quantity: null, observed_price: null, ocr_confidence: null, raw_text: 'SUGAR ???' },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText('Rice 1kg')).toBeInTheDocument()
+    expect(screen.getByText('Item label not detected')).toBeInTheDocument()
+    expect(screen.getByText('93% measured')).toBeInTheDocument()
+    expect(screen.getByText('Confidence unavailable')).toBeInTheDocument()
   })
 })

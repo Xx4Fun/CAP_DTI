@@ -91,12 +91,15 @@ class ReceiptEvidencePipeline
                             'status' => $results[$pass]['status'] ?? 'OCR_FAILED',
                             'duration_ms' => round((hrtime(true) - $started) / 1e6, 1),
                             'timeout_seconds' => $timeout,
+                            'result' => $results[$pass],
                         ];
                         if (hrtime(true) / 1e9 >= $deadline) {
                             return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
                         }
                     }
-                    $ocr = $this->ocrResultSelector->select($results['primary'], $results['fallback']);
+                    $selectedPass = $this->ocrResultSelector->selectedPass($results['primary'], $results['fallback']);
+                    $ocr = $results[$selectedPass];
+                    $ocrDiagnostics[$index]['selected_pass'] = $selectedPass;
                 } finally {
                     $this->preprocessor->cleanup($preprocessed['path']);
                     $this->preprocessor->cleanup($preprocessed['fallback_path']);
@@ -144,7 +147,11 @@ class ReceiptEvidencePipeline
             } else {
                 $continuity = $this->continuityAnalyzer->analyze($frames);
                 if ($continuity['status'] !== 'ready') {
-                    return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
+                    if ($report->capture_mode === 'continuous_video_v1') {
+                        return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
+                    }
+                    $continuity['status'] = 'unverified';
+                    $warnings[] = $this->warning('INCOMPLETE_SCAN');
                 }
             }
 
@@ -158,8 +165,13 @@ class ReceiptEvidencePipeline
             }
 
             $lines = $this->textAggregator->merge(array_column($frames, 'lines'));
-            $items = $this->itemExtractor->extract($lines);
+            $itemAnalysis = $this->itemExtractor->analyze($lines);
+            $items = $itemAnalysis['items'];
+            $rejectedItemLines = $itemAnalysis['rejected_lines'];
             $total = $this->totalExtractor->extract($lines);
+            if ($rejectedItemLines !== []) {
+                $warnings[] = $this->warning('OCR_INCOMPLETE');
+            }
             if ($items === []) {
                 $warnings[] = $this->warning('ITEMS_NOT_FOUND');
             }
@@ -181,6 +193,7 @@ class ReceiptEvidencePipeline
                 'reason_code' => null,
                 'lines' => $lines,
                 'items' => $items,
+                'rejected_item_lines' => $rejectedItemLines,
                 'detected_total' => $total,
                 'continuity' => $continuity,
                 'merchant' => $merchant,
@@ -315,6 +328,7 @@ class ReceiptEvidencePipeline
     {
         return ['code' => $code, 'message' => match ($code) {
             'OCR_INCOMPLETE' => 'One or more clear receipt sections could not be fully extracted by OCR.',
+            'INCOMPLETE_SCAN' => 'Adjacent receipt section continuity could not be verified automatically.',
             'STORE_NOT_CONFIRMED' => 'The store name could not be confidently matched by OCR.',
             'ITEMS_NOT_FOUND' => 'No complete receipt item lines were extracted.',
             'TOTAL_NOT_FOUND' => 'The receipt total was not extracted.',

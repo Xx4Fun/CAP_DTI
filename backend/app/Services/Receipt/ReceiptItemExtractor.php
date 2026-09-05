@@ -11,7 +11,14 @@ class ReceiptItemExtractor
     /** @param array<int, string> $lines */
     public function extract(array $lines): array
     {
+        return $this->analyze($lines)['items'];
+    }
+
+    /** @param array<int, string> $lines */
+    public function analyze(array $lines): array
+    {
         $items = [];
+        $rejectedLines = [];
         foreach ($lines as $line) {
             $trimmed = trim($line);
             if ($trimmed === '' || $this->isNonItemLine(strtolower($trimmed))) {
@@ -27,6 +34,9 @@ class ReceiptItemExtractor
             $priceText = str_replace(',', '.', (string) preg_replace('/[^0-9.,]/', '', $rawPrice));
             $itemName = trim(substr($trimmed, 0, $matches[0][1]), " \t\n\r\0\x0B.-:");
             if ($itemName === '' || $this->isNonItemLine(strtolower($itemName))) {
+                if ($itemName === '') {
+                    $rejectedLines[] = $trimmed;
+                }
                 continue;
             }
 
@@ -34,6 +44,10 @@ class ReceiptItemExtractor
             if (preg_match('/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|@)\s*\d+(?:[.,]\d{2})\s*$/i', $itemName, $quantityMatch, PREG_OFFSET_CAPTURE)) {
                 $quantity = (float) str_replace(',', '.', $quantityMatch[1][0]);
                 $itemName = trim(substr($itemName, 0, $quantityMatch[0][1]));
+            }
+            if (preg_match('/\p{L}/u', $itemName) !== 1) {
+                $rejectedLines[] = $trimmed;
+                continue;
             }
             if (preg_match('/\b(?:discount|disc|promo|coupon|rebate)\b/i', $itemName)) {
                 $negative = true;
@@ -46,11 +60,11 @@ class ReceiptItemExtractor
                 'quantity' => $quantity,
                 'unit' => null,
                 'observed_price' => ($negative ? -1 : 1) * (float) $priceText,
-                'ocr_confidence' => 0.8,
+                'ocr_confidence' => null,
             ];
         }
 
-        return $items;
+        return ['items' => $items, 'rejected_lines' => $rejectedLines];
     }
 
     private function isNonItemLine(string $line): bool

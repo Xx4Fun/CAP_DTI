@@ -330,6 +330,7 @@ class ReceiptReportController extends Controller
             'data' => [
                 'report_reference' => $report->report_reference,
                 'status' => $report->status,
+                'attempt_number' => (int) ($report->evidenceBundle?->attempt_number ?? 1),
                 'store' => $report->store ? [
                     'id' => $report->store->id,
                     'store_name' => $report->store->store_name,
@@ -347,6 +348,8 @@ class ReceiptReportController extends Controller
                 ])->values(),
                 'continuity' => $processingResult['continuity'] ?? ($report->raw_ocr_json['continuity'] ?? null),
                 'merchant' => $processingResult['merchant'] ?? ($report->raw_ocr_json['merchant'] ?? null),
+                'transaction_date' => data_get($processingResult, 'transaction_date')
+                    ?? data_get($report->raw_ocr_json, 'metadata.transactionDate'),
                 'detected_total' => $processingResult['detected_total'] ?? ($report->raw_ocr_json['detected_total'] ?? null),
                 'warnings' => $processingResult['warnings'] ?? ($report->raw_ocr_json['warnings'] ?? []),
                 'manual_review_required' => (bool) ($processingResult['manual_review_required'] ?? false),

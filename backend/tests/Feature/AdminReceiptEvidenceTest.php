@@ -81,6 +81,13 @@ class AdminReceiptEvidenceTest extends TestCase
     public function test_admin_evidence_manifest_hides_paths_and_audits_authorized_asset_download(): void
     {
         $report = $this->createReport('EVIDENCE', 'Submitted', true);
+        $processingResult = [
+            'ocr' => [['selected_pass' => 'fallback', 'passes' => [
+                ['pass' => 'primary', 'status' => 'OCR_SUCCESS'],
+                ['pass' => 'fallback', 'status' => 'OCR_SUCCESS'],
+            ]]],
+        ];
+        $report->evidenceBundle->update(['processing_result_json' => $processingResult]);
         $path = "receipt-evidence/{$report->evidenceBundle->evidence_uuid}/frame.jpg";
         Storage::disk('receipt_evidence')->put($path, 'private-frame');
         $asset = ReceiptEvidenceAsset::create([
@@ -98,6 +105,7 @@ class AdminReceiptEvidenceTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.assets.0.id', $asset->id)
             ->assertJsonPath('data.assets.0.kind', 'extracted_frame')
+            ->assertJsonPath('data.processing_result.ocr.0.selected_pass', 'fallback')
             ->assertJsonMissingPath('data.assets.0.path');
         $this->assertStringNotContainsString($path, $manifest->getContent());
 
@@ -106,6 +114,13 @@ class AdminReceiptEvidenceTest extends TestCase
             'action' => 'report.evidence_asset_accessed',
             'subject_id' => $report->id,
         ]);
+
+        $unauthorized = User::create([
+            'name' => 'Field Officer', 'email' => 'field-manifest@dti.test',
+            'password' => 'secret-password', 'role' => 'field_officer',
+        ]);
+        Sanctum::actingAs($unauthorized);
+        $this->getJson("/api/admin/reports/{$report->id}/evidence-manifest")->assertForbidden();
     }
 
     public function test_private_evidence_download_fails_closed_when_audit_storage_is_unavailable(): void

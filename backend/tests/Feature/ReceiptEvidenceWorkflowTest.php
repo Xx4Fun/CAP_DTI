@@ -424,6 +424,83 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         $this->assertFalse($report->evidenceBundle->assets()->where('kind', 'stitched_preview')->exists());
     }
 
+    public function test_guided_overlap_uncertainty_is_reviewable_and_preserves_both_ocr_passes(): void
+    {
+        [$report] = $this->createReadyReport('OVERLAP', false);
+        $report->update(['capture_mode' => 'guided_photos_v1']);
+        foreach ([0, 1] as $sequence) {
+            $contents = file_get_contents(base_path('tests/Fixtures/shelf_tag_saba.png'));
+            $path = "receipt-evidence/{$report->evidenceBundle->evidence_uuid}/source-{$sequence}.jpg";
+            Storage::disk('receipt_evidence')->put($path, $contents);
+            ReceiptEvidenceAsset::create([
+                'receipt_evidence_bundle_id' => $report->receipt_evidence_bundle_id,
+                'kind' => 'source_frame', 'sequence' => $sequence, 'disk' => 'receipt_evidence',
+                'path' => $path, 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($contents),
+                'sha256' => hash('sha256', $contents),
+                'metadata_json' => ['quality' => ['acceptable' => true]],
+            ]);
+        }
+        $ocr = Mockery::mock(ShelfTagOcrService::class);
+        $ocr->shouldReceive('scan')->andReturnValues([
+            ['status' => 'OCR_SUCCESS', 'raw_text' => 'SHOP A', 'lines' => ['SHOP A'], 'words' => [['confidence' => 90]]],
+            ['status' => 'OCR_SUCCESS', 'raw_text' => 'SHOP A ALT', 'lines' => ['SHOP A ALT'], 'words' => [['confidence' => 80]]],
+            ['status' => 'OCR_SUCCESS', 'raw_text' => 'TOTAL 10.00', 'lines' => ['TOTAL 10.00'], 'words' => [['confidence' => 90]]],
+            ['status' => 'OCR_SUCCESS', 'raw_text' => 'TOTAL 10.00 ALT', 'lines' => ['TOTAL 10.00 ALT'], 'words' => [['confidence' => 80]]],
+        ]);
+        $pipeline = new ReceiptEvidencePipeline(
+            app(ReceiptVideoInspector::class), app(ShelfTagImagePreprocessor::class), $ocr,
+            app(ReceiptContinuityAnalyzer::class), app(ReceiptTextAggregator::class),
+            app(ReceiptItemExtractor::class), app(ReceiptFrameQualityEvaluator::class),
+            app(ReceiptFrameSampler::class), app(ReceiptOcrResultSelector::class),
+            app(ReceiptMerchantMatcher::class), app(ReceiptTotalExtractor::class),
+        );
+
+        $result = $pipeline->process($report);
+
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame('unverified', $result['continuity']['status']);
+        $this->assertContains('INCOMPLETE_SCAN', array_column($result['warnings'], 'code'));
+        $this->assertTrue($result['manual_review_required']);
+        $this->assertSame('primary', $result['ocr'][0]['selected_pass']);
+        $this->assertSame('SHOP A', $result['ocr'][0]['passes'][0]['result']['raw_text']);
+        $this->assertSame('SHOP A ALT', $result['ocr'][0]['passes'][1]['result']['raw_text']);
+    }
+
+    public function test_mixed_valid_and_rejected_item_lines_warn_that_extraction_is_incomplete(): void
+    {
+        [$report] = $this->createReadyReport('MIXEDITEM', false);
+        $contents = file_get_contents(base_path('tests/Fixtures/shelf_tag_saba.png'));
+        $path = "receipt-evidence/{$report->evidenceBundle->evidence_uuid}/source-0.jpg";
+        Storage::disk('receipt_evidence')->put($path, $contents);
+        ReceiptEvidenceAsset::create([
+            'receipt_evidence_bundle_id' => $report->receipt_evidence_bundle_id,
+            'kind' => 'source_frame', 'sequence' => 0, 'disk' => 'receipt_evidence',
+            'path' => $path, 'mime_type' => 'image/jpeg', 'size_bytes' => strlen($contents),
+            'sha256' => hash('sha256', $contents), 'metadata_json' => ['quality' => ['acceptable' => true]],
+        ]);
+        $ocrResult = [
+            'status' => 'OCR_SUCCESS', 'raw_text' => "JUAN GROCERY\nRICE 45.00\n$ 8.50\nTOTAL 45.00",
+            'lines' => ['JUAN GROCERY', 'RICE 45.00', '$ 8.50', 'TOTAL 45.00'],
+            'words' => [['confidence' => 90]],
+        ];
+        $ocr = Mockery::mock(ShelfTagOcrService::class);
+        $ocr->shouldReceive('scan')->twice()->andReturn($ocrResult);
+        $pipeline = new ReceiptEvidencePipeline(
+            app(ReceiptVideoInspector::class), app(ShelfTagImagePreprocessor::class), $ocr,
+            app(ReceiptContinuityAnalyzer::class), app(ReceiptTextAggregator::class),
+            app(ReceiptItemExtractor::class), app(ReceiptFrameQualityEvaluator::class),
+            app(ReceiptFrameSampler::class), app(ReceiptOcrResultSelector::class),
+            app(ReceiptMerchantMatcher::class), app(ReceiptTotalExtractor::class),
+        );
+
+        $result = $pipeline->process($report);
+
+        $this->assertSame(['RICE'], array_column($result['items'], 'item_name'));
+        $this->assertSame(['$ 8.50'], $result['rejected_item_lines']);
+        $this->assertContains('OCR_INCOMPLETE', array_column($result['warnings'], 'code'));
+        $this->assertTrue($result['manual_review_required']);
+    }
+
     public function test_technical_ocr_failure_is_not_reported_as_a_bad_capture(): void
     {
         Queue::fake();
@@ -462,6 +539,34 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         $this->withHeader('X-Report-Resume-Token', 'wrong-token')
             ->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertForbidden();
+    }
+
+    public function test_review_adds_attempt_merchant_display_name_and_nullable_actual_transaction_date(): void
+    {
+        [$report, $resumeToken] = $this->createReadyReport('REVIEWMETA');
+        $report->forceFill(['raw_ocr_json' => [
+            'lines' => ['JUAN GROCERY', 'RICE 45.00'],
+            'metadata' => ['transactionDate' => '2026-09-04'],
+        ]])->save();
+        $report->evidenceBundle->update([
+            'attempt_number' => 3,
+            'processing_result_json' => ['merchant' => [
+                'status' => 'matched', 'display_name' => 'JUAN GROCERY', 'observed' => ['JUAN GROCERY'],
+            ]],
+        ]);
+
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk()
+            ->assertJsonPath('data.attempt_number', 3)
+            ->assertJsonPath('data.merchant.display_name', 'JUAN GROCERY')
+            ->assertJsonPath('data.transaction_date', '2026-09-04')
+            ->assertJsonMissingPath('data.processing_result');
+
+        $report->forceFill(['raw_ocr_json' => ['lines' => ['RICE 45.00']]])->save();
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk()->assertJsonPath('data.transaction_date', null);
     }
 
     public function test_processing_message_uses_latest_history_without_reordering_the_timeline(): void

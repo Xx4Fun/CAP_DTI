@@ -8,11 +8,16 @@ class ReceiptOcrResultSelector
 
     public function select(array $primary, array $fallback): array
     {
+        return $this->selectedPass($primary, $fallback) === 'fallback' ? $fallback : $primary;
+    }
+
+    public function selectedPass(array $primary, array $fallback): string
+    {
         if ($this->isTechnical($primary) && $this->isTechnical($fallback)) {
-            return $fallback;
+            return 'fallback';
         }
 
-        return $this->score($fallback) > $this->score($primary) ? $fallback : $primary;
+        return $this->score($fallback) > $this->score($primary) ? 'fallback' : 'primary';
     }
 
     public function isTechnical(array $result): bool
@@ -20,16 +25,22 @@ class ReceiptOcrResultSelector
         return in_array($result['status'] ?? null, self::TECHNICAL_STATUSES, true);
     }
 
-    private function score(array $result): float
+    private function score(array $result): array
     {
         if (($result['status'] ?? null) !== 'OCR_SUCCESS') {
-            return 0.0;
+            return [0, 0, 0, 0.0];
         }
 
         $words = array_filter($result['words'] ?? [], 'is_array');
-        $confidence = $words === [] ? 0.0 : array_sum(array_column($words, 'confidence')) / count($words);
+        $confidences = array_values(array_filter(array_column($words, 'confidence'), 'is_numeric'));
+        $confidence = $confidences === [] ? 0.0 : array_sum($confidences) / count($confidences);
+        $lines = array_values(array_filter($result['lines'] ?? [], 'is_string'));
 
-        return count(array_filter($result['lines'] ?? [], 'is_string')) * 1000 + count($words) * 10 + $confidence;
+        return [
+            1,
+            count((new ReceiptItemExtractor)->extract($lines)),
+            (new ReceiptTotalExtractor)->extract($lines) !== null ? 1 : 0,
+            $confidence,
+        ];
     }
 }
-

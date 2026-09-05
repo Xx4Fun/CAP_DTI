@@ -160,7 +160,7 @@ class VerifiedStoreAndRateLimitTest extends TestCase
 
         // 11th request triggers rate limiter
         $uuid11 = (string) Str::uuid();
-        $res11 = $this->postJson('/api/public/scan-tag', [
+        $res11 = $this->withHeader('Origin', 'https://customer-pwa-six.vercel.app')->postJson('/api/public/scan-tag', [
             'store_id' => $this->activeVerifiedStore->id,
             'scan_uuid' => $uuid11,
             'image' => $file,
@@ -171,6 +171,7 @@ class VerifiedStoreAndRateLimitTest extends TestCase
               ->assertJsonPath('message', 'Rate limit exceeded. Please wait a moment before taking another scan.');
 
         $this->assertTrue($res11->headers->has('Retry-After'));
+        $this->assertStringContainsString('Retry-After', $res11->headers->get('Access-Control-Expose-Headers', ''));
     }
 
     public function test_public_payload_does_not_contain_dti_sec_number_or_owner_name()

@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
@@ -25,6 +26,11 @@ describe('ReceiptDraftView', () => {
     if (!URL.revokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:original-receipt');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    // jsdom does not implement the native dialog top layer.
+    if (!HTMLDialogElement.prototype.showModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.open = true; } });
+    if (!HTMLDialogElement.prototype.close) Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value() { this.open = false; } });
+    vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
+    vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
   });
 
   it('explains that refresh only checks status and retry reruns OCR on the same evidence', async () => {
@@ -76,7 +82,8 @@ describe('ReceiptDraftView', () => {
     expect(await screen.findByText('RICE')).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: 'Original receipt section 1' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('checkbox', { name: /submit them unchanged/i }));
+    fireEvent.load(screen.getByRole('img', { name: 'Original receipt section 1' }));
+    await user.click(screen.getByRole('checkbox', { name: /want to submit/i }));
     await user.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
 
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
@@ -150,8 +157,9 @@ describe('ReceiptDraftView', () => {
     const user = userEvent.setup();
     render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
 
-    expect(await screen.findByText(/No item lines were extracted/i)).toBeInTheDocument();
-    await user.click(screen.getByRole('checkbox', { name: /submit them unchanged/i }));
+    expect(await screen.findByText(/No items detected/i)).toBeInTheDocument();
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    await user.click(screen.getByRole('checkbox', { name: /want to submit/i }));
     await user.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
     await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
       '/public/reports/REP-20260816-READY/confirm-ocr',
@@ -181,6 +189,88 @@ describe('ReceiptDraftView', () => {
       { headers: { 'X-Report-Resume-Token': 'rsm_device' } },
     );
   });
+
+  it('does not reload when the parent receives the same status with a new callback', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { data: reviewData() } });
+    function Parent() {
+      const [notifications, setNotifications] = React.useState(0);
+      return <><output>{notifications}</output><ReceiptDraftView reference="REP-20260816-READY" mode="review"
+        onStatus={() => { if (notifications < 3) setNotifications(notifications + 1); }} /></>;
+    }
+    render(<Parent />);
+    await screen.findByText('Selected store');
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1'));
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains missing sections, blocks confirmation, and retries only failed originals', async () => {
+    let broken = true;
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).endsWith('/evidence-assets/2') && broken) throw new Error('offline');
+      if (String(url).includes('/evidence-assets/')) return { data: new Blob(['image']) };
+      return { data: { data: reviewData({ evidence: [1, 2].map(id => ({ id, sequence: id - 1, mime_type: 'image/jpeg', size_bytes: 5 })) }) } };
+    });
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    expect(await screen.findByText('Section 2 could not be loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeDisabled();
+    broken = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading photos' }));
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 2' }));
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled());
+    expect(get.mock.calls.filter(([url]) => String(url).endsWith('/evidence-assets/1'))).toHaveLength(1);
+  });
+
+  it('keeps raw OCR off the customer screen and offers an accessible original viewer', async () => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['image']) } : { data: { data: reviewData({ lines: ['RAW_PRIVATE_OCR'], evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] }) } });
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
+    const photo = await screen.findByRole('img', { name: 'Original receipt section 1' });
+    fireEvent.load(photo);
+    expect(screen.queryByText('RAW_PRIVATE_OCR')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'View full size: section 1' }));
+    expect(screen.getByRole('dialog', { name: 'Receipt section 1' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Close photo' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows refresh failures even after processing status has loaded', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValueOnce({ data: { data: {
+      status: 'Processing failed', evidence: [], attempt_number: 1, ready_for_review: false,
+    } } }).mockRejectedValue({ response: { status: 429, headers: { 'retry-after': '60' }, data: { message: 'Too Many Attempts.' } } });
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="processing" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Refresh status' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Too many requests/i);
+    expect(screen.getByRole('button', { name: 'Refresh status' })).toBeDisabled();
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears acknowledgement when refreshing a changed evidence attempt', async () => {
+    let attempt = 1;
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['photo']) } : { data: { data: reviewData({ attempt_number: attempt,
+        evidence: [{ id: attempt, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] }) } });
+    vi.spyOn(apiClient, 'post').mockRejectedValue(new Error('connection lost'));
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
+    await screen.findByRole('alert');
+    attempt = 2;
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh receipt' }));
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked());
+    expect(screen.getByRole('checkbox')).toBeDisabled();
+    fireEvent.load(screen.getByRole('img', { name: 'Original receipt section 1' }));
+    expect(screen.getByRole('checkbox')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeDisabled();
+  });
+});
+
+const reviewData = (overrides = {}) => ({
+  status: 'Ready for confirmation', attempt_number: 1, store: { id: 1, store_name: 'Test shop', address: 'San Jose' },
+  items: [], evidence: [], merchant: { status: 'unverified', display_name: null }, warnings: [], manual_review_required: true,
+  ...overrides,
 });
 
 const sessionForRecapture = () => ({

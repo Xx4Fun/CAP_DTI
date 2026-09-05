@@ -13,11 +13,23 @@ class ReceiptMerchantMatcher
             fn (string $line) => $line !== '' && preg_match('/\d+[.,]\d{2}\s*$/', $line) !== 1,
         ));
         $observedTokens = $this->tokens(implode(' ', $observed));
+        $matchingLines = [];
 
         foreach (array_filter([$storeName, $ownerName]) as $expected) {
             $expectedTokens = $this->tokens((string) $expected);
             if ($expectedTokens !== [] && count(array_intersect($expectedTokens, $observedTokens)) / count($expectedTokens) >= 0.5) {
-                return ['status' => 'matched', 'expected_store' => $storeName, 'observed' => $observed];
+                foreach ($observed as $line) {
+                    $lineTokens = $this->tokens($line);
+                    if (count(array_intersect($expectedTokens, $lineTokens)) / count($expectedTokens) >= 0.5) {
+                        $matchingLines[$line] = true;
+                    }
+                }
+                return [
+                    'status' => 'matched',
+                    'expected_store' => $storeName,
+                    'observed' => $observed,
+                    'display_name' => count($matchingLines) === 1 ? array_key_first($matchingLines) : null,
+                ];
             }
         }
 
@@ -25,6 +37,7 @@ class ReceiptMerchantMatcher
             'status' => $observedTokens === [] ? 'unverified' : 'mismatch',
             'expected_store' => $storeName,
             'observed' => $observed,
+            'display_name' => null,
         ];
     }
 
@@ -37,4 +50,3 @@ class ReceiptMerchantMatcher
             && ! in_array($token, self::GENERIC_TOKENS, true))));
     }
 }
-

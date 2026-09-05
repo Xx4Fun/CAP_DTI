@@ -17,6 +17,7 @@ Only record choices that should constrain future work. Newest entries go first a
 - Customers may review evidence and system extraction but cannot edit any merchant, date, item, quantity, price, total, or other OCR-derived value. Customer correction columns remain unused for new reports and retained only for historical compatibility.
 - Poor or incomplete images require recapture. Clear images with uncertain extraction proceed with warnings for DTI review. Technical OCR failures use processing retry against the same evidence.
 - Admin review separates original evidence, raw OCR/system extraction, and DTI evaluator findings. Missing evidence is shown explicitly and never replaced by simulated receipt content.
+- Customer review is photo-first with read-only structured results; raw OCR technical presentation is Admin-only. Unknown confidence remains unknown, and OCR continuity uncertainty alone does not prove missing guided-photo evidence.
 
 ## 2026-09-01 — Admin establishment publication
 

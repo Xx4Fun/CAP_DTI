@@ -151,6 +151,7 @@ export interface ReceiptEvidenceManifest {
   processing_status: string
   continuity: Record<string, unknown> | null
   merchant: Record<string, unknown> | null
+  processing_result?: Record<string, unknown> | null
   assets: ReceiptEvidenceAssetRecord[]
 }
 

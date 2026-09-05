@@ -270,6 +270,7 @@ class ReportReviewController extends Controller
             'processing_status' => $report->evidenceBundle->processing_status,
             'continuity' => data_get($report->evidenceBundle->processing_result_json, 'continuity'),
             'merchant' => data_get($report->evidenceBundle->processing_result_json, 'merchant'),
+            'processing_result' => $report->evidenceBundle->processing_result_json,
             'assets' => $assets,
         ]]);
     }
