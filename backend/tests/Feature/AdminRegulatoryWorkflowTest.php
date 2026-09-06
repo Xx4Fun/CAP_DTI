@@ -251,22 +251,22 @@ class AdminRegulatoryWorkflowTest extends TestCase
 
         $noticesBefore = \App\Models\LegalNotice::count();
         $this->postJson('/api/admin/legal/dispatch', ['store_id' => $this->store->id])
-            ->assertStatus(422)
-            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+            ->assertNotFound();
         $this->assertSame($noticesBefore, \App\Models\LegalNotice::count());
 
-        $this->postJson('/api/admin/legal/draft-preview', [])
+        $this->postJson('/api/admin/legal-notices', [])
             ->assertUnprocessable();
 
         $record = \App\Models\MonitoringRecord::query()->first();
         $item = $record?->items()->where('is_anomaly', true)->whereNotNull('reference_value')->first();
-        if ($item) $this->postJson('/api/admin/legal/draft-preview', [
+        if ($item) {
+            $draft = $this->postJson('/api/admin/legal-notices', [
             'monitoring_record_id' => $record->id,
-            'monitoring_record_item_id' => $item->id,
+            'item_ids' => [$item->id],
             'notice_type' => 'LOI',
-        ])
-            ->assertOk()
-            ->assertSee('DRAFT - NOT AN OFFICIAL NOTICE')
-            ->assertSee((string) $item->recorded_price);
+            ])->assertCreated();
+            $this->postJson('/api/admin/legal-notices/'.$draft->json('data.id').'/preview')
+                ->assertOk()->assertSee('DRAFT — NOT AN OFFICIAL NOTICE')->assertSee((string) $item->recorded_price);
+        }
     }
 }

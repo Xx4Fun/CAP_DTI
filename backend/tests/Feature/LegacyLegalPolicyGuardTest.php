@@ -24,7 +24,7 @@ class LegacyLegalPolicyGuardTest extends TestCase
         $this->actingAs($admin, 'sanctum')->postJson('/api/notices/dispatch', [
             'store_id' => $store->id, 'srp_id' => $srp->id,
             'recorded_price' => 30, 'recorded_date' => '2026-07-26',
-        ])->assertStatus(422)->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        ])->assertStatus(405);
 
         $this->assertSame(0, LegalNotice::count());
         $this->assertSame(0, $store->fresh()->recidivism_index);
@@ -61,11 +61,15 @@ class LegacyLegalPolicyGuardTest extends TestCase
         ]);
         $this->actingAs($admin, 'sanctum');
 
-        $this->postJson('/api/admin/legal/draft-preview', [])->assertUnprocessable();
-        $this->postJson('/api/admin/legal/draft-preview', ['monitoring_record_id' => $record->id, 'monitoring_record_item_id' => $item->id, 'notice_type' => 'LOI'])
-            ->assertOk()->assertSee('Captured Store')->assertSee('Captured Rice')->assertSee('62.00')->assertSee('50.00')->assertSee('DTI-2026');
+        $this->postJson('/api/admin/legal-notices', [])->assertUnprocessable();
+        $draft = $this->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $record->id, 'item_ids' => [$item->id], 'notice_type' => 'LOI'])
+            ->assertCreated();
+        $this->postJson('/api/admin/legal-notices/'.$draft->json('data.id').'/preview')
+            ->assertOk()->assertSee('Captured Store')->assertSee('Captured Rice')->assertSee('62.00')->assertSee('50.00')->assertSee('DTI-2026')->assertSee('DRAFT — NOT AN OFFICIAL NOTICE');
         $item->update(['is_anomaly' => false]);
-        $this->postJson('/api/admin/legal/draft-preview', ['monitoring_record_id' => $record->id, 'monitoring_record_item_id' => $item->id, 'notice_type' => 'SCO'])->assertNotFound();
-        $this->assertSame(0, LegalNotice::count());
+        $record2 = $record->replicate(['client_uuid']); $record2->client_uuid = '10000000-0000-4000-8000-000000000002'; $record2->save();
+        $item2 = $item->replicate(); $item2->monitoring_record_id = $record2->id; $item2->save();
+        $this->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $record2->id, 'item_ids' => [$item2->id], 'notice_type' => 'SCO'])->assertUnprocessable();
+        $this->assertSame(1, LegalNotice::count());
     }
 }

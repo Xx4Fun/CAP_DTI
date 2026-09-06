@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Store extends Model
 {
@@ -60,6 +61,11 @@ class Store extends Model
     public function legalNotices(): HasMany
     {
         return $this->hasMany(LegalNotice::class);
+    }
+
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'vendor_user_id');
     }
 
     public function citizenTips(): HasMany

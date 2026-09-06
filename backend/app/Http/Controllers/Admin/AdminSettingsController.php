@@ -25,7 +25,6 @@ class AdminSettingsController extends Controller
             'gis_default_lat' => '10.7431',
             'gis_default_lng' => '121.9427',
             'gis_default_zoom' => '14',
-            'loi_rebuttal_hours' => '48',
         ];
 
         $mergedSystem = array_merge($defaults, $systemSettings);
@@ -122,7 +121,6 @@ class AdminSettingsController extends Controller
             'gis_default_lat' => 'required|numeric|between:-90,90',
             'gis_default_lng' => 'required|numeric|between:-180,180',
             'gis_default_zoom' => 'required|integer|between:1,20',
-            'loi_rebuttal_hours' => 'required|integer|between:1,168',
         ]);
 
         foreach ($validated as $key => $value) {

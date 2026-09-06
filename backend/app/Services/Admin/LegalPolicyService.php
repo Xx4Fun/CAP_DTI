@@ -3,22 +3,38 @@
 namespace App\Services\Admin;
 
 use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use LogicException;
 
 class LegalPolicyService
 {
-    public function availability(): array
+    public function availability(?string $noticeType = null): array
     {
-        $rules = config('legal_policy.rules', []);
+        $types = $noticeType ? [strtoupper($noticeType)] : ['LOI', 'SCO'];
         $complete = config('legal_policy.approved') === true
             && filled(config('legal_policy.policy_version'))
-            && is_numeric($rules['response_hours'] ?? null)
-            && is_bool($rules['sco_when_state_of_calamity'] ?? null)
-            && is_numeric($rules['sco_min_confirmed_violations'] ?? null)
-            && in_array($rules['normal_notice_type'] ?? null, ['LOI', 'SCO'], true)
-            && in_array($rules['escalated_notice_type'] ?? null, ['LOI', 'SCO'], true)
-            && in_array($rules['loi_template'] ?? null, ['notices.loi'], true)
-            && in_array($rules['sco_template'] ?? null, ['notices.sco'], true);
+            && filled(config('legal_policy.timezone'));
+        foreach ($types as $type) {
+            $rule = config("legal_policy.rules.$type", []);
+            $period = $rule['response_period'] ?? [];
+            $complete = $complete
+                && in_array($rule['template'] ?? null, ['notices.official-loi', 'notices.official-sco'], true)
+                && ! empty($rule['reasons']) && ! empty($rule['legal_bases']) && ! empty($rule['required_fields'])
+                && filled($rule['signatory']['name'] ?? null) && filled($rule['signatory']['office'] ?? null)
+                && in_array($period['unit'] ?? null, ['hours', 'working_days'], true)
+                && is_int($period['value'] ?? null) && $period['value'] > 0
+                && in_array($rule['deadline_anchor'] ?? null, ['received', 'refused'], true)
+                && str_contains((string) ($rule['control_number_pattern'] ?? ''), '{id}')
+                && str_contains((string) ($rule['control_number_pattern'] ?? ''), '{type}')
+                && str_contains((string) ($rule['control_number_pattern'] ?? ''), '{year}');
+            if (($period['unit'] ?? null) === 'working_days') {
+                $from = config('legal_policy.calendar_valid_from'); $until = config('legal_policy.calendar_valid_until');
+                $today = now(config('legal_policy.timezone'))->startOfDay();
+                $complete = $complete && ! empty(config('legal_policy.working_weekdays')) && is_array(config('legal_policy.non_working_dates'))
+                    && filled($from) && filled($until) && Carbon::parse($from)->startOfDay()->lte($today)
+                    && Carbon::parse($until)->endOfDay()->gte($today->copy()->addDays($period['value'] * 3));
+            }
+        }
 
         return $complete
             ? ['status' => 'LEGAL_POLICY_AVAILABLE', 'policy_version' => config('legal_policy.policy_version')]
@@ -27,32 +43,39 @@ class LegalPolicyService
 
     public function noticeType(bool $stateOfCalamity, int $confirmedViolations): string
     {
-        $this->requireAvailable();
-        $rules = config('legal_policy.rules');
-        $escalated = ($stateOfCalamity && $rules['sco_when_state_of_calamity'])
-            || $confirmedViolations >= (int) $rules['sco_min_confirmed_violations'];
-
-        return $escalated ? $rules['escalated_notice_type'] : $rules['normal_notice_type'];
+        throw new LogicException('Automatic legal notice selection is disabled.');
     }
 
-    public function responseDeadline(CarbonInterface $from): CarbonInterface
+    public function responseDeadline(CarbonInterface $from, string $noticeType): CarbonInterface
     {
-        $this->requireAvailable();
-        return $from->copy()->addHours((int) config('legal_policy.rules.response_hours'));
+        $period = $this->rulesFor($noticeType)['response_period'];
+        $deadline = Carbon::instance($from)->setTimezone(config('legal_policy.timezone'));
+        if ($period['unit'] === 'hours') return $deadline->addHours($period['value']);
+        $remaining = $period['value'];
+        while ($remaining > 0) {
+            $deadline->addDay();
+            if (in_array($deadline->dayOfWeekIso, config('legal_policy.working_weekdays'), true)
+                && ! in_array($deadline->toDateString(), config('legal_policy.non_working_dates'), true)) $remaining--;
+        }
+        return $deadline;
     }
 
     public function templateFor(string $noticeType): string
     {
-        $this->requireAvailable();
-        return $noticeType === 'SCO'
-            ? config('legal_policy.rules.sco_template')
-            : config('legal_policy.rules.loi_template');
+        return $this->rulesFor($noticeType)['template'];
     }
 
-    private function requireAvailable(): void
+    public function rulesFor(string $noticeType): array
     {
-        if ($this->availability()['status'] !== 'LEGAL_POLICY_AVAILABLE') {
-            throw new LogicException('DTI-approved legal policy is unavailable.');
-        }
+        $noticeType = strtoupper($noticeType);
+        if ($this->availability($noticeType)['status'] !== 'LEGAL_POLICY_AVAILABLE') throw new LogicException('DTI-approved legal policy is unavailable.');
+        return config("legal_policy.rules.$noticeType");
+    }
+
+    public function controlNumber(int $id, string $noticeType, int $year): string
+    {
+        return strtr($this->rulesFor($noticeType)['control_number_pattern'], [
+            '{id}' => str_pad((string) $id, 6, '0', STR_PAD_LEFT), '{type}' => strtoupper($noticeType), '{year}' => (string) $year,
+        ]);
     }
 }

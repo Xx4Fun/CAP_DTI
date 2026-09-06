@@ -75,8 +75,7 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $response->assertStatus(405);
         $this->assertSame(0, LegalNotice::count());
     }
 
@@ -92,8 +91,7 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $response->assertStatus(405);
         $this->assertSame(0, LegalNotice::count());
         $this->store->refresh();
         $this->assertEquals(0, $this->store->recidivism_index);
@@ -112,8 +110,7 @@ class LegalNoticeTest extends TestCase
                 'recorded_date' => '2026-07-18',
             ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('status', 'LEGAL_POLICY_UNAVAILABLE');
+        $response->assertStatus(405);
         $this->assertSame(0, LegalNotice::count());
         $this->store->refresh();
         $this->assertEquals(1, $this->store->recidivism_index);
@@ -126,6 +123,8 @@ class LegalNoticeTest extends TestCase
             'notice_type' => 'LOI',
             'pdf_file_path' => 'notices/test.pdf',
             'status' => 'issued',
+            'delivery_state' => 'received',
+            'delivered_at' => now(),
             'due_date_timestamp' => now()->addHours(24), // 24 hours left
         ]);
 
@@ -139,9 +138,9 @@ class LegalNoticeTest extends TestCase
         $response->assertStatus(200);
         $this->assertDatabaseHas('legal_notices', [
             'id' => $notice->id,
-            'status' => 'rebutted',
+            'status' => 'response_received',
         ]);
-        $this->assertDatabaseHas('audit_events', ['action' => 'vendor.rebuttal_submitted', 'subject_id' => $notice->id]);
+        $this->assertDatabaseHas('audit_events', ['action' => 'vendor.response_submitted', 'subject_id' => $notice->id]);
     }
 
     public function test_vendor_cannot_access_or_rebut_another_vendors_notice()
@@ -157,6 +156,8 @@ class LegalNoticeTest extends TestCase
             'notice_type' => 'LOI',
             'pdf_file_path' => 'notices/test.pdf',
             'status' => 'issued',
+            'delivery_state' => 'received',
+            'delivered_at' => now(),
             'due_date_timestamp' => now()->addHours(24),
         ]);
 
@@ -177,6 +178,8 @@ class LegalNoticeTest extends TestCase
             'notice_type' => 'LOI',
             'pdf_file_path' => 'notices/test.pdf',
             'status' => 'issued',
+            'delivery_state' => 'received',
+            'delivered_at' => now()->subDay(),
             'due_date_timestamp' => now()->subHours(1), // expired 1 hour ago
         ]);
 
@@ -189,7 +192,7 @@ class LegalNoticeTest extends TestCase
 
         $response->assertStatus(403);
         $response->assertJsonFragment([
-            'message' => 'Action Forbidden (403): Response period has expired.'
+            'message' => 'The response period has expired.'
         ]);
     }
 }

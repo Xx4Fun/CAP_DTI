@@ -5,7 +5,7 @@ use App\Http\Controllers\Admin\AdminSessionController;
 use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AuditEventController;
 use App\Http\Controllers\Admin\EmergencyAdminController;
-use App\Http\Controllers\Admin\LegalDraftController;
+use App\Http\Controllers\Admin\LegalNoticeController as AdminLegalNoticeController;
 use App\Http\Controllers\Admin\MonitoringRecordController;
 use App\Http\Controllers\Admin\ReportReviewController;
 use App\Http\Controllers\Admin\SrpAdminController;
@@ -127,8 +127,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/emergencies/{emergency}', [EmergencyAdminController::class, 'update']);
         Route::post('/emergency-prices', [EmergencyAdminController::class, 'storePrice']);
         Route::get('/emergency-prices/resolve', [EmergencyAdminController::class, 'resolve']);
-        Route::post('/legal/dispatch', [LegalDraftController::class, 'dispatch']);
-        Route::post('/legal/draft-preview', [LegalDraftController::class, 'preview']);
+        Route::get('/legal-notices', [AdminLegalNoticeController::class, 'index']);
+        Route::post('/legal-notices', [AdminLegalNoticeController::class, 'store']);
+        Route::get('/legal-notices/{legalNotice}', [AdminLegalNoticeController::class, 'show']);
+        Route::patch('/legal-notices/{legalNotice}', [AdminLegalNoticeController::class, 'update']);
+        Route::post('/legal-notices/{legalNotice}/attachments', [AdminLegalNoticeController::class, 'attach']);
+        Route::delete('/legal-notices/{legalNotice}/attachments/{attachment}', [AdminLegalNoticeController::class, 'destroyAttachment']);
+        Route::post('/legal-notices/{legalNotice}/preview', [AdminLegalNoticeController::class, 'preview']);
+        Route::post('/legal-notices/{legalNotice}/issue', [AdminLegalNoticeController::class, 'issue']);
+        Route::post('/legal-notices/{legalNotice}/delivery', [AdminLegalNoticeController::class, 'delivery']);
+        Route::get('/legal-notices/{legalNotice}/document', [AdminLegalNoticeController::class, 'document']);
+        Route::post('/legal-notices/{legalNotice}/close', [AdminLegalNoticeController::class, 'close']);
+        Route::post('/legal-notices/{legalNotice}/cancel', [AdminLegalNoticeController::class, 'cancel']);
 
         Route::get('/settings', [AdminSettingsController::class, 'index']);
         Route::put('/settings/profile', [AdminSettingsController::class, 'updateProfile']);
@@ -142,8 +152,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/notices', [LegalNoticeController::class, 'index']);
     Route::get('/notices/{id}', [LegalNoticeController::class, 'show']);
-    Route::post('/notices/dispatch', [LegalNoticeController::class, 'dispatchNotice']);
-    Route::post('/notices/{id}/rebuttal', [LegalNoticeController::class, 'uploadRebuttal']);
+    Route::get('/notices/{id}/document', [LegalNoticeController::class, 'document']);
+    Route::post('/notices/{id}/response', [LegalNoticeController::class, 'response']);
+    Route::post('/notices/{id}/rebuttal', [LegalNoticeController::class, 'response']);
 
     Route::get('/tips', [CitizenTipController::class, 'index'])
         ->middleware('dti.role:super_admin,dti_evaluator');

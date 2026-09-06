@@ -1,0 +1,15 @@
+@if($draft ?? false)<div class="legal-draft-watermark">DRAFT — NOT AN OFFICIAL NOTICE</div>@endif
+<section class="legal-schedule">
+  <h1>Monitoring Schedule</h1>
+  <p>Monitoring record: {{ data_get($notice->source_snapshot, 'monitoring_record_number') ?: 'Not recorded' }}</p>
+  <table><thead><tr><th>Product</th><th>Observed price</th><th>Captured reference</th><th>Reference</th></tr></thead><tbody>
+  @foreach(data_get($notice->source_snapshot, 'items', []) as $item)
+    <tr><td>{{ $item['commodity_name'] ?: 'Not recorded' }} {{ $item['unit'] ? '('.$item['unit'].')' : '' }}</td><td>₱{{ number_format($item['observed_price'], 2) }}</td><td>₱{{ number_format($item['reference_value'], 2) }}</td><td>{{ $item['reference_label'] ?: 'Not recorded' }} · {{ $item['reference_source'] ?: 'Source not recorded' }} · {{ $item['reference_effective_date'] ?: 'Date not recorded' }}</td></tr>
+  @endforeach
+  </tbody></table>
+  <p><strong>Evaluator review required; this is not an automatic legal finding.</strong></p>
+</section>
+<style>
+.legal-draft-watermark{position:fixed;z-index:20;left:12%;top:42%;transform:rotate(-28deg);font:700 34pt Arial;color:rgba(180,0,0,.18);border:4px solid rgba(180,0,0,.18);padding:12px;pointer-events:none}
+.legal-schedule{page-break-before:always;box-sizing:border-box;width:210mm;min-height:297mm;padding:18mm;background:#fff;color:#111;font:10pt Arial}.legal-schedule h1{font-size:18pt}.legal-schedule table{width:100%;border-collapse:collapse}.legal-schedule th,.legal-schedule td{border:1px solid #555;padding:7px;text-align:left;vertical-align:top}
+</style>

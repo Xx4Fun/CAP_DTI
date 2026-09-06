@@ -2,159 +2,78 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Store;
-use App\Models\SrpBulletin;
 use App\Models\LegalNotice;
+use App\Models\Store;
 use App\Services\Admin\AuditTrailService;
-use App\Services\Admin\AdminAuthorizationService;
-use App\Services\Admin\LegalPolicyService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Cache;
-use Barryvdh\DomPDF\Facade\Pdf;
 
 class LegalNoticeController extends Controller
 {
-    public function index(Request $request, AdminAuthorizationService $authorization)
-    {
-        $user = $request->user();
-        if ($user->role === 'vendor') {
-            $storeIds = Store::query()
-                ->where('vendor_user_id', $user->id)
-                ->orWhere(fn ($query) => $query->whereNull('vendor_user_id')->where('owner_name', $user->name))
-                ->pluck('id');
-            $notices = LegalNotice::whereIn('store_id', $storeIds)->with('store')->get();
-        } else {
-            $authorization->requireManager($user);
-            $notices = LegalNotice::with('store')->get();
-        }
-        return response()->json($notices);
-    }
-
-    public function show(Request $request, $id, AdminAuthorizationService $authorization)
-    {
-        $notice = LegalNotice::with('store')->findOrFail($id);
-        $this->authorizeNoticeAccess($request, $notice, $authorization);
-        return response()->json($notice);
-    }
-
-    public function dispatchNotice(Request $request, AdminAuthorizationService $authorization, LegalPolicyService $policy)
-    {
-        $authorization->requireManager($request->user());
-        $availability = $policy->availability();
-        if ($availability['status'] !== 'LEGAL_POLICY_AVAILABLE') {
-            return response()->json($availability, 422);
-        }
-
-        $request->validate([
-            'store_id' => 'required|exists:stores,id',
-            'srp_id' => 'required|exists:srp_bulletins,id',
-            'recorded_price' => 'required|numeric',
-            'recorded_date' => 'required|date',
-        ]);
-
-        $store = Store::findOrFail($request->store_id);
-        $commodity = SrpBulletin::findOrFail($request->srp_id);
-        $recordedPrice = $request->recorded_price;
-        $recordedDate = $request->recorded_date;
-
-        // Bifurcated Routing Logic
-        $stateOfCalamity = Cache::get('state_of_calamity', false);
-        $noticeType = $policy->noticeType($stateOfCalamity, $store->recidivism_index);
-        $dueDate = $policy->responseDeadline(now());
-
-        // Generate PDF view variables
-        $data = [
-            'store' => $store,
-            'commodity' => $commodity,
-            'recorded_price' => $recordedPrice,
-            'recorded_date' => $recordedDate,
-        ];
-
-        // Load correct blade template
-        $viewName = $policy->templateFor($noticeType);
-        $pdf = Pdf::loadView($viewName, $data);
-
-        // Save PDF to public notices storage
-        $filename = 'notice_' . $store->id . '_' . time() . '.pdf';
-        $filePath = 'notices/' . $filename;
-        Storage::disk('public')->put($filePath, $pdf->output());
-
-        // Create the notice record
-        $notice = LegalNotice::create([
-            'store_id' => $store->id,
-            'notice_type' => $noticeType,
-            'pdf_file_path' => $filePath,
-            'status' => 'issued',
-            'due_date_timestamp' => $dueDate,
-        ]);
-
-        return response()->json([
-            'message' => 'Legal notice generated and dispatched successfully.',
-            'notice' => $notice
-        ], 201);
-    }
-
-    public function uploadRebuttal(Request $request, $id, AdminAuthorizationService $authorization, AuditTrailService $audit)
-    {
-        $notice = LegalNotice::findOrFail($id);
-        $this->authorizeVendorNotice($request, $notice, $authorization);
-
-        // 1. Strict configured response-period deadline check
-        if (now() > $notice->due_date_timestamp) {
-            return response()->json([
-                'message' => 'Action Forbidden (403): Response period has expired.'
-            ], 403);
-        }
-
-        // 2. File and MIME type validation
-        $request->validate([
-            'rebuttal' => 'required|file|mimes:pdf,jpeg,png|max:5120',
-        ]);
-
-        if ($request->file('rebuttal')->isValid()) {
-            $file = $request->file('rebuttal');
-            // Store in private vault
-            $path = $file->store('rebuttals', 'local');
-
-            $notice->update([
-                'status' => 'rebutted',
-            ]);
-            $audit->record($request, 'vendor.rebuttal_submitted', $notice);
-
-            return response()->json([
-                'message' => 'Rebuttal evidence successfully submitted.',
-                'notice' => $notice
-            ]);
-        }
-
-        return response()->json(['message' => 'Invalid file upload.'], 400);
-    }
-
-    private function authorizeNoticeAccess(Request $request, LegalNotice $notice, AdminAuthorizationService $authorization): void
-    {
-        if ($request->user()->role === 'vendor') {
-            $this->authorizeVendorNotice($request, $notice, $authorization);
-            return;
-        }
-
-        $authorization->requireManager($request->user());
-    }
-
-    private function authorizeVendorNotice(Request $request, LegalNotice $notice, AdminAuthorizationService $authorization): void
+    public function index(Request $request)
     {
         abort_unless($request->user()->role === 'vendor', 403);
+        return response()->json(LegalNotice::query()
+            ->whereIn('store_id', $this->storeIds($request))
+            ->whereIn('status', ['issued', 'response_received', 'closed'])
+            ->with('store:id,store_name,address')->latest('issued_at')->get()->map(fn ($notice) => $this->vendorData($notice)));
+    }
 
-        $ownsStore = Store::query()
-            ->whereKey($notice->store_id)
-            ->where(function ($query) use ($request) {
-                $query->where('vendor_user_id', $request->user()->id)
-                    ->orWhere(function ($legacy) use ($request) {
-                        $legacy->whereNull('vendor_user_id')->where('owner_name', $request->user()->name);
-                    });
-            })
-            ->exists();
+    public function show(Request $request, int $id)
+    {
+        $notice = LegalNotice::with(['store:id,store_name,address', 'attachments' => fn ($query) => $query->where('kind', 'vendor_response')])->findOrFail($id);
+        $this->authorizeVendor($request, $notice);
+        abort_unless(in_array($notice->status, ['issued', 'response_received', 'closed'], true), 404);
+        return response()->json($this->vendorData($notice));
+    }
 
-        abort_unless($ownsStore, 403);
+    public function document(Request $request, int $id, AuditTrailService $audit)
+    {
+        $notice = LegalNotice::findOrFail($id); $this->authorizeVendor($request, $notice);
+        abort_unless(in_array($notice->status, ['issued', 'response_received', 'closed'], true) && $notice->pdf_file_path && Storage::disk($notice->pdf_disk)->exists($notice->pdf_file_path), 404);
+        $audit->recordOrFail($request, 'vendor.notice_document_accessed', $notice);
+        return Storage::disk($notice->pdf_disk)->response($notice->pdf_file_path, ($notice->control_number ?? 'notice').'.pdf', ['Content-Type' => 'application/pdf']);
+    }
+
+    public function response(Request $request, int $id, AuditTrailService $audit)
+    {
+        $notice = LegalNotice::findOrFail($id); $this->authorizeVendor($request, $notice);
+        abort_unless($notice->status === 'issued', 409, 'A response has already been submitted or the notice is closed.');
+        abort_unless(in_array($notice->delivery_state, ['received', 'refused'], true) && $notice->due_date_timestamp, 409, 'Delivery must be recorded before a response can be submitted.');
+        abort_if(now()->isAfter($notice->due_date_timestamp), 403, 'The response period has expired.');
+        $data = $request->validate(['response_text' => ['nullable', 'string', 'max:10000'], 'attachments' => ['nullable', 'array', 'max:5'], 'attachments.*' => ['file', 'mimes:pdf,jpeg,png', 'max:5120'], 'rebuttal' => ['nullable', 'file', 'mimes:pdf,jpeg,png', 'max:5120']]);
+        abort_if(blank($data['response_text'] ?? null) && ! $request->hasFile('attachments') && ! $request->hasFile('rebuttal'), 422, 'Response text or an attachment is required.');
+        $files = $request->file('attachments', []);
+        if ($legacy = $request->file('rebuttal')) $files = [$legacy];
+        $stored = [];
+        try {
+            DB::transaction(function () use ($request, $notice, $data, $files, $audit, &$stored) {
+                foreach ($files as $file) {
+                    $path = $file->store("legal-notices/{$notice->id}/responses", 'local');
+                    abort_unless($path, 503, 'Private response storage is unavailable.'); $stored[] = $path;
+                    $notice->attachments()->create(['uploaded_by' => $request->user()->id, 'kind' => 'vendor_response', 'disk' => 'local', 'path' => $path, 'original_name' => $file->getClientOriginalName(), 'mime_type' => $file->getMimeType(), 'size_bytes' => $file->getSize(), 'sha256' => hash_file('sha256', $file->getRealPath())]);
+                }
+                $notice->update(['response_text' => $data['response_text'] ?? null, 'response_received_at' => now(), 'status' => 'response_received']);
+                $audit->recordOrFail($request, 'vendor.response_submitted', $notice, ['attachment_count' => count($files)]);
+            });
+        } catch (\Throwable $error) { foreach ($stored as $path) Storage::disk('local')->delete($path); throw $error; }
+        return response()->json(['message' => 'Response submitted.', 'notice' => $notice->fresh()]);
+    }
+
+    private function authorizeVendor(Request $request, LegalNotice $notice): void
+    {
+        abort_unless($request->user()->role === 'vendor' && in_array($notice->store_id, $this->storeIds($request)->all(), true), 403);
+    }
+
+    private function storeIds(Request $request)
+    {
+        return Store::query()->where('vendor_user_id', $request->user()->id)
+            ->orWhere(fn ($query) => $query->whereNull('vendor_user_id')->where('owner_name', $request->user()->name))->pluck('id');
+    }
+
+    private function vendorData(LegalNotice $notice): array
+    {
+        return $notice->only(['id', 'control_number', 'notice_type', 'status', 'issued_at', 'delivery_state', 'delivered_at', 'due_date_timestamp', 'response_received_at', 'closed_at']) + ['store' => $notice->store, 'attachments' => $notice->relationLoaded('attachments') ? $notice->attachments : []];
     }
 }
