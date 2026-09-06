@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ConsumerReport;
 use App\Models\FieldVerificationRequest;
+use App\Models\MonitoringRecord;
 use App\Models\RegulatoryFinding;
 use App\Models\Store;
 use App\Models\User;
@@ -173,5 +174,37 @@ class AdminFieldVerificationRequestTest extends TestCase
 
         $this->expectException(QueryException::class);
         $report->delete();
+    }
+
+    public function test_admin_lists_verification_requests_with_source_and_result_links(): void
+    {
+        $report = $this->report();
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => $report->id, 'store_id' => $this->store->id,
+            'requested_by' => $this->admin->id, 'status' => 'completed', 'reason' => 'Confirm shelf price.',
+            'context_json' => ['report_reference' => $report->report_reference],
+            'requested_at' => now()->subHour(), 'completed_at' => now(),
+        ]);
+        $record = MonitoringRecord::create([
+            'client_uuid' => 'd1d0a181-a590-4f95-b96e-aadab8e09a67',
+            'officer_user_id' => $this->admin->id, 'store_id' => $this->store->id,
+            'status' => 'accepted', 'started_at' => now()->subMinutes(20),
+            'finalized_at' => now()->subMinutes(5), 'received_at' => now()->subMinutes(4),
+            'latitude' => 10.7, 'longitude' => 122.0, 'location_accuracy_meters' => 8,
+            'location_captured_at' => now()->subMinutes(5), 'representative_name' => 'Owner',
+            'officer_signature_disk' => 'receipt_evidence', 'officer_signature_path' => 'officer.png',
+            'officer_signature_sha256' => str_repeat('a', 64),
+            'representative_signature_disk' => 'receipt_evidence', 'representative_signature_path' => 'representative.png',
+            'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
+            'field_verification_request_id' => $verification->id,
+        ]);
+
+        $this->getJson('/api/admin/verification-requests?status=completed&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.data.0.store.id', $this->store->id)
+            ->assertJsonPath('data.data.0.report.id', $report->id)
+            ->assertJsonPath('data.data.0.report.report_reference', $report->report_reference)
+            ->assertJsonPath('data.data.0.monitoring_record.id', $record->id);
     }
 }

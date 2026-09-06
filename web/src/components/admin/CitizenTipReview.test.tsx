@@ -4,10 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CitizenTipReview } from './CitizenTipReview'
 import { adminApi } from '../../services/adminApi'
 
+const requestFieldVerification = vi.hoisted(() => vi.fn())
+const cancelFieldVerification = vi.hoisted(() => vi.fn())
+const reopenFieldVerification = vi.hoisted(() => vi.fn())
+
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getReports: vi.fn(),
     decideReport: vi.fn(),
+    requestFieldVerification,
+    cancelFieldVerification,
+    reopenFieldVerification,
     getReportEvidence: vi.fn(),
     getReportEvidenceManifest: vi.fn(),
     getReportEvidenceAsset: vi.fn(),
@@ -170,6 +177,74 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         corrected: expect.objectContaining({ regulatory_finding: 'confirmed_violation' }),
       }),
     )
+  })
+
+  it('refers a report for field verification without deciding a violation', async () => {
+    requestFieldVerification.mockResolvedValue({
+      id: 301,
+      status: 'open',
+      reason: 'Verify the shelf price in person.',
+      store_id: 22,
+      claimed_by: null,
+      requested_at: '2026-08-02T10:00:00Z',
+      claimed_at: null,
+      completed_at: null,
+      cancelled_at: null,
+    })
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    await user.click(await screen.findByText('RPT-2026-001'))
+    await user.click(screen.getByRole('button', { name: /Require Field Verification/i }))
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the shelf price in person.')
+    await user.click(screen.getByRole('button', { name: /Mark for Field Verification/i }))
+
+    expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.' })
+    expect(adminApi.decideReport).not.toHaveBeenCalled()
+    expect(await screen.findByText('Referred for field verification')).toBeInTheDocument()
+    expect(screen.getByText('Verify the shelf price in person.')).toBeInTheDocument()
+  })
+
+  it('shows the existing request and cancels it instead of offering a duplicate', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      status: 'Referred for field verification',
+      verification_request: {
+        id: 301,
+        status: 'open',
+        reason: 'Verify the shelf price in person.',
+        store_id: 22,
+        claimed_by: null,
+        requested_at: '2026-08-02T10:00:00Z',
+        claimed_at: null,
+        completed_at: null,
+        cancelled_at: null,
+      },
+    }])
+    cancelFieldVerification.mockResolvedValue({
+      id: 301,
+      status: 'cancelled',
+      reason: 'Verify the shelf price in person.',
+      store_id: 22,
+      claimed_by: null,
+      requested_at: '2026-08-02T10:00:00Z',
+      claimed_at: null,
+      completed_at: null,
+      cancelled_at: '2026-08-02T11:00:00Z',
+    })
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    await user.click(await screen.findByText('RPT-2026-001'))
+    expect(screen.getByText('Field verification request')).toBeInTheDocument()
+    expect(screen.getByText('Open')).toBeInTheDocument()
+    expect(screen.getByText('Verify the shelf price in person.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Require Field Verification$/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Cancel field verification/i }))
+
+    expect(cancelFieldVerification).toHaveBeenCalledWith(301)
+    expect(await screen.findByText('Cancelled')).toBeInTheDocument()
   })
 
   it('shows original guided images before legacy derivatives and submits one decision per receipt item', async () => {

@@ -415,6 +415,6 @@ export function AuditPanel() {
   )
 }
 
-export function FieldMonitoringPanel() {
-  return <Suspense fallback={<PanelLoader />}><FieldMonitoringRecords /></Suspense>
+export function FieldMonitoringPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+  return <Suspense fallback={<PanelLoader />}><FieldMonitoringRecords onNavigate={props.onNavigate} /></Suspense>
 }

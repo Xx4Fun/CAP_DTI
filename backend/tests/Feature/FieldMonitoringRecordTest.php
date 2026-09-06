@@ -463,4 +463,56 @@ class FieldMonitoringRecordTest extends TestCase
             'subject_id' => $recordId,
         ]);
     }
+
+    public function test_admin_monitoring_workspace_uses_captured_references_and_establishment_summaries(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $milk = $this->bulletin('Milk', 50);
+
+        $recordId = $this->withToken($token)
+            ->postJson('/api/field/monitoring-records/sync', $this->payload($store, [$rice, $milk]))
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_records', [
+            'id' => $recordId,
+            'protocol_mode' => 'standard',
+            'protocol_reference' => null,
+        ]);
+        $rice->update(['baseline_price' => 999]);
+
+        $manager = User::create([
+            'name' => 'Manager', 'email' => 'workspace-manager@dti.test',
+            'password' => 'manager-password', 'role' => 'dti_evaluator',
+        ]);
+        Sanctum::actingAs($manager, ['dti-admin']);
+
+        $this->getJson('/api/admin/monitoring-establishments?status=with_observations&search=San&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.summary.monitored_establishments', 1)
+            ->assertJsonPath('data.summary.recent_activity', 1)
+            ->assertJsonPath('data.summary.records_with_observations', 1)
+            ->assertJsonPath('data.summary.open_verification_requests', 0)
+            ->assertJsonPath('data.establishments.total', 1)
+            ->assertJsonPath('data.establishments.data.0.id', $store->id)
+            ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations');
+
+        $this->getJson("/api/admin/monitoring-establishments/{$store->id}")
+            ->assertOk()
+            ->assertJsonPath('data.completed_records_count', 1)
+            ->assertJsonPath('data.records_with_observations_count', 1)
+            ->assertJsonPath('data.latest_record.id', $recordId)
+            ->assertJsonPath('data.latest_record.protocol_mode', 'standard');
+
+        $this->getJson("/api/admin/monitoring-establishments/{$store->id}/price-history?per_page=10")
+            ->assertOk()
+            ->assertJsonPath('data.total', 2)
+            ->assertJsonPath('data.data.0.monitoring_record_id', $recordId)
+            ->assertJsonFragment(['reference_value' => 100]);
+
+        $this->getJson("/api/admin/monitoring-records?store_id={$store->id}&per_page=10")
+            ->assertOk()->assertJsonPath('data.total', 1);
+    }
 }

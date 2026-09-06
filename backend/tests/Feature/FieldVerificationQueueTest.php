@@ -232,5 +232,9 @@ class FieldVerificationQueueTest extends TestCase
             'reference_type' => 'emergency_ceiling', 'reference_value' => 100,
             'reference_source' => 'APC-SYNC', 'is_anomaly' => true,
         ]);
+        $this->assertDatabaseHas('monitoring_records', [
+            'id' => $recordId, 'protocol_mode' => 'emergency',
+            'protocol_reference' => 'DECL-SYNC',
+        ]);
     }
 }

@@ -15,7 +15,8 @@ class MonitoringRecord extends Model
         'representative_title', 'officer_signature_disk', 'officer_signature_path',
         'officer_signature_sha256', 'representative_signature_disk',
         'representative_signature_path', 'representative_signature_sha256',
-        'sync_source', 'client_version', 'field_verification_request_id',
+        'sync_source', 'client_version', 'protocol_mode', 'protocol_reference',
+        'field_verification_request_id',
     ];
 
     protected $hidden = [

@@ -10,11 +10,7 @@ class FieldReferenceResolver
 {
     public function resolve(SrpBulletin $submittedBulletin, string|\DateTimeInterface $observedAt): array
     {
-        $emergency = RegulatoryEmergency::query()
-            ->whereIn('status', ['active', 'ended'])
-            ->whereDate('starts_on', '<=', $observedAt)
-            ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $observedAt))
-            ->latest('starts_on')->latest('id')->first();
+        $emergency = $this->effectiveEmergency($observedAt);
 
         if ($emergency) {
             $record = RegulatoryPriceRecord::query()
@@ -52,5 +48,23 @@ class FieldReferenceResolver
             'label' => 'SRP reference unavailable', 'value' => null,
             'source' => null, 'effective_date' => null,
         ];
+    }
+
+    public function protocolAt(string|\DateTimeInterface $observedAt): array
+    {
+        $emergency = $this->effectiveEmergency($observedAt);
+        return [
+            'mode' => $emergency ? 'emergency' : 'standard',
+            'reference' => $emergency?->declaration_reference,
+        ];
+    }
+
+    private function effectiveEmergency(string|\DateTimeInterface $observedAt): ?RegulatoryEmergency
+    {
+        return RegulatoryEmergency::query()
+            ->whereIn('status', ['active', 'ended'])
+            ->whereDate('starts_on', '<=', $observedAt)
+            ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $observedAt))
+            ->latest('starts_on')->latest('id')->first();
     }
 }

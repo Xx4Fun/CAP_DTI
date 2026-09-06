@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
+import type { MonitoringRecordItem, MonitoringRecordRecord } from '../../types/admin'
 import {
   AlertCircle,
   Scale,
@@ -8,13 +9,33 @@ import {
 
 export const LegalNoticeManager: React.FC = () => {
   const [draft, setDraft] = useState('')
-  const [noticeType, setNoticeType] = useState<'LOI' | 'SCO'>('LOI')
+  const [noticeType, setNoticeType] = useState<'LOI' | 'SCO' | ''>('')
+  const [sourceRecord, setSourceRecord] = useState<MonitoringRecordRecord | null>(null)
   const [storeName, setStoreName] = useState('')
   const [secNumber, setSecNumber] = useState('')
   const [address, setAddress] = useState('')
   const [commodityName, setCommodityName] = useState('')
   const [srpBaseline, setSrpBaseline] = useState(0)
   const [recordedPrice, setRecordedPrice] = useState(0)
+
+  const applyItem = (item: MonitoringRecordItem) => {
+    setCommodityName(item.bulletin?.commodity_name || `SRP #${item.srp_id}`)
+    setSrpBaseline(Number(item.reference_value || 0))
+    setRecordedPrice(Number(item.recorded_price))
+  }
+
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('source_record'))
+    if (!id) return
+    void adminApi.getMonitoringRecord(id).then((record) => {
+      setSourceRecord(record)
+      setStoreName(record.store.store_name)
+      setSecNumber(record.store.dti_sec_number || '')
+      setAddress(record.store.address)
+      const first = record.items.find((item) => item.is_anomaly)
+      if (first) applyItem(first)
+    })
+  }, [])
 
   const priceVariancePct = srpBaseline > 0
     ? (((recordedPrice - srpBaseline) / srpBaseline) * 100).toFixed(1)
@@ -29,6 +50,8 @@ export const LegalNoticeManager: React.FC = () => {
           Official LOI and SCO generation is disabled until DTI-approved rules are configured.
         </p>
       </div>
+
+      {sourceRecord && <section className="admin-card" aria-label="Source monitoring record" style={{ padding: '1rem' }}><strong>Source monitoring record #{sourceRecord.id}</strong><p style={{ margin: '.25rem 0 .65rem' }}>{sourceRecord.store.store_name} · {sourceRecord.items.filter((item) => item.is_anomaly).length} product(s) requiring review · {sourceRecord.protocol_mode ? `${sourceRecord.protocol_mode} protocol` : 'protocol not captured'}</p>{sourceRecord.items.filter((item) => item.is_anomaly).length > 1 && <label>Product to prepare<select aria-label="Product to prepare" onChange={(event) => { const item = sourceRecord.items.find((candidate) => candidate.id === Number(event.target.value)); if (item) applyItem(item) }}>{sourceRecord.items.filter((item) => item.is_anomaly).map((item) => <option key={item.id} value={item.id}>{item.bulletin?.commodity_name || `SRP #${item.srp_id}`}</option>)}</select></label>}</section>}
 
       {/* Interactive Controls & Notice Configuration Toolbar */}
       <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
@@ -235,7 +258,7 @@ export const LegalNoticeManager: React.FC = () => {
         {/* Notice Header Title */}
         <div style={{ textAlign: 'center', margin: '1.5rem 0' }}>
           <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: noticeType === 'SCO' ? '#991b1b' : '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            {noticeType === 'LOI' ? 'DRAFT NOTICE OF INQUIRY (LOI)' : 'DRAFT SHOW CAUSE ORDER (SCO)'}
+            {noticeType === 'LOI' ? 'DRAFT NOTICE OF INQUIRY (LOI)' : noticeType === 'SCO' ? 'DRAFT SHOW CAUSE ORDER (SCO)' : 'SELECT A REGULATORY ACTION'}
           </h3>
           <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
             Under R.A. 7581 (Price Act) & DTI Administrative Regulations
@@ -305,8 +328,9 @@ export const LegalNoticeManager: React.FC = () => {
       <div className="admin-actions" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <button
           type="button"
+          disabled={!noticeType}
           onClick={() => void adminApi.legalDraft().then(setDraft)}
-          style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: '1px solid #1d4ed8', background: '#ffffff', color: '#1d4ed8', fontWeight: 600, cursor: 'pointer' }}
+          style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: '1px solid #1d4ed8', background: '#ffffff', color: '#1d4ed8', fontWeight: 600, cursor: noticeType ? 'pointer' : 'not-allowed', opacity: noticeType ? 1 : .5 }}
         >
           Preview watermarked draft
         </button>

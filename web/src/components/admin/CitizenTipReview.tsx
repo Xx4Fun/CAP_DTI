@@ -40,6 +40,7 @@ export const CitizenTipReview: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'dismissed'>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [decisionIntent, setDecisionIntent] = useState<'verify' | 'close'>('verify')
+  const [verificationChosen, setVerificationChosen] = useState(false)
 
   // Evidence image controls state
   const [zoom, setZoom] = useState(1)
@@ -93,6 +94,7 @@ export const CitizenTipReview: React.FC = () => {
     setEvidenceManifest(null)
     setSelectedAsset(null)
     setDecisionIntent(report.status.toLowerCase().includes('dismiss') ? 'close' : 'verify')
+    setVerificationChosen(false)
     setItemDecisions(Object.fromEntries((report.items ?? []).map((item) => [item.id, {
       item_id: item.id,
       commodity_key: item.commodity_key || '',
@@ -207,6 +209,39 @@ export const CitizenTipReview: React.FC = () => {
       setError('')
     } catch (failure: any) {
       setError(failure.response?.data?.message || 'The report decision could not be saved.')
+    } finally {
+      setDecisionSaving(false)
+    }
+  }
+
+  const requestVerification = async () => {
+    if (!selected || !reason.trim()) return
+    setDecisionSaving(true)
+    try {
+      const request = await adminApi.requestFieldVerification(selected.id, { reason: reason.trim() })
+      const updated = { ...selected, status: 'Referred for field verification', verification_request: request }
+      setSelected(updated)
+      setReports((current) => current.map((report) => report.id === updated.id ? updated : report))
+      setReason('')
+      setError('')
+    } catch (failure: any) {
+      setError(failure.response?.data?.message || 'The field verification request could not be created.')
+    } finally {
+      setDecisionSaving(false)
+    }
+  }
+
+  const cancelVerification = async () => {
+    if (!selected?.verification_request) return
+    setDecisionSaving(true)
+    try {
+      const request = await adminApi.cancelFieldVerification(selected.verification_request.id)
+      const updated = { ...selected, verification_request: request }
+      setSelected(updated)
+      setReports((current) => current.map((report) => report.id === updated.id ? updated : report))
+      setError('')
+    } catch (failure: any) {
+      setError(failure.response?.data?.message || 'The field verification request could not be cancelled.')
     } finally {
       setDecisionSaving(false)
     }
@@ -1006,14 +1041,24 @@ export const CitizenTipReview: React.FC = () => {
                 )}
 
                 {/* Decision Intent & Regulatory Finding Controls */}
+                {selected.verification_request && (
+                  <section aria-label="Field verification request" style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#eff6ff' }}>
+                    <strong>Field verification request</strong>
+                    <small>{selected.status}</small>
+                    <span>{selected.verification_request.status.charAt(0).toUpperCase() + selected.verification_request.status.slice(1)}</span>
+                    <p style={{ margin: 0 }}>{selected.verification_request.reason}</p>
+                    {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
+                  </section>
+                )}
                 {!hasItemReview ? (
                   <div style={{ display: 'grid', gap: '0.75rem' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                      <button
+                      {!selected.verification_request && <button
                         type="button"
                         onClick={() => {
                           setDecisionIntent('verify')
                           setFinding('confirmed_violation')
+                          setVerificationChosen(true)
                         }}
                         style={{
                           padding: '0.65rem 0.75rem',
@@ -1034,7 +1079,7 @@ export const CitizenTipReview: React.FC = () => {
                         <div style={{ fontSize: '0.7rem', fontWeight: 500, color: '#64748b', marginTop: '0.15rem' }}>
                           Mark the report for a separate field-verification workflow
                         </div>
-                      </button>
+                      </button>}
 
                       <button
                         type="button"
@@ -1075,6 +1120,7 @@ export const CitizenTipReview: React.FC = () => {
                         onChange={(event) => {
                           const val = event.target.value
                           setFinding(val)
+                          setVerificationChosen(false)
                           if (val === 'confirmed_violation') setDecisionIntent('verify')
                           else if (val === 'no_violation' || val === 'insufficient_evidence') setDecisionIntent('close')
                         }}
@@ -1133,7 +1179,7 @@ export const CitizenTipReview: React.FC = () => {
                     type="button"
                     aria-label="Mark for Field Verification — Validate findings"
                     disabled={decisionSaving || !reason || (hasItemReview ? !itemReviewComplete : !finding)}
-                    onClick={() => void decide('validate')}
+                    onClick={() => void (verificationChosen ? requestVerification() : decide('validate'))}
                     style={{
                       flex: 1,
                       padding: '0.65rem 1.15rem',

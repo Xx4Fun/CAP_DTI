@@ -144,7 +144,8 @@ class FieldMonitoringController extends Controller
         $officerPath = null;
         $representativePath = null;
         try {
-        $record = MonitoringRecord::create([
+            $protocol = $references->protocolAt($payload['finalized_at']);
+            $record = MonitoringRecord::create([
             'client_uuid' => $payload['client_uuid'], 'officer_user_id' => $userId,
             'store_id' => $payload['store_id'], 'offline_lease_id' => $lease->id,
             'status' => 'accepted', 'started_at' => $payload['started_at'],
@@ -160,6 +161,8 @@ class FieldMonitoringController extends Controller
             'representative_signature_sha256' => $representativeHash,
             'sync_source' => $payload['sync_source'] ?? 'online',
             'client_version' => $payload['client_version'] ?? null,
+            'protocol_mode' => $protocol['mode'],
+            'protocol_reference' => $protocol['reference'],
             'field_verification_request_id' => $verification?->id,
         ]);
 

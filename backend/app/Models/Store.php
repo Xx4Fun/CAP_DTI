@@ -42,6 +42,21 @@ class Store extends Model
         return $this->hasMany(TemporalInspection::class);
     }
 
+    public function monitoringRecords(): HasMany
+    {
+        return $this->hasMany(MonitoringRecord::class);
+    }
+
+    public function latestMonitoringRecord()
+    {
+        return $this->hasOne(MonitoringRecord::class)->latestOfMany('finalized_at');
+    }
+
+    public function verificationRequests(): HasMany
+    {
+        return $this->hasMany(FieldVerificationRequest::class);
+    }
+
     public function legalNotices(): HasMany
     {
         return $this->hasMany(LegalNotice::class);

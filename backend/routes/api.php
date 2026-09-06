@@ -91,6 +91,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-records', [MonitoringRecordController::class, 'index']);
         Route::get('/monitoring-records/{monitoringRecord}', [MonitoringRecordController::class, 'show']);
         Route::get('/monitoring-records/{monitoringRecord}/signatures/{kind}', [MonitoringRecordController::class, 'signature']);
+        Route::get('/monitoring-establishments', [MonitoringRecordController::class, 'establishments']);
+        Route::get('/monitoring-establishments/{store}', [MonitoringRecordController::class, 'establishment']);
+        Route::get('/monitoring-establishments/{store}/price-history', [MonitoringRecordController::class, 'priceHistory']);
+        Route::get('/verification-requests', [MonitoringRecordController::class, 'verificationRequests']);
         Route::post('/users/field-officers', [UserManagementController::class, 'storeFieldOfficer']);
         Route::patch('/users/{managedUser}', [UserManagementController::class, 'update']);
         Route::put('/users/{managedUser}/password', [UserManagementController::class, 'updatePassword']);

@@ -1,11 +1,11 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringRecordPage, MonitoringRecordRecord, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
 export const adminApi = {
-  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
+  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
   },
   async getMonitoringRecord(id: number): Promise<MonitoringRecordRecord> {
@@ -13,6 +13,27 @@ export const adminApi = {
   },
   async getMonitoringSignature(id: number, kind: 'officer' | 'representative'): Promise<Blob> {
     return (await api.get(`/admin/monitoring-records/${id}/signatures/${kind}`, { responseType: 'blob' })).data
+  },
+  async getMonitoringEstablishments(filters: { search?: string; status?: 'all' | 'with_observations' | 'no_observations' | 'awaiting_verification' | 'never_monitored'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringWorkspace> {
+    return data(await api.get('/admin/monitoring-establishments', { params: filters }))
+  },
+  async getMonitoringEstablishment(storeId: number): Promise<MonitoringEstablishmentProfile> {
+    return data(await api.get(`/admin/monitoring-establishments/${storeId}`))
+  },
+  async getMonitoringPriceHistory(storeId: number, filters: { page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringPriceHistoryPage> {
+    return data(await api.get(`/admin/monitoring-establishments/${storeId}/price-history`, { params: filters }))
+  },
+  async getFieldVerificationRequests(filters: { search?: string; status?: 'all' | 'open' | 'claimed' | 'completed' | 'cancelled'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<FieldVerificationRequestPage> {
+    return data(await api.get('/admin/verification-requests', { params: filters }))
+  },
+  async requestFieldVerification(reportId: number, payload: { reason: string }): Promise<FieldVerificationRequestActionRecord> {
+    return data(await api.post(`/admin/reports/${reportId}/verification-request`, payload))
+  },
+  async cancelFieldVerification(requestId: number): Promise<FieldVerificationRequestActionRecord> {
+    return data(await api.post(`/admin/verification-requests/${requestId}/cancel`))
+  },
+  async reopenFieldVerification(requestId: number): Promise<FieldVerificationRequestActionRecord> {
+    return data(await api.post(`/admin/verification-requests/${requestId}/reopen`))
   },
   async getManagedUsers(filters: { search?: string; role?: 'all' | ManagedUserRole; status?: 'all' | 'active' | 'inactive'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<ManagedUserPage> {
     const response = await api.get('/admin/users', { params: filters })

@@ -122,6 +122,7 @@ describe('DTI Admin safeguards', () => {
     render(<LegalDraftPanel />)
     expect(await screen.findByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'LOI (Letter of Inquiry)' }))
     await user.click(screen.getByRole('button', { name: 'Preview watermarked draft' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute(
       'srcdoc',
