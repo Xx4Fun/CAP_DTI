@@ -256,7 +256,17 @@ class AdminRegulatoryWorkflowTest extends TestCase
         $this->assertSame($noticesBefore, \App\Models\LegalNotice::count());
 
         $this->postJson('/api/admin/legal/draft-preview', [])
+            ->assertUnprocessable();
+
+        $record = \App\Models\MonitoringRecord::query()->first();
+        $item = $record?->items()->where('is_anomaly', true)->whereNotNull('reference_value')->first();
+        if ($item) $this->postJson('/api/admin/legal/draft-preview', [
+            'monitoring_record_id' => $record->id,
+            'monitoring_record_item_id' => $item->id,
+            'notice_type' => 'LOI',
+        ])
             ->assertOk()
-            ->assertSee('DRAFT - NOT AN OFFICIAL NOTICE');
+            ->assertSee('DRAFT - NOT AN OFFICIAL NOTICE')
+            ->assertSee((string) $item->recorded_price);
     }
 }

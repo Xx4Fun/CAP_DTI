@@ -7,6 +7,8 @@ use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Models\User;
 use App\Models\FieldOfflineLease;
+use App\Models\MonitoringRecord;
+use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -497,14 +499,17 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.summary.open_verification_requests', 0)
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.id', $store->id)
-            ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations');
+            ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations')
+            ->assertJsonPath('data.establishments.data.0.latest_officer.name', 'Field Officer');
 
         $this->getJson("/api/admin/monitoring-establishments/{$store->id}")
             ->assertOk()
             ->assertJsonPath('data.completed_records_count', 1)
             ->assertJsonPath('data.records_with_observations_count', 1)
             ->assertJsonPath('data.latest_record.id', $recordId)
-            ->assertJsonPath('data.latest_record.protocol_mode', 'standard');
+            ->assertJsonPath('data.latest_record.protocol_mode', 'standard')
+            ->assertJsonFragment(['selector' => 'key:milk'])
+            ->assertJsonFragment(['selector' => 'key:rice']);
 
         $this->getJson("/api/admin/monitoring-establishments/{$store->id}/price-history?per_page=10")
             ->assertOk()
@@ -514,5 +519,52 @@ class FieldMonitoringRecordTest extends TestCase
 
         $this->getJson("/api/admin/monitoring-records?store_id={$store->id}&per_page=10")
             ->assertOk()->assertJsonPath('data.total', 1);
+    }
+
+    public function test_establishment_status_uses_only_latest_visit_and_missing_reference_precedence(): void
+    {
+        Carbon::setTestNow('2026-09-06 10:00:00');
+        $officer = User::create(['name' => 'Latest Officer', 'email' => 'latest@dti.test', 'password' => 'password', 'role' => 'field_officer']);
+        $manager = User::create(['name' => 'Manager', 'email' => 'latest-manager@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
+        $store = $this->store();
+        $bulletin = $this->bulletin('Rice', 100);
+        foreach ([['2026-08-01', true, 'available'], ['2026-09-05', false, 'unavailable']] as $index => [$date, $anomaly, $reference]) {
+            $record = MonitoringRecord::create([
+                'client_uuid' => "00000000-0000-4000-8000-00000000000{$index}", 'officer_user_id' => $officer->id,
+                'store_id' => $store->id, 'status' => 'accepted', 'started_at' => "$date 08:00:00", 'finalized_at' => "$date 09:00:00",
+                'received_at' => "$date 09:01:00", 'latitude' => 10, 'longitude' => 121, 'location_accuracy_meters' => 8,
+                'location_captured_at' => "$date 08:59:00", 'representative_name' => 'Owner', 'officer_signature_disk' => 'local',
+                'officer_signature_path' => 'a', 'officer_signature_sha256' => str_repeat('a', 64), 'representative_signature_disk' => 'local',
+                'representative_signature_path' => 'b', 'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
+            ]);
+            MonitoringRecordItem::create([
+                'monitoring_record_id' => $record->id, 'srp_id' => $bulletin->id, 'recorded_price' => 100,
+                'baseline_price' => 100, 'variance_percent' => 0, 'is_anomaly' => $anomaly,
+                'reference_status' => $reference, 'reference_type' => 'standard_srp',
+                'reference_label' => $reference === 'available' ? 'SRP' : 'SRP reference unavailable',
+                'reference_value' => $reference === 'available' ? 100 : null,
+            ]);
+        }
+        Sanctum::actingAs($manager, ['dti-admin']);
+
+        $this->getJson('/api/admin/monitoring-establishments?status=with_observations')->assertOk()->assertJsonPath('data.establishments.total', 0);
+        $this->getJson('/api/admin/monitoring-establishments?status=reference_unavailable')->assertOk()
+            ->assertJsonPath('data.establishments.total', 1)
+            ->assertJsonPath('data.establishments.data.0.latest_result', 'reference_unavailable')
+            ->assertJsonPath('data.establishments.data.0.latest_officer.name', 'Latest Officer');
+        $this->getJson('/api/admin/monitoring-establishments?status=recently_monitored')->assertOk()->assertJsonPath('data.establishments.total', 1);
+
+        $rejectedStore = Store::create(['store_name' => 'Rejected Only', 'address' => 'Antique', 'latitude' => 10, 'longitude' => 121, 'is_active' => true]);
+        MonitoringRecord::create([
+            'client_uuid' => '00000000-0000-4000-8000-000000000099', 'officer_user_id' => $officer->id, 'store_id' => $rejectedStore->id,
+            'status' => 'rejected', 'started_at' => now(), 'finalized_at' => now()->addDay(), 'received_at' => now(),
+            'latitude' => 10, 'longitude' => 121, 'location_accuracy_meters' => 8, 'location_captured_at' => now(),
+            'representative_name' => 'Owner', 'officer_signature_disk' => 'local', 'officer_signature_path' => 'a',
+            'officer_signature_sha256' => str_repeat('a', 64), 'representative_signature_disk' => 'local',
+            'representative_signature_path' => 'b', 'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
+        ]);
+        $this->getJson('/api/admin/monitoring-establishments?status=never_monitored')->assertOk()
+            ->assertJsonFragment(['store_name' => 'Rejected Only']);
+        Carbon::setTestNow();
     }
 }

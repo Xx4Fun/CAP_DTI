@@ -24,7 +24,7 @@ class MonitoringRecordController extends Controller
             'store_id' => ['nullable', 'integer', 'exists:stores,id'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
-        $query = MonitoringRecord::query()
+        $query = MonitoringRecord::query()->where('status', 'accepted')
             ->with(['officer:id,name,email', 'store:id,store_name,address'])
             ->withCount(['items', 'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true)]);
         if ($search = trim($filters['search'] ?? '')) {
@@ -44,28 +44,38 @@ class MonitoringRecordController extends Controller
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', Rule::in(['all', 'with_observations', 'no_observations', 'awaiting_verification', 'never_monitored'])],
+            'status' => ['nullable', Rule::in(['all', 'with_observations', 'reference_unavailable', 'no_observations', 'awaiting_verification', 'recently_monitored', 'never_monitored'])],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
         $query = Store::query()
             ->withCount([
-                'monitoringRecords as completed_records_count',
-                'monitoringRecords as records_with_observations_count' => fn ($records) => $records->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
+                'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
+                'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
                 'verificationRequests as open_verification_requests_count' => fn ($requests) => $requests->whereIn('status', ['open', 'claimed']),
             ])
             ->with(['latestMonitoringRecord' => fn ($record) => $record
-                ->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at', 'monitoring_records.protocol_mode', 'monitoring_records.protocol_reference')
-                ->withCount(['items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true)])]);
+                ->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.officer_user_id', 'monitoring_records.finalized_at', 'monitoring_records.protocol_mode', 'monitoring_records.protocol_reference')
+                ->with('officer:id,name,email')
+                ->withCount([
+                    'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true),
+                    'items as unavailable_reference_count' => fn ($items) => $items->where('reference_status', 'unavailable'),
+                ])]);
         if ($search = trim($filters['search'] ?? '')) {
             $query->where(fn ($nested) => $nested->where('store_name', 'like', "%{$search}%")
                 ->orWhere('address', 'like', "%{$search}%")
                 ->orWhere('dti_sec_number', 'like', "%{$search}%"));
         }
         match ($filters['status'] ?? 'all') {
-            'with_observations' => $query->whereHas('monitoringRecords.items', fn ($items) => $items->where('is_anomaly', true)),
-            'no_observations' => $query->whereHas('monitoringRecords')->whereDoesntHave('monitoringRecords.items', fn ($items) => $items->where('is_anomaly', true)),
+            'with_observations' => $query->whereHas('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true)),
+            'reference_unavailable' => $query
+                ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true))
+                ->whereHas('latestMonitoringRecord.items', fn ($items) => $items->where('reference_status', 'unavailable')),
+            'no_observations' => $query->whereHas('latestMonitoringRecord')
+                ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true))
+                ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('reference_status', 'unavailable')),
             'awaiting_verification' => $query->whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed'])),
-            'never_monitored' => $query->whereDoesntHave('monitoringRecords'),
+            'recently_monitored' => $query->whereHas('latestMonitoringRecord', fn ($record) => $record->where('finalized_at', '>=', now()->subDays(30))),
+            'never_monitored' => $query->whereDoesntHave('monitoringRecords', fn ($records) => $records->where('status', 'accepted')),
             default => null,
         };
         $establishments = $query->orderBy('store_name')->paginate($filters['per_page'] ?? 10);
@@ -73,11 +83,11 @@ class MonitoringRecordController extends Controller
 
         return response()->json(['data' => [
             'summary' => [
-                'monitored_establishments' => MonitoringRecord::distinct('store_id')->count('store_id'),
-                'recent_activity' => MonitoringRecord::where('finalized_at', '>=', now()->subDays(30))->count(),
-                'records_with_observations' => MonitoringRecord::whereHas('items', fn ($items) => $items->where('is_anomaly', true))->count(),
+                'monitored_establishments' => MonitoringRecord::where('status', 'accepted')->distinct('store_id')->count('store_id'),
+                'recent_activity' => MonitoringRecord::where('status', 'accepted')->where('finalized_at', '>=', now()->subDays(30))->count(),
+                'records_with_observations' => MonitoringRecord::where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true))->count(),
                 'open_verification_requests' => FieldVerificationRequest::whereIn('status', ['open', 'claimed'])->count(),
-                'latest_completed_at' => MonitoringRecord::max('finalized_at'),
+                'latest_completed_at' => MonitoringRecord::where('status', 'accepted')->max('finalized_at'),
             ],
             'establishments' => $establishments,
         ]]);
@@ -87,12 +97,27 @@ class MonitoringRecordController extends Controller
     {
         $auth->requireManager($request->user());
         $store->loadCount([
-            'monitoringRecords as completed_records_count',
-            'monitoringRecords as records_with_observations_count' => fn ($records) => $records->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
+            'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
+            'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
             'verificationRequests as open_verification_requests_count' => fn ($requests) => $requests->whereIn('status', ['open', 'claimed']),
         ])->load(['latestMonitoringRecord' => fn ($record) => $record
             ->with(['officer:id,name,email', 'store:id,store_name,address'])
-            ->withCount(['items', 'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true)])]);
+            ->withCount([
+                'items',
+                'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true),
+                'items as unavailable_reference_count' => fn ($items) => $items->where('reference_status', 'unavailable'),
+            ])]);
+
+        $commodities = MonitoringRecordItem::query()
+            ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)->where('status', 'accepted'))
+            ->with('bulletin:id,commodity_name,unit,commodity_key')
+            ->join('monitoring_records', 'monitoring_records.id', '=', 'monitoring_record_items.monitoring_record_id')
+            ->select('monitoring_record_items.*')->latest('monitoring_records.finalized_at')->get()
+            ->map(fn (MonitoringRecordItem $item) => [
+                'selector' => $item->bulletin?->commodity_key ? 'key:'.$item->bulletin->commodity_key : 'srp:'.$item->srp_id,
+                'commodity_name' => $item->bulletin?->commodity_name ?? 'SRP #'.$item->srp_id,
+                'unit' => $item->bulletin?->unit,
+            ])->unique('selector')->values();
 
         return response()->json(['data' => [
             'store' => $store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public']),
@@ -100,18 +125,29 @@ class MonitoringRecordController extends Controller
             'records_with_observations_count' => $store->records_with_observations_count,
             'open_verification_requests_count' => $store->open_verification_requests_count,
             'latest_record' => $store->latestMonitoringRecord,
+            'monitored_commodities' => $commodities,
         ]]);
     }
 
     public function priceHistory(Request $request, Store $store, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-        $filters = $request->validate(['per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])]]);
+        $filters = $request->validate([
+            'commodity' => ['nullable', 'string', 'regex:/^(key:[A-Za-z0-9._-]+|srp:[1-9][0-9]*)$/'],
+            'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
+        ]);
         $history = MonitoringRecordItem::query()
-            ->whereHas('record', fn ($record) => $record->where('store_id', $store->id))
+            ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)->where('status', 'accepted'))
             ->with(['record:id,store_id,finalized_at,protocol_mode,protocol_reference', 'bulletin:id,commodity_name,unit'])
             ->join('monitoring_records', 'monitoring_records.id', '=', 'monitoring_record_items.monitoring_record_id')
-            ->select('monitoring_record_items.*')->latest('monitoring_records.finalized_at')
+            ->select('monitoring_record_items.*');
+        if ($commodity = $filters['commodity'] ?? null) {
+            [$kind, $value] = explode(':', $commodity, 2);
+            $kind === 'key'
+                ? $history->whereHas('bulletin', fn ($bulletin) => $bulletin->where('commodity_key', $value))
+                : $history->where('monitoring_record_items.srp_id', (int) $value);
+        }
+        $history = $history->latest('monitoring_records.finalized_at')
             ->paginate($filters['per_page'] ?? 10);
         $history->setCollection($history->getCollection()->map(fn (MonitoringRecordItem $item) => [
             'id' => $item->id,
@@ -141,6 +177,7 @@ class MonitoringRecordController extends Controller
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', Rule::in(['all', 'open', 'claimed', 'completed', 'cancelled'])],
+            'store_id' => ['nullable', 'integer', 'exists:stores,id'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
         $query = FieldVerificationRequest::query()->with([
@@ -148,6 +185,7 @@ class MonitoringRecordController extends Controller
             'claimant:id,name,email', 'monitoringRecord:id,field_verification_request_id',
         ]);
         if (($filters['status'] ?? 'all') !== 'all') $query->where('status', $filters['status']);
+        if (isset($filters['store_id'])) $query->where('store_id', $filters['store_id']);
         if ($search = trim($filters['search'] ?? '')) {
             $query->where(fn ($nested) => $nested
                 ->whereHas('store', fn ($store) => $store->where('store_name', 'like', "%{$search}%"))
@@ -201,7 +239,10 @@ class MonitoringRecordController extends Controller
             'latest_monitoring_at' => $latest?->finalized_at,
             'latest_record_id' => $latest?->id,
             'latest_protocol_mode' => $latest?->protocol_mode,
-            'latest_result' => $latest ? ($latest->anomaly_count ? 'with_observations' : 'no_observations') : 'never_monitored',
+            'latest_officer' => $latest?->officer,
+            'latest_result' => $latest
+                ? ($latest->anomaly_count ? 'with_observations' : ($latest->unavailable_reference_count ? 'reference_unavailable' : 'no_observations'))
+                : 'never_monitored',
         ];
     }
 }

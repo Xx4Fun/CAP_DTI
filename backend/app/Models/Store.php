@@ -49,7 +49,7 @@ class Store extends Model
 
     public function latestMonitoringRecord()
     {
-        return $this->hasOne(MonitoringRecord::class)->latestOfMany('finalized_at');
+        return $this->hasOne(MonitoringRecord::class)->where('status', 'accepted')->latestOfMany('finalized_at');
     }
 
     public function verificationRequests(): HasMany

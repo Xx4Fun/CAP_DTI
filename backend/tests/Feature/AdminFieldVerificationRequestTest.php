@@ -206,5 +206,18 @@ class AdminFieldVerificationRequestTest extends TestCase
             ->assertJsonPath('data.data.0.report.id', $report->id)
             ->assertJsonPath('data.data.0.report.report_reference', $report->report_reference)
             ->assertJsonPath('data.data.0.monitoring_record.id', $record->id);
+
+        $otherStore = Store::create(['store_name' => 'Other Store', 'address' => 'Antique', 'latitude' => 10, 'longitude' => 121, 'is_active' => true]);
+        $otherReport = ConsumerReport::create([
+            'report_reference' => 'VERIFY-REPORT-2', 'tracking_token_hash' => hash('sha256', 'other-token'),
+            'submission_uuid' => 'verification-submission-2', 'store_id' => $otherStore->id,
+            'status' => 'Under initial evaluation', 'raw_ocr_json' => [], 'submitted_at' => now(),
+        ]);
+        FieldVerificationRequest::create([
+            'consumer_report_id' => $otherReport->id, 'store_id' => $otherStore->id,
+            'requested_by' => $this->admin->id, 'status' => 'open', 'reason' => 'Other visit', 'context_json' => [], 'requested_at' => now(),
+        ]);
+        $this->getJson("/api/admin/verification-requests?store_id={$this->store->id}&per_page=10")
+            ->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.store.id', $this->store->id);
     }
 }
