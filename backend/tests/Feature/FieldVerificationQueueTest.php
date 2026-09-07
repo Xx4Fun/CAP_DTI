@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\ConsumerReport;
 use App\Models\AuditEvent;
+use App\Models\ConsumerReport;
 use App\Models\FieldVerificationRequest;
 use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
@@ -29,6 +29,7 @@ class FieldVerificationQueueTest extends TestCase
         $login = $this->postJson('/api/field/login', [
             'email' => $email, 'password' => 'secure-password',
         ])->assertOk();
+
         return [$officer, $login->json('token'), $login->json('offline_lease.id')];
     }
 
@@ -49,6 +50,7 @@ class FieldVerificationQueueTest extends TestCase
             'submission_uuid' => uniqid('submission-', true),
             'store_id' => $store->id, 'status' => 'Referred for field verification',
         ]);
+
         return FieldVerificationRequest::create($extra + [
             'consumer_report_id' => $report->id, 'store_id' => $store->id,
             'requested_by' => $admin->id, 'status' => 'open', 'reason' => 'Check the displayed price.',
@@ -146,6 +148,11 @@ class FieldVerificationQueueTest extends TestCase
             'new_status' => 'Under regulatory review', 'actor_id' => $officer->id,
         ]);
         $this->assertSame('monitoring_record_accepted', $officer->fresh()->notifications()->latest()->first()?->data['event'] ?? null);
+        $this->withToken($token)->getJson('/api/field/bootstrap')
+            ->assertOk()
+            ->assertJsonPath('data.stores.0.weekly_routine_status', 'not_yet_monitored')
+            ->assertJsonPath('data.stores.0.has_prior_routine_monitoring', false)
+            ->assertJsonPath('data.stores.0.latest_routine_monitoring_at', null);
         $auditCount = AuditEvent::count();
         $notificationCount = $officer->fresh()->notifications()->count();
         $historyCount = ReportStatusHistory::count();

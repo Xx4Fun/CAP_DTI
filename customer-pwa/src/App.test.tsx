@@ -505,11 +505,6 @@ describe('legacy App shell routing and status', () => {
     render(<App />);
     await screen.findByRole('button', { name: 'View Absolute (1L) price details' });
 
-    await user.click(screen.getByRole('button', { name: 'Open menu' }));
-    expect(screen.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
-    act(() => history.back());
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close menu' })).not.toBeInTheDocument());
-
     await user.click(screen.getByRole('button', { name: 'Sort prices: Default order' }));
     expect(screen.getByRole('listbox', { name: 'Sort prices' })).toBeInTheDocument();
     act(() => history.back());

@@ -7,10 +7,14 @@ import { AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportRevie
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getReports: vi.fn(),
+    getMonitoringRecord: vi.fn(),
     decideReport: vi.fn(),
     getReportEvidence: vi.fn(),
-    legalDraft: vi.fn(),
-    dispatchLegal: vi.fn(),
+    getLegalNotices: vi.fn(),
+    createLegalNotice: vi.fn(),
+    updateLegalNotice: vi.fn(),
+    previewLegalNotice: vi.fn(),
+    issueLegalNotice: vi.fn(),
     getEmergencies: vi.fn(),
     createEmergency: vi.fn(),
     createEmergencyPrice: vi.fn(),
@@ -26,6 +30,7 @@ vi.mock('../../services/adminApi', () => ({
 describe('DTI Admin safeguards', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
   })
 
   it('renders the original receipt OCR separately from evaluator corrections', async () => {
@@ -115,23 +120,29 @@ describe('DTI Admin safeguards', () => {
   })
 
   it('labels legal output as unavailable and previews only a watermarked draft', async () => {
-    vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
-    vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', items_count: 1, anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    vi.mocked(adminApi.createLegalNotice).mockResolvedValue({ id: 4, monitoring_record_id: 14, notice_type: 'LOI', status: 'draft', delivery_state: 'not_recorded', source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Maria', address: 'San Jose', legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE', policy_version: null } })
+    vi.mocked(adminApi.previewLegalNotice).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
     const user = userEvent.setup()
 
     render(<LegalDraftPanel />)
+    await screen.findByText('Rice')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
     expect(await screen.findByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'LOI (Letter of Inquiry)' }))
-    await user.click(screen.getByRole('button', { name: 'Preview watermarked draft' }))
+    await user.click(screen.getByRole('button', { name: 'Open Official Preview' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute(
       'srcdoc',
       expect.stringContaining('DRAFT - NOT AN OFFICIAL NOTICE'),
     )
 
-    expect(screen.queryByRole('button', { name: /official dispatch/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/No notice, deadline, notification, or vendor state change/i)).toBeInTheDocument()
-    expect(adminApi.dispatchLegal).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Issue Notice' })).toBeDisabled()
+    expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
+    expect(adminApi.previewLegalNotice).toHaveBeenCalledWith(4)
   })
 
   it('stores authoritative emergency prices against a confirmed declaration', async () => {

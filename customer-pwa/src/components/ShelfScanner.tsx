@@ -9,7 +9,9 @@ import {
   Scale,
   AlertTriangle,
   Tag,
-  ArrowLeft
+  ArrowLeft,
+  CheckCircle2,
+  History
 } from 'lucide-react';
 import {
   apiClient,
@@ -37,6 +39,15 @@ interface ShelfScannerProps {
   locationError?: string;
   mode?: 'manual' | 'ocr';
 }
+
+const STAPLE_CHIPS = [
+  { label: 'Rice', query: 'Rice' },
+  { label: 'Canned Fish', query: 'Sardines' },
+  { label: 'Milk', query: 'Milk' },
+  { label: 'Coffee', query: 'Coffee' },
+  { label: 'Bread', query: 'Bread' },
+  { label: 'Candles', query: 'Esperma' },
+];
 
 const getConciseCommodityTitle = (commodity: Pick<Commodity, 'commodity_name' | 'category' | 'unit' | 'package_size'>): string =>
   formatCommodityDisplay(
@@ -224,6 +235,13 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
       stopCamera();
     };
   }, [scannerState, facingMode, mode]);
+
+  // Ensure scroll offset resets to top when entering entry, result, or store selection views
+  useEffect(() => {
+    if (scannerState === 'RESULT' || scannerState === 'MANUAL_ENTRY' || scannerState === 'SELECT_STORE') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [scannerState]);
 
   useEffect(() => {
     return () => {
@@ -876,35 +894,47 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
       {/* Manual Compare is the visible customer flow. It intentionally bypasses camera and OCR. */}
       {mode === 'manual' && scannerState === 'MANUAL_ENTRY' && selectedStore && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: 'calc(104px + env(safe-area-inset-bottom))' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="shelf-compare-page">
+          <div className="shelf-compare-header">
             <button
               type="button"
               onClick={returnScannerToStart}
               aria-label="Back to store selection"
-              style={{ width: '42px', height: '42px', borderRadius: '12px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+              className="shelf-compare-back-btn"
             >
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 style={{ margin: 0, color: '#0f172a', fontSize: '1.35rem', fontWeight: 800 }}>Compare a shelf price</h1>
-              <p style={{ margin: '3px 0 0', color: '#64748b', fontSize: '0.82rem' }}>Choose an official item, then enter the price shown in store.</p>
+              <h1 className="shelf-compare-title">Compare a shelf price</h1>
+              <p className="shelf-compare-subtitle">Choose an official item, then enter the price shown in store.</p>
             </div>
           </div>
 
-          <div style={{ background: '#eaf3ff', border: '1px solid #bfdbfe', borderRadius: '14px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <MapPin size={18} color="#2563eb" aria-hidden="true" />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: '#1e3a8a', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Selected store</div>
-              <div style={{ color: '#0f172a', fontSize: '0.9rem', fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedStore.store_name}</div>
+          <div className="shelf-compare-store-card">
+            <div className="shelf-compare-store-info">
+              <span className="shelf-compare-store-badge">Selected Store</span>
+              <div className="shelf-compare-store-name">{selectedStore.store_name}</div>
+              {selectedStore.address && (
+                <div className="shelf-compare-store-address">{selectedStore.address}</div>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={returnScannerToStart}
+              className="shelf-compare-change-btn"
+              aria-label="Change store"
+            >
+              Change
+            </button>
           </div>
 
-          <section style={{ background: '#ffffff', border: '1px solid #dbe3ee', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label htmlFor="manual-commodity-search" style={{ display: 'block', color: '#0f172a', fontSize: '0.84rem', fontWeight: 750, marginBottom: '7px' }}>Official item</label>
-              <div style={{ position: 'relative' }}>
-                <Search size={18} color="#64748b" aria-hidden="true" style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <section className="shelf-compare-form-card">
+            <div className="shelf-compare-field">
+              <label htmlFor="manual-commodity-search" className="shelf-compare-label">
+                <span>Official item</span>
+              </label>
+              <div className="shelf-compare-input-wrap">
+                <Search size={18} className="shelf-compare-search-icon" aria-hidden="true" />
                 <input
                   id="manual-commodity-search"
                   type="search"
@@ -920,48 +950,108 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                     }
                     void searchCommodities(query);
                   }}
-                  style={{ width: '100%', height: '46px', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '0 14px 0 40px', color: '#0f172a', background: '#ffffff', fontSize: '0.9rem', outline: 'none' }}
+                  className="shelf-compare-search-input"
                 />
               </div>
+
+              {!selectedCandidate && !commoditySearchQuery && (
+                <div className="shelf-compare-chips-container">
+                  <span className="shelf-compare-chips-label">Common staples</span>
+                  <div className="shelf-compare-chips-scroll">
+                    {STAPLE_CHIPS.map((chip) => (
+                      <button
+                        key={chip.query}
+                        type="button"
+                        className="shelf-compare-chip"
+                        onClick={() => {
+                          void searchCommodities(chip.query);
+                        }}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {commoditySearchResults.length > 0 && (
+                <div className="shelf-compare-dropdown">
+                  {commoditySearchResults.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-label={`Select ${getConciseCommodityTitle(item)}`}
+                      onClick={() => handleManualEntryCommoditySelect(item)}
+                      className="shelf-compare-dropdown-item"
+                    >
+                      <span className="shelf-compare-dropdown-title">{getConciseCommodityTitle(item)}</span>
+                      <span className="shelf-compare-dropdown-meta">
+                        {item.unit || item.package_size || 'Standard unit'} · Current SRP ₱{Number(item.baseline_price).toFixed(2)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {isSearchingCommodities && <div role="status" style={{ color: '#64748b', fontSize: '0.8rem' }}>Searching official price directory…</div>}
-            {commoditySearchError && <div role="alert" style={{ color: '#b91c1c', fontSize: '0.8rem' }}>{commoditySearchError}</div>}
-            {!isSearchingCommodities && commoditySearchQuery.trim() && !selectedCandidate && commoditySearchResults.length === 0 && !commoditySearchError && (
-              <div style={{ color: '#64748b', fontSize: '0.8rem' }}>No official items match that search.</div>
+            {isSearchingCommodities && (
+              <div role="status" style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                Searching official price directory…
+              </div>
             )}
-            {commoditySearchResults.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {commoditySearchResults.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    aria-label={`Select ${getConciseCommodityTitle(item)}`}
-                    onClick={() => handleManualEntryCommoditySelect(item)}
-                    style={{ width: '100%', border: '1px solid #dbe3ee', borderRadius: '12px', background: '#f8fafc', padding: '11px 12px', textAlign: 'left', cursor: 'pointer' }}
-                  >
-                    <span style={{ display: 'block', color: '#0f172a', fontSize: '0.86rem', fontWeight: 750 }}>{getConciseCommodityTitle(item)}</span>
-                    <span style={{ display: 'block', color: '#64748b', fontSize: '0.74rem', marginTop: '3px' }}>{item.unit || item.package_size || 'Standard unit'} · Current SRP ₱{Number(item.baseline_price).toFixed(2)}</span>
-                  </button>
-                ))}
+            {commoditySearchError && (
+              <div role="alert" style={{ color: '#b91c1c', fontSize: '0.8rem' }}>
+                {commoditySearchError}
+              </div>
+            )}
+            {!isSearchingCommodities && commoditySearchQuery.trim() && !selectedCandidate && commoditySearchResults.length === 0 && !commoditySearchError && (
+              <div style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                No official items match that search.
               </div>
             )}
 
             {selectedCandidate && (
-              <div style={{ border: '1px solid #bfdbfe', borderRadius: '13px', background: '#eff6ff', padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                <strong style={{ color: '#0f172a', fontSize: '0.9rem' }}>{getConciseCommodityTitle(selectedCandidate as Commodity)}</strong>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: '#475569', fontSize: '0.78rem' }}>
-                  <span>Official unit</span>
-                  <strong style={{ color: '#1e3a8a' }}>{selectedCandidate.unit || selectedCandidate.package_size || 'Standard'}</strong>
+              <div className="shelf-compare-selected-card">
+                <div className="shelf-compare-selected-top">
+                  <div className="shelf-compare-selected-title-group">
+                    <span className="shelf-compare-selected-badge">Selected Product</span>
+                    <strong className="shelf-compare-selected-title">
+                      {getConciseCommodityTitle(selectedCandidate as Commodity)}
+                    </strong>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Change item"
+                    className="shelf-compare-selected-clear-btn"
+                    onClick={() => {
+                      handedOffCommodityRef.current = null;
+                      setSelectedCandidate(null);
+                      setCommoditySearchQuery('');
+                    }}
+                  >
+                    Change
+                  </button>
                 </div>
-                <div style={{ color: '#1d4ed8', fontSize: '0.8rem', fontWeight: 750 }}>Current SRP: ₱{Number(selectedCandidate.baseline_price || 0).toFixed(2)}</div>
+                <div className="shelf-compare-selected-details">
+                  <div className="shelf-compare-selected-unit-row">
+                    <span>Official unit</span>
+                    <strong className="shelf-compare-selected-unit-val">
+                      {selectedCandidate.unit || selectedCandidate.package_size || 'Standard'}
+                    </strong>
+                  </div>
+                  <div className="shelf-compare-selected-srp-val">
+                    Current SRP: ₱{Number(selectedCandidate.baseline_price || 0).toFixed(2)}
+                  </div>
+                </div>
               </div>
             )}
 
-            <div>
-              <label htmlFor="manual-shelf-price" style={{ display: 'block', color: '#0f172a', fontSize: '0.84rem', fontWeight: 750, marginBottom: '7px' }}>Shelf price</label>
-              <div style={{ position: 'relative' }}>
-                <span aria-hidden="true" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#475569', fontWeight: 750 }}>₱</span>
+            <div className="shelf-compare-field">
+              <label htmlFor="manual-shelf-price" className="shelf-compare-label">
+                <span>Shelf price</span>
+              </label>
+              <div className="shelf-compare-price-wrap">
+                <span aria-hidden="true" className="shelf-compare-currency-symbol">₱</span>
                 <input
                   id="manual-shelf-price"
                   type="number"
@@ -975,22 +1065,58 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                     setUserPriceInput(event.target.value);
                     setErrorMessage('');
                   }}
-                  style={{ width: '100%', height: '48px', boxSizing: 'border-box', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '0 14px 0 34px', color: '#0f172a', background: '#ffffff', fontSize: '1rem', fontWeight: 700, outline: 'none' }}
+                  className="shelf-compare-price-input"
                 />
               </div>
-              <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '0.74rem' }}>Enter the price exactly as displayed on the shelf.</p>
+              <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.74rem' }}>
+                Enter the price exactly as displayed on the shelf.
+              </p>
+
+              {/* Live Reactive Price Delta Indicator */}
+              {selectedCandidate && userPriceInput && Number(userPriceInput) > 0 && (() => {
+                const userPrice = Number(userPriceInput);
+                const srp = Number(selectedCandidate.baseline_price || 0);
+                const diff = Math.round((userPrice - srp) * 100) / 100;
+                const absDiff = Math.abs(diff).toFixed(2);
+                if (diff > 0) {
+                  return (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--above">
+                      <AlertTriangle size={15} color="#d97706" />
+                      <span>₱{absDiff} above Current SRP baseline</span>
+                    </div>
+                  );
+                } else if (diff < 0) {
+                  return (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--below">
+                      <Scale size={15} color="#059669" />
+                      <span>₱{absDiff} below Current SRP baseline (Within SRP)</span>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--exact">
+                      <Scale size={15} color="#2563eb" />
+                      <span>Matches Current SRP baseline exactly</span>
+                    </div>
+                  );
+                }
+              })()}
             </div>
 
-            {errorMessage && <div role="alert" style={{ borderRadius: '10px', background: '#fef2f2', color: '#b91c1c', padding: '10px 12px', fontSize: '0.8rem' }}>{errorMessage}</div>}
+            {errorMessage && (
+              <div role="alert" style={{ borderRadius: '10px', background: '#fef2f2', color: '#b91c1c', padding: '10px 12px', fontSize: '0.8rem' }}>
+                {errorMessage}
+              </div>
+            )}
 
             <button
               type="button"
-              className="btn-primary"
+              className="shelf-compare-submit-btn"
               onClick={handleManualCompare}
               disabled={!selectedCandidate || !Number.isFinite(Number(userPriceInput)) || Number(userPriceInput) < 0.01}
-              style={{ width: '100%', height: '48px', borderRadius: '12px', fontSize: '0.92rem', fontWeight: 750 }}
             >
-              Compare price
+              <Scale size={18} />
+              <span>Compare price</span>
             </button>
           </section>
         </div>
@@ -1614,334 +1740,270 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
       )}
 
       {/* SCREEN 3: DYNAMIC COMPARISON RESULT */}
-      {scannerState === 'RESULT' && comparisonResult && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
-          
-          <div style={{ textAlign: 'center', paddingTop: '4px' }}>
+      {scannerState === 'RESULT' && comparisonResult && (() => {
+        const label = comparisonResult.regulatory_label || comparisonResult.comparison_label || 'Current SRP';
+        const isAbove = comparisonResult.is_above_reference || comparisonResult.comparison_status === 'ABOVE_SRP';
+        const isBelow = comparisonResult.comparison_status === 'BELOW_SRP';
+        const diffVal = comparisonResult.peso_difference ?? comparisonResult.difference_pesos ?? 0;
+        const numDiff = Math.abs(Number(diffVal));
+        const verdictTitle = isAbove
+          ? `₱${numDiff.toFixed(2)} above ${label}`
+          : isBelow
+          ? `₱${numDiff.toFixed(2)} below ${label}`
+          : `Matches ${label} baseline`;
+
+        return (
+          <div className="shelf-compare-page">
+            <div style={{ textAlign: 'center', paddingTop: '4px' }}>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: isAbove ? '#fef3c7' : '#dcfce7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 10px auto',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                }}
+              >
+                <Scale size={28} color={isAbove ? '#d97706' : '#16a34a'} />
+              </div>
+              <h1 className="shelf-compare-title" style={{ fontSize: '1.4rem' }}>
+                Comparison Result
+              </h1>
+            </div>
+
+            {/* Mandatory Consumer Disclaimer Banner */}
             <div
+              className="disclaimer-banner"
               style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                background: (comparisonResult.comparison_status === 'ABOVE_SRP' || comparisonResult.is_above_reference) ? '#fef3c7' : '#dcfce7',
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '12px',
+                padding: '12px 14px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 10px auto',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                gap: '10px',
+                alignItems: 'flex-start'
               }}
             >
-              <Scale size={28} color={(comparisonResult.comparison_status === 'ABOVE_SRP' || comparisonResult.is_above_reference) ? '#d97706' : '#16a34a'} />
-            </div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-              Comparison Result
-            </h1>
-          </div>
-
-          {/* Mandatory Consumer Disclaimer Banner */}
-          <div
-            className="disclaimer-banner"
-            style={{
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: '12px',
-              padding: '12px 14px',
-              display: 'flex',
-              gap: '10px',
-              alignItems: 'flex-start'
-            }}
-          >
-            <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.35 }}>
-              ⚠️ This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
-            </div>
-          </div>
-
-          {/* Store & Product Section */}
-          <div
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '14px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-              boxShadow: 'var(--shadow-sm)'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Store</span>
-              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                {comparisonResult.store.store_name}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Product</span>
-              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                  {resultProductName}
-                </span>
-                <span style={{
-                  background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
-                  color: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#6b21a8' : '#1e40af',
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  fontSize: '0.72rem',
-                  fontWeight: 700
-                }}>
-                  {mode === 'manual'
-                    ? 'Manual entry'
-                    : (comparisonResult.product_source === 'MANUAL_SEARCH')
-                      ? 'Manual Directory Selection'
-                      : 'OCR-Detected'}
-                </span>
+              <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.35 }}>
+                This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Package Size</span>
-              <span style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 700 }}>
-                {comparisonResult.package_size || comparisonResult.unit || comparisonResult.product?.unit || 'Standard'}
-              </span>
-            </div>
-          </div>
-
-          {/* Prices Comparison Section */}
-          <div
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              boxShadow: 'var(--shadow-sm)'
-            }}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '10px',
-                  padding: '10px 12px'
-                }}
-              >
-                <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>
-                  Displayed Shelf Price
+            {/* Hero Result Card */}
+            <div className="shelf-result-hero-card">
+              {/* Verdict Banner */}
+              <div className={`shelf-result-verdict-banner ${isAbove ? 'shelf-result-verdict-banner--above' : 'shelf-result-verdict-banner--within'}`}>
+                <div className="shelf-result-verdict-icon">
+                  {isAbove ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}
                 </div>
-                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#0f172a' }}>
-                  ₱{Number(comparisonResult.displayed_price).toFixed(2)}
-                </div>
-                <div style={{ marginTop: '4px' }}>
-                  <span style={{
-                    background: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#fef3c7' : '#dcfce7',
-                    color: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#b45309' : '#15803d',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    fontSize: '0.68rem',
-                    fontWeight: 700
-                  }}>
-                    {mode === 'manual'
-                      ? 'Consumer-entered price'
-                      : (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED')
-                        ? '✏️ Consumer-Entered Price'
-                        : '✔ OCR-Detected Tag Price'}
-                  </span>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                  borderRadius: '10px',
-                  padding: '10px 12px'
-                }}
-              >
-                <div style={{ fontSize: '0.7rem', color: '#1e40af', fontWeight: 700, marginBottom: '2px' }}>
-                  {comparisonResult.regulatory_label || comparisonResult.comparison_label || 'Current SRP'}
-                </div>
-                <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#1d4ed8' }}>
-                  ₱{Number(comparisonResult.reference_price ?? comparisonResult.baseline_price ?? 0).toFixed(2)}
-                </div>
-                {comparisonResult.product?.effective_date && (
-                  <div style={{ fontSize: '0.65rem', color: '#3b82f6' }}>
-                    Effective {comparisonResult.product.effective_date.split('T')[0]}
+                <div className="shelf-result-verdict-text">
+                  <div className="shelf-result-verdict-title">{verdictTitle}</div>
+                  <div className="shelf-result-verdict-subtitle">
+                    {isAbove ? 'Displayed price exceeds the official ceiling' : 'Complies with DTI suggested retail price'}
                   </div>
+                </div>
+              </div>
+
+              {/* Price Grid */}
+              <div className="shelf-result-price-grid">
+                <div className="shelf-result-price-card shelf-result-price-card--shelf">
+                  <div className="shelf-result-price-label">Displayed Shelf Price</div>
+                  <div className="shelf-result-price-amount">
+                    ₱{Number(comparisonResult.displayed_price).toFixed(2)}
+                  </div>
+                  <div className="shelf-result-price-subtext">
+                    <span style={{
+                      background: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#fef3c7' : '#dcfce7',
+                      color: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#b45309' : '#15803d',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      fontSize: '0.68rem',
+                      fontWeight: 700
+                    }}>
+                      {mode === 'manual'
+                        ? 'Consumer-entered price'
+                        : (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED')
+                          ? '✏️ Consumer-Entered Price'
+                          : '✔ OCR-Detected Tag Price'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="shelf-result-price-card shelf-result-price-card--srp">
+                  <div className="shelf-result-price-label">
+                    {label}
+                  </div>
+                  <div className="shelf-result-price-amount">
+                    ₱{Number(comparisonResult.reference_price ?? comparisonResult.baseline_price ?? 0).toFixed(2)}
+                  </div>
+                  <div className="shelf-result-price-subtext">
+                    {comparisonResult.product?.effective_date ? (
+                      `Effective ${comparisonResult.product.effective_date.split('T')[0]}`
+                    ) : (
+                      'Official reference baseline'
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Historical Benchmark Strip */}
+              <div className="shelf-result-history-strip">
+                <History size={16} />
+                {comparisonResult.previous_verified_price ? (
+                  <div>
+                    Previous verified store price was{' '}
+                    <strong style={{ color: '#0f172a' }}>
+                      ₱{Number(comparisonResult.previous_verified_price).toFixed(2)}
+                    </strong>{' '}
+                    on {comparisonResult.previous_recorded_date}.
+                  </div>
+                ) : (
+                  <div>No verified historical store price is currently available.</div>
                 )}
               </div>
-            </div>
 
-            {/* Historical Store Price Subcard */}
-            <div
-              style={{
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '10px',
-                padding: '10px 12px',
-                fontSize: '0.8rem',
-                color: '#475569'
-              }}
-            >
-              {comparisonResult.previous_verified_price ? (
-                <div>
-                  Previous verified store price was{' '}
-                  <strong style={{ color: '#0f172a' }}>
-                    ₱{Number(comparisonResult.previous_verified_price).toFixed(2)}
-                  </strong>{' '}
-                  on {comparisonResult.previous_recorded_date}.
+              {/* Item & Store Meta Details */}
+              <div className="shelf-result-meta-strip">
+                <div className="shelf-result-meta-row">
+                  <span>Store</span>
+                  <span>{comparisonResult.store.store_name}</span>
                 </div>
-              ) : (
-                <div>No verified historical store price is currently available.</div>
-              )}
-            </div>
-
-            {/* Price Difference Indicator Box */}
-            {(() => {
-              const label = comparisonResult.regulatory_label || comparisonResult.comparison_label || 'current SRP';
-              const isAbove = comparisonResult.is_above_reference || comparisonResult.comparison_status === 'ABOVE_SRP';
-              const isBelow = comparisonResult.comparison_status === 'BELOW_SRP';
-              const diffVal = comparisonResult.peso_difference ?? comparisonResult.difference_pesos ?? 0;
-              const numDiff = Math.abs(Number(diffVal));
-
-              return (
-                <div
-                  style={{
-                    background: isAbove ? '#fffbeb' : '#f0fdf4',
-                    border: isAbove ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                    borderRadius: '12px',
-                    padding: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '2px'
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '0.9rem',
-                      fontWeight: 800,
-                      color: isAbove ? '#d97706' : '#16a34a'
-                    }}
-                  >
-                    {isAbove
-                      ? `₱${numDiff.toFixed(2)} above ${label}`
-                      : isBelow
-                      ? `₱${numDiff.toFixed(2)} below ${label}`
-                      : `Matches ${label} baseline`}
+                <div className="shelf-result-meta-row">
+                  <span>Product</span>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                    <span>{resultProductName}</span>
+                    <span style={{
+                      background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
+                      color: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#6b21a8' : '#1e40af',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700
+                    }}>
+                      {mode === 'manual'
+                        ? 'Manual entry'
+                        : (comparisonResult.product_source === 'MANUAL_SEARCH')
+                          ? 'Manual Directory Selection'
+                          : 'OCR-Detected'}
+                    </span>
                   </div>
                 </div>
-              );
-            })()}
-          </div>
-
-          {/* Result actions */}
-          <div
-            data-testid="scan-result-actions"
-            style={{
-              marginTop: '4px',
-              padding: '4px 0 8px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px'
-            }}
-          >
-            {mode === 'ocr' && resultIsAboveReference && (
-              <button
-                className="btn-primary"
-                onClick={handleReportWithReceipt}
-                style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
-              >
-                Report using receipt
-              </button>
-            )}
-
-            {mode === 'manual' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleEditManualComparison}
-                  style={{ width: '100%', height: '44px', borderRadius: '10px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Edit item or price
-                </button>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={handleCompareAnotherManualItem}
-                    style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
-                  >
-                    Compare another item
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab?.('prices')}
-                    style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#1d4ed8', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
-                  >
-                    Return to Prices
-                  </button>
+                <div className="shelf-result-meta-row">
+                  <span>Package Size</span>
+                  <span>{comparisonResult.package_size || comparisonResult.unit || comparisonResult.product?.unit || 'Standard'}</span>
                 </div>
-              </>
-            ) : (
-              <>
+              </div>
+            </div>
+
+            {/* Result actions */}
+            <div
+              data-testid="scan-result-actions"
+              style={{
+                marginTop: '4px',
+                padding: '4px 0 8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              {mode === 'ocr' && resultIsAboveReference && (
                 <button
-                  onClick={handleCorrectResult}
-                  style={{
-                    width: '100%',
-                    height: '42px',
-                    borderRadius: '8px',
-                    border: '1px solid #93c5fd',
-                    background: '#eff6ff',
-                    color: '#1d4ed8',
-                    fontSize: '0.85rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
+                  className="btn-primary"
+                  onClick={handleReportWithReceipt}
+                  style={{ width: '100%', height: '48px', fontSize: '0.92rem', fontWeight: 700, borderRadius: '10px' }}
                 >
-                  Correct product or price
+                  Report using receipt
                 </button>
+              )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {mode === 'manual' ? (
+                <>
                   <button
-                    onClick={handleRetake}
-                    style={{
-                      height: '42px',
-                      borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      background: '#ffffff',
-                      color: '#0f172a',
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
+                    type="button"
+                    onClick={handleEditManualComparison}
+                    style={{ width: '100%', height: '44px', borderRadius: '10px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
                   >
-                    Scan another item
+                    Edit item or price
                   </button>
-
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleCompareAnotherManualItem}
+                      style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
+                    >
+                      Compare another item
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab?.('prices')}
+                      style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#1d4ed8', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
+                    >
+                      Return to Prices
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
                   <button
-                    onClick={() => setActiveTab && setActiveTab('prices')}
+                    onClick={handleCorrectResult}
                     style={{
+                      width: '100%',
                       height: '42px',
                       borderRadius: '8px',
-                      border: '1px solid #cbd5e1',
-                      background: '#ffffff',
+                      border: '1px solid #93c5fd',
+                      background: '#eff6ff',
                       color: '#1d4ed8',
                       fontSize: '0.85rem',
                       fontWeight: 700,
                       cursor: 'pointer'
                     }}
                   >
-                    View price history
+                    Correct product or price
                   </button>
-                </div>
-              </>
-            )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button
+                      onClick={handleRetake}
+                      style={{
+                        height: '42px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#0f172a',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Scan another item
+                    </button>
+                    <button
+                      onClick={() => setActiveTab && setActiveTab('prices')}
+                      style={{
+                        height: '42px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#ffffff',
+                        color: '#1d4ed8',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      View price history
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ERROR STATE */}
       {scannerState === 'ERROR' && (

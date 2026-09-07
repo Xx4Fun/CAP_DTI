@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isBlankDraft, resolveClientReference } from './workflow'
+import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, resolveClientReference } from './workflow'
 
 describe('field visit workflow', () => {
   it('marks prices above ten percent of SRP as an observation requiring attention', () => {
@@ -33,6 +33,13 @@ describe('field visit workflow', () => {
     expect(isBlankDraft({ ...blank, store_id: 2, location: { latitude: 10, longitude: 122, accuracy_meters: 10, captured_at: new Date().toISOString() } })).toBe(true)
     expect(isBlankDraft({ ...blank, items: [{ srp_id: 1, recorded_price: 42 }] })).toBe(false)
     expect(isBlankDraft({ ...blank, representative: { name: 'Maria Santos', title: '' } })).toBe(false)
+  })
+
+  it('keeps only meaningful or claimed visits in Current Work', () => {
+    const blank = createDraft('lease-1')
+    expect(isActionableDraft({ ...blank, store_id: 2 })).toBe(false)
+    expect(isActionableDraft({ ...blank, store_id: 2, items: [{ srp_id: 1, recorded_price: 42 }] })).toBe(true)
+    expect(isActionableDraft(createDraft('lease-1', 42))).toBe(true)
   })
 
   it('links a claimed verification request to its draft', () => {

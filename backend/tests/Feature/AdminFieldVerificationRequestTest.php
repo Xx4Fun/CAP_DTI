@@ -19,6 +19,7 @@ class AdminFieldVerificationRequestTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private Store $store;
 
     protected function setUp(): void
@@ -219,5 +220,48 @@ class AdminFieldVerificationRequestTest extends TestCase
         ]);
         $this->getJson("/api/admin/verification-requests?store_id={$this->store->id}&per_page=10")
             ->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.store.id', $this->store->id);
+    }
+
+    public function test_weekly_routine_and_verification_filters_remain_independent(): void
+    {
+        $officer = User::create([
+            'name' => 'Routine Officer', 'email' => 'routine@dti.test', 'password' => 'password', 'role' => 'field_officer',
+        ]);
+        MonitoringRecord::create([
+            'client_uuid' => 'a1d0a181-a590-4f95-b96e-aadab8e09a67', 'officer_user_id' => $officer->id,
+            'store_id' => $this->store->id, 'status' => 'accepted', 'started_at' => now()->subMinutes(20),
+            'finalized_at' => now()->subMinute(), 'received_at' => now()->subWeeks(2),
+            'latitude' => 10.7, 'longitude' => 122.0, 'location_accuracy_meters' => 8,
+            'location_captured_at' => now()->subMinute(), 'representative_name' => 'Owner',
+            'officer_signature_disk' => 'receipt_evidence', 'officer_signature_path' => 'officer.png',
+            'officer_signature_sha256' => str_repeat('a', 64), 'representative_signature_disk' => 'receipt_evidence',
+            'representative_signature_path' => 'representative.png', 'representative_signature_sha256' => str_repeat('b', 64),
+            'sync_source' => 'offline_queue',
+        ]);
+        $report = $this->report();
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => $report->id, 'store_id' => $this->store->id,
+            'requested_by' => $this->admin->id, 'status' => 'open', 'reason' => 'Verify separately.',
+            'context_json' => [], 'requested_at' => now(),
+        ]);
+
+        $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week&additional_task=verification_required&observation=all')
+            ->assertOk()
+            ->assertJsonPath('data.establishments.total', 1)
+            ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week')
+            ->assertJsonPath('data.establishments.data.0.verification_task_status', 'open')
+            ->assertJsonPath('data.weekly_summary.verification_required', 1);
+
+        $verification->update(['status' => 'claimed', 'claimed_by' => $officer->id, 'claimed_at' => now()]);
+        $this->getJson('/api/admin/monitoring-establishments?additional_task=verification_required')
+            ->assertOk()
+            ->assertJsonPath('data.establishments.data.0.verification_task_status', 'claimed')
+            ->assertJsonPath('data.establishments.data.0.verification_claimant.name', 'Routine Officer');
+
+        $verification->update(['status' => 'completed', 'completed_at' => now()]);
+        $this->getJson('/api/admin/monitoring-establishments?additional_task=verification_required')
+            ->assertOk()->assertJsonPath('data.establishments.total', 0);
+        $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week')
+            ->assertOk()->assertJsonPath('data.establishments.total', 1);
     }
 }

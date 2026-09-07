@@ -870,6 +870,28 @@ html, body, #root {
   box-shadow: 0 10px 28px rgba(7, 59, 115, 0.09);
 }
 
+.field-bento-card.clickable {
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+}
+
+.field-bento-card.clickable:hover {
+  transform: translateY(-4px);
+  border-color: #0052cc;
+  box-shadow: 0 12px 30px rgba(0, 82, 204, 0.12);
+}
+
+.field-bento-card.clickable:focus-visible {
+  outline: 2px solid #0052cc;
+  outline-offset: 3px;
+}
+
+.field-bento-card.clickable:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 82, 204, 0.08);
+}
+
 .bento-icon-wrap {
   display: grid;
   place-items: center;
@@ -1809,7 +1831,11 @@ html, body, #root {
   border: 1px solid #fde68a;
   color: #8a5807;
 }
-.field-history-status .fa-status-icon {
+.field-history-status .fa-status-icon,
+.field-history-status .field-history-status-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
   font-size: .65rem;
 }
 .field-history-store-address {
@@ -1838,7 +1864,11 @@ html, body, #root {
   font-weight: 700;
   white-space: nowrap;
 }
-.field-history-date .fa-date-icon {
+.field-history-date .fa-date-icon,
+.field-history-date .field-history-date-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
   font-size: .72rem;
   color: #64748b;
 }
@@ -2253,7 +2283,37 @@ html, body, #root {
 }
 
 /* Field workspace navigation and operational queues */
-.field-sidebar-account .field-account-profile { display: flex; width: auto; height: auto; min-width: 0; flex: 1; justify-content: flex-start; gap: 9px; text-align: left; }
+.field-sidebar-account .field-account-profile {
+  display: flex;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
+  gap: 9px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+.field-sidebar-account .field-account-profile:hover {
+  background: var(--field-sidebar-hover);
+}
+.field-sidebar-account .field-account-profile.active {
+  background: var(--field-sidebar-active);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+}
+.field-sidebar-account .field-account-profile.active strong {
+  color: #fff;
+}
+.field-sidebar-account .field-account-profile.active .field-account-mark {
+  background: #fff;
+  color: #123a82;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
 .field-account-profile > span:last-child { display: flex; min-width: 0; flex-direction: column; }
 .field-header-icon, .field-header-avatar { position: relative; display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; padding: 0; border: 0; border-radius: 11px; color: #31506f; background: #f1f5f9; }
 .field-header-icon:hover, .field-header-avatar:hover { color: #164c97; background: #e4edfa; }
@@ -4046,6 +4106,11 @@ html, body, #root {
   font-size: 0.82rem;
   font-weight: 750;
 }
+.store-filter-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.store-filter-row label { display: grid; gap: 4px; color: #52657a; font-size: .75rem; font-weight: 800; }
+.store-filter-row select { min-height: 40px; padding: 0 32px 0 10px; border: 1px solid #b9c8d8; border-radius: 10px; background: #fff; color: #0f2747; }
+.store-status-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.store-status-row > span { padding: 3px 7px; border-radius: 999px; color: #082f49; background: rgba(224, 242, 254, .94); font-size: .68rem; font-weight: 850; }
 
 .store-list {
   display: grid;
@@ -4895,6 +4960,23 @@ html, body, #root {
 }
 .field-dialog-actions > span {
   flex: 1;
+}
+@media (max-width: 599px) {
+  .field-guide-dialog .field-dialog-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px;
+  }
+  .field-guide-dialog .field-dialog-actions > span { display: none; }
+  .field-guide-dialog .field-dialog-actions button {
+    min-height: 44px;
+    padding-inline: 6px;
+    font-size: .78rem;
+    white-space: nowrap;
+  }
+  .field-guide-dialog .field-dialog-actions .text-button { justify-self: start; }
+  .field-guide-dialog .field-dialog-actions .secondary-button { grid-column: 2; }
+  .field-guide-dialog .field-dialog-actions .primary-button { grid-column: 3; }
 }
 .field-dialog-actions.visit-exit-actions,
 .visit-exit-actions {

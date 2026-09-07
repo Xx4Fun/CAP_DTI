@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -14,16 +14,16 @@ export const adminApi = {
   async getMonitoringSignature(id: number, kind: 'officer' | 'representative'): Promise<Blob> {
     return (await api.get(`/admin/monitoring-records/${id}/signatures/${kind}`, { responseType: 'blob' })).data
   },
-  async getMonitoringEstablishments(filters: { search?: string; status?: 'all' | 'with_observations' | 'no_observations' | 'awaiting_verification' | 'never_monitored'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringWorkspace> {
+  async getMonitoringEstablishments(filters: { search?: string; weekly_status?: 'all' | 'not_yet_monitored' | 'monitored_this_week'; additional_task?: 'all' | 'verification_required'; observation?: 'all' | 'with_observations' | 'reference_unavailable' | 'no_observations'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringWorkspace> {
     return data(await api.get('/admin/monitoring-establishments', { params: filters }))
   },
   async getMonitoringEstablishment(storeId: number): Promise<MonitoringEstablishmentProfile> {
     return data(await api.get(`/admin/monitoring-establishments/${storeId}`))
   },
-  async getMonitoringPriceHistory(storeId: number, filters: { page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringPriceHistoryPage> {
+  async getMonitoringPriceHistory(storeId: number, filters: { commodity?: `key:${string}` | `srp:${number}`; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringPriceHistoryPage> {
     return data(await api.get(`/admin/monitoring-establishments/${storeId}/price-history`, { params: filters }))
   },
-  async getFieldVerificationRequests(filters: { search?: string; status?: 'all' | 'open' | 'claimed' | 'completed' | 'cancelled'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<FieldVerificationRequestPage> {
+  async getFieldVerificationRequests(filters: { search?: string; status?: 'all' | 'open' | 'claimed' | 'completed' | 'cancelled'; store_id?: number; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<FieldVerificationRequestPage> {
     return data(await api.get('/admin/verification-requests', { params: filters }))
   },
   async requestFieldVerification(reportId: number, payload: { reason: string }): Promise<FieldVerificationRequestActionRecord> {
@@ -155,12 +155,40 @@ export const adminApi = {
   async createEmergencyPrice(payload: unknown) {
     return data(await api.post('/admin/emergency-prices', payload))
   },
-  async legalDraft(): Promise<string> {
-    const response = await api.post('/admin/legal/draft-preview', {}, { responseType: 'text' })
+  async getLegalNotices(params: { search?: string; status?: string } = {}): Promise<LegalNoticePage> {
+    return data(await api.get('/admin/legal-notices', { params }))
+  },
+  async createLegalNotice(payload: { monitoring_record_id: number; notice_type: 'LOI' | 'SCO'; item_ids: number[] }): Promise<LegalNoticeRecord> {
+    return data(await api.post('/admin/legal-notices', payload))
+  },
+  async updateLegalNotice(id: number, payload: Record<string, unknown>): Promise<LegalNoticeRecord> {
+    return data(await api.patch(`/admin/legal-notices/${id}`, payload))
+  },
+  async previewLegalNotice(id: number): Promise<string> {
+    const response = await api.post(`/admin/legal-notices/${id}/preview`, {}, { responseType: 'text' })
     return response.data
   },
-  async dispatchLegal() {
-    return api.post('/admin/legal/dispatch', {})
+  async issueLegalNotice(id: number): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/issue`, { confirmed: true }))
+  },
+  async recordLegalDelivery(id: number, payload: { state: 'received' | 'refused' | 'failed'; recorded_at: string; details?: Record<string, unknown> }): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/delivery`, payload))
+  },
+  async getLegalDocument(id: number): Promise<Blob> {
+    return (await api.get(`/admin/legal-notices/${id}/document`, { responseType: 'blob' })).data
+  },
+  async closeLegalNotice(id: number): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/close`))
+  },
+  async cancelLegalNotice(id: number): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/cancel`))
+  },
+  async addLegalAttachment(id: number, file: File): Promise<NonNullable<LegalNoticeRecord['attachments']>[number]> {
+    const body = new FormData(); body.append('file', file)
+    return data(await api.post(`/admin/legal-notices/${id}/attachments`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  async deleteLegalAttachment(id: number, attachmentId: number): Promise<void> {
+    await api.delete(`/admin/legal-notices/${id}/attachments/${attachmentId}`)
   },
   async getAuditEvents(): Promise<AuditRecord[]> {
     return data(await api.get('/admin/audit-events'))

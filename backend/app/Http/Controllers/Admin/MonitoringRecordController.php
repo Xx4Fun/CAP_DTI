@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\FieldVerificationRequest;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
-use App\Models\FieldVerificationRequest;
 use App\Models\Store;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
+use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -35,7 +36,10 @@ class MonitoringRecordController extends Controller
         if (($filters['anomaly'] ?? 'all') !== 'all') {
             $query->{($filters['anomaly'] === 'yes' ? 'whereHas' : 'whereDoesntHave')}('items', fn ($items) => $items->where('is_anomaly', true));
         }
-        if (isset($filters['store_id'])) $query->where('store_id', $filters['store_id']);
+        if (isset($filters['store_id'])) {
+            $query->where('store_id', $filters['store_id']);
+        }
+
         return response()->json(['data' => $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
     }
 
@@ -44,14 +48,21 @@ class MonitoringRecordController extends Controller
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', Rule::in(['all', 'with_observations', 'reference_unavailable', 'no_observations', 'awaiting_verification', 'recently_monitored', 'never_monitored'])],
+            'weekly_status' => ['nullable', Rule::in(['all', 'not_yet_monitored', 'monitored_this_week'])],
+            'additional_task' => ['nullable', Rule::in(['all', 'verification_required'])],
+            'observation' => ['nullable', Rule::in(['all', 'with_observations', 'reference_unavailable', 'no_observations'])],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
+        $week = MonitoringWeek::current();
         $query = Store::query()
             ->withCount([
                 'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
                 'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
                 'verificationRequests as open_verification_requests_count' => fn ($requests) => $requests->whereIn('status', ['open', 'claimed']),
+            ])
+            ->withExists([
+                'routineMonitoringRecords as has_prior_routine_monitoring',
+                'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
             ])
             ->with(['latestMonitoringRecord' => fn ($record) => $record
                 ->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.officer_user_id', 'monitoring_records.finalized_at', 'monitoring_records.protocol_mode', 'monitoring_records.protocol_reference')
@@ -59,13 +70,24 @@ class MonitoringRecordController extends Controller
                 ->withCount([
                     'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true),
                     'items as unavailable_reference_count' => fn ($items) => $items->where('reference_status', 'unavailable'),
-                ])]);
+                ]),
+                'latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at'),
+                'activeVerificationRequest.claimant:id,name,email',
+            ]);
         if ($search = trim($filters['search'] ?? '')) {
             $query->where(fn ($nested) => $nested->where('store_name', 'like', "%{$search}%")
                 ->orWhere('address', 'like', "%{$search}%")
                 ->orWhere('dti_sec_number', 'like', "%{$search}%"));
         }
-        match ($filters['status'] ?? 'all') {
+        match ($filters['weekly_status'] ?? 'all') {
+            'monitored_this_week' => $query->whereHas('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
+            'not_yet_monitored' => $query->whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
+            default => null,
+        };
+        if (($filters['additional_task'] ?? 'all') === 'verification_required') {
+            $query->whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed']));
+        }
+        match ($filters['observation'] ?? 'all') {
             'with_observations' => $query->whereHas('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true)),
             'reference_unavailable' => $query
                 ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true))
@@ -73,21 +95,22 @@ class MonitoringRecordController extends Controller
             'no_observations' => $query->whereHas('latestMonitoringRecord')
                 ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('is_anomaly', true))
                 ->whereDoesntHave('latestMonitoringRecord.items', fn ($items) => $items->where('reference_status', 'unavailable')),
-            'awaiting_verification' => $query->whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed'])),
-            'recently_monitored' => $query->whereHas('latestMonitoringRecord', fn ($record) => $record->where('finalized_at', '>=', now()->subDays(30))),
-            'never_monitored' => $query->whereDoesntHave('monitoringRecords', fn ($records) => $records->where('status', 'accepted')),
             default => null,
         };
         $establishments = $query->orderBy('store_name')->paginate($filters['per_page'] ?? 10);
         $establishments->setCollection($establishments->getCollection()->map(fn (Store $store) => $this->establishmentSummary($store)));
 
         return response()->json(['data' => [
-            'summary' => [
-                'monitored_establishments' => MonitoringRecord::where('status', 'accepted')->distinct('store_id')->count('store_id'),
-                'recent_activity' => MonitoringRecord::where('status', 'accepted')->where('finalized_at', '>=', now()->subDays(30))->count(),
-                'records_with_observations' => MonitoringRecord::where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true))->count(),
-                'open_verification_requests' => FieldVerificationRequest::whereIn('status', ['open', 'claimed'])->count(),
-                'latest_completed_at' => MonitoringRecord::where('status', 'accepted')->max('finalized_at'),
+            'monitoring_week' => [
+                'timezone' => $week['timezone'],
+                'starts_at' => $week['starts_at']->toIso8601String(),
+                'ends_at' => $week['ends_at']->toIso8601String(),
+            ],
+            'weekly_summary' => [
+                'total_establishments' => Store::count(),
+                'not_yet_monitored' => Store::whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
+                'monitored_this_week' => Store::whereHas('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
+                'verification_required' => Store::whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed']))->count(),
             ],
             'establishments' => $establishments,
         ]]);
@@ -96,6 +119,7 @@ class MonitoringRecordController extends Controller
     public function establishment(Request $request, Store $store, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
+        $week = MonitoringWeek::current();
         $store->loadCount([
             'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
             'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
@@ -106,7 +130,7 @@ class MonitoringRecordController extends Controller
                 'items',
                 'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true),
                 'items as unavailable_reference_count' => fn ($items) => $items->where('reference_status', 'unavailable'),
-            ])]);
+            ]), 'latestRoutineMonitoringRecord.officer:id,name,email', 'activeVerificationRequest.claimant:id,name,email']);
 
         $commodities = MonitoringRecordItem::query()
             ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)->where('status', 'accepted'))
@@ -125,6 +149,16 @@ class MonitoringRecordController extends Controller
             'records_with_observations_count' => $store->records_with_observations_count,
             'open_verification_requests_count' => $store->open_verification_requests_count,
             'latest_record' => $store->latestMonitoringRecord,
+            'latest_routine_record' => $store->latestRoutineMonitoringRecord,
+            'monitoring_week' => [
+                'timezone' => $week['timezone'], 'starts_at' => $week['starts_at']->toIso8601String(), 'ends_at' => $week['ends_at']->toIso8601String(),
+            ],
+            'weekly_routine_status' => $store->routineMonitoringRecords()->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])->exists()
+                ? 'monitored_this_week' : 'not_yet_monitored',
+            'has_prior_routine_monitoring' => $store->routineMonitoringRecords()->exists(),
+            'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
+            'verification_task_status' => $store->activeVerificationRequest?->status ?? 'none',
+            'verification_claimant' => $store->activeVerificationRequest?->claimant,
             'monitored_commodities' => $commodities,
         ]]);
     }
@@ -168,6 +202,7 @@ class MonitoringRecordController extends Controller
             'variance_percent' => $item->variance_percent,
             'is_anomaly' => $item->is_anomaly,
         ]));
+
         return response()->json(['data' => $history]);
     }
 
@@ -184,19 +219,25 @@ class MonitoringRecordController extends Controller
             'store:id,store_name,address', 'report:id,report_reference,status',
             'claimant:id,name,email', 'monitoringRecord:id,field_verification_request_id',
         ]);
-        if (($filters['status'] ?? 'all') !== 'all') $query->where('status', $filters['status']);
-        if (isset($filters['store_id'])) $query->where('store_id', $filters['store_id']);
+        if (($filters['status'] ?? 'all') !== 'all') {
+            $query->where('status', $filters['status']);
+        }
+        if (isset($filters['store_id'])) {
+            $query->where('store_id', $filters['store_id']);
+        }
         if ($search = trim($filters['search'] ?? '')) {
             $query->where(fn ($nested) => $nested
                 ->whereHas('store', fn ($store) => $store->where('store_name', 'like', "%{$search}%"))
                 ->orWhereHas('report', fn ($report) => $report->where('report_reference', 'like', "%{$search}%")));
         }
+
         return response()->json(['data' => $query->latest('requested_at')->paginate($filters['per_page'] ?? 10)]);
     }
 
     public function show(Request $request, MonitoringRecord $monitoringRecord, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
+
         return response()->json(['data' => $monitoringRecord->load([
             'officer:id,name,email', 'store', 'items.bulletin',
             'verificationRequest.report:id,report_reference,status',
@@ -222,6 +263,7 @@ class MonitoringRecordController extends Controller
             ['kind' => $kind],
             'Audit trail is unavailable. Private signature evidence cannot be accessed safely.'
         );
+
         return response(Storage::disk($disk)->get($path), 200, [
             'Content-Type' => 'image/png', 'Cache-Control' => 'private, no-store',
             'Content-Disposition' => 'inline; filename="signature.png"',
@@ -231,11 +273,17 @@ class MonitoringRecordController extends Controller
     private function establishmentSummary(Store $store): array
     {
         $latest = $store->latestMonitoringRecord;
+
         return [
-            ...$store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'is_active', 'is_verified']),
+            ...$store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'is_active', 'is_verified', 'image_path']),
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
             'open_verification_requests_count' => $store->open_verification_requests_count,
+            'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
+            'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
+            'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
+            'verification_task_status' => $store->activeVerificationRequest?->status ?? 'none',
+            'verification_claimant' => $store->activeVerificationRequest?->claimant,
             'latest_monitoring_at' => $latest?->finalized_at,
             'latest_record_id' => $latest?->id,
             'latest_protocol_mode' => $latest?->protocol_mode,

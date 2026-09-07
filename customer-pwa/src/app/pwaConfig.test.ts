@@ -14,6 +14,10 @@ describe('PWA cache configuration', () => {
     expect(viteConfig).not.toContain('/api/public/');
   });
 
+  it('keeps bulk commodity images out of the app-shell installation cache', () => {
+    expect(viteConfig).toContain("globIgnores: ['storage/commodity_images/**/*']");
+  });
+
   it('uses versioned DTI launcher icons and aligned install colors', () => {
     expect(viteConfig).toContain("src: '/icons/dti-pwa-192x192.png'");
     expect(viteConfig).toContain("src: '/icons/dti-pwa-512x512.png'");

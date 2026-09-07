@@ -49,6 +49,7 @@ export default defineConfig({
         clientsClaim: false,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,ico,png,svg,webp,webmanifest}'],
+        globIgnores: ['storage/commodity_images/**/*'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
       },

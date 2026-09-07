@@ -163,12 +163,12 @@ describe('ProductDetail', () => {
     expect(screen.queryByText(/penalt/i)).not.toBeInTheDocument();
   });
 
-  it('uses a compact image card, summary metrics, segmented tabs, and bottom-nav clearance', () => {
+  it('uses a studio image stage, summary metrics, segmented tabs, and bottom-nav clearance', () => {
     const detailRule = css.match(/\.product-detail\s*\{([^}]*)\}/)?.[1] || '';
     const imageRule = css.match(/\.product-detail-image-stage\s*\{([^}]*)\}/)?.[1] || '';
     expect(detailRule).toMatch(/max-width:\s*720px/);
     expect(detailRule).toMatch(/env\(safe-area-inset-bottom\)/);
-    expect(imageRule).toMatch(/aspect-ratio:\s*16\s*\/\s*9/);
+    expect(imageRule).toMatch(/min-height:\s*380px/);
     expect(css).toMatch(/\.product-detail-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
     expect(css).toMatch(/\.product-detail-summary-metrics\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   });

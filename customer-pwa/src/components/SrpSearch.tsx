@@ -369,6 +369,9 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({
       </div>
 
       {/* 3. Regulatory classification */}
+      <div className="price-classification-header">
+        <span className="price-classification-label">Classification</span>
+      </div>
       <div className="price-classification-tabs" role="group" aria-label="Price classification">
         <button
           type="button"

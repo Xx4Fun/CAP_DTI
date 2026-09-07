@@ -12,7 +12,7 @@ const fixtures = vi.hoisted(() => ({
     offline_lease: { id: 'lease-old', expires_at: '2099-08-29T00:00:00Z' },
   },
   vault: {
-    archiveUnreadableDrafts: vi.fn(), clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
+    archiveUnreadableDrafts: vi.fn(), archiveUnreadableQueue: vi.fn(), clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
     getBiometricUnlockAvailability: vi.fn().mockResolvedValue('prf-unsupported'),
     getVaultPinLength: vi.fn().mockResolvedValue(null), hasBiometricUnlock: vi.fn().mockResolvedValue(false), hasVault: vi.fn().mockResolvedValue(false),
     isBiometricUnlockAvailable: vi.fn().mockResolvedValue(false), lockVault: vi.fn(),
@@ -22,7 +22,7 @@ const fixtures = vi.hoisted(() => ({
   },
   api: {
     bootstrap: vi.fn().mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }),
-    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(),
+    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(), verificationRequests: vi.fn(),
   },
   draft: {
     client_uuid: '0b4cf2cf-51c9-4da4-8420-b6f271c82b8e', store_id: null, offline_lease_id: 'lease-old',
@@ -85,9 +85,11 @@ describe('field workspace security flow', () => {
     fixtures.vault.restoreVaultSession.mockResolvedValue(false)
     fixtures.vault.unlockVault.mockResolvedValue({ requiresPinMigration: false })
     fixtures.vault.archiveUnreadableDrafts.mockResolvedValue(undefined)
+    fixtures.vault.archiveUnreadableQueue.mockResolvedValue(undefined)
     fixtures.vault.readSecret.mockResolvedValue(undefined)
     fixtures.vault.writeSecret.mockResolvedValue(undefined)
     fixtures.api.bootstrap.mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] })
+    fixtures.api.verificationRequests.mockResolvedValue([])
     fixtures.api.sync.mockResolvedValue([])
     fixtures.api.renewLease.mockResolvedValue({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
@@ -354,15 +356,16 @@ describe('field workspace security flow', () => {
     localStorage.setItem('field-guide:1:v1', 'complete')
     fixtures.vault.hasVault.mockResolvedValue(true)
     fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+    const legacyDraft = { ...fixtures.draft, store_id: 7, items: [{ srp_id: 3, recorded_price: 52 }] }
     fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
       session: fixtures.session,
       bootstrap: { version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] },
-      'active-draft': fixtures.draft,
+      'active-draft': legacyDraft,
     })[key])
     render(<App />)
 
     await screen.findByText(/Good day, Ana/i)
-    await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', [fixtures.draft]))
+    await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', [legacyDraft]))
     expect(fixtures.vault.deleteSecret).toHaveBeenCalledWith('active-draft')
   })
 
@@ -387,7 +390,7 @@ describe('field workspace security flow', () => {
         ],
         srp_bulletins: [], recent_prices: [],
       },
-      drafts: [{ ...fixtures.draft, store_id: 7 }, newer],
+      drafts: [{ ...fixtures.draft, store_id: 7, items: [{ srp_id: 3, recorded_price: 52 }] }, newer],
     })[key])
     render(<App />)
 
@@ -426,7 +429,7 @@ describe('field workspace security flow', () => {
     render(<App />)
 
     fireEvent.click((await screen.findAllByRole('button', { name: 'Start a new monitoring visit' }))[0])
-    await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', [expect.any(Object)]))
+    await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', []))
     fixtures.vault.writeSecret.mockClear()
     fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
     await act(async () => {})
@@ -439,6 +442,64 @@ describe('field workspace security flow', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Current Work/ }))
 
     expect(screen.getByText('No active monitoring visit')).toBeInTheDocument()
+  })
+
+  it('removes a selected-store-only placeholder restored after a forced close', async () => {
+    localStorage.setItem('field-guide:1:v1', 'complete')
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
+      session: fixtures.session,
+      bootstrap: { version: 'v1', is_delta: false, stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 0, longitude: 0, is_active: true }], srp_bulletins: [], recent_prices: [] },
+      drafts: [{ ...fixtures.draft, store_id: 7, store_name: 'Market One', current_step: 1 }],
+    })[key])
+
+    render(<App />)
+
+    await screen.findByText(/Good day, Ana/i)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Monitoring' })[0])
+    fireEvent.click(screen.getByRole('tab', { name: /Current Work/ }))
+    expect(screen.getByText('No active monitoring visit')).toBeInTheDocument()
+    await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', []))
+  })
+
+  it('filters Choose Store by independent weekly and verification status without starting a verification draft', async () => {
+    localStorage.setItem('field-guide:1:v1', 'complete')
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+    fixtures.api.verificationRequests.mockResolvedValue([{ id: 44, status: 'open', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: null, claimed_by: null, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }])
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
+      session: fixtures.session,
+      bootstrap: {
+        version: 'v1', is_delta: false, recent_prices: [], srp_bulletins: [],
+        stores: [
+          { id: 3, store_name: 'Charlie Store', address: 'South', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T01:00:00Z' },
+          { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T02:00:00Z' },
+          { id: 2, store_name: 'Beta Store', address: 'West', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'not_yet_monitored', has_prior_routine_monitoring: false, latest_routine_monitoring_at: null },
+        ],
+      },
+      'verification-requests': [{ id: 44, status: 'open', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: null, claimed_by: null, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }],
+      drafts: [],
+    })[key])
+
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Good day, Ana' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
+
+    const choices = screen.getAllByRole('button', { name: /to record prices/ })
+    expect(choices.map((choice) => choice.getAttribute('aria-label'))).toEqual([
+      'Choose Beta Store to record prices', 'Choose Alpha Store to record prices', 'Choose Charlie Store to record prices',
+    ])
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'monitored_this_week')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Additional task' }), 'verification_required')
+    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Monitored This Week')
+    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Verification Required')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' }))
+    await waitFor(() => {
+      const persisted = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').at(-1)?.[1] as Array<{ verification_request_id?: number }>
+      expect(persisted[0]?.verification_request_id).toBeUndefined()
+    })
   })
 
   it('deletes the old draft and opens a separate blank draft without moving evidence', async () => {
@@ -472,9 +533,7 @@ describe('field workspace security flow', () => {
     expect(screen.getByRole('heading', { name: 'Choose a store' })).toBeInTheDocument()
     await waitFor(() => {
       const persisted = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').at(-1)?.[1] as typeof fixtures.draft[]
-      expect(persisted).toHaveLength(1)
-      expect(persisted[0]).toMatchObject({ store_id: null, items: [], representative: { name: '', title: '' }, signatures: { officer_png_base64: '', representative_png_base64: '' }, location: null })
-      expect(persisted[0].client_uuid).not.toBe(recorded.client_uuid)
+      expect(persisted).toEqual([])
     })
   })
 
@@ -632,7 +691,7 @@ describe('field workspace security flow', () => {
     expect(screen.queryByText('Validated visit appears immediately in the DTI Admin Monitoring dashboard.')).not.toBeInTheDocument()
   })
 
-  it('orders Step 1 stores by distance and opens price recording from the selected card', async () => {
+  it('orders Step 1 stores by routine priority and opens price recording from the selected card', async () => {
     localStorage.setItem('field-guide:1:v1', 'complete')
     Object.defineProperty(window.navigator, 'geolocation', {
       configurable: true,
@@ -665,20 +724,20 @@ describe('field workspace security flow', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
 
     expect(screen.getByPlaceholderText('Search establishment name or address')).not.toHaveFocus()
-    expect(screen.getByText('2 stores · Nearest first')).toBeInTheDocument()
+    expect(screen.getByText('2 stores · Routine priority')).toBeInTheDocument()
     expect(screen.getByText('New Visit')).toBeInTheDocument()
     expect(screen.getByTestId('field-sidebar')).toBeInTheDocument()
     expect(screen.queryByText('Store not selected')).not.toBeInTheDocument()
     expect(screen.queryByText('Saved securely on device')).not.toBeInTheDocument()
     const storeCards = screen.getAllByRole('button', { name: /Choose .* to record prices/i })
     expect(storeCards.map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Choose Near Market to record prices',
       'Choose Far Market to record prices',
+      'Choose Near Market to record prices',
     ])
     expect(screen.getByText('0 m')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Continue to Record Prices' })).not.toBeInTheDocument()
 
-    fireEvent.click(storeCards[0])
+    fireEvent.click(storeCards[1])
     expect(screen.getAllByText('Near Market').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('DTI Verified')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Choose .* to record prices/i })).not.toBeInTheDocument()
@@ -713,18 +772,18 @@ describe('field workspace security flow', () => {
       'Choose Alpha Store to record prices',
       'Choose Beta Store to record prices',
     ])
-    expect(screen.getByText('2 stores · A–Z')).toBeInTheDocument()
+    expect(screen.getByText('2 stores · Routine priority')).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText('Search establishment name or address'), { target: { value: 'Alpha' } })
     expect(screen.getByRole('button', { name: 'Clear search' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
     expect(screen.getByPlaceholderText('Search establishment name or address')).toHaveValue('')
 
     fireEvent.change(screen.getByPlaceholderText('Search establishment name or address'), { target: { value: 'missing' } })
-    expect(screen.getByText('0 stores · A–Z')).toBeInTheDocument()
+    expect(screen.getByText('0 stores · Routine priority')).toBeInTheDocument()
     expect(screen.getByText('No stores found')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
-    expect(screen.getByText('2 stores · A–Z')).toBeInTheDocument()
+    expect(screen.getByText('2 stores · Routine priority')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search establishment name or address')).toHaveValue('')
   })
 
@@ -783,7 +842,7 @@ describe('field workspace security flow', () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
     fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
       session: fixtures.session, bootstrap: { version: 'cached', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] },
-      queue: [{ ...fixtures.draft, finalized_at: '2026-08-28T01:00:00Z' }], 'active-draft': { ...fixtures.draft, client_uuid: '6ff2bb4c-b2d0-430d-9327-d41ad6eef068' },
+      queue: [{ ...fixtures.draft, finalized_at: '2026-08-28T01:00:00Z' }], 'active-draft': { ...fixtures.draft, client_uuid: '6ff2bb4c-b2d0-430d-9327-d41ad6eef068', store_id: 7, items: [{ srp_id: 3, recorded_price: 52 }] },
     })[key])
     render(<App />)
     fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
@@ -849,7 +908,7 @@ describe('field workspace security flow', () => {
 
   it('blocks sign out while unfinished drafts remain and routes to Current Work', async () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
-    fixtures.vault.readSecret.mockImplementation(async (key: string) => key === 'active-draft' ? fixtures.draft : undefined)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => key === 'active-draft' ? { ...fixtures.draft, store_id: 7, items: [{ srp_id: 3, recorded_price: 52 }] } : undefined)
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Authenticate' }))
     fireEvent.change(screen.getByLabelText('4-digit device PIN'), { target: { value: '4321' } })
@@ -1056,6 +1115,29 @@ describe('field workspace security flow', () => {
     fireEvent.click(recover)
     expect(await screen.findByRole('heading', { name: 'Unlock field workspace' })).toBeInTheDocument()
     expect(fixtures.vault.archiveUnreadableDrafts).toHaveBeenCalledOnce()
+    expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+    expect(fixtures.vault.createVault).not.toHaveBeenCalled()
+  })
+
+  it('archives unreadable queue records only after confirmation and returns to device unlock', async () => {
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+      if (key === 'session') return fixtures.session
+      if (key === 'queue') throw new Error('queue record unreadable')
+      return undefined
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+    const recover = await screen.findByRole('button', { name: 'Archive unreadable queue and continue' })
+    fireEvent.click(recover)
+    expect(fixtures.vault.archiveUnreadableQueue).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(recover)
+    expect(await screen.findByRole('heading', { name: 'Unlock field workspace' })).toBeInTheDocument()
+    expect(fixtures.vault.archiveUnreadableQueue).toHaveBeenCalledOnce()
     expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
     expect(fixtures.vault.createVault).not.toHaveBeenCalled()
   })

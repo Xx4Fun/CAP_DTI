@@ -3,15 +3,22 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PwaUpdatePrompt } from './PwaUpdatePrompt';
 
-const { updateServiceWorkerMock, setNeedRefreshMock } = vi.hoisted(() => ({
+const {
+  updateServiceWorkerMock,
+  setNeedRefreshMock,
+  setOfflineReadyMock,
+  registrationState,
+} = vi.hoisted(() => ({
   updateServiceWorkerMock: vi.fn<() => Promise<void>>(),
   setNeedRefreshMock: vi.fn(),
+  setOfflineReadyMock: vi.fn(),
+  registrationState: { needRefresh: true, offlineReady: false },
 }));
 
 vi.mock('../app/pwaRegistration', () => ({
   useRegisterSW: () => ({
-    needRefresh: [true, setNeedRefreshMock],
-    offlineReady: [false, vi.fn()],
+    needRefresh: [registrationState.needRefresh, setNeedRefreshMock],
+    offlineReady: [registrationState.offlineReady, setOfflineReadyMock],
     updateServiceWorker: updateServiceWorkerMock,
   }),
 }));
@@ -20,6 +27,9 @@ describe('PwaUpdatePrompt', () => {
   beforeEach(() => {
     updateServiceWorkerMock.mockReset();
     setNeedRefreshMock.mockReset();
+    setOfflineReadyMock.mockReset();
+    registrationState.needRefresh = true;
+    registrationState.offlineReady = false;
   });
 
   it('does not apply an update until the user chooses Update now', async () => {
@@ -40,5 +50,17 @@ describe('PwaUpdatePrompt', () => {
     await user.click(screen.getByRole('button', { name: 'Later' }));
     expect(setNeedRefreshMock).toHaveBeenCalledWith(false);
     expect(updateServiceWorkerMock).not.toHaveBeenCalled();
+  });
+
+  it('confirms when the complete app shell is ready for offline use', async () => {
+    registrationState.needRefresh = false;
+    registrationState.offlineReady = true;
+    const user = userEvent.setup();
+
+    render(<PwaUpdatePrompt />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Ready for offline use');
+    await user.click(screen.getByRole('button', { name: 'Dismiss offline-ready notice' }));
+    expect(setOfflineReadyMock).toHaveBeenCalledWith(false);
   });
 });

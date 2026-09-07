@@ -8,7 +8,11 @@ import { AdminToastHost } from './AdminToastHost'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
-    legalDraft: vi.fn(),
+    getLegalNotices: vi.fn(),
+    createLegalNotice: vi.fn(),
+    updateLegalNotice: vi.fn(),
+    previewLegalNotice: vi.fn(),
+    issueLegalNotice: vi.fn(),
     getMonitoringRecord: vi.fn(),
     dispatchLegal: vi.fn(),
     getEmergencies: vi.fn(),
@@ -21,56 +25,74 @@ vi.mock('../../services/adminApi', () => ({
 describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [], current_page: 1, last_page: 1, per_page: 20, total: 0, from: null, to: null })
     window.history.replaceState({}, '', '/?module=legal_actions')
   })
 
-  it('prefills captured monitoring evidence and still requires an action choice', async () => {
+  it('opens the queue by default and deep links to read-only captured evidence', async () => {
+    const first = render(<LegalNoticeManager />)
+    expect(await screen.findByRole('heading', { name: 'Action Queue' })).toBeInTheDocument()
+    first.unmount()
     window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
       id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', items_count: 1, anomaly_count: 1,
       officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' },
       store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose', dti_sec_number: 'SEC-2' },
       protocol_mode: 'standard', protocol_reference: null,
-      items: [{ id: 1, srp_id: 3, recorded_price: 62, baseline_price: 999, reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 999 } }],
+      items: [{ id: 1, srp_id: 3, recorded_price: 62, baseline_price: 999, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 999 } }],
     })
 
     render(<LegalNoticeManager />)
 
-    expect(await screen.findByText('Source monitoring record #14')).toBeInTheDocument()
-    expect(screen.getByLabelText('Target Establishment')).toHaveValue('Antique Central Market')
-    expect(screen.getByTitle('SRP Baseline Price')).toHaveValue(50)
-    expect(screen.getByTitle('Recorded Shelf Price')).toHaveValue(62)
-    expect(screen.getByText('SELECT A REGULATORY ACTION')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Prepare Notice' })).toBeInTheDocument()
+    expect(screen.getByText('Antique Central Market')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Target Establishment')).not.toBeInTheDocument()
+    expect(screen.getByText(/Evaluator review required; this is not an automatic legal finding/i)).toBeInTheDocument()
   })
 
-  it('renders the draft letterhead and switches between LOI and SCO', async () => {
+  it('creates one draft for selected eligible products and saves only on command', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', representative_title: 'Manager', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, reference_label: 'SRP', reference_source: 'DTI', reference_effective_date: '2026-01-01', bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const notice = { id: 4, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9, commodity_name: 'Rice', observed_price: 62, reference_value: 50 }] }, draft_payload: { recipient_name: 'Maria', recipient_title: 'Manager', recipient_email: null, address: 'San Jose', reason: null, legal_bases: [] }, internal_justification: null, intended_delivery_method: null, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.createLegalNotice).mockResolvedValue(notice)
+    vi.mocked(adminApi.updateLegalNotice).mockResolvedValue({ ...notice, internal_justification: 'Evaluator notes' })
     const user = userEvent.setup()
-    render(<><LegalNoticeManager /><AdminToastHost /></>)
-
-    expect(screen.getByText('Department of Trade and Industry')).toBeInTheDocument()
-    expect(screen.getByText('SELECT A REGULATORY ACTION')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'LOI (Letter of Inquiry)' }))
-    expect(screen.getByText('DRAFT NOTICE OF INQUIRY (LOI)')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'SCO (Show Cause Order)' }))
-
-    expect(screen.getByText('DRAFT SHOW CAUSE ORDER (SCO)')).toBeInTheDocument()
+    render(<LegalNoticeManager />)
+    await screen.findByText('Rice')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    expect(adminApi.createLegalNotice).toHaveBeenCalledWith({ monitoring_record_id: 14, notice_type: 'LOI', item_ids: [9] })
+    await user.type(screen.getByLabelText('Internal justification'), 'Evaluator notes')
+    expect(screen.queryByText('All changes saved')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }))
+    expect(await screen.findByText('All changes saved')).toBeInTheDocument()
   })
 
   it('keeps official dispatch unavailable and sandboxes draft HTML', async () => {
-    vi.mocked(adminApi.legalDraft).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', items_count: 1, anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const notice = { id: 4, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Maria', recipient_title: null, recipient_email: null, address: 'San Jose', reason: null, legal_bases: [] }, internal_justification: null, intended_delivery_method: null, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.createLegalNotice).mockResolvedValue(notice)
+    vi.mocked(adminApi.previewLegalNotice).mockResolvedValue('<h1>DRAFT - NOT AN OFFICIAL NOTICE</h1>')
     const user = userEvent.setup()
 
     render(<><LegalNoticeManager /><AdminToastHost /></>)
 
-    expect(screen.queryByRole('button', { name: /Authorize & Issue Legal Notice/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /dispatch authorization/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/No notice, deadline, notification, or vendor state change/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'LOI (Letter of Inquiry)' }))
-    await user.click(screen.getByRole('button', { name: /Preview watermarked draft/i }))
+    await screen.findByText('Rice')
+    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    expect(screen.getByRole('button', { name: 'Issue Notice' })).toBeDisabled()
+    expect(screen.getByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open Official Preview' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute('sandbox', '')
-    expect(adminApi.dispatchLegal).not.toHaveBeenCalled()
+    expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
+    expect(adminApi.previewLegalNotice).toHaveBeenCalledWith(4)
   })
 
   it('renders only API-backed emergency records and exposes no simulated SCO action', async () => {

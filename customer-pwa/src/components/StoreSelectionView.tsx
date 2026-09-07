@@ -1,13 +1,5 @@
 import React, { useId, type ReactNode } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowLeft,
-  faClockRotateLeft,
-  faMagnifyingGlass,
-  faStar,
-  faStore,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+import { ArrowLeft, History, Search, Star, Store, X, type LucideIcon } from 'lucide-react';
 
 export type StoreDirectoryFilter = 'all' | 'recent' | 'favorite';
 
@@ -30,10 +22,10 @@ interface StoreSelectionViewProps {
   children: ReactNode;
 }
 
-const filters = [
-  { value: 'all' as const, label: 'All', icon: faStore },
-  { value: 'recent' as const, label: 'Recent', icon: faClockRotateLeft },
-  { value: 'favorite' as const, label: 'Favorite', icon: faStar },
+const filters: Array<{ value: StoreDirectoryFilter; label: string; icon: LucideIcon }> = [
+  { value: 'all', label: 'All', icon: Store },
+  { value: 'recent', label: 'Recent', icon: History },
+  { value: 'favorite', label: 'Favorite', icon: Star },
 ];
 
 export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
@@ -62,7 +54,7 @@ export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
             onClick={backAction.onActivate}
             aria-label={backAction.label}
           >
-            <FontAwesomeIcon icon={faArrowLeft} aria-hidden="true" />
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
         )}
 
@@ -75,7 +67,7 @@ export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
       <div className="store-search-floating-wrapper">
         <div className="store-search-floating-card" role="search">
           <label className="visually-hidden" htmlFor={searchId}>Search stores</label>
-          <FontAwesomeIcon icon={faMagnifyingGlass} className="store-search-icon" aria-hidden="true" />
+          <Search size={18} className="store-search-icon" aria-hidden="true" />
           <input
             id={searchId}
             type="search"
@@ -92,25 +84,28 @@ export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
               onClick={() => onSearchChange('')}
               aria-label="Clear store search"
             >
-              <FontAwesomeIcon icon={faXmark} aria-hidden="true" />
+              <X size={16} aria-hidden="true" />
             </button>
           )}
         </div>
       </div>
 
       <div className="store-filter-pills" role="group" aria-label="Filter store directory">
-        {filters.map((filter) => (
-          <button
-            key={filter.value}
-            type="button"
-            className={`store-filter-pill ${activeFilter === filter.value ? 'active' : ''}`}
-            aria-pressed={activeFilter === filter.value}
-            onClick={() => onFilterChange(filter.value)}
-          >
-            <FontAwesomeIcon icon={filter.icon} aria-hidden="true" />
-            <span>{filter.label}</span>
-          </button>
-        ))}
+        {filters.map((filter) => {
+          const IconComponent = filter.icon;
+          return (
+            <button
+              key={filter.value}
+              type="button"
+              className={`store-filter-pill ${activeFilter === filter.value ? 'active' : ''}`}
+              aria-pressed={activeFilter === filter.value}
+              onClick={() => onFilterChange(filter.value)}
+            >
+              <IconComponent size={16} aria-hidden="true" />
+              <span>{filter.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {geoError && (
@@ -130,7 +125,11 @@ export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
           children
         ) : (
           <div className="store-empty-state">
-            <FontAwesomeIcon icon={activeFilter === 'favorite' ? faStar : faStore} className="store-empty-icon" aria-hidden="true" />
+            {activeFilter === 'favorite' ? (
+              <Star size={40} className="store-empty-icon" aria-hidden="true" />
+            ) : (
+              <Store size={40} className="store-empty-icon" aria-hidden="true" />
+            )}
             <p className="store-empty-title">{emptyTitle}</p>
             <p className="store-empty-desc">{emptyDescription}</p>
             {onReset && (
@@ -144,3 +143,5 @@ export const StoreSelectionView: React.FC<StoreSelectionViewProps> = ({
     </section>
   );
 };
+
+export default StoreSelectionView;

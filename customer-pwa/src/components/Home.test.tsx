@@ -166,11 +166,10 @@ describe('approved Home experience', () => {
     }
     expect(screen.queryByRole('button', { name: 'Scan' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Open menu' }));
-    expect(screen.getByRole('button', { name: 'Compare Prices' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Live Shelf Tag Scanner' })).not.toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: 'More' }));
     expect(mockSetActiveTab).toHaveBeenCalledWith('more');
+
+    await user.click(screen.getByRole('button', { name: 'Prices' }));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('prices');
   });
 });

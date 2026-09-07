@@ -193,7 +193,8 @@ export function DtiMonitoringSheet({
             <Search size={15} aria-hidden="true" />
             <input
               type="text"
-              placeholder="Search commodity or brand (e.g. Wilkins, Saba, Bear Brand)..."
+              aria-label="Search commodity or brand"
+              placeholder="Search commodity or brand..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />

@@ -467,7 +467,7 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     const storeCard = await screen.findByRole('button', { name: 'Continue with Verified API Store' });
     const image = storeCard.querySelector('img[src="https://images.example.test/store.webp"]');
     expect(image).toHaveAttribute('loading', 'lazy');
-    expect(storeCard.querySelector('[data-icon="location-dot"]')).toBeInTheDocument();
+    expect(storeCard.querySelector('.store-card-pin')).toBeInTheDocument();
 
     fireEvent.error(image!);
     expect(storeCard).toHaveTextContent('VA');

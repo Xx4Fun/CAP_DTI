@@ -16,9 +16,9 @@ import { NotificationDrawer } from './components/NotificationDrawer'
 import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, hasDraftActivity, isBlankDraft } from './app/workflow'
+import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft } from './app/workflow'
 import {
-  archiveUnreadableDrafts, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
+  archiveUnreadableDrafts, archiveUnreadableQueue, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
   requestPersistentStorage, restoreVaultSession, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './app/vault'
@@ -65,6 +65,7 @@ export default function App() {
   const [repairingSession, setRepairingSession] = useState(false)
   const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue | null>(null)
   const [recoveringDrafts, setRecoveringDrafts] = useState(false)
+  const [recoveringQueue, setRecoveringQueue] = useState(false)
   const [bootstrap, setBootstrap] = useState(EMPTY_BOOTSTRAP)
   const [queue, setQueue] = useState<QueuedVisit[]>([])
   const [view, setView] = useState<View>('home')
@@ -99,7 +100,7 @@ export default function App() {
   const draft = drafts.find((item) => item.client_uuid === activeDraftId) || null
   const dismissNotice = useCallback(() => setNotice(null), [])
   const persistDrafts = useCallback(async (next: VisitDraft[]) => {
-    const write = draftWrite.current.catch(() => undefined).then(() => writeSecret('drafts', next))
+    const write = draftWrite.current.catch(() => undefined).then(() => writeSecret('drafts', next.filter(isActionableDraft)))
     draftWrite.current = write
     await write
   }, [])
@@ -156,11 +157,13 @@ export default function App() {
       ? await readRequiredSecret<VisitDraft>('active-draft', { code: 'PW-WORK-LEGACY', detail: 'An encrypted unfinished visit from an earlier version could not be opened.' })
       : undefined
     let effectiveSession = next
-    let effectiveDrafts = cachedDrafts ?? (legacyDraft ? [legacyDraft] : [])
+    const storedDrafts = cachedDrafts ?? (legacyDraft ? [legacyDraft] : [])
+    let effectiveDrafts = storedDrafts.filter(isActionableDraft)
     if (cachedDrafts === undefined && legacyDraft) {
       await persistDrafts(effectiveDrafts)
       try { await deleteSecret('active-draft') } catch { /* canonical copy is already secured */ }
     }
+    if (cachedDrafts !== undefined && effectiveDrafts.length !== storedDrafts.length) await persistDrafts(effectiveDrafts)
     const queuedIds = new Set((cachedQueue ?? []).map((item) => item.client_uuid))
     const reconciledDrafts = effectiveDrafts.filter((item) => !queuedIds.has(item.client_uuid))
     if (reconciledDrafts.length !== effectiveDrafts.length) {
@@ -429,6 +432,18 @@ export default function App() {
     } finally { setRecoveringDrafts(false) }
   }
 
+  const recoverUnreadableQueue = async () => {
+    if (!window.confirm('Archive the unreadable upload queue and continue? Any preserved queued visits will remain backed up securely on this device.')) return
+    setRecoveringQueue(true)
+    try {
+      await archiveUnreadableQueue()
+      setRecoveryIssue(null)
+      setGate('unlock')
+    } catch {
+      setRecoveryIssue({ code: 'PW-WORK-ARCHIVE', detail: 'The unreadable upload queue could not be archived safely.' })
+    } finally { setRecoveringQueue(false) }
+  }
+
   const leaseValid = session ? canFinalizeWithLease(session.offline_lease) : false
   const startVisit = (storeId?: number, verificationRequestId?: number) => {
     if (!session) return
@@ -558,12 +573,7 @@ export default function App() {
   }
   const shellView: TopLevelView = view
   const unreadCount = notifications.filter((item) => !item.read_at).length
-  const actionableDrafts = drafts.filter((d) => {
-    if (view === 'visit' && d.client_uuid === activeDraftId && isBlankDraft(d)) {
-      return false
-    }
-    return d.store_id !== null || d.items.length > 0
-  })
+  const actionableDrafts = drafts.filter(isActionableDraft)
 
   return (
     <>
@@ -584,8 +594,9 @@ export default function App() {
           {gate === 'migration' && session && <PinSetup migration onDone={async (pin) => { await rewrapVaultPin(pin); if (repairingSession) { await writeSecret('session', session); setRepairingSession(false) } await hydrate(session) }} />}
           {gate === 'attention' && <SecurityMessage title="Workspace needs attention" detail="This account is no longer authorized online. Unresolved drafts and queued evidence remain encrypted on this device." icon={<TriangleAlert />}><button type="button" className="primary-button" onClick={() => setGate('unlock')}>Try device unlock again<LockKeyhole size={18} /></button></SecurityMessage>}
           {gate === 'recovery' && recoveryIssue && <SecurityMessage title="Encrypted field work needs recovery" detail={`${recoveryIssue.detail} Do not clear site data or reinstall the app. Support code: ${recoveryIssue.code}`} icon={<TriangleAlert />}>
-            {(recoveryIssue.code === 'PW-WORK-DRAFTS' || recoveryIssue.code === 'PW-WORK-LEGACY') && <button type="button" className="primary-button" disabled={recoveringDrafts} onClick={() => void recoverUnreadableDrafts()}>{recoveringDrafts ? 'Archiving drafts…' : 'Archive unreadable drafts and continue'}</button>}
-            <button type="button" className="secondary-button" disabled={recoveringDrafts} onClick={() => { setRecoveryIssue(null); setGate('unlock') }}>Try device unlock again<LockKeyhole size={18} /></button>
+            {(recoveryIssue.code === 'PW-WORK-DRAFTS' || recoveryIssue.code === 'PW-WORK-LEGACY') && <button type="button" className="primary-button" disabled={recoveringDrafts || recoveringQueue} onClick={() => void recoverUnreadableDrafts()}>{recoveringDrafts ? 'Archiving drafts…' : 'Archive unreadable drafts and continue'}</button>}
+            {recoveryIssue.code === 'PW-WORK-QUEUE' && <button type="button" className="primary-button" disabled={recoveringDrafts || recoveringQueue} onClick={() => void recoverUnreadableQueue()}>{recoveringQueue ? 'Archiving queue…' : 'Archive unreadable queue and continue'}</button>}
+            <button type="button" className="secondary-button" disabled={recoveringDrafts || recoveringQueue} onClick={() => { setRecoveryIssue(null); setGate('unlock') }}>Try device unlock again<LockKeyhole size={18} /></button>
           </SecurityMessage>}
         </AuthShell>
       ) : session ? (
@@ -594,9 +605,9 @@ export default function App() {
           {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
           {view === 'home' && (completion
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
-            : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} />)}
+            : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} onViewHistory={() => setView('history')} />)}
           {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onClaim={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
-          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
+          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} verificationRequests={verificationRequests} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
             const queuedVisit = { ...finished, sync_source: navigator.onLine ? finished.sync_source : 'offline_queue' as const }
@@ -1004,6 +1015,7 @@ interface VisitWizardProps {
   onStep: (step: number) => void
   draft: VisitDraft
   bootstrap: BootstrapData
+  verificationRequests: FieldVerificationRequest[]
   officerPosition: GeoPosition | null
   online: boolean
   authorizationValid: boolean
@@ -1017,6 +1029,7 @@ function VisitWizard({
   onStep,
   draft,
   bootstrap,
+  verificationRequests,
   officerPosition,
   online,
   authorizationValid,
@@ -1025,6 +1038,8 @@ function VisitWizard({
   onFinish,
 }: VisitWizardProps) {
   const [query, setQuery] = useState('')
+  const [routineStatus, setRoutineStatus] = useState<'all' | 'not_yet_monitored' | 'monitored_this_week'>('all')
+  const [additionalTask, setAdditionalTask] = useState<'all' | 'verification_required'>('all')
   const [error, setError] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [gpsRetryVisible, setGpsRetryVisible] = useState(false)
@@ -1036,24 +1051,25 @@ function VisitWizard({
 
   const stores = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
+    const verificationStoreIds = new Set(verificationRequests.map((request) => request.store.id))
     return bootstrap.stores
       .filter((store) => `${store.store_name} ${store.address}`.toLowerCase().includes(normalizedQuery))
+      .filter((store) => routineStatus === 'all' || store.weekly_routine_status === routineStatus)
+      .filter((store) => additionalTask === 'all' || verificationStoreIds.has(store.id))
       .map((store) => ({
         ...store,
+        verificationRequired: verificationStoreIds.has(store.id),
         distanceKm: officerPosition && Number.isFinite(store.latitude) && Number.isFinite(store.longitude)
           && (store.latitude !== 0 || store.longitude !== 0)
           ? haversineKm(officerPosition.latitude, officerPosition.longitude, store.latitude, store.longitude)
           : null,
       }))
       .sort((left, right) => {
-        if (left.distanceKm !== null && right.distanceKm !== null) {
-          return left.distanceKm - right.distanceKm || left.store_name.localeCompare(right.store_name)
-        }
-        if (left.distanceKm !== null) return -1
-        if (right.distanceKm !== null) return 1
-        return left.store_name.localeCompare(right.store_name)
+        const leftRank = left.weekly_routine_status === 'not_yet_monitored' ? 0 : left.weekly_routine_status === 'monitored_this_week' ? 1 : 2
+        const rightRank = right.weekly_routine_status === 'not_yet_monitored' ? 0 : right.weekly_routine_status === 'monitored_this_week' ? 1 : 2
+        return leftRank - rightRank || left.store_name.localeCompare(right.store_name)
       })
-  }, [bootstrap.stores, officerPosition, query])
+  }, [additionalTask, bootstrap.stores, officerPosition, query, routineStatus, verificationRequests])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
 
@@ -1215,8 +1231,12 @@ function VisitWizard({
               />
               {query && <button type="button" className="store-search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={16} /></button>}
             </div>
+            <div className="store-filter-row">
+              <label>Routine status<select aria-label="Routine status" value={routineStatus} onChange={(event) => setRoutineStatus(event.target.value as typeof routineStatus)}><option value="all">All</option><option value="not_yet_monitored">Not Yet Monitored</option><option value="monitored_this_week">Monitored This Week</option></select></label>
+              <label>Additional task<select aria-label="Additional task" value={additionalTask} onChange={(event) => setAdditionalTask(event.target.value as typeof additionalTask)}><option value="all">All</option><option value="verification_required">Verification Required</option></select></label>
+            </div>
             <div className="store-results-summary" aria-live="polite">
-              {stores.length} {stores.length === 1 ? 'store' : 'stores'} · {officerPosition ? 'Nearest first' : 'A–Z'}
+              {stores.length} {stores.length === 1 ? 'store' : 'stores'} · Routine priority
             </div>
             {stores.length ? (
               <div className="store-list">
@@ -1255,6 +1275,8 @@ function VisitWizard({
                     <span className="store-card-copy">
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
+                      <span className="store-status-row"><span>{store.weekly_routine_status === 'monitored_this_week' ? 'Monitored This Week' : store.weekly_routine_status === 'not_yet_monitored' ? 'Not Yet Monitored' : 'Routine status unavailable'}</span>{store.verificationRequired && <span>Verification Required</span>}</span>
+                      <small>{store.latest_routine_monitoring_at ? `Latest routine: ${new Date(store.latest_routine_monitoring_at).toLocaleDateString('en-PH')}` : store.has_prior_routine_monitoring === false ? 'No previous routine visits' : ''}</small>
                     </span>
                   </button>
                 ))}

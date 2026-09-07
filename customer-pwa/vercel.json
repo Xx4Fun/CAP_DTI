@@ -4,7 +4,7 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/((?!assets/|storage/|stores/|branding/|icons/|home/|products/|sw\\.js|manifest\\.webmanifest|favicon\\.ico).*)",
+      "source": "/((?!assets/|storage/|stores/|branding/|icons/|home/|products/|sw\\.js|receipt-push-sw\\.js|workbox-.*\\.js|manifest\\.webmanifest|favicon.*|apple-touch-icon.*|pwa-.*).*)",
       "destination": "/index.html"
     }
   ],

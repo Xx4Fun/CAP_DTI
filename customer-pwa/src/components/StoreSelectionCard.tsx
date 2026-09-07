@@ -1,12 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faBuildingColumns,
-  faLocationDot,
-  faSpinner,
-  faStar,
-  faStore,
-} from '@fortawesome/free-solid-svg-icons';
+import { Building2, Loader2, MapPin, Star, Store } from 'lucide-react';
 import { resolveImageUrl, type Establishment } from '../api/client';
 
 export interface StoreSelectionCardProps {
@@ -63,7 +56,7 @@ export const StoreSelectionCard: React.FC<StoreSelectionCardProps> = ({
             />
           ) : (
             <span className="store-card-facade-fallback">
-              <FontAwesomeIcon icon={useInstitutionFallback ? faBuildingColumns : faStore} />
+              {useInstitutionFallback ? <Building2 size={24} /> : <Store size={24} />}
               <span>{initials}</span>
             </span>
           )}
@@ -73,21 +66,21 @@ export const StoreSelectionCard: React.FC<StoreSelectionCardProps> = ({
         <span className="store-card-copy">
           <strong className="store-card-title">{store.store_name}</strong>
           <span className="store-card-address">
-            <FontAwesomeIcon icon={faLocationDot} className="store-card-pin" aria-hidden="true" />
+            <MapPin size={14} className="store-card-pin" aria-hidden="true" />
             <span>{store.address}</span>
           </span>
         </span>
 
         {distanceLabel && (
           <span className="store-card-distance">
-            <FontAwesomeIcon icon={faLocationDot} aria-hidden="true" />
+            <MapPin size={12} aria-hidden="true" />
             {distanceLabel.replace(/\s*away$/i, '')}
           </span>
         )}
 
         {busy && (
           <span className="store-card-loading-overlay" aria-hidden="true">
-            <FontAwesomeIcon icon={faSpinner} spin size="2x" />
+            <Loader2 size={32} className="animate-spin" />
           </span>
         )}
       </button>
@@ -100,9 +93,11 @@ export const StoreSelectionCard: React.FC<StoreSelectionCardProps> = ({
         disabled={disabled}
         onClick={onToggleFavorite}
       >
-        <FontAwesomeIcon icon={faStar} aria-hidden="true" />
+        <Star size={16} aria-hidden="true" fill={isFavorite ? 'currentColor' : 'none'} />
         <span>Favorite</span>
       </button>
     </article>
   );
 };
+
+export default StoreSelectionCard;

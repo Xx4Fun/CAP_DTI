@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'helpers/db_helper.dart';
 import 'services/sync_service.dart';
+import 'services/auth_service.dart';
 import 'screens/inspection_screen.dart';
 import 'screens/consumer_scan_screen.dart';
 
@@ -11,7 +12,8 @@ void main() async {
 }
 
 class PriceWatchMobileApp extends StatelessWidget {
-  const PriceWatchMobileApp({super.key});
+  final AuthService authService;
+  const PriceWatchMobileApp({super.key, this.authService = const AuthService()});
 
   @override
   Widget build(BuildContext context) {
@@ -26,13 +28,14 @@ class PriceWatchMobileApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF09090B),
         cardColor: const Color(0xFF141419),
       ),
-      home: const AuthWrapper(),
+      home: AuthWrapper(authService: authService),
     );
   }
 }
 
 class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
+  final AuthService authService;
+  const AuthWrapper({super.key, required this.authService});
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
@@ -51,9 +54,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   Future<void> _checkAuth() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString('auth_token');
+    final savedRole = prefs.getString('user_role');
+    final valid = savedToken != null && savedRole != null
+        ? await widget.authService.validateSavedSession(savedToken, savedRole)
+        : false;
+    if (!valid) {
+      await prefs.remove('auth_token');
+      await prefs.remove('user_role');
+    }
+    if (!mounted) return;
     setState(() {
-      _token = prefs.getString('auth_token');
-      _role = prefs.getString('user_role');
+      _token = valid ? savedToken : null;
+      _role = valid ? savedRole : null;
       _checking = false;
     });
   }
@@ -87,7 +100,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
 
     if (_token == null) {
-      return MobileLoginScreen(onLoginSuccess: _onLoginSuccess);
+      return MobileLoginScreen(authService: widget.authService, onLoginSuccess: _onLoginSuccess);
     }
 
     if (_role == 'consumer') {
@@ -107,8 +120,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
 }
 
 class MobileLoginScreen extends StatefulWidget {
+  final AuthService authService;
   final Function(String, String) onLoginSuccess;
-  const MobileLoginScreen({super.key, required this.onLoginSuccess});
+  const MobileLoginScreen({super.key, required this.authService, required this.onLoginSuccess});
 
   @override
   State<MobileLoginScreen> createState() => _MobileLoginScreenState();
@@ -126,21 +140,16 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
       _error = '';
     });
 
-    // Simulated login endpoint or direct mock auth validation
-    final String email = _emailController.text;
-    final String pass = _passwordController.text;
-
-    if (email == 'officer@dti.gov.ph' && pass == 'password123') {
-      widget.onLoginSuccess('mock_field_officer_token_123456', 'field_officer');
-    } else if (email == 'consumer@price.gov.ph' && pass == 'password123') {
-      widget.onLoginSuccess('mock_consumer_token_123456', 'consumer');
-    } else {
+    try {
+      final session = await widget.authService.login(_emailController.text, _passwordController.text);
+      widget.onLoginSuccess(session.token, session.role);
+    } on AuthException catch (error) {
+      if (!mounted) return;
       setState(() {
-        _error = 'Incorrect credentials.\n'
-            'Officer: officer@dti.gov.ph / password123\n'
-            'Consumer: consumer@price.gov.ph / password123';
+        _error = error.message;
       });
     }
+    if (!mounted) return;
     setState(() {
       _loading = false;
     });

@@ -7,7 +7,6 @@
   overflow-x: clip;
   background: var(--home-hero-background, var(--home-blue));
 }
-
 .home-hero {
   min-height: 260px;
   color: #ffffff;
@@ -896,5 +895,39 @@
   .home-action-card,
   .home-rights-action {
     transition: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .home-hero-inner {
+    width: min(100%, 780px);
+  }
+
+  .home-main-content {
+    width: min(100%, 780px);
+  }
+
+  .home-hero-copy {
+    width: 55%;
+    padding: 44px 0 100px 30px;
+  }
+
+  .home-hero-copy h1 {
+    max-width: 420px;
+  }
+
+  .home-hero-art-frame {
+    width: 48%;
+    right: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .home-hero-inner {
+    width: min(100%, 880px);
+  }
+
+  .home-main-content {
+    width: min(100%, 880px);
   }
 }

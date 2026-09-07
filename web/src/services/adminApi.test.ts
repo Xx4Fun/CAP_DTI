@@ -13,17 +13,17 @@ describe('adminApi', () => {
   it('loads the establishment workspace, history, records, and verification queue', async () => {
     get.mockResolvedValue({ data: { data: { ok: true } } })
 
-    await adminApi.getMonitoringEstablishments({ search: 'Central', status: 'with_observations', page: 2, per_page: 25 })
+    await adminApi.getMonitoringEstablishments({ search: 'Central', weekly_status: 'monitored_this_week', additional_task: 'verification_required', observation: 'with_observations', page: 2, per_page: 25 })
     await adminApi.getMonitoringEstablishment(7)
-    await adminApi.getMonitoringPriceHistory(7, { page: 2, per_page: 25 })
+    await adminApi.getMonitoringPriceHistory(7, { commodity: 'key:rice', page: 2, per_page: 25 })
     await adminApi.getMonitoringRecords({ store_id: 7, anomaly: 'yes' })
-    await adminApi.getFieldVerificationRequests({ status: 'open', search: 'Central', page: 1, per_page: 10 })
+    await adminApi.getFieldVerificationRequests({ status: 'open', search: 'Central', store_id: 7, page: 1, per_page: 10 })
 
-    expect(get).toHaveBeenNthCalledWith(1, '/admin/monitoring-establishments', { params: { search: 'Central', status: 'with_observations', page: 2, per_page: 25 } })
+    expect(get).toHaveBeenNthCalledWith(1, '/admin/monitoring-establishments', { params: { search: 'Central', weekly_status: 'monitored_this_week', additional_task: 'verification_required', observation: 'with_observations', page: 2, per_page: 25 } })
     expect(get).toHaveBeenNthCalledWith(2, '/admin/monitoring-establishments/7')
-    expect(get).toHaveBeenNthCalledWith(3, '/admin/monitoring-establishments/7/price-history', { params: { page: 2, per_page: 25 } })
+    expect(get).toHaveBeenNthCalledWith(3, '/admin/monitoring-establishments/7/price-history', { params: { commodity: 'key:rice', page: 2, per_page: 25 } })
     expect(get).toHaveBeenNthCalledWith(4, '/admin/monitoring-records', { params: { store_id: 7, anomaly: 'yes' } })
-    expect(get).toHaveBeenNthCalledWith(5, '/admin/verification-requests', { params: { status: 'open', search: 'Central', page: 1, per_page: 10 } })
+    expect(get).toHaveBeenNthCalledWith(5, '/admin/verification-requests', { params: { status: 'open', search: 'Central', store_id: 7, page: 1, per_page: 10 } })
   })
 
   it('posts field verification reasons to the dedicated report endpoint', async () => {

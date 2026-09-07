@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
   History, LogOut, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
-import type { BiometricAvailability } from '../app/vault'
+import { readSecret, writeSecret, type BiometricAvailability } from '../app/vault'
 import { analyzeWithReference, resolveClientReference } from '../app/workflow'
 import { apiError, fieldApi } from '../services/fieldApi'
 import type { BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
@@ -23,6 +23,7 @@ interface HomePageProps {
   draftCount?: number
   onStart: (storeId?: number) => void
   onViewActivity: (tab: 'verification' | 'work' | 'sync') => void
+  onViewHistory?: () => void
 }
 
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -49,6 +50,7 @@ export function HomePage({
   authorizationValid,
   onStart,
   onViewActivity,
+  onViewHistory,
 }: HomePageProps) {
   const firstName = name.split(/\s+/)[0]
   const storeCount = bootstrap.stores.length
@@ -117,19 +119,55 @@ export function HomePage({
 
     <section className="field-bento-section" aria-label="Field operation statistics">
       <dl className="field-bento-grid field-status-strip">
-        <div className="field-bento-card bento-stores">
+        <div
+          role="button"
+          tabIndex={0}
+          className="field-bento-card bento-stores clickable"
+          onClick={() => onStart()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onStart()
+            }
+          }}
+          aria-label="Open store directory to start a visit"
+        >
           <div className="bento-icon-wrap bento-icon-blue"><Building2 size={22} /></div>
           <dt>Store directory</dt>
           <dd className="bento-value">{storeCount} active store{storeCount === 1 ? '' : 's'}</dd>
           <span className="bento-subtext">Monitored outlets</span>
         </div>
-        <div className="field-bento-card bento-srp">
+        <div
+          role="button"
+          tabIndex={0}
+          className="field-bento-card bento-srp clickable"
+          onClick={() => onStart()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onStart()
+            }
+          }}
+          aria-label="Open store directory to monitor SRP baselines"
+        >
           <div className="bento-icon-wrap bento-icon-teal"><PackageSearch size={22} /></div>
           <dt>Price references</dt>
           <dd className="bento-value">{srpCount} current reference{srpCount === 1 ? '' : 's'}</dd>
           <span className="bento-subtext">Active DTI SRP baselines</span>
         </div>
-        <div className="field-bento-card bento-sync">
+        <div
+          role="button"
+          tabIndex={0}
+          className="field-bento-card bento-sync clickable"
+          onClick={() => onViewActivity('sync')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onViewActivity('sync')
+            }
+          }}
+          aria-label="Open synchronization queue"
+        >
           <div className={`bento-icon-wrap ${queueCount ? 'bento-icon-amber' : 'bento-icon-teal'}`}>
             {queueCount ? <CloudOff size={22} /> : <CheckCircle2 size={22} />}
           </div>
@@ -137,7 +175,23 @@ export function HomePage({
           <dd className="bento-value">{queueCount} pending sync</dd>
           <span className="bento-subtext">{queueCount ? 'Encrypted on device' : 'All visits up to date'}</span>
         </div>
-        <div className="field-bento-card bento-access">
+        <div
+          role="button"
+          tabIndex={0}
+          className="field-bento-card bento-access clickable"
+          onClick={() => {
+            if (onViewHistory) onViewHistory()
+            else onViewActivity('work')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              if (onViewHistory) onViewHistory()
+              else onViewActivity('work')
+            }
+          }}
+          aria-label="Open monitoring history"
+        >
           <div className="bento-icon-wrap bento-icon-indigo"><CalendarCheck size={22} /></div>
           <dt>Today’s visits</dt>
           <dd className="bento-value">{totalToday} visited</dd>
@@ -534,23 +588,93 @@ export function MonitoringPage({
   )
 }
 
+interface HistoryCache {
+  updated_at: string
+  pages: Record<number, Page<MonitoringRecord>>
+  details: Record<number, MonitoringRecordDetail>
+}
+
 export function HistoryPage({ session, online }: { session: FieldSession; online: boolean }) {
   const [page, setPage] = useState<Page<MonitoringRecord> | null>(null)
   const [current, setCurrent] = useState(1)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState<MonitoringRecordDetail | null>(null)
+  const [cachedAt, setCachedAt] = useState('')
+  const cacheRef = useRef<HistoryCache>({ updated_at: '', pages: {}, details: {} })
+  const cacheWrite = useRef<Promise<void>>(Promise.resolve())
+  const cacheKey = `history:${session.user.id}`
+
+  const persistCache = (next: HistoryCache) => {
+    cacheRef.current = next; setCachedAt(next.updated_at)
+    const write = cacheWrite.current.catch(() => undefined).then(() => writeSecret(cacheKey, next))
+    cacheWrite.current = write
+    return write
+  }
+
   useEffect(() => {
-    if (!online) return
-    setLoading(true); setError('')
-    void fieldApi.history(session.token, current).then(setPage).catch((reason) => setError(apiError(reason, 'Monitoring history could not load.'))).finally(() => setLoading(false))
-  }, [current, online, session.token])
+    cacheRef.current = { updated_at: '', pages: {}, details: {} }
+    setPage(null); setDetail(null); setCachedAt('')
+  }, [cacheKey])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true); setError('')
+      if (!cacheRef.current.updated_at) {
+        try {
+          const saved = await readSecret<HistoryCache>(cacheKey)
+          if (saved?.pages && saved?.details) {
+            cacheRef.current = saved
+            if (!cancelled) setCachedAt(saved.updated_at)
+          }
+        } catch {
+          if (!online && !cancelled) setError('Saved history could not be opened. Reconnect to download it again.')
+        }
+      }
+      if (cancelled) return
+      const cachedPage = cacheRef.current.pages[current]
+      setPage(cachedPage || null)
+      if (!online) { setLoading(false); return }
+      try {
+        const fresh = await fieldApi.history(session.token, current)
+        if (cancelled) return
+        const next = { ...cacheRef.current, updated_at: new Date().toISOString(), pages: { ...cacheRef.current.pages, [current]: fresh } }
+        setPage(fresh)
+        try { await persistCache(next) }
+        catch { if (!cancelled) setError('History loaded, but it could not be saved for offline use.') }
+      } catch (reason) {
+        if (!cancelled) setError(cachedPage ? 'Showing saved history because the latest records could not be downloaded.' : apiError(reason, 'Monitoring history could not load.'))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [cacheKey, current, online, session.token])
+
   const openDetail = (record: MonitoringRecord) => {
-    setLoading(true); setError('')
-    void fieldApi.historyDetail(session.token, record.id).then(setDetail).catch((reason) => setError(apiError(reason, 'Visit details could not load.'))).finally(() => setLoading(false))
+    const cachedDetail = cacheRef.current.details[record.id]
+    setError('')
+    if (cachedDetail) setDetail(cachedDetail)
+    if (!online) {
+      setLoading(false)
+      if (!cachedDetail) setError('Connect to download this visit before opening it offline.')
+      return
+    }
+    setLoading(!cachedDetail)
+    void fieldApi.historyDetail(session.token, record.id).then(async (fresh) => {
+      setDetail(fresh)
+      const next = { ...cacheRef.current, updated_at: new Date().toISOString(), details: { ...cacheRef.current.details, [record.id]: fresh } }
+      try { await persistCache(next) }
+      catch { setError('Visit loaded, but it could not be saved for offline use.') }
+    }).catch((reason) => {
+      if (!cachedDetail) setError(apiError(reason, 'Visit details could not load.'))
+    }).finally(() => setLoading(false))
   }
   if (detail) return <div className="page field-page field-history-page">
-    <button type="button" className="text-button field-history-back" onClick={() => setDetail(null)}><ArrowLeft />Back to history</button>
+    <button type="button" className="text-button field-history-back" onClick={() => { setDetail(null); setError('') }}><ArrowLeft />Back to history</button>
+    {!online && <div className="field-offline-state"><WifiOff /><div><h2>Showing saved visit details</h2><p>{cachedAt ? `History saved ${formatDate(cachedAt)}.` : 'Reconnect to refresh this visit.'}</p></div></div>}
     <section className="field-history-detail">
       <div className="field-page-heading"><div><h1 tabIndex={-1}>{detail.store.store_name}</h1><p>{detail.store.address}</p></div></div>
       <dl><div><dt>Finalized</dt><dd>{formatDate(detail.finalized_at)}</dd></div><div><dt>Synchronization</dt><dd>{detail.sync_source === 'offline_queue' ? 'Uploaded from offline queue' : 'Accepted online'}</dd></div><div><dt>Store representative</dt><dd>{detail.representative.name}{detail.representative.title ? ` · ${detail.representative.title}` : ''}</dd></div><div><dt>Signatures</dt><dd>{detail.signatures.officer_present && detail.signatures.representative_present ? 'Both signatures captured' : 'Signature evidence incomplete'}</dd></div><div><dt>Locked GPS</dt><dd>{detail.location.latitude.toFixed(5)}, {detail.location.longitude.toFixed(5)} · ±{Math.round(detail.location.accuracy_meters)} m</dd></div>{detail.field_verification_request_id && <div><dt>Field verification</dt><dd>Verification request #{detail.field_verification_request_id}</dd></div>}</dl>
@@ -559,55 +683,27 @@ export function HistoryPage({ session, online }: { session: FieldSession; online
   </div>
   return <div className="page field-page field-history-page">
     <section className="field-history-section">
-      {!online && <div className="field-offline-state"><WifiOff /><div><h2>History needs a connection</h2><p>Current drafts and pending synchronization remain available in Monitoring.</p></div></div>}
+      {!online && <div className="field-offline-state"><WifiOff /><div><h2>{page ? 'Showing history saved on this device' : 'No saved history on this device'}</h2><p>{page && cachedAt ? `History saved ${formatDate(cachedAt)}. Reconnect to refresh it.` : 'Reconnect once to download accepted visits.'}</p></div></div>}
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading ? (
         <div className="field-history-loading" role="status">Loading accepted visits…</div>
-      ) : online && page?.data.length ? (
+      ) : page?.data.length ? (
         <div className="field-history-records">
           {page.data.map((record) => (
-            <button
-              key={record.id}
-              type="button"
-              className="field-history-card"
-              aria-label={`View ${record.store.store_name} visit details`}
-              onClick={() => openDetail(record)}
-            >
+            <button key={record.id} type="button" className="field-history-card" aria-label={`View ${record.store?.store_name || 'Store'} visit details`} onClick={() => openDetail(record)}>
               <div className="field-history-card-header">
-                <strong className="field-history-store-name">{record.store.store_name}</strong>
-                <span className="field-history-status">
-                  {record.anomaly_count > 0 ? (
-                    <em className="attention">
-                      <TriangleAlert className="fa-status-icon" aria-hidden="true" />
-                      <span>{record.anomaly_count} {record.anomaly_count === 1 ? 'anomaly' : 'anomalies'}</span>
-                    </em>
-                  ) : (
-                    <em className="accepted">
-                      <Check className="fa-status-icon" aria-hidden="true" />
-                      <span>Accepted</span>
-                    </em>
-                  )}
-                </span>
+                <strong className="field-history-store-name">{record.store?.store_name || 'Store'}</strong>
+                <span className="field-history-status">{record.anomaly_count > 0 ? <em className="attention"><TriangleAlert size={12} className="field-history-status-icon fa-status-icon" aria-hidden="true" /><span>{record.anomaly_count} {record.anomaly_count === 1 ? 'anomaly' : 'anomalies'}</span></em> : <em className="accepted"><Check size={12} className="field-history-status-icon fa-status-icon" aria-hidden="true" /><span>Accepted</span></em>}</span>
               </div>
-
-              <small className="field-history-store-address">{record.store.address}</small>
-
-              <div className="field-history-card-footer">
-                <span className="field-history-date">
-                  <Clock className="fa-date-icon" aria-hidden="true" />
-                  <span>{formatDate(record.finalized_at)}</span>
-                </span>
-                <span className="field-history-chevron" aria-hidden="true">
-                  <ChevronRight />
-                </span>
-              </div>
+              <small className="field-history-store-address">{record.store?.address || ''}</small>
+              <div className="field-history-card-footer"><span className="field-history-date"><Clock size={12} className="field-history-date-icon fa-date-icon" aria-hidden="true" /><span>{formatDate(record.finalized_at)}</span></span><span className="field-history-chevron" aria-hidden="true"><ChevronRight size={16} /></span></div>
             </button>
           ))}
         </div>
-      ) : online && !loading ? (
-        <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>Server-accepted monitoring records will appear here.</span></div>
+      ) : page && !loading ? (
+        <div className="field-quiet-state"><History /><strong>No accepted visits yet</strong><span>{online ? 'Server-accepted monitoring records will appear here.' : 'No accepted visits were saved on this page.'}</span></div>
       ) : null}
-      {page && page.last_page > 1 && <div className="pagination"><span>Showing {page.from}–{page.to} of {page.total}</span><div><button type="button" disabled={current <= 1} onClick={() => setCurrent(current - 1)}>Previous</button><strong>Page {current} of {page.last_page}</strong><button type="button" disabled={current >= page.last_page} onClick={() => setCurrent(current + 1)}>Next</button></div></div>}
+      {page && page.last_page > 1 && <div className="pagination"><span>Showing {page.from}–{page.to} of {page.total}</span><div><button type="button" disabled={current <= 1 || (!online && !cacheRef.current.pages[current - 1])} onClick={() => setCurrent(current - 1)}>Previous</button><strong>Page {current} of {page.last_page}</strong><button type="button" disabled={current >= page.last_page || (!online && !cacheRef.current.pages[current + 1])} onClick={() => setCurrent(current + 1)}>Next</button></div></div>}
     </section>
   </div>
 }

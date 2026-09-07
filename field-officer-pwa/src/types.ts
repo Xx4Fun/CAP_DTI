@@ -1,7 +1,12 @@
 export interface FieldUser { id: number; name: string; email: string; role: 'field_officer'; must_change_password?: boolean }
 export interface OfflineLease { id: string; expires_at: string }
 export interface FieldSession { token: string; user: FieldUser; offline_lease: OfflineLease }
-export interface StoreRecord { id: number; store_name: string; address: string; latitude: number; longitude: number; is_active: boolean; image_path?: string | null }
+export interface StoreRecord {
+  id: number; store_name: string; address: string; latitude: number; longitude: number; is_active: boolean; image_path?: string | null
+  weekly_routine_status?: 'not_yet_monitored' | 'monitored_this_week'
+  has_prior_routine_monitoring?: boolean
+  latest_routine_monitoring_at?: string | null
+}
 export interface Bulletin {
   id: number
   commodity_name: string
@@ -35,6 +40,7 @@ export interface RegulatoryPrice {
 export interface BootstrapData {
   version: string; reference_version?: string; is_delta: boolean; stores: StoreRecord[]; srp_bulletins: Bulletin[]
   regulatory_prices?: RegulatoryPrice[]; recent_prices: RecentPrice[]; accepted_today?: number; protocol?: MonitoringProtocol
+  monitoring_week?: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
 }
 export interface VisitItem { srp_id: number; recorded_price: number }
 export interface VisitLocation { latitude: number; longitude: number; accuracy_meters: number; captured_at: string }

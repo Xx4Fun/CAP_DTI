@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  archiveUnreadableDrafts, clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
+  archiveUnreadableDrafts, archiveUnreadableQueue, clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
   isBiometricUnlockAvailable, lockVault, readSecret, restoreVaultSession,
   requestPersistentStorage, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './vault'
@@ -135,6 +135,25 @@ describe('encrypted offline vault', () => {
     await unlockVault('4321')
     expect(await readSecret('session')).toEqual({ token: 'current-session' })
     expect(await readSecret('queue')).toEqual([{ client_uuid: 'queued-1' }])
+  })
+
+  it('archives only queue records while preserving the locked vault and drafts', async () => {
+    await createVault('4321')
+    await writeSecret('session', { token: 'current-session' })
+    await writeSecret('queue', [{ client_uuid: 'queued-1' }])
+    await writeSecret('drafts', [{ client_uuid: 'draft-1' }])
+    const queueEnvelope = await rawRecord('secret:queue')
+    lockVault()
+
+    await archiveUnreadableQueue()
+
+    expect(await rawRecord('secret:queue')).toBeUndefined()
+    const keys = (await rawKeys()).map(String)
+    const archivedQueue = keys.find((key) => key.startsWith('recovery:queue:'))
+    expect(archivedQueue && await rawRecord(archivedQueue)).toEqual(queueEnvelope)
+    await unlockVault('4321')
+    expect(await readSecret('session')).toEqual({ token: 'current-session' })
+    expect(await readSecret('drafts')).toEqual([{ client_uuid: 'draft-1' }])
   })
 
   it('refuses to replace an existing vault and its encrypted records', async () => {

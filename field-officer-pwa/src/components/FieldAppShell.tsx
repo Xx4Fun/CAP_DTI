@@ -112,7 +112,13 @@ export function FieldAppShell({
           </nav>
 
           <div className="field-sidebar-account">
-            <button type="button" className="field-account-profile" aria-label="Open profile" onClick={() => onNavigate('profile')}>
+            <button
+              type="button"
+              className={`field-account-profile ${activeView === 'profile' ? 'active' : ''}`}
+              aria-current={activeView === 'profile' ? 'page' : undefined}
+              aria-label="Open profile"
+              onClick={() => onNavigate('profile')}
+            >
               <span className="field-account-mark" aria-hidden="true">{initials(officerName)}</span>
               <span><strong>{officerName}</strong><small>DTI Field Officer</small></span>
             </button>

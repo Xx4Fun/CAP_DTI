@@ -22,8 +22,9 @@ const record = {
 }
 
 const workspace = {
-  summary: { monitored_establishments: 1, recent_activity: 1, records_with_observations: 1, open_verification_requests: 0, latest_completed_at: record.finalized_at },
-  establishments: { data: [{ id: 2, dti_sec_number: 'SEC-2', store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 0, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
+  monitoring_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-23T16:00:00Z', ends_at: '2026-08-30T16:00:00Z' },
+  weekly_summary: { total_establishments: 1, not_yet_monitored: 0, monitored_this_week: 1, verification_required: 1 },
+  establishments: { data: [{ id: 2, dti_sec_number: null, store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, weekly_routine_status: 'monitored_this_week' as const, has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, verification_task_status: 'claimed' as const, verification_claimant: record.officer, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_officer: record.officer, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
 }
 
 describe('FieldMonitoringRecords', () => {
@@ -31,7 +32,7 @@ describe('FieldMonitoringRecords', () => {
     vi.clearAllMocks()
     window.history.replaceState({}, '', '/?module=field_monitoring')
     vi.mocked(adminApi.getMonitoringEstablishments).mockResolvedValue(workspace)
-    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: 'SEC-2', store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 0, latest_record: record })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
     vi.mocked(adminApi.getMonitoringPriceHistory).mockResolvedValue({ data: [{ id: 1, monitoring_record_id: 14, monitoring_date: record.finalized_at, protocol_mode: 'standard', protocol_reference: null, commodity_name: 'Rice', unit: 'kg', reference_status: 'available', reference_label: 'SRP baseline', reference_value: 50, reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', recorded_price: 62, difference: 12, variance_percent: 24, is_anomaly: true }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [record], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(record)
@@ -40,10 +41,26 @@ describe('FieldMonitoringRecords', () => {
 
   it('opens on the establishment overview with operational summary filters', async () => {
     render(<FieldMonitoringRecords />)
-    expect(await screen.findByRole('table', { name: 'Monitoring establishments' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Establishments' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByText('Monitored establishments').closest('button')).toHaveTextContent('1')
-    expect(screen.getByText('Records with observations').closest('button')).toHaveTextContent('1')
+    const summary = screen.getByRole('region', { name: 'Field Monitoring overview' })
+    expect(summary).toHaveTextContent('Total Establishments1')
+    expect(summary).toHaveTextContent('Monitored This Week1')
+    expect(summary).toHaveTextContent('Verification Required1')
+    expect(screen.getAllByText('Monitored This Week').length).toBeGreaterThan(1)
+    expect(screen.getAllByText('Verification Required').length).toBeGreaterThan(1)
+    expect(screen.getByText('Ana Officer')).toBeInTheDocument()
+    expect(screen.queryByText(/12345678|inspection score|assigned officer|non-compliant|compliant/i)).not.toBeInTheDocument()
+  })
+
+  it('allows switching between grid and table views', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    expect(await screen.findByRole('table', { name: 'Monitoring establishments' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Grid view' }))
+    expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
   })
 
   it('opens an establishment profile with captured price history and filtered records', async () => {
@@ -51,9 +68,10 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     await user.click(await screen.findByRole('button', { name: 'Open Antique Central Market monitoring profile' }))
     expect(await screen.findByRole('heading', { name: 'Antique Central Market' })).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Price History' }))
     expect(screen.getByRole('table', { name: 'Temporal price history' })).toHaveTextContent('₱50.00')
     expect(screen.getByRole('table', { name: 'Temporal price history' })).not.toHaveTextContent('₱999.00')
-    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
+    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, expect.objectContaining({ commodity: 'key:rice' }))
     expect(new URLSearchParams(window.location.search).get('store')).toBe('2')
   })
 
@@ -61,13 +79,13 @@ describe('FieldMonitoringRecords', () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
     render(<FieldMonitoringRecords onNavigate={onNavigate} />)
-    await user.click(screen.getByRole('tab', { name: 'Monitoring Records' }))
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
     await user.click(await screen.findByRole('button', { name: 'View visit 14' }))
     expect(await screen.findByRole('heading', { name: 'Visit #14' })).toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Recorded commodity prices' })).toHaveTextContent('₱50.00')
     expect(screen.getByRole('heading', { name: 'Products requiring regulatory review' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve|reject/i })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Proceed to Regulatory Action' }))
+    await user.click(screen.getByRole('button', { name: 'Open Legal Actions' }))
     expect(onNavigate).toHaveBeenCalledWith('legal_actions')
     expect(new URLSearchParams(window.location.search).get('source_record')).toBe('14')
   })
@@ -84,20 +102,39 @@ describe('FieldMonitoringRecords', () => {
   it('stores the active workspace and list controls in the URL', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
-    await screen.findByRole('table', { name: 'Monitoring establishments' })
+    await screen.findByRole('region', { name: 'Monitoring establishments' })
     await user.type(screen.getByRole('searchbox', { name: 'Search establishments' }), 'Central')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitoring status' }), 'with_observations')
-    await user.click(screen.getByRole('tab', { name: 'Monitoring Records' }))
-    await waitFor(() => expect(window.location.search).toContain('monitor_search=Central'))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Weekly status' }), 'monitored_this_week')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Additional task' }), 'verification_required')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Latest observation' }), 'with_observations')
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
+    await waitFor(() => expect(window.location.search).toContain('establishment_search=Central'))
     expect(window.location.search).toContain('monitor_tab=records')
-    expect(window.location.search).toContain('monitor_status=with_observations')
+    expect(window.location.search).toContain('weekly_status=monitored_this_week')
+    expect(window.location.search).toContain('additional_task=verification_required')
+    expect(window.location.search).toContain('observation=with_observations')
+    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ weekly_status: 'monitored_this_week', additional_task: 'verification_required', observation: 'with_observations' }))
+    expect(screen.getByRole('searchbox', { name: 'Search monitoring visits' })).toHaveValue('')
   })
 
   it('restores an establishment profile from the URL', async () => {
     window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
     render(<FieldMonitoringRecords />)
     expect(await screen.findByRole('heading', { name: 'Antique Central Market' })).toBeInTheDocument()
-    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, { per_page: 10 })
+    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, { commodity: 'key:rice', per_page: 10 })
+  })
+
+  it('opens the scoped verification queue from an establishment and can clear it', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Antique Central Market monitoring profile' }))
+    expect(screen.getByText('Latest accepted routine monitoring').closest('div')).toHaveTextContent('Aug 24, 2026')
+    expect(screen.getByText('Verification claimed by Ana Officer')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'View Verification Requests' }))
+    expect(await screen.findByText('Antique Central Market', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
+    expect(adminApi.getFieldVerificationRequests).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
+    await user.click(screen.getByRole('button', { name: 'Clear establishment filter' }))
+    expect(new URLSearchParams(window.location.search).get('verification_store')).toBeNull()
   })
 
   it('loads the next establishment page', async () => {

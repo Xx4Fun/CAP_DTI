@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HistoryPage, HomePage, MonitoringPage, ProfilePage } from './FieldPages'
 import type { BootstrapData, FieldSession, VisitDraft } from '../types'
 
-const fixtures = vi.hoisted(() => ({ history: vi.fn(), historyDetail: vi.fn() }))
+const fixtures = vi.hoisted(() => ({ history: vi.fn(), historyDetail: vi.fn(), readSecret: vi.fn(), writeSecret: vi.fn() }))
 vi.mock('../services/fieldApi', () => ({
   fieldApi: { history: fixtures.history, historyDetail: fixtures.historyDetail },
   apiError: (_error: unknown, fallback: string) => fallback,
 }))
+vi.mock('../app/vault', () => ({ readSecret: fixtures.readSecret, writeSecret: fixtures.writeSecret }))
 
 const session: FieldSession = {
   token: 'token',
@@ -33,6 +34,11 @@ const draft: VisitDraft = {
 }
 
 describe('Field top-level pages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fixtures.readSecret.mockResolvedValue(undefined)
+    fixtures.writeSecret.mockResolvedValue(undefined)
+  })
   afterEach(cleanup)
 
   it('routes each Home summary to the matching Monitoring tab', () => {
@@ -192,10 +198,59 @@ describe('Field top-level pages', () => {
     expect(await screen.findByText('Market One')).toBeInTheDocument()
     expect(screen.queryByText(/waiting to synchronize/i)).not.toBeInTheDocument()
     expect(fixtures.history).toHaveBeenCalledWith('token', 1)
+    await waitFor(() => expect(fixtures.writeSecret).toHaveBeenCalledWith('history:1', expect.objectContaining({ pages: expect.objectContaining({ 1: expect.objectContaining({ total: 1 }) }) })))
     fireEvent.click(screen.getByRole('button', { name: 'View Market One visit details' }))
     expect(await screen.findByRole('heading', { name: 'Market One' })).toBeInTheDocument()
     expect(screen.getByText('Both signatures captured')).toBeInTheDocument()
     expect(screen.getByText('Verification request #8')).toBeInTheDocument()
+    await waitFor(() => expect(fixtures.writeSecret).toHaveBeenCalledWith('history:1', expect.objectContaining({ details: expect.objectContaining({ 9: expect.objectContaining({ client_uuid: 'accepted-1' }) }) })))
+  })
+
+  it('shows encrypted cached History and cached details offline without calling the API', async () => {
+    fixtures.readSecret.mockResolvedValue({
+      updated_at: '2026-09-06T01:00:00Z',
+      pages: {
+        1: {
+          data: [{ id: 9, client_uuid: 'accepted-1', status: 'accepted', finalized_at: '2026-08-28T01:00:00Z', received_at: '2026-08-28T01:02:00Z', representative_name: 'Ben', sync_source: 'online', items_count: 3, anomaly_count: 0, store: { id: 7, store_name: 'Market One', address: 'San Jose' }, items: [] }],
+          current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1,
+        },
+      },
+      details: {
+        9: {
+          id: 9, client_uuid: 'accepted-1', status: 'accepted', started_at: '2026-08-28T00:00:00Z', finalized_at: '2026-08-28T01:00:00Z', received_at: '2026-08-28T01:02:00Z', sync_source: 'online', field_verification_request_id: 8,
+          store: { ...bootstrap.stores[0] }, location: { latitude: 10.7, longitude: 121.9, accuracy_meters: 20, captured_at: '2026-08-28T01:00:00Z' }, representative: { name: 'Ben', title: 'Manager' }, signatures: { officer_present: true, representative_present: true }, items: [],
+        },
+      },
+    })
+
+    render(<HistoryPage session={session} online={false} />)
+
+    expect(await screen.findByText('Market One')).toBeInTheDocument()
+    expect(screen.getByText(/Showing history saved on this device/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View Market One visit details' }))
+    expect(await screen.findByText('Both signatures captured')).toBeInTheDocument()
+    expect(fixtures.history).not.toHaveBeenCalled()
+    expect(fixtures.historyDetail).not.toHaveBeenCalled()
+  })
+
+  it('settles to a reconnect message when an offline History detail was not downloaded', async () => {
+    fixtures.readSecret.mockResolvedValue({
+      updated_at: '2026-09-06T01:00:00Z',
+      pages: {
+        1: {
+          data: [{ id: 9, client_uuid: 'accepted-1', status: 'accepted', finalized_at: '2026-08-28T01:00:00Z', received_at: '2026-08-28T01:02:00Z', representative_name: 'Ben', sync_source: 'online', items_count: 3, anomaly_count: 0, store: { id: 7, store_name: 'Market One', address: 'San Jose' }, items: [] }],
+          current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1,
+        },
+      },
+      details: {},
+    })
+
+    render(<HistoryPage session={session} online={false} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'View Market One visit details' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Connect to download this visit')
+    expect(screen.queryByRole('status', { name: /Loading/i })).not.toBeInTheDocument()
+    expect(fixtures.historyDetail).not.toHaveBeenCalled()
   })
 
   it('renders profile details and sign out action', async () => {

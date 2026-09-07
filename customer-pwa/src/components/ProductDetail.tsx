@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faArrowLeft,
-  faArrowTrendDown,
-  faArrowTrendUp,
-  faChevronDown,
-  faChevronUp,
-  faCircleInfo,
-  faExpand,
-  faMinus,
-} from '@fortawesome/free-solid-svg-icons';
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Maximize2,
+  Minus,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import {
   apiClient,
   type Commodity,
@@ -117,17 +117,17 @@ const TrendValue: React.FC<{ trend: Trend }> = ({ trend }) => {
   if (trend.kind === 'unavailable') return <strong>History unavailable</strong>;
   if (trend.kind === 'no-past') return <strong>No past SRP</strong>;
 
-  const icon = trend.kind === 'increase'
-    ? faArrowTrendUp
+  const IconComponent = trend.kind === 'increase'
+    ? TrendingUp
     : trend.kind === 'decrease'
-      ? faArrowTrendDown
-      : faMinus;
+      ? TrendingDown
+      : Minus;
   const prefix = trend.kind === 'increase' ? '+' : trend.kind === 'decrease' ? '-' : '';
 
   return (
     <>
       <strong className={`product-detail-trend-value product-detail-trend-value--${trend.kind}`}>
-        <FontAwesomeIcon icon={icon} aria-hidden="true" />
+        <IconComponent size={14} aria-hidden="true" />
         {prefix}{'\u20B1'}{Math.abs(trend.difference).toFixed(2)}
       </strong>
       <span>{trend.kind === 'unchanged' ? 'No change' : 'vs past SRP'}</span>
@@ -230,21 +230,33 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   return (
     <div className="product-detail">
-      <button type="button" className="product-detail-back" aria-label="Back to Prices" onClick={onBack}>
-        <FontAwesomeIcon icon={faArrowLeft} aria-hidden="true" />
-        Back to Prices
-      </button>
-
       <section className="product-detail-hero" aria-labelledby="product-detail-title">
         <div className="product-detail-image-stage">
-          <span className="product-detail-srp-pill">SRP</span>
-          <ProgressiveProductImage
-            imageUrl={resolvedImageUrl}
-            altText={commodity.commodity_name}
-            variant="detail"
-            decorative={false}
-            onSettled={setImageStatus}
-          />
+          <button
+            type="button"
+            className="product-detail-circle-back"
+            aria-label="Back to Prices"
+            onClick={onBack}
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
+          </button>
+
+          <div className="product-detail-stage-content">
+            <ProgressiveProductImage
+              imageUrl={resolvedImageUrl}
+              altText={commodity.commodity_name}
+              variant="detail"
+              decorative={false}
+              onSettled={setImageStatus}
+            />
+            <div className="product-detail-pedestal" aria-hidden="true" />
+          </div>
+
+          <div className="product-detail-floating-pill">
+            <ShieldCheck size={14} aria-hidden="true" />
+            <span>{classification !== 'Not provided' ? classification : 'Official SRP'}</span>
+          </div>
+
           {imageStatus === 'loaded' && resolvedImageUrl && (
             <button
               ref={imageTriggerRef}
@@ -254,7 +266,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               onClick={() => setIsLightboxOpen(true)}
             >
               <span className="product-detail-image-expand" aria-hidden="true">
-                <FontAwesomeIcon icon={faExpand} />
+                <Maximize2 size={16} />
               </span>
             </button>
           )}
@@ -289,10 +301,14 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             aria-controls="product-detail-freeze-content"
           >
             <span className="product-detail-freeze-label">
-              <FontAwesomeIcon icon={faCircleInfo} aria-hidden="true" />
+              <Info size={16} aria-hidden="true" />
               Price-freeze information
             </span>
-            <FontAwesomeIcon icon={isFreezeOpen ? faChevronUp : faChevronDown} aria-hidden="true" />
+            {isFreezeOpen ? (
+              <ChevronUp size={16} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={16} aria-hidden="true" />
+            )}
           </button>
           {isFreezeOpen && (
             <div id="product-detail-freeze-content" className="product-detail-freeze-content">

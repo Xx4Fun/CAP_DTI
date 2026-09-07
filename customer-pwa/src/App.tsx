@@ -5,6 +5,7 @@ import { OfflineBanner } from './components/OfflineBanner';
 import { PageLoader, type PageLoaderDestination } from './components/PageLoader';
 import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { ServiceStartStatus } from './components/ServiceStartStatus';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { BackToTop } from './components/BackToTop';
 import {
   apiClient,
@@ -381,12 +382,13 @@ export const App: React.FC = () => {
           onRetry={() => setRefreshAttempt((attempt) => attempt + 1)}
         />
 
-        <Suspense fallback={(
-          <PageLoader
-            destination={pageLoaderDestination(activeTab)}
-            onPendingChange={setRouteChunkPending}
-          />
-        )}>
+        <ErrorBoundary resetKey={route.name} variant="route" onGoHome={() => setActiveTab('home')}>
+          <Suspense fallback={(
+            <PageLoader
+              destination={pageLoaderDestination(activeTab)}
+              onPendingChange={setRouteChunkPending}
+            />
+          )}>
         {activeTab === 'home' && (
           <Home
             setActiveTab={setActiveTab}
@@ -482,7 +484,8 @@ export const App: React.FC = () => {
             onSubmitted={(result) => updateRecentReportStatus(result.report_reference, result.status, result.submitted_at)}
           />
         )}
-        </Suspense>
+          </Suspense>
+        </ErrorBoundary>
       </main>
       <BackToTop hidden={routeChunkPending || route.name === 'receipt-processing' || route.name === 'receipt-review'} />
     </div>

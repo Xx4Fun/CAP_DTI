@@ -324,6 +324,25 @@ export async function archiveUnreadableDrafts(): Promise<void> {
   })
 }
 
+export async function archiveUnreadableQueue(): Promise<void> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite')
+    const store = transaction.objectStore(STORE)
+    const timestamp = new Date().toISOString()
+    const source = 'secret:queue'
+    const request = store.get(source)
+    request.onsuccess = () => {
+      if (request.result === undefined) return
+      store.put(request.result, `recovery:queue:${timestamp}`)
+      store.delete(source)
+    }
+    transaction.oncomplete = () => { db.close(); resolve() }
+    transaction.onerror = () => { db.close(); reject(transaction.error) }
+    transaction.onabort = () => { db.close(); reject(transaction.error || new Error('Queue archive was interrupted.')) }
+  })
+}
+
 async function detectBrowserBiometricAvailability(): Promise<BiometricAvailability> {
   if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) return 'browser-unsupported'
   const api = window.PublicKeyCredential as typeof PublicKeyCredential & { getClientCapabilities?: () => Promise<Record<string, boolean>> }

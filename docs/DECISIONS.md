@@ -8,6 +8,13 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-07 - Weekly field monitoring status
+
+- The monitoring week runs from Monday 00:00 in `Asia/Manila` to the following Monday 00:00, exclusive. Backend queries convert those boundaries to UTC.
+- An establishment is Monitored This Week only when an accepted routine visit has a validated `finalized_at` inside that period. Verification visits, rejected records, and upload time do not satisfy routine monitoring.
+- Weekly routine status and active verification requirements are independent; the same establishment may have both. Follow-up Required remains excluded until an explicit follow-up workflow exists.
+- In Progress, Pending Sync, and Needs Attention remain encrypted device-local states and do not change backend weekly status before synchronization and acceptance.
+
 ## 2026-09-05 — Receipt evidence capture and OCR trust boundary
 
 - New Customer receipt reports use one or more guided still images; continuous video remains supported only for historical evidence.

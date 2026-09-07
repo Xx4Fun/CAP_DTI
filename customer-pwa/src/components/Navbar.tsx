@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Home, Tag, Scale, ClipboardList, AlertTriangle, Menu, X } from 'lucide-react';
-import { useBackLayer } from '../hooks/useBackLayer';
+import React from 'react';
+import { Home, Tag, Scale, ClipboardList, AlertTriangle, Menu } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
@@ -9,17 +8,6 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOfCalamity }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  useBackLayer('navbar-menu', isMenuOpen, () => setIsMenuOpen(false));
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsMenuOpen(false);
-    };
-    if (isMenuOpen) window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMenuOpen]);
-
-
   return (
     <>
       <header className="navbar-top">
@@ -38,29 +26,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
             </div>
           </div>
         </div>
-
-        <button
-          className="menu-button"
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-          style={{
-            minWidth: '44px',
-            minHeight: '44px',
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'none',
-            border: 'none',
-            borderRadius: '10px',
-            cursor: 'pointer',
-            flexShrink: 0,
-            transition: 'background-color 0.15s ease'
-          }}
-        >
-          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
       </header>
       <div className="navbar-top-offset" aria-hidden="true" />
 
@@ -88,78 +53,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOf
           <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
           <span>Price Freeze active · View applicable prices</span>
         </div>
-      )}
-
-      {/* Compact Quick Menu Drawer */}
-      {isMenuOpen && (
-        <>
-          <div
-            onClick={() => setIsMenuOpen(false)}
-            style={{
-              position: 'fixed',
-              top: '68px',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 98
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              top: '68px',
-              left: 0,
-              right: 0,
-              background: '#ffffff',
-              borderBottom: '1px solid #e2e8f0',
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-              zIndex: 99,
-              padding: '16px',
-              maxWidth: '600px',
-              margin: '0 auto'
-            }}
-          >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button
-              onClick={() => { setActiveTab('home'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'home' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'home' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              Home Dashboard
-            </button>
-            <button
-              onClick={() => { setActiveTab('prices'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'prices' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'prices' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              SRP Price Directory
-            </button>
-            <button
-              onClick={() => { setActiveTab('compare'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'compare' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'compare' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              Compare Prices
-            </button>
-            <button
-              onClick={() => { setActiveTab('reports'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'reports' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'reports' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              Formal Receipt Reporting
-            </button>
-            <button
-              onClick={() => { setActiveTab('track'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'track' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'track' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              Track Report
-            </button>
-            <button
-              onClick={() => { setActiveTab('more'); setIsMenuOpen(false); }}
-              style={{ padding: '12px', textAlign: 'left', background: activeTab === 'more' ? '#eff6ff' : 'none', border: 'none', borderRadius: '8px', fontWeight: 600, color: activeTab === 'more' ? '#1d4ed8' : '#0f172a', cursor: 'pointer' }}
-            >
-              More & Help
-            </button>
-          </div>
-        </div>
-        </>
       )}
 
       {/* Fixed five-action bottom navigation */}

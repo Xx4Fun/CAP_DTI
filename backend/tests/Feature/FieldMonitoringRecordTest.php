@@ -2,15 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\SrpBulletin;
-use App\Models\Store;
-use App\Models\TemporalInspection;
-use App\Models\User;
 use App\Models\FieldOfflineLease;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
+use App\Models\SrpBulletin;
+use App\Models\Store;
+use App\Models\TemporalInspection;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -29,6 +29,7 @@ class FieldMonitoringRecordTest extends TestCase
             'password' => 'secure-password', 'role' => 'field_officer',
         ]);
         $login = $this->postJson('/api/field/login', ['email' => $officer->email, 'password' => 'secure-password'])->assertOk();
+
         return [$officer, $login->json('token'), $login->json('offline_lease.id')];
     }
 
@@ -324,7 +325,7 @@ class FieldMonitoringRecordTest extends TestCase
         $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
         $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
             ->assertCreated()->json('data.results.0.record_id');
-        \App\Models\MonitoringRecord::findOrFail($recordId)->update(['received_at' => '2026-08-31 15:00:00']);
+        MonitoringRecord::findOrFail($recordId)->update(['received_at' => '2026-08-31 15:00:00']);
 
         $this->withToken($token)->getJson('/api/field/bootstrap')
             ->assertOk()->assertJsonPath('data.accepted_today', 0);
@@ -485,20 +486,30 @@ class FieldMonitoringRecordTest extends TestCase
         ]);
         $rice->update(['baseline_price' => 999]);
 
+        $this->withToken($token)->getJson('/api/field/bootstrap')
+            ->assertOk()
+            ->assertJsonPath('data.monitoring_week.timezone', 'Asia/Manila')
+            ->assertJsonPath('data.stores.0.weekly_routine_status', 'monitored_this_week')
+            ->assertJsonPath('data.stores.0.has_prior_routine_monitoring', true)
+            ->assertJsonPath('data.stores.0.latest_routine_monitoring_at', fn ($value) => str_starts_with($value, now()->subMinute()->toDateString()));
+
         $manager = User::create([
             'name' => 'Manager', 'email' => 'workspace-manager@dti.test',
             'password' => 'manager-password', 'role' => 'dti_evaluator',
         ]);
         Sanctum::actingAs($manager, ['dti-admin']);
 
-        $this->getJson('/api/admin/monitoring-establishments?status=with_observations&search=San&per_page=10')
+        $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week&additional_task=all&observation=with_observations&search=San&per_page=10')
             ->assertOk()
-            ->assertJsonPath('data.summary.monitored_establishments', 1)
-            ->assertJsonPath('data.summary.recent_activity', 1)
-            ->assertJsonPath('data.summary.records_with_observations', 1)
-            ->assertJsonPath('data.summary.open_verification_requests', 0)
+            ->assertJsonPath('data.monitoring_week.timezone', 'Asia/Manila')
+            ->assertJsonPath('data.weekly_summary.total_establishments', 1)
+            ->assertJsonPath('data.weekly_summary.not_yet_monitored', 0)
+            ->assertJsonPath('data.weekly_summary.monitored_this_week', 1)
+            ->assertJsonPath('data.weekly_summary.verification_required', 0)
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.id', $store->id)
+            ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week')
+            ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', true)
             ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations')
             ->assertJsonPath('data.establishments.data.0.latest_officer.name', 'Field Officer');
 
@@ -507,6 +518,9 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.completed_records_count', 1)
             ->assertJsonPath('data.records_with_observations_count', 1)
             ->assertJsonPath('data.latest_record.id', $recordId)
+            ->assertJsonPath('data.latest_routine_record.id', $recordId)
+            ->assertJsonPath('data.weekly_routine_status', 'monitored_this_week')
+            ->assertJsonPath('data.verification_task_status', 'none')
             ->assertJsonPath('data.latest_record.protocol_mode', 'standard')
             ->assertJsonFragment(['selector' => 'key:milk'])
             ->assertJsonFragment(['selector' => 'key:rice']);
@@ -547,12 +561,14 @@ class FieldMonitoringRecordTest extends TestCase
         }
         Sanctum::actingAs($manager, ['dti-admin']);
 
-        $this->getJson('/api/admin/monitoring-establishments?status=with_observations')->assertOk()->assertJsonPath('data.establishments.total', 0);
-        $this->getJson('/api/admin/monitoring-establishments?status=reference_unavailable')->assertOk()
+        $this->getJson('/api/admin/monitoring-establishments?observation=with_observations')->assertOk()->assertJsonPath('data.establishments.total', 0);
+        $this->getJson('/api/admin/monitoring-establishments?observation=reference_unavailable')->assertOk()
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.latest_result', 'reference_unavailable')
             ->assertJsonPath('data.establishments.data.0.latest_officer.name', 'Latest Officer');
-        $this->getJson('/api/admin/monitoring-establishments?status=recently_monitored')->assertOk()->assertJsonPath('data.establishments.total', 1);
+        $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week')->assertOk()
+            ->assertJsonPath('data.establishments.total', 1)
+            ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week');
 
         $rejectedStore = Store::create(['store_name' => 'Rejected Only', 'address' => 'Antique', 'latitude' => 10, 'longitude' => 121, 'is_active' => true]);
         MonitoringRecord::create([
@@ -563,8 +579,10 @@ class FieldMonitoringRecordTest extends TestCase
             'officer_signature_sha256' => str_repeat('a', 64), 'representative_signature_disk' => 'local',
             'representative_signature_path' => 'b', 'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
         ]);
-        $this->getJson('/api/admin/monitoring-establishments?status=never_monitored')->assertOk()
-            ->assertJsonFragment(['store_name' => 'Rejected Only']);
+        $this->getJson('/api/admin/monitoring-establishments?weekly_status=not_yet_monitored')->assertOk()
+            ->assertJsonPath('data.establishments.total', 1)
+            ->assertJsonPath('data.establishments.data.0.store_name', 'Rejected Only')
+            ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', false);
         Carbon::setTestNow();
     }
 }

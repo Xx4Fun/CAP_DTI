@@ -2,19 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   ShieldCheck, FileText, ChevronRight, Camera, Shield, UserCheck,
   CheckCircle2, RefreshCw, Eye, Copy, Check, Lock, ArrowLeft, Flashlight,
-  SwitchCamera, AlertTriangle, ExternalLink, MapPin
+  SwitchCamera, AlertTriangle, ExternalLink, MapPin,
+  Info, ChevronDown, Store, Scale, MessageSquare
 } from 'lucide-react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faCircleInfo,
-  faShieldHalved,
-  faComments,
-  faChevronDown,
-  faStore,
-  faCamera,
-  faScaleBalanced,
-  faLock,
-} from '@fortawesome/free-solid-svg-icons';
 import { apiClient, type Establishment, type CaptureSessionResponse, type FormalReportResponse, defaultStoresList } from '../api/client';
 import { createFormalReportPayload } from '../app/reportIntegrity';
 import { consumeHandoff, type FlowHandoff } from '../app/handoffs';
@@ -632,12 +622,12 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 />
                 <div className="report-vector-track-placeholder" style={{ display: 'none' }}>
                   <div className="report-vector-track-badge">
-                    <FontAwesomeIcon icon={faShieldHalved} />
+                    <Shield size={20} />
                   </div>
                   <div className="report-vector-track-info">
                     <div style={{ fontSize: '0.60rem', fontWeight: 800, color: '#0369a1', letterSpacing: '0.04em' }}>DTI SECURE</div>
                     <span className="report-vector-track-pill">
-                      <FontAwesomeIcon icon={faShieldHalved} style={{ fontSize: '0.55rem' }} />
+                      <Shield size={10} />
                       VERIFIED
                     </span>
                   </div>
@@ -646,11 +636,11 @@ export const FormalReport: React.FC<FormalReportProps> = ({
             </div>
           </div>
 
-          {/* Retained Info Section: 3 Collapsible Accordions (FontAwesome Icons) */}
+          {/* Retained Info Section: 3 Collapsible Accordions (Lucide Icons) */}
           <div className="report-accordion-group">
             <div className="report-accordion-header-label">Information & Guidelines</div>
 
-            {/* Accordion 1: How reporting works (FontAwesome faCircleInfo) */}
+            {/* Accordion 1: How reporting works (Lucide Info) */}
             <div className="report-accordion-item">
               <div
                 className="report-accordion-trigger"
@@ -668,15 +658,15 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-amber" style={{ width: '36px', height: '36px' }}>
-                    <FontAwesomeIcon icon={faCircleInfo} style={{ fontSize: '1.1rem' }} />
+                    <Info size={18} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     How reporting works
                   </div>
                 </div>
                 <div>
-                  <FontAwesomeIcon
-                    icon={faChevronDown}
+                  <ChevronDown
+                    size={18}
                     className={`report-accordion-chevron ${openAccordions['how-reporting-works'] ? 'report-accordion-chevron--open' : ''}`}
                   />
                 </div>
@@ -686,7 +676,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                   <div className="report-steps-container">
                     <div className="report-step-item">
                       <div className="report-step-icon-badge">
-                        <FontAwesomeIcon icon={faStore} />
+                        <Store size={18} />
                       </div>
                       <div className="report-step-content">
                         <div className="report-step-title">1. Select Establishment</div>
@@ -695,7 +685,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                     </div>
                     <div className="report-step-item">
                       <div className="report-step-icon-badge">
-                        <FontAwesomeIcon icon={faCamera} />
+                        <Camera size={18} />
                       </div>
                       <div className="report-step-content">
                         <div className="report-step-title">2. Live Receipt Capture</div>
@@ -704,7 +694,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                     </div>
                     <div className="report-step-item">
                       <div className="report-step-icon-badge">
-                        <FontAwesomeIcon icon={faScaleBalanced} />
+                        <Scale size={18} />
                       </div>
                       <div className="report-step-content">
                         <div className="report-step-title">3. DTI Evaluation</div>
@@ -716,7 +706,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               )}
             </div>
 
-            {/* Accordion 2: Privacy & Evidence Security (FontAwesome faShieldHalved) */}
+            {/* Accordion 2: Privacy & Evidence Security (Lucide Shield) */}
             <div className="report-accordion-item">
               <div
                 className="report-accordion-trigger"
@@ -734,15 +724,15 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
-                    <FontAwesomeIcon icon={faShieldHalved} style={{ fontSize: '1.1rem' }} />
+                    <Shield size={18} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     Privacy & Evidence Security
                   </div>
                 </div>
                 <div>
-                  <FontAwesomeIcon
-                    icon={faChevronDown}
+                  <ChevronDown
+                    size={18}
                     className={`report-accordion-chevron ${openAccordions['privacy-security'] ? 'report-accordion-chevron--open' : ''}`}
                   />
                 </div>
@@ -752,7 +742,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                   <div className="report-security-points">
                     <div className="report-security-point">
                       <div className="report-security-point-icon">
-                        <FontAwesomeIcon icon={faCamera} />
+                        <Camera size={18} />
                       </div>
                       <div>
                         <strong>Live Capture Only:</strong> Camera access is strictly active during receipt capture. Gallery uploads are disabled to maintain tamper-evident legal integrity.
@@ -760,7 +750,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                     </div>
                     <div className="report-security-point">
                       <div className="report-security-point-icon">
-                        <FontAwesomeIcon icon={faLock} />
+                        <Lock size={18} />
                       </div>
                       <div>
                         <strong>SHA-256 Vaulting:</strong> All submitted receipts are cryptographically hashed and vaulted in restricted DTI evidence storage.
@@ -771,7 +761,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               )}
             </div>
 
-            {/* Accordion 3: Frequently Asked Questions (FontAwesome faComments) */}
+            {/* Accordion 3: Frequently Asked Questions (Lucide MessageSquare) */}
             <div className="report-accordion-item">
               <div
                 className="report-accordion-trigger"
@@ -789,15 +779,15 @@ export const FormalReport: React.FC<FormalReportProps> = ({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
-                    <FontAwesomeIcon icon={faComments} style={{ fontSize: '1.1rem' }} />
+                    <MessageSquare size={18} />
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                     Frequently Asked Questions
                   </div>
                 </div>
                 <div>
-                  <FontAwesomeIcon
-                    icon={faChevronDown}
+                  <ChevronDown
+                    size={18}
                     className={`report-accordion-chevron ${openAccordions['faq'] ? 'report-accordion-chevron--open' : ''}`}
                   />
                 </div>

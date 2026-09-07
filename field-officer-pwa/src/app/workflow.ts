@@ -22,6 +22,10 @@ export function hasDraftActivity(draft: VisitDraft): boolean {
   return !isBlankDraft(draft)
 }
 
+export function isActionableDraft(draft: VisitDraft): boolean {
+  return hasDraftActivity(draft) || draft.verification_request_id !== undefined
+}
+
 export function analyzeLine(line: VisitItem, baseline: number) {
   const variance = baseline > 0 ? ((line.recorded_price - baseline) / baseline) * 100 : 0
   return { variance_percent: Number(variance.toFixed(2)), is_anomaly: baseline > 0 && line.recorded_price > baseline * 1.1 }

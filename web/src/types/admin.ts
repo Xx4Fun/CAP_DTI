@@ -95,8 +95,9 @@ export interface MonitoringRecordRecord {
   longitude?: number | string | null
   location_accuracy_meters?: number | string | null
   location_captured_at?: string | null
-  items_count: number
+  items_count?: number
   anomaly_count: number
+  unavailable_reference_count?: number
   officer: { id: number; name: string; email: string }
   store: { id: number; store_name: string; address: string; dti_sec_number?: string | null }
   items: MonitoringRecordItem[]
@@ -128,19 +129,26 @@ export interface MonitoringEstablishmentSummary {
   completed_records_count: number
   records_with_observations_count: number
   open_verification_requests_count: number
+  weekly_routine_status: 'not_yet_monitored' | 'monitored_this_week'
+  has_prior_routine_monitoring: boolean
+  latest_routine_monitoring_at: string | null
+  verification_task_status: 'none' | 'open' | 'claimed'
+  verification_claimant: { id: number; name: string; email: string } | null
   latest_monitoring_at: string | null
   latest_record_id: number | null
   latest_protocol_mode: 'standard' | 'emergency' | null
-  latest_result: 'with_observations' | 'no_observations' | 'never_monitored'
+  latest_officer?: { id: number; name: string; email: string } | null
+  latest_result: 'with_observations' | 'reference_unavailable' | 'no_observations' | 'never_monitored'
+  image_path?: string | null
 }
 
 export interface MonitoringWorkspace {
-  summary: {
-    monitored_establishments: number
-    recent_activity: number
-    records_with_observations: number
-    open_verification_requests: number
-    latest_completed_at: string | null
+  monitoring_week: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
+  weekly_summary: {
+    total_establishments: number
+    not_yet_monitored: number
+    monitored_this_week: number
+    verification_required: number
   }
   establishments: {
     data: MonitoringEstablishmentSummary[]
@@ -158,7 +166,19 @@ export interface MonitoringEstablishmentProfile {
   completed_records_count: number
   records_with_observations_count: number
   open_verification_requests_count: number
+  monitoring_week: MonitoringWorkspace['monitoring_week']
+  weekly_routine_status: MonitoringEstablishmentSummary['weekly_routine_status']
+  has_prior_routine_monitoring: boolean
+  latest_routine_monitoring_at: string | null
+  latest_routine_record: MonitoringRecordRecord | null
+  verification_task_status: 'none' | 'open' | 'claimed'
+  verification_claimant: { id: number; name: string; email: string } | null
   latest_record: MonitoringRecordRecord | null
+  monitored_commodities: Array<{
+    selector: `key:${string}` | `srp:${number}`
+    commodity_name: string
+    unit: string | null
+  }>
 }
 
 export interface MonitoringPriceHistoryRow {
@@ -319,4 +339,37 @@ export interface SrpRecord {
   baseline_price: number
   effective_date: string
   source_reference: string | null
+}
+
+export type LegalNoticeState = 'draft' | 'issued' | 'response_received' | 'closed' | 'cancelled'
+export interface LegalNoticeRecord {
+  id: number
+  monitoring_record_id: number
+  notice_type: 'LOI' | 'SCO'
+  status: LegalNoticeState
+  control_number?: string | null
+  delivery_state: 'not_recorded' | 'received' | 'refused' | 'failed'
+  due_date_timestamp?: string | null
+  issued_at?: string | null
+  updated_at: string
+  intended_delivery_method?: 'portal' | 'email_and_hand_copy' | 'hand_copy' | null
+  internal_justification?: string | null
+  source_snapshot: { monitoring_record_number?: string; monitoring_date?: string; store?: { store_name?: string; address?: string }; items: Array<Record<string, unknown>> }
+  draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[] }
+  store?: { id: number; store_name: string; address: string }
+  preparer?: { id: number; name: string } | null
+  attachments?: Array<{ id: number; kind: string; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
+  readiness: Record<string, boolean>
+  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null }
+  overdue?: boolean
+}
+
+export interface LegalNoticePage {
+  data: LegalNoticeRecord[]
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+  from: number | null
+  to: number | null
 }

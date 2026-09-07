@@ -56,21 +56,19 @@ class DatabaseSeeder extends Seeder
         );
 
         // 5. Seed the official San Jose de Buenavista establishment list.
-        Store::where('dti_sec_number', 'SEC-CS202654321')->update(['store_name' => 'Gaisano Grand Mall']);
-        Store::where('dti_sec_number', 'SEC-CS202699999')->update(['store_name' => 'Robinsons Supermarket Corp.']);
+        Store::where('store_name', 'Super Metro San Jose')->delete();
 
         $stores = [
-            ['store_name' => 'Super Metro San Jose', 'dti_sec_number' => 'SEC-CS202612345', 'owner_name' => 'Metro Retail Stores Group Inc.', 'address' => 'Tradetown, San Jose de Buenavista', 'latitude' => 10.74240000, 'longitude' => 121.94060000, 'image_path' => '/stores/store.webp', 'is_active' => false, 'is_public' => false],
-            ['store_name' => 'Robinsons Supermarket Corp.', 'dti_sec_number' => null, 'owner_name' => 'Robinsons Supermarket Corporation', 'address' => 'San Angel', 'latitude' => 10.73577800, 'longitude' => 121.95190790, 'image_path' => '/stores/robinsons.jpg'],
-            ['store_name' => 'Gaisano Grand Mall', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Bagumbayan Bridge', 'latitude' => 10.74350410, 'longitude' => 121.94868190, 'image_path' => '/stores/gaisano-grand.jpg'],
-            ['store_name' => 'Puregold Price Club Incorporated', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'T.A. Fornier Street', 'latitude' => 10.74778260, 'longitude' => 121.94086580, 'image_path' => '/stores/store.webp'],
-            ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Gov. Villavert St.', 'latitude' => 10.74420800, 'longitude' => 121.94285040, 'image_path' => '/stores/store.webp'],
-            ['store_name' => 'Merrymart Consumer Corp.', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'City Mall', 'latitude' => 10.74450380, 'longitude' => 121.94194850, 'image_path' => '/stores/store.webp'],
-            ['store_name' => 'Antique City Square', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier St.', 'latitude' => 10.75116050, 'longitude' => 121.94115710, 'image_path' => '/stores/store.webp'],
-            ['store_name' => 'Unitop General Merchandise', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier St.', 'latitude' => 10.75098230, 'longitude' => 121.94072350, 'image_path' => '/stores/store.webp'],
-            ['store_name' => 'HARO MART', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe', 'latitude' => 10.75787110, 'longitude' => 121.93553460, 'image_path' => '/stores/store.webp'],
-            ['store_name' => 'CPT Mart - Antique Branch', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias Fornier St.', 'latitude' => 10.74536990, 'longitude' => 121.94139040, 'image_path' => '/stores/store.webp'],
-            ['store_name' => "Licanda's Retail Chain Branch 1", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe', 'latitude' => 10.75341425, 'longitude' => 121.93786260, 'image_path' => '/stores/store.webp'],
+            ['store_name' => 'Robinsons Supermarket Corp.', 'dti_sec_number' => 'SEC-CS202699999', 'owner_name' => 'Robinsons Supermarket Corporation', 'address' => 'San, Angel, San Jose, Antique', 'latitude' => 10.73578000, 'longitude' => 121.95191000, 'image_path' => '/stores/robinsons.jpg'],
+            ['store_name' => 'Gaisano Grand Mall', 'dti_sec_number' => 'SEC-CS202654321', 'owner_name' => 'Gaisano Grand Malls Inc.', 'address' => 'Bagumbayan Bridge, San Jose, Antique', 'latitude' => 10.74329000, 'longitude' => 121.94845000, 'image_path' => '/stores/gaisano-grand.jpg'],
+            ['store_name' => 'Puregold Price Club Incorporated', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'T.A. Fornier Street, San Jose de Buenavista, Antique', 'latitude' => 10.74650000, 'longitude' => 121.94250000, 'image_path' => null],
+            ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Gov. Villavert St. San Jose, Antique', 'latitude' => 10.74450000, 'longitude' => 121.94150000, 'image_path' => null],
+            ['store_name' => 'Merrymart Consumer Corp.', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'City Mall, San Jose Antique', 'latitude' => 10.74350000, 'longitude' => 121.94110000, 'image_path' => null],
+            ['store_name' => 'Antique City Square', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier Street, San Jose, Antique', 'latitude' => 10.74550000, 'longitude' => 121.94300000, 'image_path' => null],
+            ['store_name' => 'Unitop General Merchandise', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias A. Fornier Street, San Jose, Antique', 'latitude' => 10.74600000, 'longitude' => 121.94280000, 'image_path' => null],
+            ['store_name' => 'HARO MART', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe, San Jose Antique', 'latitude' => 10.76350000, 'longitude' => 121.93150000, 'image_path' => null],
+            ['store_name' => 'CPT Mart- Antique Branch', 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Tobias Fornier St., San Jose, Antique', 'latitude' => 10.74700000, 'longitude' => 121.94220000, 'image_path' => null],
+            ['store_name' => "Licanda's Retail Chain Branch 1", 'dti_sec_number' => null, 'owner_name' => null, 'address' => 'Funda-Dalipe, San Jose Antique', 'latitude' => 10.76420000, 'longitude' => 121.93100000, 'image_path' => null],
         ];
 
         foreach ($stores as $store) {

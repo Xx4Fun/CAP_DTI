@@ -11,6 +11,7 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Services\Admin\AuditTrailService;
+use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,7 @@ class FieldDataController extends Controller
         $user = $this->fieldUser($request);
         $filters = $request->validate(['since' => ['nullable', 'string', 'max:128']]);
         $today = now('Asia/Manila')->toDateString();
+        $week = MonitoringWeek::current();
         $effectiveEmergency = RegulatoryEmergency::query()->whereIn('status', ['active', 'ended'])
             ->whereDate('starts_on', '<=', $today)
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $today))
@@ -35,6 +37,7 @@ class FieldDataController extends Controller
             Store::max('updated_at') ?? 'none',
             $referenceVersion,
             TemporalInspection::where('validation_status', 'verified')->max('updated_at') ?? 'none',
+            MonitoringRecord::where('status', 'accepted')->max('updated_at') ?? 'none',
         ]));
         $isCurrent = isset($filters['since']) && hash_equals($version, $filters['since']);
 
@@ -60,7 +63,21 @@ class FieldDataController extends Controller
                     'starts_on' => $effectiveEmergency?->starts_on?->toDateString(),
                     'ends_on' => $effectiveEmergency?->ends_on?->toDateString(),
                 ],
-                'stores' => $isCurrent ? [] : Store::query()->where('is_active', true)->orderBy('store_name')->get(),
+                'monitoring_week' => [
+                    'timezone' => $week['timezone'], 'starts_at' => $week['starts_at']->toIso8601String(), 'ends_at' => $week['ends_at']->toIso8601String(),
+                ],
+                'stores' => $isCurrent ? [] : Store::query()->where('is_active', true)
+                    ->withExists([
+                        'routineMonitoringRecords as has_prior_routine_monitoring',
+                        'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
+                    ])
+                    ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
+                    ->orderBy('store_name')->get()->map(fn (Store $store) => [
+                        ...$store->only(['id', 'store_name', 'address', 'latitude', 'longitude', 'is_active', 'image_path']),
+                        'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
+                        'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
+                        'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
+                    ]),
                 'srp_bulletins' => $isCurrent ? [] : SrpBulletin::query()->where('is_active', true)
                     ->whereDate('effective_date', '<=', $today)
                     ->orderBy('commodity_key')->latest('effective_date')->latest('id')->get()
@@ -105,7 +122,9 @@ class FieldDataController extends Controller
         $user = $this->fieldUser($request);
         DB::transaction(function () use ($request, $verificationRequest, $user, $audit) {
             $verificationRequest = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($verificationRequest->id);
-            if ($verificationRequest->status === 'claimed' && $verificationRequest->claimed_by === $user->id) return;
+            if ($verificationRequest->status === 'claimed' && $verificationRequest->claimed_by === $user->id) {
+                return;
+            }
             abort_unless($verificationRequest->status === 'open', 409, 'This request is no longer available.');
             $verificationRequest->update(['status' => 'claimed', 'claimed_by' => $user->id, 'claimed_at' => now()]);
             $audit->recordOrFail($request, 'field_verification.claimed', $verificationRequest);
@@ -132,6 +151,7 @@ class FieldDataController extends Controller
         $user = $this->fieldUser($request);
         $filters = $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100']]);
         $paginator = $user->notifications()->latest()->paginate($filters['per_page'] ?? 20);
+
         return response()->json(['data' => $paginator->getCollection()->map(fn ($notification) => [
             'id' => $notification->id, 'event' => $notification->data['event'] ?? null,
             'payload' => $notification->data['payload'] ?? [], 'read_at' => $notification->read_at,
@@ -147,6 +167,7 @@ class FieldDataController extends Controller
         $user = $this->fieldUser($request);
         $notification = $user->notifications()->whereKey($notification)->firstOrFail();
         $notification->markAsRead();
+
         return response()->json(['data' => [
             'id' => $notification->id, 'event' => $notification->data['event'] ?? null,
             'payload' => $notification->data['payload'] ?? [], 'read_at' => $notification->fresh()->read_at,
@@ -158,6 +179,7 @@ class FieldDataController extends Controller
     {
         $user = $this->fieldUser($request);
         $user->unreadNotifications()->update(['read_at' => now()]);
+
         return response()->json(['data' => ['unread_count' => 0]]);
     }
 
@@ -165,6 +187,7 @@ class FieldDataController extends Controller
     {
         $user = $request->user();
         abort_unless($user?->role === 'field_officer' && $user->is_active && $user->currentAccessToken()?->can('field-monitoring'), 403, 'Forbidden');
+
         return $user;
     }
 

@@ -4,8 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Store extends Model
 {
@@ -53,9 +54,26 @@ class Store extends Model
         return $this->hasOne(MonitoringRecord::class)->where('status', 'accepted')->latestOfMany('finalized_at');
     }
 
+    public function routineMonitoringRecords(): HasMany
+    {
+        return $this->monitoringRecords()->where('status', 'accepted')->whereNull('field_verification_request_id');
+    }
+
+    public function latestRoutineMonitoringRecord(): HasOne
+    {
+        return $this->hasOne(MonitoringRecord::class)
+            ->where('status', 'accepted')->whereNull('field_verification_request_id')
+            ->latestOfMany('finalized_at');
+    }
+
     public function verificationRequests(): HasMany
     {
         return $this->hasMany(FieldVerificationRequest::class);
+    }
+
+    public function activeVerificationRequest(): HasOne
+    {
+        return $this->hasOne(FieldVerificationRequest::class)->whereIn('status', ['open', 'claimed'])->latestOfMany();
     }
 
     public function legalNotices(): HasMany
