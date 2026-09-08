@@ -11,6 +11,7 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Services\Admin\AuditTrailService;
+use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,10 +24,8 @@ class FieldDataController extends Controller
         $filters = $request->validate(['since' => ['nullable', 'string', 'max:128']]);
         $today = now('Asia/Manila')->toDateString();
         $week = MonitoringWeek::current();
-        $effectiveEmergency = RegulatoryEmergency::query()->whereIn('status', ['active', 'ended'])
-            ->whereDate('starts_on', '<=', $today)
-            ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $today))
-            ->latest('starts_on')->latest('id')->first();
+        $period = MonitoringPeriod::current();
+        $effectiveEmergency = MonitoringPeriod::effectiveEmergency(now('Asia/Manila'));
         $referenceVersion = hash('sha256', implode('|', [
             $today,
             SrpBulletin::max('updated_at') ?? 'none',
@@ -66,14 +65,17 @@ class FieldDataController extends Controller
                 'monitoring_week' => [
                     'timezone' => $week['timezone'], 'starts_at' => $week['starts_at']->toIso8601String(), 'ends_at' => $week['ends_at']->toIso8601String(),
                 ],
+                'monitoring_period' => $this->periodPayload($period),
                 'stores' => $isCurrent ? [] : Store::query()->where('is_active', true)
                     ->withExists([
                         'routineMonitoringRecords as has_prior_routine_monitoring',
                         'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
+                        'routineMonitoringRecords as routine_completed' => fn ($records) => $this->routinePeriod($records, $period),
                     ])
                     ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
                     ->orderBy('store_name')->get()->map(fn (Store $store) => [
                         ...$store->only(['id', 'store_name', 'address', 'latitude', 'longitude', 'is_active', 'image_path']),
+                        'routine_status' => $store->routine_completed ? 'completed' : 'due',
                         'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
                         'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
                         'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
@@ -104,33 +106,17 @@ class FieldDataController extends Controller
     {
         $user = $this->fieldUser($request);
         $requests = FieldVerificationRequest::query()
-            ->where(fn ($query) => $query->where('status', 'open')
-                ->orWhere(fn ($claimed) => $claimed->where('status', 'claimed')->where('claimed_by', $user->id)))
+            ->where('status', 'claimed')->where('claimed_by', $user->id)
             ->with('store:id,store_name,address,latitude,longitude')
             ->latest('requested_at')->get()
             ->map(fn ($item) => [
-                'id' => $item->id, 'status' => $item->status, 'reason' => $item->reason,
+                'id' => $item->id, 'status' => $item->status, 'source_type' => $item->source_type,
+                'reason' => $item->reason,
                 'requested_at' => $item->requested_at, 'claimed_at' => $item->claimed_at,
                 'claimed_by' => $item->claimed_by, 'store' => $item->store,
             ]);
 
         return response()->json(['data' => $requests]);
-    }
-
-    public function claim(Request $request, FieldVerificationRequest $verificationRequest, AuditTrailService $audit)
-    {
-        $user = $this->fieldUser($request);
-        DB::transaction(function () use ($request, $verificationRequest, $user, $audit) {
-            $verificationRequest = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($verificationRequest->id);
-            if ($verificationRequest->status === 'claimed' && $verificationRequest->claimed_by === $user->id) {
-                return;
-            }
-            abort_unless($verificationRequest->status === 'open', 409, 'This request is no longer available.');
-            $verificationRequest->update(['status' => 'claimed', 'claimed_by' => $user->id, 'claimed_at' => now()]);
-            $audit->recordOrFail($request, 'field_verification.claimed', $verificationRequest);
-        });
-
-        return response()->json(['data' => $this->verificationPayload($verificationRequest->fresh())]);
     }
 
     public function release(Request $request, FieldVerificationRequest $verificationRequest, AuditTrailService $audit)
@@ -195,9 +181,26 @@ class FieldDataController extends Controller
     {
         return [
             'id' => $verification->id, 'status' => $verification->status,
-            'store_id' => $verification->store_id, 'reason' => $verification->reason,
+            'source_type' => $verification->source_type, 'store_id' => $verification->store_id, 'reason' => $verification->reason,
             'claimed_by' => $verification->claimed_by, 'requested_at' => $verification->requested_at,
             'claimed_at' => $verification->claimed_at, 'released_at' => $verification->released_at,
+        ];
+    }
+
+    private function routinePeriod($query, array $period)
+    {
+        $query->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
+        if ($period['cadence'] === 'daily') $query->where('protocol_mode', 'emergency');
+
+        return $query;
+    }
+
+    private function periodPayload(array $period): array
+    {
+        return [
+            'cadence' => $period['cadence'], 'timezone' => $period['timezone'],
+            'starts_at' => $period['starts_at']->toIso8601String(), 'ends_at' => $period['ends_at']->toIso8601String(),
+            'protocol_mode' => $period['protocol_mode'], 'declaration_reference' => $period['declaration_reference'],
         ];
     }
 }

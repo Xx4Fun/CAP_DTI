@@ -120,6 +120,46 @@ class FieldMonitoringRecordTest extends TestCase
         $this->assertSame(2, TemporalInspection::where('monitoring_record_id', $recordId)->count());
     }
 
+    public function test_sync_rejects_a_second_routine_visit_in_the_same_monitoring_period(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
+            ->assertCreated();
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload(
+            $store, $bulletins, '5cb0a181-a590-4f95-b96e-aadab8e09a67'
+        ))->assertUnprocessable()
+            ->assertJsonValidationErrors('records.0.store_id')
+            ->assertJsonFragment(['This establishment already has an accepted routine visit for the current monitoring period.']);
+
+        $this->assertDatabaseCount('monitoring_records', 1);
+    }
+
+    public function test_price_freeze_requires_an_emergency_routine_visit_even_after_a_standard_visit_that_day(): void
+    {
+        Storage::fake('receipt_evidence');
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
+            ->assertCreated();
+
+        RegulatoryEmergency::create([
+            'location' => 'Systemwide', 'starts_on' => now('Asia/Manila')->toDateString(),
+            'declaration_reference' => 'PF-TODAY', 'status' => 'active',
+            'confirmed_at' => now(), 'responsible_admin_id' => $officer->id,
+        ]);
+
+        $this->withToken($token)->getJson('/api/field/bootstrap')
+            ->assertOk()
+            ->assertJsonPath('data.monitoring_period.cadence', 'daily')
+            ->assertJsonPath('data.monitoring_period.protocol_mode', 'emergency')
+            ->assertJsonPath('data.stores.0.routine_status', 'due');
+    }
+
     public function test_bootstrap_downloads_active_field_data_and_returns_an_empty_delta_when_current(): void
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
@@ -400,7 +440,11 @@ class FieldMonitoringRecordTest extends TestCase
             'commodity_name' => 'Rice current', 'commodity_key' => 'rice', 'baseline_price' => 110,
             'effective_date' => now('Asia/Manila')->toDateString(), 'source_reference' => 'SRP-RICE-CURRENT', 'is_active' => true,
         ]);
-        $stalePayload = $this->payload($store, [$past, $milk], 'f0b0a181-a590-4f95-b96e-aadab8e09a67');
+        $staleStore = Store::create([
+            'dti_sec_number' => 'SEC-FIELD-STALE', 'store_name' => 'Stale Bulletin Store', 'owner_name' => 'Owner',
+            'latitude' => 10.74, 'longitude' => 121.94, 'address' => 'Antique', 'is_active' => true,
+        ]);
+        $stalePayload = $this->payload($staleStore, [$past, $milk], 'f0b0a181-a590-4f95-b96e-aadab8e09a67');
         $stalePayload['records'][0]['finalized_at'] = now()->subMinutes(2)->toIso8601String();
         $stalePayload['records'][0]['location']['captured_at'] = now()->subMinutes(2)->toIso8601String();
         $staleRecordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $stalePayload)
@@ -411,7 +455,11 @@ class FieldMonitoringRecordTest extends TestCase
             'commodity_name' => 'Oil future', 'commodity_key' => 'oil', 'baseline_price' => 90,
             'effective_date' => now('Asia/Manila')->addDay()->toDateString(), 'source_reference' => 'SRP-OIL-FUTURE', 'is_active' => true,
         ]);
-        $nonePayload = $this->payload($store, [$onlyFuture, $milk], 'e0b0a181-a590-4f95-b96e-aadab8e09a67');
+        $noneStore = Store::create([
+            'dti_sec_number' => 'SEC-FIELD-NONE', 'store_name' => 'No Bulletin Store', 'owner_name' => 'Owner',
+            'latitude' => 10.74, 'longitude' => 121.94, 'address' => 'Antique', 'is_active' => true,
+        ]);
+        $nonePayload = $this->payload($noneStore, [$onlyFuture, $milk], 'e0b0a181-a590-4f95-b96e-aadab8e09a67');
         $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $nonePayload)
             ->assertUnprocessable()->assertJsonValidationErrors('records.0.items');
     }
@@ -504,6 +552,9 @@ class FieldMonitoringRecordTest extends TestCase
 
         $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week&additional_task=all&observation=with_observations&search=San&per_page=10')
             ->assertOk()
+            ->assertJsonPath('data.monitoring_period.cadence', 'weekly')
+            ->assertJsonPath('data.routine_summary.due', 0)
+            ->assertJsonPath('data.routine_summary.completed', 1)
             ->assertJsonPath('data.monitoring_week.timezone', 'Asia/Manila')
             ->assertJsonPath('data.weekly_summary.total_establishments', 1)
             ->assertJsonPath('data.weekly_summary.not_yet_monitored', 0)
@@ -512,6 +563,7 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.id', $store->id)
             ->assertJsonPath('data.establishments.data.0.image_path', '/stores/gaisano-grand.webp')
+            ->assertJsonPath('data.establishments.data.0.routine_status', 'completed')
             ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week')
             ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', true)
             ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations')
@@ -519,6 +571,8 @@ class FieldMonitoringRecordTest extends TestCase
 
         $this->getJson("/api/admin/monitoring-establishments/{$store->id}")
             ->assertOk()
+            ->assertJsonPath('data.monitoring_period.cadence', 'weekly')
+            ->assertJsonPath('data.routine_status', 'completed')
             ->assertJsonPath('data.completed_records_count', 1)
             ->assertJsonPath('data.records_with_observations_count', 1)
             ->assertJsonPath('data.latest_record.id', $recordId)

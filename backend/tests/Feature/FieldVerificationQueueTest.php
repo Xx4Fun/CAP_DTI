@@ -89,7 +89,7 @@ class FieldVerificationQueueTest extends TestCase
         ]]];
     }
 
-    public function test_queue_contains_open_and_own_claimed_requests_without_consumer_context(): void
+    public function test_queue_contains_only_the_officers_assigned_requests_without_consumer_context(): void
     {
         [$officer, $token] = $this->fieldSession('queue-one@dti.test');
         [$other] = $this->fieldSession('queue-two@dti.test');
@@ -100,14 +100,15 @@ class FieldVerificationQueueTest extends TestCase
         $this->verification($store, $admin, ['status' => 'claimed', 'claimed_by' => $other->id, 'claimed_at' => now()]);
 
         $response = $this->withToken($token)->getJson('/api/field/verification-requests')
-            ->assertOk()->assertJsonCount(2, 'data');
-        $this->assertEqualsCanonicalizing([$open->id, $mine->id], collect($response->json('data'))->pluck('id')->all());
+            ->assertOk()->assertJsonCount(1, 'data');
+        $this->assertSame([$mine->id], collect($response->json('data'))->pluck('id')->all());
+        $response->assertJsonPath('data.0.source_type', 'complaint');
         $response->assertJsonMissingPath('data.0.consumer_report_id')
             ->assertJsonMissingPath('data.0.context_json');
         $this->assertStringNotContainsString('private_customer_note', $response->getContent());
     }
 
-    public function test_claim_is_atomic_and_only_the_claimant_can_release(): void
+    public function test_self_claim_is_unavailable_and_only_the_assignee_can_return_a_request(): void
     {
         [$officer, $token] = $this->fieldSession('claim-one@dti.test');
         [$other] = $this->fieldSession('claim-two@dti.test');
@@ -115,10 +116,9 @@ class FieldVerificationQueueTest extends TestCase
         $verification = $this->verification($this->store(), $admin);
 
         $this->withToken($token)->postJson("/api/field/verification-requests/{$verification->id}/claim")
-            ->assertOk()->assertJsonPath('data.claimed_by', $officer->id);
+            ->assertNotFound();
+        $verification->update(['status' => 'claimed', 'claimed_by' => $officer->id, 'claimed_at' => now()]);
         Sanctum::actingAs($other->fresh(), ['field-monitoring']);
-        $this->postJson("/api/field/verification-requests/{$verification->id}/claim")
-            ->assertStatus(409);
         $this->postJson("/api/field/verification-requests/{$verification->id}/release")
             ->assertForbidden();
         Sanctum::actingAs($officer->fresh(), ['field-monitoring']);
@@ -178,6 +178,30 @@ class FieldVerificationQueueTest extends TestCase
             ->assertJsonPath('data.protocol.standard_review_threshold_percent', 10)
             ->assertJsonPath('data.accepted_today', 1)
             ->assertJsonStructure(['data' => ['reference_version', 'regulatory_prices']]);
+    }
+
+    public function test_supervisor_directive_sync_completes_without_a_consumer_report(): void
+    {
+        Storage::fake('receipt_evidence');
+        [$officer, $token, $leaseId] = $this->fieldSession('directive-sync@dti.test');
+        $admin = User::create(['name' => 'Admin', 'email' => 'directive-sync-admin@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
+        $store = $this->store('directive');
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => null, 'source_type' => 'supervisor_directive',
+            'store_id' => $store->id, 'requested_by' => $admin->id,
+            'claimed_by' => $officer->id, 'status' => 'claimed',
+            'reason' => 'Supervisor-directed revisit.', 'context_json' => [],
+            'requested_at' => now(), 'claimed_at' => now(),
+        ]);
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->syncPayload(
+            $store, $this->bulletin(), $leaseId, $verification->id
+        ))->assertCreated();
+
+        $this->assertDatabaseHas('field_verification_requests', [
+            'id' => $verification->id, 'status' => 'completed', 'consumer_report_id' => null,
+        ]);
+        $this->assertDatabaseCount('consumer_reports', 0);
     }
 
     public function test_sync_rejects_a_request_claimed_by_another_officer_or_for_another_store(): void

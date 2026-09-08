@@ -14,6 +14,7 @@ use App\Models\ReportStatusHistory;
 use App\Services\Admin\AuditTrailService;
 use App\Services\FieldReferenceResolver;
 use App\Services\FieldNotificationService;
+use App\Support\MonitoringPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -125,13 +126,26 @@ class FieldMonitoringController extends Controller
         $userId = $user->id;
         $lease = FieldOfflineLease::whereKey($payload['offline_lease_id'])->where('user_id', $userId)->firstOrFail();
         abort_if($lease->revoked_at || $lease->expires_at->lt($payload['finalized_at']), 422, 'The offline authorization lease did not cover this finalized visit.');
-        Store::query()->whereKey($payload['store_id'])->where('is_active', true)->firstOrFail();
+        Store::query()->whereKey($payload['store_id'])->where('is_active', true)->lockForUpdate()->firstOrFail();
         $verification = null;
         if (isset($payload['verification_request_id'])) {
             $verification = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($payload['verification_request_id']);
             if ($verification->status !== 'claimed' || $verification->claimed_by !== $userId || $verification->store_id !== $payload['store_id']) {
                 throw ValidationException::withMessages([
                     "records.{$index}.verification_request_id" => ['The request must be claimed by this officer for the selected store.'],
+                ]);
+            }
+        }
+        if (! $verification) {
+            $period = MonitoringPeriod::for(Carbon::parse($payload['finalized_at']));
+            $existingRoutine = MonitoringRecord::query()
+                ->where('store_id', $payload['store_id'])->where('status', 'accepted')
+                ->whereNull('field_verification_request_id')
+                ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
+            if ($period['cadence'] === 'daily') $existingRoutine->where('protocol_mode', 'emergency');
+            if ($existingRoutine->exists()) {
+                throw ValidationException::withMessages([
+                    "records.{$index}.store_id" => ['This establishment already has an accepted routine visit for the current monitoring period.'],
                 ]);
             }
         }
@@ -209,16 +223,17 @@ class FieldMonitoringController extends Controller
 
         if ($verification) {
             $verification->update(['status' => 'completed', 'completed_at' => now()]);
-            $report = $verification->report()->lockForUpdate()->firstOrFail();
-            $previousStatus = $report->status;
-            $report->update(['status' => 'Under regulatory review']);
-            ReportStatusHistory::create([
-                'consumer_report_id' => $report->id, 'previous_status' => $previousStatus,
-                'new_status' => 'Under regulatory review',
-                'public_message' => 'Field verification was completed. The report is under regulatory review.',
-                'internal_notes' => 'Linked field monitoring record '.$record->id,
-                'actor_type' => 'field_officer', 'actor_id' => $userId,
-            ]);
+            if ($report = $verification->report()->lockForUpdate()->first()) {
+                $previousStatus = $report->status;
+                $report->update(['status' => 'Under regulatory review']);
+                ReportStatusHistory::create([
+                    'consumer_report_id' => $report->id, 'previous_status' => $previousStatus,
+                    'new_status' => 'Under regulatory review',
+                    'public_message' => 'Field verification was completed. The report is under regulatory review.',
+                    'internal_notes' => 'Linked field monitoring record '.$record->id,
+                    'actor_type' => 'field_officer', 'actor_id' => $userId,
+                ]);
+            }
             $audit->recordOrFail($request, 'field_verification.completed', $verification, ['monitoring_record_id' => $record->id]);
         }
 

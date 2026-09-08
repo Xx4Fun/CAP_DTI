@@ -15,7 +15,7 @@ class FieldVerificationSchemaTest extends TestCase
         $this->assertTrue(Schema::hasTable('notifications'));
         $this->assertTrue(Schema::hasTable('field_verification_requests'));
         $this->assertTrue(Schema::hasColumns('field_verification_requests', [
-            'consumer_report_id', 'store_id', 'requested_by', 'claimed_by', 'status',
+            'consumer_report_id', 'store_id', 'requested_by', 'claimed_by', 'source_type', 'status',
             'reason', 'context_json', 'requested_at', 'claimed_at', 'released_at',
             'completed_at', 'cancelled_at',
         ]));

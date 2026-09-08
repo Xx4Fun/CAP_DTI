@@ -53,11 +53,18 @@ class AdminFieldVerificationRequestTest extends TestCase
     public function test_admin_refers_a_report_once_without_creating_a_regulatory_finding_and_lists_the_summary(): void
     {
         $report = $this->report();
+        $officer = User::create([
+            'name' => 'Assigned Officer', 'email' => 'assigned@dti.test',
+            'password' => 'password', 'role' => 'field_officer', 'is_active' => true,
+        ]);
 
         $response = $this->postJson("/api/admin/reports/{$report->id}/verification-request", [
             'reason' => 'Verify the shelf price in person.',
+            'field_officer_id' => $officer->id,
         ])->assertCreated()
-            ->assertJsonPath('data.status', 'open')
+            ->assertJsonPath('data.status', 'claimed')
+            ->assertJsonPath('data.source_type', 'complaint')
+            ->assertJsonPath('data.claimed_by', $officer->id)
             ->assertJsonPath('data.consumer_report_id', $report->id);
 
         $requestId = $response->json('data.id');
@@ -72,12 +79,76 @@ class AdminFieldVerificationRequestTest extends TestCase
 
         $this->postJson("/api/admin/reports/{$report->id}/verification-request", [
             'reason' => 'Do not create another request.',
+            'field_officer_id' => $officer->id,
         ])->assertStatus(409);
         $this->assertDatabaseCount('field_verification_requests', 1);
 
         $this->getJson('/api/admin/reports')->assertOk()
             ->assertJsonPath('data.0.verification_request.id', $requestId)
-            ->assertJsonPath('data.0.verification_request.status', 'open');
+            ->assertJsonPath('data.0.verification_request.status', 'claimed');
+    }
+
+    public function test_admin_assigns_a_supervisor_directive_without_a_consumer_report(): void
+    {
+        $officer = User::create([
+            'name' => 'Directive Officer', 'email' => 'directive@dti.test',
+            'password' => 'password', 'role' => 'field_officer', 'is_active' => true,
+        ]);
+
+        $response = $this->postJson("/api/admin/monitoring-establishments/{$this->store->id}/additional-visits", [
+            'reason' => 'Supervisor requested a second shelf inspection.',
+            'field_officer_id' => $officer->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.source_type', 'supervisor_directive')
+            ->assertJsonPath('data.consumer_report_id', null)
+            ->assertJsonPath('data.status', 'claimed')
+            ->assertJsonPath('data.claimed_by', $officer->id);
+
+        $this->assertDatabaseHas('audit_events', [
+            'action' => 'field_verification.requested',
+            'subject_id' => $response->json('data.id'),
+        ]);
+    }
+
+    public function test_admin_assigns_only_active_field_officers_to_returned_requests(): void
+    {
+        $inactive = User::create([
+            'name' => 'Inactive Officer', 'email' => 'inactive-assignment@dti.test',
+            'password' => 'password', 'role' => 'field_officer', 'is_active' => false,
+        ]);
+        $active = User::create([
+            'name' => 'Active Officer', 'email' => 'active-assignment@dti.test',
+            'password' => 'password', 'role' => 'field_officer', 'is_active' => true,
+        ]);
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => null, 'source_type' => 'supervisor_directive',
+            'store_id' => $this->store->id, 'requested_by' => $this->admin->id,
+            'status' => 'open', 'reason' => 'Returned task.', 'context_json' => [], 'requested_at' => now(),
+        ]);
+
+        $this->postJson("/api/admin/verification-requests/{$verification->id}/assign", [
+            'field_officer_id' => $inactive->id,
+        ])->assertUnprocessable();
+
+        $this->postJson("/api/admin/verification-requests/{$verification->id}/assign", [
+            'field_officer_id' => $active->id,
+        ])->assertOk()
+            ->assertJsonPath('data.status', 'claimed')
+            ->assertJsonPath('data.claimed_by', $active->id);
+    }
+
+    public function test_admin_cancels_and_reopens_an_unassigned_supervisor_directive(): void
+    {
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => null, 'source_type' => 'supervisor_directive',
+            'store_id' => $this->store->id, 'requested_by' => $this->admin->id,
+            'status' => 'open', 'reason' => 'Returned directive.', 'context_json' => [], 'requested_at' => now(),
+        ]);
+
+        $this->postJson("/api/admin/verification-requests/{$verification->id}/cancel")
+            ->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->postJson("/api/admin/verification-requests/{$verification->id}/reopen")
+            ->assertOk()->assertJsonPath('data.status', 'open');
     }
 
     public function test_referral_requires_an_active_linked_store(): void

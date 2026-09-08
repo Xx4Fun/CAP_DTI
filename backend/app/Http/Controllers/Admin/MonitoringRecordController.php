@@ -7,15 +7,70 @@ use App\Models\FieldVerificationRequest;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
 use App\Models\Store;
+use App\Models\User;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
+use App\Services\FieldNotificationService;
+use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class MonitoringRecordController extends Controller
 {
+    public function additionalVisit(Request $request, Store $store, AdminAuthorizationService $auth, AuditTrailService $audit, FieldNotificationService $notifications)
+    {
+        $auth->requireManager($request->user());
+        abort_unless($store->is_active, 422, 'An active establishment is required.');
+        $data = $this->assignmentData($request);
+        $officer = User::findOrFail($data['field_officer_id']);
+
+        $verification = DB::transaction(function () use ($request, $store, $data, $officer, $audit, $notifications) {
+            $verification = FieldVerificationRequest::create([
+                'consumer_report_id' => null, 'source_type' => 'supervisor_directive',
+                'store_id' => $store->id, 'requested_by' => $request->user()->id,
+                'claimed_by' => $officer->id, 'status' => 'claimed', 'reason' => $data['reason'],
+                'context_json' => [], 'requested_at' => now(), 'claimed_at' => now(),
+            ]);
+            $audit->recordOrFail($request, 'field_verification.requested', $verification, [
+                'source_type' => 'supervisor_directive', 'store_id' => $store->id, 'field_officer_id' => $officer->id,
+            ]);
+            $notifications->send($officer, 'verification_assigned', [
+                'verification_request_id' => $verification->id, 'store_id' => $store->id, 'store_name' => $store->store_name,
+            ]);
+
+            return $verification;
+        });
+
+        return response()->json(['data' => $verification], 201);
+    }
+
+    public function assignVerification(Request $request, FieldVerificationRequest $verificationRequest, AdminAuthorizationService $auth, AuditTrailService $audit, FieldNotificationService $notifications)
+    {
+        $auth->requireManager($request->user());
+        $data = $request->validate([
+            'field_officer_id' => ['required', Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'field_officer')->where('is_active', true))],
+        ]);
+        $officer = User::findOrFail($data['field_officer_id']);
+
+        DB::transaction(function () use ($request, $verificationRequest, $officer, $audit, $notifications) {
+            $verificationRequest = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($verificationRequest->id);
+            abort_unless($verificationRequest->status === 'open', 422, 'Only a returned request can be assigned.');
+            $verificationRequest->update([
+                'status' => 'claimed', 'claimed_by' => $officer->id, 'claimed_at' => now(),
+            ]);
+            $audit->recordOrFail($request, 'field_verification.assigned', $verificationRequest, ['field_officer_id' => $officer->id]);
+            $notifications->send($officer, 'verification_assigned', [
+                'verification_request_id' => $verificationRequest->id, 'store_id' => $verificationRequest->store_id,
+                'store_name' => $verificationRequest->store()->value('store_name'),
+            ]);
+        });
+
+        return response()->json(['data' => $verificationRequest->fresh()]);
+    }
+
     public function index(Request $request, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
@@ -48,13 +103,15 @@ class MonitoringRecordController extends Controller
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
+            'routine_status' => ['nullable', Rule::in(['all', 'due', 'completed'])],
             'weekly_status' => ['nullable', Rule::in(['all', 'not_yet_monitored', 'monitored_this_week'])],
             'additional_task' => ['nullable', Rule::in(['all', 'verification_required'])],
             'observation' => ['nullable', Rule::in(['all', 'with_observations', 'reference_unavailable', 'no_observations'])],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
         $week = MonitoringWeek::current();
-        $query = Store::query()
+        $period = MonitoringPeriod::current();
+        $query = Store::query()->where('is_active', true)
             ->withCount([
                 'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
                 'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
@@ -63,6 +120,7 @@ class MonitoringRecordController extends Controller
             ->withExists([
                 'routineMonitoringRecords as has_prior_routine_monitoring',
                 'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
+                'routineMonitoringRecords as routine_completed' => fn ($records) => $this->routinePeriod($records, $period),
             ])
             ->with(['latestMonitoringRecord' => fn ($record) => $record
                 ->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.officer_user_id', 'monitoring_records.finalized_at', 'monitoring_records.protocol_mode', 'monitoring_records.protocol_reference')
@@ -82,6 +140,11 @@ class MonitoringRecordController extends Controller
         match ($filters['weekly_status'] ?? 'all') {
             'monitored_this_week' => $query->whereHas('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
             'not_yet_monitored' => $query->whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
+            default => null,
+        };
+        match ($filters['routine_status'] ?? 'all') {
+            'completed' => $query->whereHas('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period)),
+            'due' => $query->whereDoesntHave('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period)),
             default => null,
         };
         if (($filters['additional_task'] ?? 'all') === 'verification_required') {
@@ -106,6 +169,13 @@ class MonitoringRecordController extends Controller
                 'starts_at' => $week['starts_at']->toIso8601String(),
                 'ends_at' => $week['ends_at']->toIso8601String(),
             ],
+            'monitoring_period' => $this->periodPayload($period),
+            'routine_summary' => [
+                'total_establishments' => Store::where('is_active', true)->count(),
+                'due' => Store::where('is_active', true)->whereDoesntHave('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period))->count(),
+                'completed' => Store::where('is_active', true)->whereHas('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period))->count(),
+                'additional_visits' => FieldVerificationRequest::whereIn('status', ['open', 'claimed'])->count(),
+            ],
             'weekly_summary' => [
                 'total_establishments' => Store::count(),
                 'not_yet_monitored' => Store::whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
@@ -120,6 +190,7 @@ class MonitoringRecordController extends Controller
     {
         $auth->requireManager($request->user());
         $week = MonitoringWeek::current();
+        $period = MonitoringPeriod::current();
         $store->loadCount([
             'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
             'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
@@ -153,6 +224,8 @@ class MonitoringRecordController extends Controller
             'monitoring_week' => [
                 'timezone' => $week['timezone'], 'starts_at' => $week['starts_at']->toIso8601String(), 'ends_at' => $week['ends_at']->toIso8601String(),
             ],
+            'monitoring_period' => $this->periodPayload($period),
+            'routine_status' => $this->routinePeriod($store->routineMonitoringRecords(), $period)->exists() ? 'completed' : 'due',
             'weekly_routine_status' => $store->routineMonitoringRecords()->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])->exists()
                 ? 'monitored_this_week' : 'not_yet_monitored',
             'has_prior_routine_monitoring' => $store->routineMonitoringRecords()->exists(),
@@ -279,6 +352,7 @@ class MonitoringRecordController extends Controller
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
             'open_verification_requests_count' => $store->open_verification_requests_count,
+            'routine_status' => $store->routine_completed ? 'completed' : 'due',
             'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
             'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
             'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
@@ -291,6 +365,31 @@ class MonitoringRecordController extends Controller
             'latest_result' => $latest
                 ? ($latest->anomaly_count ? 'with_observations' : ($latest->unavailable_reference_count ? 'reference_unavailable' : 'no_observations'))
                 : 'never_monitored',
+        ];
+    }
+
+    private function assignmentData(Request $request): array
+    {
+        return $request->validate([
+            'reason' => ['required', 'string', 'max:2000'],
+            'field_officer_id' => ['required', Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'field_officer')->where('is_active', true))],
+        ]);
+    }
+
+    private function routinePeriod($query, array $period)
+    {
+        $query->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
+        if ($period['cadence'] === 'daily') $query->where('protocol_mode', 'emergency');
+
+        return $query;
+    }
+
+    private function periodPayload(array $period): array
+    {
+        return [
+            'cadence' => $period['cadence'], 'timezone' => $period['timezone'],
+            'starts_at' => $period['starts_at']->toIso8601String(), 'ends_at' => $period['ends_at']->toIso8601String(),
+            'protocol_mode' => $period['protocol_mode'], 'declaration_reference' => $period['declaration_reference'],
         ];
     }
 }

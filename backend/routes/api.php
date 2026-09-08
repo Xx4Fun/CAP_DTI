@@ -72,7 +72,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [FieldAuthController::class, 'logout']);
         Route::get('/bootstrap', [FieldDataController::class, 'bootstrap']);
         Route::get('/verification-requests', [FieldDataController::class, 'verificationRequests']);
-        Route::post('/verification-requests/{verificationRequest}/claim', [FieldDataController::class, 'claim']);
         Route::post('/verification-requests/{verificationRequest}/release', [FieldDataController::class, 'release']);
         Route::get('/notifications', [FieldDataController::class, 'notifications']);
         Route::post('/notifications/read-all', [FieldDataController::class, 'readAllNotifications']);
@@ -93,8 +92,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-records/{monitoringRecord}/signatures/{kind}', [MonitoringRecordController::class, 'signature']);
         Route::get('/monitoring-establishments', [MonitoringRecordController::class, 'establishments']);
         Route::get('/monitoring-establishments/{store}', [MonitoringRecordController::class, 'establishment']);
+        Route::post('/monitoring-establishments/{store}/additional-visits', [MonitoringRecordController::class, 'additionalVisit']);
         Route::get('/monitoring-establishments/{store}/price-history', [MonitoringRecordController::class, 'priceHistory']);
         Route::get('/verification-requests', [MonitoringRecordController::class, 'verificationRequests']);
+        Route::post('/verification-requests/{verificationRequest}/assign', [MonitoringRecordController::class, 'assignVerification']);
         Route::post('/users/field-officers', [UserManagementController::class, 'storeFieldOfficer']);
         Route::patch('/users/{managedUser}', [UserManagementController::class, 'update']);
         Route::put('/users/{managedUser}/password', [UserManagementController::class, 'updatePassword']);

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
+use App\Support\MonitoringPeriod;
 
 class FieldReferenceResolver
 {
@@ -61,10 +62,6 @@ class FieldReferenceResolver
 
     private function effectiveEmergency(string|\DateTimeInterface $observedAt): ?RegulatoryEmergency
     {
-        return RegulatoryEmergency::query()
-            ->whereIn('status', ['active', 'ended'])
-            ->whereDate('starts_on', '<=', $observedAt)
-            ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $observedAt))
-            ->latest('starts_on')->latest('id')->first();
+        return MonitoringPeriod::effectiveEmergency($observedAt);
     }
 }

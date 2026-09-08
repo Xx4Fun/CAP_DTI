@@ -10,7 +10,7 @@ use LogicException;
 class FieldVerificationRequest extends Model
 {
     protected $fillable = [
-        'consumer_report_id', 'store_id', 'requested_by', 'claimed_by', 'status',
+        'consumer_report_id', 'source_type', 'store_id', 'requested_by', 'claimed_by', 'status',
         'reason', 'context_json', 'requested_at', 'claimed_at', 'released_at',
         'completed_at', 'cancelled_at',
     ];

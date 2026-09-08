@@ -90,9 +90,9 @@ class FieldNotificationTest extends TestCase
             'status' => 'Under initial evaluation',
         ]);
 
-        $this->postJson("/api/admin/reports/{$report->id}/verification-request", ['reason' => 'Visit required.'])
+        $this->postJson("/api/admin/reports/{$report->id}/verification-request", ['reason' => 'Visit required.', 'field_officer_id' => $active->id])
             ->assertCreated();
-        $this->assertSame('verification_requested', $active->fresh()->notifications()->latest()->first()?->data['event'] ?? null);
+        $this->assertSame('verification_assigned', $active->fresh()->notifications()->latest()->first()?->data['event'] ?? null);
         $this->assertSame(0, $inactive->notifications()->count());
 
         $srpId = $this->postJson('/api/admin/srp', [
