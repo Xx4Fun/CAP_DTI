@@ -24,7 +24,7 @@ const record = {
 const workspace = {
   monitoring_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-23T16:00:00Z', ends_at: '2026-08-30T16:00:00Z' },
   weekly_summary: { total_establishments: 1, not_yet_monitored: 0, monitored_this_week: 1, verification_required: 1 },
-  establishments: { data: [{ id: 2, dti_sec_number: null, store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, weekly_routine_status: 'monitored_this_week' as const, has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, verification_task_status: 'claimed' as const, verification_claimant: record.officer, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_officer: record.officer, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
+  establishments: { data: [{ id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, weekly_routine_status: 'monitored_this_week' as const, has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, verification_task_status: 'claimed' as const, verification_claimant: record.officer, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_officer: record.officer, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
 }
 
 describe('FieldMonitoringRecords', () => {
@@ -32,7 +32,7 @@ describe('FieldMonitoringRecords', () => {
     vi.clearAllMocks()
     window.history.replaceState({}, '', '/?module=field_monitoring')
     vi.mocked(adminApi.getMonitoringEstablishments).mockResolvedValue(workspace)
-    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Antique Central Market', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
     vi.mocked(adminApi.getMonitoringPriceHistory).mockResolvedValue({ data: [{ id: 1, monitoring_record_id: 14, monitoring_date: record.finalized_at, protocol_mode: 'standard', protocol_reference: null, commodity_name: 'Rice', unit: 'kg', reference_status: 'available', reference_label: 'SRP baseline', reference_value: 50, reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', recorded_price: 62, difference: 12, variance_percent: 24, is_anomaly: true }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [record], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(record)
@@ -50,6 +50,7 @@ describe('FieldMonitoringRecords', () => {
     expect(screen.getAllByText('Monitored This Week').length).toBeGreaterThan(1)
     expect(screen.getAllByText('Verification Required').length).toBeGreaterThan(1)
     expect(screen.getByText('Ana Officer')).toBeInTheDocument()
+    expect(document.querySelector('.establishment-row-img')).toHaveAttribute('src', '/stores/store.webp')
     expect(screen.queryByText(/12345678|inspection score|assigned officer|non-compliant|compliant/i)).not.toBeInTheDocument()
   })
 
@@ -66,8 +67,8 @@ describe('FieldMonitoringRecords', () => {
   it('opens an establishment profile with captured price history and filtered records', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
-    await user.click(await screen.findByRole('button', { name: 'Open Antique Central Market monitoring profile' }))
-    expect(await screen.findByRole('heading', { name: 'Antique Central Market' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Price History' }))
     expect(screen.getByRole('table', { name: 'Temporal price history' })).toHaveTextContent('₱50.00')
     expect(screen.getByRole('table', { name: 'Temporal price history' })).not.toHaveTextContent('₱999.00')
@@ -120,18 +121,18 @@ describe('FieldMonitoringRecords', () => {
   it('restores an establishment profile from the URL', async () => {
     window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
     render(<FieldMonitoringRecords />)
-    expect(await screen.findByRole('heading', { name: 'Antique Central Market' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
     expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, { commodity: 'key:rice', per_page: 10 })
   })
 
   it('opens the scoped verification queue from an establishment and can clear it', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
-    await user.click(await screen.findByRole('button', { name: 'Open Antique Central Market monitoring profile' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
     expect(screen.getByText('Latest accepted routine monitoring').closest('div')).toHaveTextContent('Aug 24, 2026')
     expect(screen.getByText('Verification claimed by Ana Officer')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'View Verification Requests' }))
-    expect(await screen.findByText('Antique Central Market', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
+    expect(await screen.findByText('Gaisano Grand Mall', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
     expect(adminApi.getFieldVerificationRequests).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
     await user.click(screen.getByRole('button', { name: 'Clear establishment filter' }))
     expect(new URLSearchParams(window.location.search).get('verification_store')).toBeNull()

@@ -390,21 +390,8 @@ function RoutineBadge({ value }: { value: MonitoringEstablishmentSummary['weekly
   </span>
 }
 
-function getStoreImageUrl(store: { store_name: string; image_path?: string | null }): string {
-  if (store.image_path) {
-    return store.image_path
-  }
-  const name = store.store_name.toLowerCase()
-  if (name.includes('puregold')) return '/stores/puregold.jpg'
-  if (name.includes('gaisano')) return '/stores/gaisano-grand.jpg'
-  if (name.includes('robinson')) return '/stores/robinsons.jpg'
-  if (name.includes('merrymart')) return '/stores/merrymart.jpg'
-  if (name.includes('antique city square')) return '/stores/antique-city-square.jpg'
-  if (name.includes('unitop')) return '/stores/unitop.jpg'
-  if (name.includes('licanda')) return '/stores/licandas.jpg'
-  if (name.includes('haro')) return '/stores/haro-mart.jpg'
-  if (name.includes('cpt')) return '/stores/cpt-mart.jpg'
-  return '/stores/store.webp'
+function getStoreImageUrl(store: { image_path?: string | null }): string {
+  return store.image_path || '/stores/store.webp'
 }
 
 function EstablishmentCard({ store, onOpen }: { store: MonitoringEstablishmentSummary; onOpen: (id: number) => void }) {
