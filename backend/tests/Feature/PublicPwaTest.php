@@ -31,6 +31,7 @@ class PublicPwaTest extends TestCase
             'latitude' => 10.7424,
             'longitude' => 121.9406,
             'address' => 'Main Street, San Jose',
+            'image_path' => '/stores/gaisano-grand.webp',
             'recidivism_index' => 0,
         ]);
 
@@ -66,7 +67,8 @@ class PublicPwaTest extends TestCase
         $response = $this->getJson('/api/public/establishments?query=Central');
         $response->assertStatus(200)
                  ->assertJsonCount(1, 'data')
-                 ->assertJsonPath('data.0.store_name', 'San Jose Central Mart');
+                 ->assertJsonPath('data.0.store_name', 'San Jose Central Mart')
+                 ->assertJsonPath('data.0.image_path', '/stores/gaisano-grand.webp');
     }
 
     public function test_can_create_capture_session()

@@ -124,6 +124,7 @@ class FieldMonitoringRecordTest extends TestCase
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
+        $store->update(['image_path' => '/stores/gaisano-grand.webp']);
         $bulletin = $this->bulletin('Rice', 100);
         TemporalInspection::create([
             'store_id' => $store->id, 'srp_id' => $bulletin->id,
@@ -135,6 +136,7 @@ class FieldMonitoringRecordTest extends TestCase
         $full = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()
             ->assertJsonPath('data.is_delta', false)
             ->assertJsonPath('data.stores.0.id', $store->id)
+            ->assertJsonPath('data.stores.0.image_path', '/stores/gaisano-grand.webp')
             ->assertJsonPath('data.srp_bulletins.0.id', $bulletin->id)
             ->assertJsonPath('data.recent_prices.0.recorded_price', 108);
 
@@ -472,6 +474,7 @@ class FieldMonitoringRecordTest extends TestCase
         Storage::fake('receipt_evidence');
         [, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
+        $store->update(['image_path' => '/stores/gaisano-grand.webp']);
         $rice = $this->bulletin('Rice', 100);
         $milk = $this->bulletin('Milk', 50);
 
@@ -508,6 +511,7 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.weekly_summary.verification_required', 0)
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.id', $store->id)
+            ->assertJsonPath('data.establishments.data.0.image_path', '/stores/gaisano-grand.webp')
             ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week')
             ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', true)
             ->assertJsonPath('data.establishments.data.0.latest_result', 'with_observations')

@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\AuditEvent;
 use App\Models\Store;
+use App\Models\User;
 use Database\Seeders\OfficialEstablishmentSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class OfficialEstablishmentSeederTest extends TestCase
@@ -52,11 +54,39 @@ class OfficialEstablishmentSeederTest extends TestCase
         $this->assertDatabaseHas('stores', [
             'store_name' => 'Puregold Price Club Incorporated', 'image_path' => '/stores/store.webp',
         ]);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Gaisano Grand Mall', 'image_path' => '/stores/gaisano-grand.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Robinsons Supermarket Corp.', 'image_path' => '/stores/robinsons.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Merrymart Consumer Corp.', 'image_path' => '/stores/merrymart.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 1", 'image_path' => '/stores/licandas-branch-1.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'image_path' => '/stores/licandas-branch-2.webp']);
         $this->assertSame(11, AuditEvent::query()->where('action', 'store.official_list_seeded')->count());
 
         $this->seed(OfficialEstablishmentSeeder::class);
 
         $this->assertDatabaseCount('stores', 11);
         $this->assertSame(11, AuditEvent::query()->where('action', 'store.official_list_seeded')->count());
+    }
+
+    public function test_assigned_photos_are_returned_by_public_field_and_admin_establishment_endpoints(): void
+    {
+        $this->seed(OfficialEstablishmentSeeder::class);
+        $expected = [
+            'Gaisano Grand Mall' => '/stores/gaisano-grand.webp',
+            'Robinsons Supermarket Corp.' => '/stores/robinsons.webp',
+            'Merrymart Consumer Corp.' => '/stores/merrymart.webp',
+            "Licanda's Retail Chain Branch 1" => '/stores/licandas-branch-1.webp',
+            "Licanda's Retail Chain Branch 2 (Licandas OPC 1)" => '/stores/licandas-branch-2.webp',
+        ];
+        ksort($expected);
+
+        $paths = fn (array $stores) => collect($stores)->mapWithKeys(fn (array $store) => [$store['store_name'] => $store['image_path']])->only(array_keys($expected))->sortKeys()->all();
+        $this->assertSame($expected, $paths($this->getJson('/api/public/establishments')->assertOk()->json('data')));
+
+        $officer = User::create(['name' => 'Field Officer', 'email' => 'field-photos@dti.test', 'password' => 'password', 'role' => 'field_officer']);
+        $token = $this->postJson('/api/field/login', ['email' => $officer->email, 'password' => 'password'])->assertOk()->json('token');
+        $this->assertSame($expected, $paths($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.stores')));
+
+        Sanctum::actingAs(User::create(['name' => 'Manager', 'email' => 'manager-photos@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']), ['dti-admin']);
+        $this->assertSame($expected, $paths($this->getJson('/api/admin/monitoring-establishments?per_page=25')->assertOk()->json('data.establishments.data')));
     }
 }
