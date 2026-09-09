@@ -125,8 +125,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/analytics/stores/{store}', [TemporalAnalyticsController::class, 'show']);
         Route::get('/emergencies', [EmergencyAdminController::class, 'index']);
         Route::post('/emergencies', [EmergencyAdminController::class, 'store']);
+        Route::get('/emergencies/{emergency}', [EmergencyAdminController::class, 'show']);
+        Route::post('/emergencies/{emergency}/prepare', [EmergencyAdminController::class, 'prepare']);
+        Route::post('/emergencies/{emergency}/activate', [EmergencyAdminController::class, 'activate']);
         Route::patch('/emergencies/{emergency}', [EmergencyAdminController::class, 'update']);
-        Route::post('/emergency-prices', [EmergencyAdminController::class, 'storePrice']);
         Route::get('/emergency-prices/resolve', [EmergencyAdminController::class, 'resolve']);
         Route::get('/legal-notices', [AdminLegalNoticeController::class, 'index']);
         Route::post('/legal-notices', [AdminLegalNoticeController::class, 'store']);

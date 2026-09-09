@@ -11,6 +11,7 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Models\User;
+use App\Services\FieldReferenceResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -52,13 +53,16 @@ class FieldMonitoringRecordTest extends TestCase
 
     private function payload(Store $store, array $bulletins, string $uuid = '4cb0a181-a590-4f95-b96e-aadab8e09a67'): array
     {
+        $finalizedAt = now()->subMinute();
+        $resolver = app(FieldReferenceResolver::class);
+
         return [
             'records' => [[
                 'client_uuid' => $uuid,
                 'store_id' => $store->id,
                 'offline_lease_id' => $this->leaseId,
                 'started_at' => now()->subMinutes(20)->toIso8601String(),
-                'finalized_at' => now()->subMinute()->toIso8601String(),
+                'finalized_at' => $finalizedAt->toIso8601String(),
                 'location' => [
                     'latitude' => 10.7425, 'longitude' => 121.9407,
                     'accuracy_meters' => 12.5, 'captured_at' => now()->subMinute()->toIso8601String(),
@@ -68,11 +72,22 @@ class FieldMonitoringRecordTest extends TestCase
                     'officer_png_base64' => base64_encode("\x89PNG\r\n\x1a\nofficer-signature"),
                     'representative_png_base64' => base64_encode("\x89PNG\r\n\x1a\nrepresentative-signature"),
                 ],
-                'sync_source' => 'offline_queue', 'client_version' => '1.0.0',
-                'items' => [
-                    ['srp_id' => $bulletins[0]->id, 'recorded_price' => 115.00],
-                    ['srp_id' => $bulletins[1]->id, 'recorded_price' => 45.00],
-                ],
+                'sync_source' => 'offline_queue', 'client_version' => '1.1.0',
+                'items' => collect($bulletins)->map(function (SrpBulletin $bulletin, int $index) use ($resolver, $finalizedAt) {
+                    $reference = $resolver->resolve($bulletin, $finalizedAt);
+
+                    return [
+                        'srp_id' => $bulletin->id,
+                        'recorded_price' => $index === 0 ? 115.00 : 45.00,
+                        'reference_snapshot' => [
+                            'status' => $reference['status'], 'type' => $reference['type'],
+                            'source_id' => $reference['source_id'], 'value' => $reference['value'],
+                            'label' => $reference['label'], 'source_reference' => $reference['source'],
+                            'effective_date' => $reference['effective_date'],
+                            'reference_version' => $resolver->version($reference),
+                        ],
+                    ];
+                })->all(),
             ]],
         ];
     }
@@ -160,6 +175,37 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.stores.0.routine_status', 'due');
     }
 
+    public function test_normal_weekly_routine_resumes_after_price_freeze_ends(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-15 02:00:00', 'UTC'));
+        Storage::fake('receipt_evidence');
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+        $emergency = RegulatoryEmergency::create([
+            'location' => 'San Jose de Buenavista, Antique',
+            'starts_on' => '2026-09-14', 'ends_on' => '2026-09-15',
+            'declaration_reference' => 'PF-RESUME', 'status' => 'active',
+            'confirmed_at' => '2026-09-14 00:00:00', 'responsible_admin_id' => $officer->id,
+        ]);
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
+            ->assertCreated();
+        $emergency->update(['status' => 'ended', 'active_scope_key' => null]);
+        Carbon::setTestNow(Carbon::parse('2026-09-16 02:00:00', 'UTC'));
+
+        $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()
+            ->assertJsonPath('data.monitoring_period.protocol_mode', 'standard')
+            ->assertJsonPath('data.stores.0.routine_status', 'due')
+            ->assertJsonPath('data.stores.0.weekly_routine_status', 'not_yet_monitored');
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload(
+            $store, $bulletins, '6cb0a181-a590-4f95-b96e-aadab8e09a67'
+        ))->assertCreated();
+        $this->assertDatabaseCount('monitoring_records', 2);
+        $this->assertSame(['emergency', 'standard'], MonitoringRecord::orderBy('id')->pluck('protocol_mode')->all());
+    }
+
     public function test_bootstrap_downloads_active_field_data_and_returns_an_empty_delta_when_current(): void
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
@@ -178,12 +224,67 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.stores.0.id', $store->id)
             ->assertJsonPath('data.stores.0.image_path', '/stores/gaisano-grand.webp')
             ->assertJsonPath('data.srp_bulletins.0.id', $bulletin->id)
+            ->assertJsonPath('data.monitoring_references.0.srp_id', $bulletin->id)
+            ->assertJsonPath('data.monitoring_references.0.type', 'standard_srp')
+            ->assertJsonPath('data.monitoring_references.0.source_id', $bulletin->id)
+            ->assertJsonPath('data.monitoring_references.0.value', 100)
             ->assertJsonPath('data.recent_prices.0.recorded_price', 108);
 
         $version = rawurlencode($full->json('data.version'));
         $this->withToken($token)->getJson("/api/field/bootstrap?since={$version}")
             ->assertOk()->assertJsonPath('data.is_delta', true)
             ->assertJsonCount(0, 'data.stores')->assertJsonCount(0, 'data.srp_bulletins');
+    }
+
+    public function test_sync_preserves_a_validated_reference_snapshot_and_rejects_a_mismatch_before_creating_evidence(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+        $references = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.monitoring_references'))
+            ->keyBy('srp_id');
+        $payload = $this->payload($store, $bulletins);
+        foreach ($payload['records'][0]['items'] as &$item) {
+            unset($item['reference_snapshot']);
+        }
+        unset($item);
+        $payload['records'][0]['client_version'] = '1.0.0';
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertUnprocessable()->assertJsonPath('status', 'REFERENCE_SNAPSHOT_REQUIRED');
+        foreach ($payload['records'][0]['items'] as &$item) {
+            $reference = $references->get($item['srp_id']);
+            $item['reference_snapshot'] = [
+                'status' => $reference['status'], 'type' => $reference['type'],
+                'source_id' => $reference['source_id'], 'value' => $reference['value'],
+                'label' => $reference['label'], 'source_reference' => $reference['source'],
+                'effective_date' => $reference['effective_date'],
+                'reference_version' => $reference['reference_version'],
+            ];
+        }
+        unset($item);
+
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'reference_type' => 'standard_srp', 'reference_value' => 100,
+            'reference_version' => $references->get($bulletins[0]->id)['reference_version'],
+        ]);
+
+        $otherStore = Store::create([
+            'store_name' => 'Mismatch Market', 'address' => 'San Jose de Buenavista',
+            'latitude' => 10.74, 'longitude' => 121.94, 'is_active' => true,
+        ]);
+        $forged = $this->payload($otherStore, $bulletins, '9cb0a181-a590-4f95-b96e-aadab8e09a67');
+        $forged['records'][0]['items'][0]['reference_snapshot'] = $payload['records'][0]['items'][0]['reference_snapshot'];
+        $forged['records'][0]['items'][0]['reference_snapshot']['reference_version'] = str_repeat('f', 64);
+        $forged['records'][0]['items'][1]['reference_snapshot'] = $payload['records'][0]['items'][1]['reference_snapshot'];
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $forged)
+            ->assertConflict()->assertJsonPath('status', 'REFERENCE_PACKAGE_MISMATCH');
+        $this->assertDatabaseMissing('monitoring_records', ['client_uuid' => '9cb0a181-a590-4f95-b96e-aadab8e09a67']);
+        $this->assertSame([], Storage::disk('receipt_evidence')->allFiles('field-monitoring/2'));
     }
 
     public function test_bootstrap_keeps_current_unkeyed_srp_rows_distinct_by_id(): void
@@ -486,6 +587,33 @@ class FieldMonitoringRecordTest extends TestCase
         $this->assertDatabaseHas('monitoring_record_items', ['monitoring_record_id' => $recordId, 'srp_id' => $current->id]);
     }
 
+    public function test_sync_preserves_a_downloaded_temporal_reference_after_the_bulletin_is_deactivated(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $milk = $this->bulletin('Milk', 50);
+        $payload = $this->payload($store, [$rice, $milk]);
+
+        $rice->update(['is_active' => false]);
+        SrpBulletin::create([
+            'commodity_name' => 'Rice future', 'commodity_key' => 'rice', 'baseline_price' => 105,
+            'effective_date' => now('Asia/Manila')->addDay()->toDateString(),
+            'source_reference' => 'SRP-RICE-FUTURE', 'is_active' => true,
+        ]);
+
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId,
+            'srp_id' => $rice->id,
+            'reference_source_id' => $rice->id,
+            'reference_value' => 100,
+        ]);
+    }
+
     public function test_officer_history_and_admin_review_are_paginated_and_do_not_expose_signature_paths(): void
     {
         Storage::fake('receipt_evidence');
@@ -588,6 +716,10 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.total', 2)
             ->assertJsonPath('data.data.0.monitoring_record_id', $recordId)
             ->assertJsonFragment(['reference_value' => 100]);
+
+        $this->getJson("/api/admin/analytics/stores/{$store->id}?commodity_key={$rice->commodity_key}")
+            ->assertOk()
+            ->assertJsonPath('data.srp_series.0', 100);
 
         $this->getJson("/api/admin/monitoring-records?store_id={$store->id}&per_page=10")
             ->assertOk()->assertJsonPath('data.total', 1);

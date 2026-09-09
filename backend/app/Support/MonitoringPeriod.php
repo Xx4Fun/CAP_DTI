@@ -37,12 +37,22 @@ final class MonitoringPeriod
         return self::for(now(MonitoringWeek::TIMEZONE));
     }
 
+    public static function constrainProtocol($query, string $mode)
+    {
+        return $mode === 'emergency'
+            ? $query->where('protocol_mode', 'emergency')
+            : $query->where(fn ($protocol) => $protocol->where('protocol_mode', 'standard')->orWhereNull('protocol_mode'));
+    }
+
     public static function effectiveEmergency(CarbonInterface|string $at): ?RegulatoryEmergency
     {
-        $date = CarbonImmutable::parse($at)->setTimezone(MonitoringWeek::TIMEZONE)->toDateString();
+        $instant = CarbonImmutable::parse($at, MonitoringWeek::TIMEZONE);
+        $date = $instant->setTimezone(MonitoringWeek::TIMEZONE)->toDateString();
 
         return RegulatoryEmergency::query()
             ->whereIn('status', ['active', 'ended'])
+            ->whereNotNull('confirmed_at')
+            ->where('confirmed_at', '<=', $instant->utc())
             ->whereDate('starts_on', '<=', $date)
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $date))
             ->latest('starts_on')->latest('id')->first();

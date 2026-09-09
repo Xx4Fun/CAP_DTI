@@ -2,7 +2,9 @@
 
 namespace App\Services\Admin;
 
+use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryFinding;
+use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 
@@ -17,8 +19,10 @@ class TemporalAnalyticsService
         $findings = RegulatoryFinding::where('store_id', $store->id)->where('decision', 'confirmed')
             ->whereBetween('observed_at', [$from, $asOf])->get();
         foreach ($findings as $finding) {
-            $srp = $finding->srp_bulletin_id ? \App\Models\SrpBulletin::find($finding->srp_bulletin_id) : null;
-            if ($commodityKey && $srp?->commodity_key !== $commodityKey) continue;
+            $srp = $finding->srp_bulletin_id ? SrpBulletin::find($finding->srp_bulletin_id) : null;
+            if ($commodityKey && $srp?->commodity_key !== $commodityKey) {
+                continue;
+            }
             $resolved = $commodityKey ? $this->resolver->resolve($commodityKey, $finding->observed_at) : $srp;
             $rows->push(['date' => $finding->observed_at->format('Y-m-d'), 'price' => $finding->observed_price, 'srp' => $resolved?->baseline_price, 'source' => 'Validated receipt']);
         }
@@ -26,11 +30,25 @@ class TemporalAnalyticsService
             ->where('validation_status', 'verified')->whereNotNull('officer_signature')->where('officer_signature', '!=', '')
             ->whereBetween('inspection_timestamp', [$from, $asOf])->get();
         foreach ($inspections as $inspection) {
-            if ($commodityKey && $inspection->bulletin?->commodity_key !== $commodityKey) continue;
-            $resolved = $commodityKey ? $this->resolver->resolve($commodityKey, $inspection->inspection_timestamp) : $inspection->bulletin;
-            $rows->push(['date' => $inspection->inspection_timestamp->format('Y-m-d'), 'price' => $inspection->recorded_price, 'srp' => $resolved?->baseline_price, 'source' => 'Verified field inspection']);
+            if ($commodityKey && $inspection->bulletin?->commodity_key !== $commodityKey) {
+                continue;
+            }
+            $captured = MonitoringRecordItem::query()->where('srp_id', $inspection->srp_id)
+                ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)
+                    ->where('status', 'accepted')->where('finalized_at', $inspection->inspection_timestamp))
+                ->first();
+            $resolved = $captured ? null : ($commodityKey ? $this->resolver->resolve($commodityKey, $inspection->inspection_timestamp) : $inspection->bulletin);
+            $rows->push([
+                'date' => $inspection->inspection_timestamp->format('Y-m-d'),
+                'price' => $inspection->recorded_price,
+                'srp' => $captured?->reference_value ?? $resolved?->baseline_price,
+                'source' => 'Verified field inspection',
+                'reference_type' => $captured?->reference_type,
+                'reference_source' => $captured?->reference_source,
+            ]);
         }
         $rows = $rows->sortBy('date')->values();
+
         return [
             'labels' => $rows->pluck('date'), 'price_series' => $rows->pluck('price'),
             'srp_series' => $rows->pluck('srp'), 'table_rows' => $rows,

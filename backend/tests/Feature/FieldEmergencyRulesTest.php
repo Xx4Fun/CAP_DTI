@@ -24,24 +24,21 @@ class FieldEmergencyRulesTest extends TestCase
             'password' => 'password', 'role' => 'dti_evaluator',
         ]);
         Sanctum::actingAs($admin);
+
         return $admin;
     }
 
     public function test_only_one_emergency_can_be_active_and_resolution_is_deployment_wide(): void
     {
         $admin = $this->admin();
-        $emergencyId = $this->postJson('/api/admin/emergencies', [
+        $emergency = RegulatoryEmergency::create([
             'location' => 'Antique display metadata', 'starts_on' => '2026-08-01',
-            'declaration_reference' => 'DECL-1', 'confirmed' => true,
-        ])->assertCreated()->json('data.id');
-
-        $this->postJson('/api/admin/emergencies', [
-            'location' => 'Different display metadata', 'starts_on' => '2026-08-02',
-            'declaration_reference' => 'DECL-2', 'confirmed' => true,
-        ])->assertUnprocessable();
+            'declaration_reference' => 'DECL-1', 'status' => 'active', 'active_scope_key' => 'systemwide',
+            'confirmed_at' => '2026-08-01 00:00:00', 'responsible_admin_id' => $admin->id,
+        ]);
 
         RegulatoryPriceRecord::create([
-            'regulatory_emergency_id' => $emergencyId, 'commodity_key' => 'rice',
+            'regulatory_emergency_id' => $emergency->id, 'commodity_key' => 'rice',
             'price_type' => 'APC', 'authoritative_price' => 50, 'effective_from' => '2026-08-01',
             'location' => 'Antique display metadata', 'declaration_reference' => 'DECL-1',
             'source_reference' => 'APC-SOURCE', 'created_by' => $admin->id,
@@ -53,6 +50,7 @@ class FieldEmergencyRulesTest extends TestCase
         DB::table('regulatory_emergencies')->insert([
             'location' => 'Bypass controller', 'starts_on' => '2026-08-03',
             'declaration_reference' => 'DECL-BYPASS', 'status' => 'active',
+            'active_scope_key' => 'bypass',
             'confirmed_at' => now(), 'responsible_admin_id' => $admin->id,
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -63,11 +61,13 @@ class FieldEmergencyRulesTest extends TestCase
         $admin = $this->admin();
         $historical = SrpBulletin::create([
             'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 40,
-            'effective_date' => '2026-01-01', 'source_reference' => 'SRP-JAN', 'is_active' => true,
+            'effective_date' => '2026-01-01', 'source_reference' => 'SRP-JAN', 'is_active' => false,
+            'price_freeze_applicable' => true,
         ]);
         $current = SrpBulletin::create([
             'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 45,
             'effective_date' => '2026-08-01', 'source_reference' => 'SRP-AUG', 'is_active' => true,
+            'price_freeze_applicable' => true,
         ]);
         $resolver = app(FieldReferenceResolver::class);
 
@@ -76,7 +76,7 @@ class FieldEmergencyRulesTest extends TestCase
 
         $emergency = RegulatoryEmergency::create([
             'location' => 'Metadata only', 'starts_on' => '2026-08-10', 'ends_on' => '2026-08-20',
-            'declaration_reference' => 'DECL-3', 'status' => 'active', 'confirmed_at' => now(),
+            'declaration_reference' => 'DECL-3', 'status' => 'active', 'confirmed_at' => '2026-08-10 00:00:00',
             'responsible_admin_id' => $admin->id,
         ]);
         $missing = $resolver->resolve($current, '2026-08-12');
@@ -96,13 +96,48 @@ class FieldEmergencyRulesTest extends TestCase
         $this->assertSame('FREEZE-SOURCE', $reference['source']);
     }
 
+    public function test_price_freeze_applies_only_to_covered_products_and_only_after_confirmation(): void
+    {
+        $admin = $this->admin();
+        $covered = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 45,
+            'effective_date' => '2026-01-01', 'source_reference' => 'SRP-RICE', 'is_active' => true,
+            'price_freeze_applicable' => true,
+        ]);
+        $notCovered = SrpBulletin::create([
+            'commodity_name' => 'Soap', 'commodity_key' => 'soap', 'baseline_price' => 20,
+            'effective_date' => '2026-01-01', 'source_reference' => 'SRP-SOAP', 'is_active' => true,
+            'price_freeze_applicable' => false,
+        ]);
+        $emergency = RegulatoryEmergency::create([
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-08-10', 'ends_on' => '2026-08-20',
+            'declaration_reference' => 'DECL-COVERAGE', 'status' => 'active',
+            'confirmed_at' => '2026-08-10 00:00:00', 'responsible_admin_id' => $admin->id,
+        ]);
+        RegulatoryPriceRecord::create([
+            'regulatory_emergency_id' => $emergency->id, 'commodity_key' => 'rice',
+            'price_type' => 'APC', 'authoritative_price' => 42, 'effective_from' => '2026-08-10',
+            'location' => $emergency->location, 'declaration_reference' => $emergency->declaration_reference,
+            'source_reference' => 'COMPUTED-APC', 'created_by' => $admin->id,
+        ]);
+        $resolver = app(FieldReferenceResolver::class);
+
+        $this->assertSame('standard_srp', $resolver->resolve($covered, '2026-08-10 07:59:59')['type']);
+        $this->assertSame('emergency_ceiling', $resolver->resolve($covered, '2026-08-10 08:00:00')['type']);
+        $this->assertSame(42.0, $resolver->resolve($covered, '2026-08-10 08:00:00')['value']);
+        $this->assertSame('standard_srp', $resolver->resolve($notCovered, '2026-08-12 09:00:00')['type']);
+        $this->assertSame(20.0, $resolver->resolve($notCovered, '2026-08-12 09:00:00')['value']);
+    }
+
     public function test_a_terminal_emergency_declaration_cannot_be_changed_again(): void
     {
-        $this->admin();
-        $emergencyId = $this->postJson('/api/admin/emergencies', [
+        $admin = $this->admin();
+        $emergencyId = RegulatoryEmergency::create([
             'location' => 'Antique', 'starts_on' => '2026-08-01',
-            'declaration_reference' => 'DECL-TERMINAL', 'confirmed' => true,
-        ])->assertCreated()->json('data.id');
+            'declaration_reference' => 'DECL-TERMINAL', 'status' => 'active',
+            'active_scope_key' => 'systemwide', 'confirmed_at' => '2026-08-01 00:00:00',
+            'responsible_admin_id' => $admin->id,
+        ])->id;
 
         $this->patchJson("/api/admin/emergencies/{$emergencyId}", [
             'status' => 'ended', 'ends_on' => '2026-08-02', 'confirmed' => true,

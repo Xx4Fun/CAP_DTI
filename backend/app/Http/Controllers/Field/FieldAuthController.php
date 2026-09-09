@@ -41,6 +41,7 @@ class FieldAuthController extends Controller
     public function session(Request $request)
     {
         $user = $this->fieldUser($request);
+
         return response()->json(['data' => ['user' => $user, 'must_change_password' => false]]);
     }
 
@@ -50,6 +51,7 @@ class FieldAuthController extends Controller
         $data = $request->validate(['password' => ['required', 'string', 'min:12', 'confirmed']]);
         $user->forceFill(['password' => $data['password'], 'must_change_password' => false])->save();
         $audit->record($request, 'auth.field_password_changed', $user);
+
         return response()->json(['must_change_password' => false]);
     }
 
@@ -59,6 +61,7 @@ class FieldAuthController extends Controller
         $request->user()->currentAccessToken()?->delete();
         FieldOfflineLease::where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         $audit->recordAs($request, $user, 'auth.field_logout', $user);
+
         return response()->json(['message' => 'Logged out successfully']);
     }
 
@@ -77,6 +80,7 @@ class FieldAuthController extends Controller
             'id' => (string) Str::uuid(),
             'user_id' => $user->id,
             'expires_at' => now()->addHours(24),
+            'requires_reference_snapshot' => true,
         ]);
     }
 
@@ -90,6 +94,7 @@ class FieldAuthController extends Controller
         $user = $request->user();
         abort_unless($user && $user->role === 'field_officer' && $user->is_active, 403, 'Forbidden');
         abort_unless($user->currentAccessToken()?->can('field-monitoring'), 403, 'Forbidden');
+
         return $user;
     }
 }

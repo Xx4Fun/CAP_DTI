@@ -11,6 +11,7 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Services\Admin\AuditTrailService;
+use App\Services\FieldReferenceResolver;
 use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 
 class FieldDataController extends Controller
 {
-    public function bootstrap(Request $request)
+    public function bootstrap(Request $request, FieldReferenceResolver $references)
     {
         $user = $this->fieldUser($request);
         $filters = $request->validate(['since' => ['nullable', 'string', 'max:128']]);
@@ -39,6 +40,12 @@ class FieldDataController extends Controller
             MonitoringRecord::where('status', 'accepted')->max('updated_at') ?? 'none',
         ]));
         $isCurrent = isset($filters['since']) && hash_equals($version, $filters['since']);
+
+        $bulletins = $isCurrent ? collect() : SrpBulletin::query()->where('is_active', true)
+            ->whereDate('effective_date', '<=', $today)
+            ->orderBy('commodity_key')->latest('effective_date')->latest('id')->get()
+            ->unique(fn ($bulletin) => $bulletin->commodity_key ?: 'id:'.$bulletin->id)
+            ->sortBy('commodity_name')->values();
 
         $recentPrices = $isCurrent ? collect() : TemporalInspection::query()
             ->where('validation_status', 'verified')
@@ -69,7 +76,7 @@ class FieldDataController extends Controller
                 'stores' => $isCurrent ? [] : Store::query()->where('is_active', true)
                     ->withExists([
                         'routineMonitoringRecords as has_prior_routine_monitoring',
-                        'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
+                        'routineMonitoringRecords as monitored_this_week' => fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
                         'routineMonitoringRecords as routine_completed' => fn ($records) => $this->routinePeriod($records, $period),
                     ])
                     ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
@@ -80,11 +87,18 @@ class FieldDataController extends Controller
                         'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
                         'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
                     ]),
-                'srp_bulletins' => $isCurrent ? [] : SrpBulletin::query()->where('is_active', true)
-                    ->whereDate('effective_date', '<=', $today)
-                    ->orderBy('commodity_key')->latest('effective_date')->latest('id')->get()
-                    ->unique(fn ($bulletin) => $bulletin->commodity_key ?: 'id:'.$bulletin->id)
-                    ->sortBy('commodity_name')->values(),
+                'srp_bulletins' => $bulletins,
+                'monitoring_references' => $bulletins->map(function (SrpBulletin $bulletin) use ($references) {
+                    $reference = $references->resolve($bulletin, now('Asia/Manila'));
+
+                    return [
+                        'srp_id' => $bulletin->id,
+                        'commodity_key' => $bulletin->commodity_key,
+                        'covered_by_price_freeze' => (bool) $bulletin->price_freeze_applicable,
+                        ...$reference,
+                        'reference_version' => $references->version($reference),
+                    ];
+                })->values(),
                 'regulatory_prices' => $isCurrent ? [] : RegulatoryPriceRecord::query()
                     ->whereDate('effective_from', '<=', $today)
                     ->where(fn ($query) => $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $today))
@@ -189,8 +203,8 @@ class FieldDataController extends Controller
 
     private function routinePeriod($query, array $period)
     {
-        $query->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
-        if ($period['cadence'] === 'daily') $query->where('protocol_mode', 'emergency');
+        MonitoringPeriod::constrainProtocol($query, $period['protocol_mode'])
+            ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
 
         return $query;
     }

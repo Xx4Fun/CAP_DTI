@@ -11,6 +11,7 @@ use App\Models\ReportStatusHistory;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
+use App\Services\FieldReferenceResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -70,12 +71,16 @@ class FieldVerificationQueueTest extends TestCase
 
     private function syncPayload(Store $store, SrpBulletin $bulletin, string $leaseId, int $verificationId): array
     {
+        $finalizedAt = now()->subMinute();
+        $resolver = app(FieldReferenceResolver::class);
+        $reference = $resolver->resolve($bulletin, $finalizedAt);
+
         return ['records' => [[
             'client_uuid' => '07b1654e-8386-4cf4-9ca0-d08f492443e8',
             'verification_request_id' => $verificationId,
             'store_id' => $store->id, 'offline_lease_id' => $leaseId,
             'started_at' => now()->subMinutes(10)->toIso8601String(),
-            'finalized_at' => now()->subMinute()->toIso8601String(),
+            'finalized_at' => $finalizedAt->toIso8601String(),
             'location' => [
                 'latitude' => 10.71, 'longitude' => 122.01, 'accuracy_meters' => 8,
                 'captured_at' => now()->subMinute()->toIso8601String(),
@@ -85,7 +90,17 @@ class FieldVerificationQueueTest extends TestCase
                 'officer_png_base64' => base64_encode("\x89PNG\r\n\x1a\nofficer"),
                 'representative_png_base64' => base64_encode("\x89PNG\r\n\x1a\nrepresentative"),
             ],
-            'items' => [['srp_id' => $bulletin->id, 'recorded_price' => 112]],
+            'client_version' => '1.1.0',
+            'items' => [[
+                'srp_id' => $bulletin->id, 'recorded_price' => 112,
+                'reference_snapshot' => [
+                    'status' => $reference['status'], 'type' => $reference['type'],
+                    'source_id' => $reference['source_id'], 'value' => $reference['value'],
+                    'label' => $reference['label'], 'source_reference' => $reference['source'],
+                    'effective_date' => $reference['effective_date'],
+                    'reference_version' => $resolver->version($reference),
+                ],
+            ]],
         ]]];
     }
 
@@ -241,10 +256,11 @@ class FieldVerificationQueueTest extends TestCase
         $store = $this->store('emergency');
         $verification = $this->verification($store, $admin, ['status' => 'claimed', 'claimed_by' => $officer->id, 'claimed_at' => now()]);
         $bulletin = $this->bulletin();
+        $bulletin->update(['price_freeze_applicable' => true]);
         $emergency = RegulatoryEmergency::create([
             'location' => 'A different province', 'starts_on' => now()->subDay(),
             'declaration_reference' => 'DECL-SYNC', 'status' => 'active',
-            'confirmed_at' => now(), 'responsible_admin_id' => $admin->id,
+            'confirmed_at' => now()->subHour(), 'responsible_admin_id' => $admin->id,
         ]);
         RegulatoryPriceRecord::create([
             'regulatory_emergency_id' => $emergency->id, 'commodity_key' => 'rice',

@@ -33,6 +33,7 @@ class MonitoringPeriodTest extends TestCase
         RegulatoryEmergency::create([
             'location' => 'Systemwide', 'starts_on' => '2026-09-10', 'ends_on' => '2026-09-15',
             'declaration_reference' => 'PF-2026-01', 'status' => 'active',
+            'confirmed_at' => '2026-09-10 00:00:00',
             'responsible_admin_id' => $admin->id,
         ]);
 

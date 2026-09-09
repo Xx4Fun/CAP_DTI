@@ -119,7 +119,7 @@ class MonitoringRecordController extends Controller
             ])
             ->withExists([
                 'routineMonitoringRecords as has_prior_routine_monitoring',
-                'routineMonitoringRecords as monitored_this_week' => fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
+                'routineMonitoringRecords as monitored_this_week' => fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
                 'routineMonitoringRecords as routine_completed' => fn ($records) => $this->routinePeriod($records, $period),
             ])
             ->with(['latestMonitoringRecord' => fn ($record) => $record
@@ -138,8 +138,8 @@ class MonitoringRecordController extends Controller
                 ->orWhere('dti_sec_number', 'like', "%{$search}%"));
         }
         match ($filters['weekly_status'] ?? 'all') {
-            'monitored_this_week' => $query->whereHas('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
-            'not_yet_monitored' => $query->whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
+            'monitored_this_week' => $query->whereHas('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
+            'not_yet_monitored' => $query->whereDoesntHave('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])),
             default => null,
         };
         match ($filters['routine_status'] ?? 'all') {
@@ -178,8 +178,8 @@ class MonitoringRecordController extends Controller
             ],
             'weekly_summary' => [
                 'total_establishments' => Store::count(),
-                'not_yet_monitored' => Store::whereDoesntHave('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
-                'monitored_this_week' => Store::whereHas('routineMonitoringRecords', fn ($records) => $records->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
+                'not_yet_monitored' => Store::whereDoesntHave('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
+                'monitored_this_week' => Store::whereHas('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
                 'verification_required' => Store::whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed']))->count(),
             ],
             'establishments' => $establishments,
@@ -226,7 +226,7 @@ class MonitoringRecordController extends Controller
             ],
             'monitoring_period' => $this->periodPayload($period),
             'routine_status' => $this->routinePeriod($store->routineMonitoringRecords(), $period)->exists() ? 'completed' : 'due',
-            'weekly_routine_status' => $store->routineMonitoringRecords()->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])->exists()
+            'weekly_routine_status' => MonitoringPeriod::constrainProtocol($store->routineMonitoringRecords(), 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at'])->exists()
                 ? 'monitored_this_week' : 'not_yet_monitored',
             'has_prior_routine_monitoring' => $store->routineMonitoringRecords()->exists(),
             'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
@@ -268,8 +268,10 @@ class MonitoringRecordController extends Controller
             'reference_type' => $item->reference_type,
             'reference_label' => $item->reference_label,
             'reference_value' => $item->reference_value,
+            'reference_source_id' => $item->reference_source_id,
             'reference_source' => $item->reference_source,
             'reference_effective_date' => $item->reference_effective_date?->toDateString(),
+            'reference_version' => $item->reference_version,
             'recorded_price' => $item->recorded_price,
             'difference' => $item->reference_value === null ? null : round($item->recorded_price - $item->reference_value, 2),
             'variance_percent' => $item->variance_percent,
@@ -378,8 +380,8 @@ class MonitoringRecordController extends Controller
 
     private function routinePeriod($query, array $period)
     {
-        $query->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
-        if ($period['cadence'] === 'daily') $query->where('protocol_mode', 'emergency');
+        MonitoringPeriod::constrainProtocol($query, $period['protocol_mode'])
+            ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
 
         return $query;
     }

@@ -5,7 +5,11 @@ namespace Tests\Feature;
 use App\Mail\VendorInvitationMail;
 use App\Models\CitizenTip;
 use App\Models\ConsumerReport;
+use App\Models\LegalNotice;
+use App\Models\MonitoringRecord;
+use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryFinding;
+use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
@@ -21,6 +25,7 @@ class AdminRegulatoryWorkflowTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private Store $store;
 
     protected function setUp(): void
@@ -210,27 +215,29 @@ class AdminRegulatoryWorkflowTest extends TestCase
             ->assertJsonCount(2, 'data.table_rows')
             ->assertJsonPath('data.recidivism_count', 1);
 
-        $emergencyId = $this->postJson('/api/admin/emergencies', [
+        $emergency = RegulatoryEmergency::create([
             'location' => 'San Jose de Buenavista, Antique',
             'starts_on' => '2026-07-26',
             'declaration_reference' => 'PDRRMC-2026-07',
-            'confirmed' => true,
-        ])->assertCreated()->json('data.id');
+            'status' => 'active', 'active_scope_key' => 'systemwide',
+            'confirmed_at' => '2026-07-25 16:00:00', 'responsible_admin_id' => $this->admin->id,
+        ]);
+        $emergencyId = $emergency->id;
 
         $this->getJson('/api/admin/emergency-prices/resolve?commodity_key=saba-sardines-155g&location=San%20Jose%20de%20Buenavista%2C%20Antique&observed_at=2026-07-26')
             ->assertOk()
             ->assertJsonPath('status', 'REGULATORY_PRICE_UNAVAILABLE');
 
-        $this->postJson('/api/admin/emergency-prices', [
+        RegulatoryPriceRecord::create([
             'regulatory_emergency_id' => $emergencyId,
             'commodity_key' => 'saba-sardines-155g',
             'price_type' => 'PRICE_FREEZE',
             'authoritative_price' => 21.25,
             'effective_from' => '2026-07-26',
             'location' => 'San Jose de Buenavista, Antique',
-            'declaration_reference' => 'PDRRMC-2026-07',
+            'declaration_reference' => 'PDRRMC-2026-07', 'created_by' => $this->admin->id,
             'source_reference' => 'DTI-PF-2026-07',
-        ])->assertCreated();
+        ]);
         $this->getJson('/api/admin/emergency-prices/resolve?commodity_key=saba-sardines-155g&location=San%20Jose%20de%20Buenavista%2C%20Antique&observed_at=2026-07-26')
             ->assertOk()
             ->assertJsonPath('status', 'REGULATORY_PRICE_FOUND')
@@ -249,21 +256,21 @@ class AdminRegulatoryWorkflowTest extends TestCase
             'subject_id' => $emergencyId,
         ]);
 
-        $noticesBefore = \App\Models\LegalNotice::count();
+        $noticesBefore = LegalNotice::count();
         $this->postJson('/api/admin/legal/dispatch', ['store_id' => $this->store->id])
             ->assertNotFound();
-        $this->assertSame($noticesBefore, \App\Models\LegalNotice::count());
+        $this->assertSame($noticesBefore, LegalNotice::count());
 
         $this->postJson('/api/admin/legal-notices', [])
             ->assertUnprocessable();
 
-        $record = \App\Models\MonitoringRecord::query()->first();
+        $record = MonitoringRecord::query()->first();
         $item = $record?->items()->where('is_anomaly', true)->whereNotNull('reference_value')->first();
         if ($item) {
             $draft = $this->postJson('/api/admin/legal-notices', [
-            'monitoring_record_id' => $record->id,
-            'item_ids' => [$item->id],
-            'notice_type' => 'LOI',
+                'monitoring_record_id' => $record->id,
+                'item_ids' => [$item->id],
+                'notice_type' => 'LOI',
             ])->assertCreated();
             $this->postJson('/api/admin/legal-notices/'.$draft->json('data.id').'/preview')
                 ->assertOk()->assertSee('DRAFT — NOT AN OFFICIAL NOTICE')->assertSee((string) $item->recorded_price);

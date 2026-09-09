@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\ConsumerReport;
+use App\Models\MonitoringRecord;
+use App\Models\MonitoringRecordItem;
+use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,6 +52,7 @@ class FieldNotificationTest extends TestCase
             'data' => json_encode(['event' => $event, 'payload' => []]),
             'created_at' => now(), 'updated_at' => now(),
         ]);
+
         return $id;
     }
 
@@ -58,7 +62,9 @@ class FieldNotificationTest extends TestCase
         $other = $this->officer('notification-two@dti.test');
         $ownOne = $this->insertNotification($officer, 'one');
         $ownTwo = $this->insertNotification($officer, 'two');
-        foreach (range(3, 12) as $number) $this->insertNotification($officer, 'event-'.$number);
+        foreach (range(3, 12) as $number) {
+            $this->insertNotification($officer, 'event-'.$number);
+        }
         $otherId = $this->insertNotification($other, 'private-other');
         Sanctum::actingAs($officer->fresh(), ['field-monitoring']);
 
@@ -102,35 +108,55 @@ class FieldNotificationTest extends TestCase
         $this->assertDatabaseHas('notifications', ['notifiable_id' => $active->id]);
         $this->assertTrue($active->fresh()->notifications->contains(fn ($notification) => $notification->data['event'] === 'srp_published'));
 
-        $this->postJson("/api/admin/srp/{$srpId}/revisions", [
+        $revisionId = $this->postJson("/api/admin/srp/{$srpId}/revisions", [
             'commodity_name' => 'Rice', 'unit' => 'kg', 'baseline_price' => 52,
             'effective_date' => '2026-09-01', 'source_reference' => 'SRP-2026-09',
             'change_reason' => 'Approved revision.',
-        ])->assertCreated();
+        ])->assertCreated()->json('data.id');
         $this->assertTrue($active->fresh()->notifications->contains(fn ($notification) => $notification->data['event'] === 'srp_revised'));
 
-        $emergencyId = $this->postJson('/api/admin/emergencies', [
-            'location' => 'Display metadata', 'starts_on' => '2026-08-01',
-            'declaration_reference' => 'DECL-NOTIFY', 'confirmed' => true,
-        ])->assertCreated()->json('data.id');
-        $this->postJson('/api/admin/emergency-prices', [
-            'regulatory_emergency_id' => $emergencyId, 'commodity_key' => 'rice-kg',
-            'price_type' => 'APC', 'authoritative_price' => 49, 'effective_from' => '2026-08-01',
-            'source_reference' => 'APC-NOTIFY',
+        $bulletin = SrpBulletin::findOrFail($revisionId);
+        $bulletin->update(['price_freeze_applicable' => true]);
+        $record = MonitoringRecord::create([
+            'client_uuid' => '7bb34575-7079-40aa-b360-bdc1cfa85d85', 'officer_user_id' => $active->id,
+            'store_id' => $store->id, 'status' => 'accepted', 'started_at' => '2026-09-01 09:00:00',
+            'finalized_at' => '2026-09-01 09:00:00', 'received_at' => '2026-09-01 09:00:00',
+            'latitude' => 10.7, 'longitude' => 122.0, 'location_accuracy_meters' => 5,
+            'location_captured_at' => '2026-09-01 09:00:00', 'representative_name' => 'Owner',
+            'officer_signature_disk' => 'local', 'officer_signature_path' => 'officer.png',
+            'officer_signature_sha256' => str_repeat('a', 64),
+            'representative_signature_disk' => 'local', 'representative_signature_path' => 'owner.png',
+            'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
+            'protocol_mode' => 'standard',
+        ]);
+        MonitoringRecordItem::create([
+            'monitoring_record_id' => $record->id, 'srp_id' => $bulletin->id,
+            'recorded_price' => 49, 'baseline_price' => 52, 'is_anomaly' => false,
+        ]);
+        $prepared = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'declaration_reference' => 'DECL-NOTIFY',
         ])->assertCreated();
+        $emergencyId = $prepared->json('data.id');
+        $this->postJson("/api/admin/emergencies/{$emergencyId}/activate", [
+            'confirmed' => true, 'preparation_hash' => $prepared->json('data.preparation_hash'),
+        ])->assertOk();
         $this->patchJson("/api/admin/emergencies/{$emergencyId}", [
-            'status' => 'ended', 'ends_on' => '2026-08-31', 'confirmed' => true,
+            'status' => 'ended', 'ends_on' => '2026-09-09', 'confirmed' => true,
         ])->assertOk();
 
         $events = $active->fresh()->notifications->pluck('data')->pluck('event');
         $this->assertTrue($events->contains('emergency_activated'));
-        $this->assertTrue($events->contains('emergency_price_created'));
         $this->assertTrue($events->contains('emergency_ended'));
 
-        $cancelId = $this->postJson('/api/admin/emergencies', [
-            'location' => 'Display metadata', 'starts_on' => '2026-09-01',
-            'declaration_reference' => 'DECL-CANCEL', 'confirmed' => true,
-        ])->assertCreated()->json('data.id');
+        $cancel = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-10',
+            'declaration_reference' => 'DECL-CANCEL',
+        ])->assertCreated();
+        $cancelId = $cancel->json('data.id');
+        $this->postJson("/api/admin/emergencies/{$cancelId}/activate", [
+            'confirmed' => true, 'preparation_hash' => $cancel->json('data.preparation_hash'),
+        ])->assertOk();
         $this->patchJson("/api/admin/emergencies/{$cancelId}", [
             'status' => 'cancelled', 'confirmed' => true,
         ])->assertOk();

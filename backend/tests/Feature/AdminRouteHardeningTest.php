@@ -58,29 +58,31 @@ class AdminRouteHardeningTest extends TestCase
         $this->getJson('/api/admin/analytics/options')->assertForbidden();
     }
 
-    public function test_sensitive_emergency_creation_requires_recent_reauthentication(): void
+    public function test_emergency_activation_requires_recent_reauthentication(): void
     {
         $admin = $this->user('dti_evaluator');
         $token = $admin->createToken('dti-admin-web', ['dti-admin'], now()->addHours(8))->plainTextToken;
         $payload = [
-            'location' => 'Antique',
+            'location' => 'San Jose de Buenavista, Antique',
             'starts_on' => '2026-07-30',
             'declaration_reference' => 'DECL-2026-01',
             'confirmed' => true,
         ];
 
+        $prepared = $this->withToken($token)->postJson('/api/admin/emergencies', $payload)->assertCreated();
+        $activate = ['confirmed' => true, 'preparation_hash' => $prepared->json('data.preparation_hash')];
+
         $this->withToken($token)
-            ->postJson('/api/admin/emergencies', $payload)
-            ->assertForbidden()
-            ->assertJsonPath('status', 'REAUTHENTICATION_REQUIRED');
+            ->postJson('/api/admin/emergencies/'.$prepared->json('data.id').'/activate', $activate)
+            ->assertForbidden()->assertJsonPath('status', 'REAUTHENTICATION_REQUIRED');
 
         $this->withToken($token)
             ->postJson('/api/admin/reauthenticate', ['password' => 'correct-password'])
             ->assertOk();
 
         $this->withToken($token)
-            ->postJson('/api/admin/emergencies', $payload)
-            ->assertCreated();
+            ->postJson('/api/admin/emergencies/'.$prepared->json('data.id').'/activate', $activate)
+            ->assertUnprocessable()->assertJsonPath('status', 'APC_SOURCE_WEEK_EMPTY');
     }
 
     public function test_store_cannot_be_public_until_active_and_verified(): void
