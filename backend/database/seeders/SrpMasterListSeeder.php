@@ -2,10 +2,12 @@
 
 namespace Database\Seeders;
 
-use App\Models\SrpBulletin;
 use App\Models\ItemAlias;
+use App\Models\SrpBulletin;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use RuntimeException;
 
 class SrpMasterListSeeder extends Seeder
 {
@@ -15,21 +17,23 @@ class SrpMasterListSeeder extends Seeder
     public function run(): void
     {
         $jsonPath = base_path('../DTI_SRP_Master_List_2026-05-11.json');
-        
-        if (!File::exists($jsonPath)) {
+
+        if (! File::exists($jsonPath)) {
             $jsonPath = base_path('DTI_SRP_Master_List_2026-05-11.json');
         }
 
-        if (!File::exists($jsonPath)) {
+        if (! File::exists($jsonPath)) {
             $this->command->error("DTI_SRP_Master_List_2026-05-11.json not found at {$jsonPath}");
+
             return;
         }
 
         $jsonContent = File::get($jsonPath);
         $data = json_decode($jsonContent, true);
 
-        if (!$data || !isset($data['items'])) {
-            $this->command->error("Invalid JSON structure in DTI_SRP_Master_List_2026-05-11.json");
+        if (! $data || ! isset($data['items'])) {
+            $this->command->error('Invalid JSON structure in DTI_SRP_Master_List_2026-05-11.json');
+
             return;
         }
 
@@ -53,12 +57,20 @@ class SrpMasterListSeeder extends Seeder
 
             // Build clean, concise commodity display name
             $commodityName = $itemName;
-            if (!empty($unit) && !str_contains($itemName, $unit)) {
+            if (! empty($unit) && ! str_contains($itemName, $unit)) {
                 $commodityName = "{$itemName} ({$unit})";
             }
 
             // Check if record exists to preserve any attached image_path
             $existing = SrpBulletin::where('commodity_name', $commodityName)->first();
+            $commodityKey = $existing?->commodity_key ?: Str::slug(trim($itemName.' '.$unit));
+            if (! $existing?->commodity_key) {
+                $collision = SrpBulletin::query()->where('commodity_key', $commodityKey)->get()
+                    ->first(fn ($row) => $row->commodity_name !== $commodityName || $row->unit !== $unit);
+                if ($collision) {
+                    throw new RuntimeException("Derived commodity_key collision '{$commodityKey}' between '{$commodityName}' and '{$collision->commodity_name}'.");
+                }
+            }
 
             $attributes = [
                 'category' => $category,
@@ -69,12 +81,13 @@ class SrpMasterListSeeder extends Seeder
                 'is_active' => true,
                 'price_freeze_applicable' => $freezeApplicable,
                 'price_freeze_treatment' => $freezeTreatment,
+                'commodity_key' => $commodityKey,
             ];
 
             // Preserve existing image_path if no new one is provided in JSON
-            if (isset($item['image_path']) && !empty($item['image_path'])) {
+            if (isset($item['image_path']) && ! empty($item['image_path'])) {
                 $attributes['image_path'] = $item['image_path'];
-            } elseif ($existing && !empty($existing->image_path)) {
+            } elseif ($existing && ! empty($existing->image_path)) {
                 $attributes['image_path'] = $existing->image_path;
             }
 

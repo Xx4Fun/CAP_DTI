@@ -11,9 +11,10 @@ php artisan storage:link || true
 # Run database migrations
 php artisan migrate --force || true
 
-
+if [ "${RUN_CAPSTONE_MONITORING_SEED:-}" = "2026-09-01-v1" ]; then
+    php artisan db:seed --class=CapstoneMonitoringSeeder --force
+fi
 
 # Execute Supervisord
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-
 
