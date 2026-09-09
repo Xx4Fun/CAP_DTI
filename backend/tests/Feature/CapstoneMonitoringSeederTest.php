@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AuditEvent;
+use App\Models\LegalNotice;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryEmergency;
@@ -11,12 +12,15 @@ use App\Models\Store;
 use App\Models\TemporalInspection;
 use App\Models\User;
 use App\Services\Admin\EmergencyApcPreparationService;
+use Database\Seeders\CapstoneMonitoringReplacementSeeder;
 use Database\Seeders\CapstoneMonitoringSeeder;
 use Database\Seeders\OfficialEstablishmentSeeder;
 use Database\Seeders\SrpMasterListSeeder;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Mockery;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -150,6 +154,99 @@ class CapstoneMonitoringSeederTest extends TestCase
         $this->assertSame([], Storage::disk('receipt_evidence')->allFiles());
     }
 
+    public function test_replacement_supersedes_the_verified_legacy_set_and_seeds_atomically(): void
+    {
+        $this->prepareCatalog(123, 36);
+        [$legacy, $notice] = $this->createProductionLegacySet();
+        $legacyFiles = Storage::disk('receipt_evidence')->allFiles();
+        $auditCount = AuditEvent::query()->count();
+
+        $this->seed(CapstoneMonitoringReplacementSeeder::class);
+
+        $this->assertSame(4, MonitoringRecord::query()->whereKey($legacy->pluck('id'))->where('status', 'superseded')->count());
+        $this->assertSame('cancelled', $notice->fresh()->status);
+        $this->assertNotNull($notice->fresh()->cancelled_at);
+        $this->assertSame(9, MonitoringRecordItem::query()->whereIn('monitoring_record_id', $legacy->pluck('id'))->count());
+        $this->assertSame(9, TemporalInspection::query()->whereIn('monitoring_record_id', $legacy->pluck('id'))->count());
+        foreach ($legacyFiles as $path) {
+            Storage::disk('receipt_evidence')->assertExists($path);
+        }
+
+        $demo = MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->get();
+        $this->assertCount(10, $demo);
+        $this->assertSame(449, MonitoringRecordItem::query()->whereIn('monitoring_record_id', $demo->pluck('id'))->count());
+        $this->assertSame(449, TemporalInspection::query()->whereIn('monitoring_record_id', $demo->pluck('id'))->count());
+        $this->assertSame(12, MonitoringRecordItem::query()->whereIn('monitoring_record_id', $demo->pluck('id'))->where('is_anomaly', true)->count());
+        $this->assertCount(28, Storage::disk('receipt_evidence')->allFiles());
+        $this->assertSame(4, AuditEvent::query()->where('action', 'monitoring.capstone_legacy_superseded')->count());
+        $this->assertSame(1, AuditEvent::query()->where('action', 'legal.capstone_legacy_draft_cancelled')->count());
+        $this->assertSame($auditCount + 15, AuditEvent::query()->count());
+
+        $before = $this->datasetCounts();
+        $files = Storage::disk('receipt_evidence')->allFiles();
+        $this->seed(CapstoneMonitoringReplacementSeeder::class);
+        $this->assertSame($before, $this->datasetCounts());
+        $this->assertSame($files, Storage::disk('receipt_evidence')->allFiles());
+    }
+
+    public function test_replacement_rolls_back_legacy_statuses_when_new_evidence_cannot_be_written(): void
+    {
+        $this->prepareCatalog();
+        [$legacy, $notice] = $this->createProductionLegacySet();
+        $contents = collect(Storage::disk('receipt_evidence')->allFiles())
+            ->mapWithKeys(fn ($path) => [$path => Storage::disk('receipt_evidence')->get($path)]);
+        $filesystem = Mockery::mock(Filesystem::class);
+        $filesystem->shouldReceive('exists')->andReturn(true);
+        $filesystem->shouldReceive('get')->andReturnUsing(fn ($path) => $contents[$path]);
+        $filesystem->shouldReceive('put')->andReturn(false);
+        $filesystem->shouldReceive('delete')->andReturn(true);
+        Storage::shouldReceive('disk')->with('receipt_evidence')->andReturn($filesystem);
+
+        try {
+            $this->seed(CapstoneMonitoringReplacementSeeder::class);
+            $this->fail('Expected the replacement seed to fail when evidence storage fails.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('persist private capstone signature', $exception->getMessage());
+        }
+
+        $this->assertSame(4, MonitoringRecord::query()->whereKey($legacy->pluck('id'))->where('status', 'accepted')->count());
+        $this->assertSame('draft', $notice->fresh()->status);
+        $this->assertNull($notice->fresh()->cancelled_at);
+        $this->assertSame(0, MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->count());
+        $this->assertSame(0, AuditEvent::query()->whereIn('action', ['monitoring.capstone_legacy_superseded', 'legal.capstone_legacy_draft_cancelled'])->count());
+    }
+
+    public function test_replacement_still_supersedes_legacy_records_when_the_demo_dataset_already_exists(): void
+    {
+        $this->prepareCatalog(123, 36);
+        $this->seed(CapstoneMonitoringSeeder::class);
+        $demoIds = MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->pluck('id')->all();
+        [$legacy, $notice] = $this->createProductionLegacySet();
+
+        $this->seed(CapstoneMonitoringReplacementSeeder::class);
+
+        $this->assertSame($demoIds, MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->pluck('id')->all());
+        $this->assertSame(4, MonitoringRecord::query()->whereKey($legacy->pluck('id'))->where('status', 'superseded')->count());
+        $this->assertSame('cancelled', $notice->fresh()->status);
+        $this->assertSame(449, MonitoringRecordItem::query()->whereIn('monitoring_record_id', $demoIds)->count());
+    }
+
+    public function test_replacement_refuses_an_issued_legal_notice_without_writes(): void
+    {
+        $this->prepareCatalog();
+        [$legacy, $notice] = $this->createProductionLegacySet();
+        $notice->update(['status' => 'issued', 'issued_at' => now(), 'control_number' => 'LOI-TEST-1']);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('unissued draft');
+        try {
+            $this->seed(CapstoneMonitoringReplacementSeeder::class);
+        } finally {
+            $this->assertSame(4, MonitoringRecord::query()->whereKey($legacy->pluck('id'))->where('status', 'accepted')->count());
+            $this->assertSame(0, MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->count());
+        }
+    }
+
     public function test_incomplete_covered_catalog_identity_aborts_before_writes(): void
     {
         $this->prepareCatalog();
@@ -247,12 +344,69 @@ class CapstoneMonitoringSeederTest extends TestCase
         $this->seed(SrpMasterListSeeder::class);
     }
 
-    private function prepareCatalog(): void
+    private function prepareCatalog(int $covered = 30, int $other = 12): void
     {
         Storage::fake('receipt_evidence');
         $this->seed(OfficialEstablishmentSeeder::class);
-        $this->createBulletins(30, true);
-        $this->createBulletins(12, false);
+        $this->createBulletins($covered, true);
+        $this->createBulletins($other, false);
+    }
+
+    private function createProductionLegacySet(): array
+    {
+        $officer = User::create(['name' => 'Kris', 'email' => 'kris@example.test', 'password' => 'password', 'role' => 'field_officer']);
+        $specs = [
+            ['0b879c49-b61c-4a21-828b-724903c0bfde', 'Gaisano Grand Mall', '2026-09-01 03:54:34', 3],
+            ['cc00a001-225b-4135-bb33-79d746d63836', 'Gaisano Grand Mall', '2026-09-02 15:19:56', 1],
+            ['410df4c8-eec2-4686-93d9-26bb796b0c09', 'Robinsons Supermarket Corp.', '2026-09-06 10:35:27', 1],
+            ['fae9368f-4a7b-476f-89bf-0d16708d4617', 'Robinsons Supermarket Corp.', '2026-09-06 10:37:32', 4],
+        ];
+        $bulletins = SrpBulletin::query()->orderBy('id')->take(4)->get();
+        $records = collect();
+        foreach ($specs as [$uuid, $storeName, $finalizedAt, $itemCount]) {
+            $store = Store::query()->where('store_name', $storeName)->firstOrFail();
+            $signature = "legacy-signature-{$uuid}";
+            $hash = hash('sha256', $signature);
+            $record = MonitoringRecord::create([
+                'client_uuid' => $uuid, 'officer_user_id' => $officer->id, 'store_id' => $store->id,
+                'status' => 'accepted', 'started_at' => $finalizedAt, 'finalized_at' => $finalizedAt,
+                'received_at' => $finalizedAt, 'latitude' => $store->latitude, 'longitude' => $store->longitude,
+                'location_accuracy_meters' => 8, 'location_captured_at' => $finalizedAt,
+                'representative_name' => 'Legacy Representative', 'officer_signature_disk' => 'receipt_evidence',
+                'officer_signature_path' => "field-monitoring/legacy/{$uuid}-officer.png", 'officer_signature_sha256' => $hash,
+                'representative_signature_disk' => 'receipt_evidence',
+                'representative_signature_path' => "field-monitoring/legacy/{$uuid}-representative.png", 'representative_signature_sha256' => $hash,
+                'sync_source' => 'online', 'client_version' => '1.0.0', 'protocol_mode' => null,
+            ]);
+            Storage::disk('receipt_evidence')->put($record->officer_signature_path, $signature);
+            Storage::disk('receipt_evidence')->put($record->representative_signature_path, $signature);
+            foreach (range(0, $itemCount - 1) as $index) {
+                $bulletin = $bulletins[$index];
+                $item = MonitoringRecordItem::create([
+                    'monitoring_record_id' => $record->id, 'srp_id' => $bulletin->id,
+                    'recorded_price' => $bulletin->baseline_price, 'baseline_price' => $bulletin->baseline_price,
+                    'variance_percent' => 0, 'is_anomaly' => false,
+                ]);
+                TemporalInspection::create([
+                    'store_id' => $store->id, 'srp_id' => $bulletin->id,
+                    'recorded_price' => $bulletin->baseline_price, 'is_flagged' => false,
+                    'inspection_timestamp' => $finalizedAt, 'sync_timestamp' => $finalizedAt,
+                    'officer_signature' => $record->officer_signature_path,
+                    'vendor_signature' => $record->representative_signature_path,
+                    'validation_status' => 'verified', 'validated_at' => $finalizedAt,
+                    'monitoring_record_id' => $record->id, 'monitoring_record_item_id' => $item->id,
+                    'officer_user_id' => $officer->id,
+                ]);
+            }
+            AuditEvent::create(['actor_id' => $officer->id, 'action' => 'monitoring_record.accepted', 'subject_type' => MonitoringRecord::class, 'subject_id' => $record->id]);
+            $records->push($record);
+        }
+        $notice = LegalNotice::create([
+            'store_id' => $records->last()->store_id, 'monitoring_record_id' => $records->last()->id,
+            'notice_type' => 'LOI', 'status' => 'draft',
+        ]);
+
+        return [$records, $notice];
     }
 
     private function createBulletins(int $count, bool $covered): void

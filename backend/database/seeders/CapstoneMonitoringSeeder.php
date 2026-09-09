@@ -3,8 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\AuditEvent;
+use App\Models\LegalNotice;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryPriceCandidate;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
@@ -22,6 +24,8 @@ use Throwable;
 
 class CapstoneMonitoringSeeder extends Seeder
 {
+    protected bool $replaceVerifiedLegacyRecords = false;
+
     private const CLIENT_VERSION = 'capstone-seed-2026-09-01';
 
     private const DATASET_VERSION = '2026-09-01-v1';
@@ -32,6 +36,13 @@ class CapstoneMonitoringSeeder extends Seeder
 
     private const ANOMALY_STORES = ['HARO MART', 'Unitop General Merchandise'];
 
+    private const LEGACY_RECORDS = [
+        '0b879c49-b61c-4a21-828b-724903c0bfde' => ['store' => 'Gaisano Grand Mall', 'finalized_at' => '2026-09-01 03:54:34', 'items' => 3, 'digest' => '5e0eb3df1b51b2521e85b8dd2fc45781'],
+        'cc00a001-225b-4135-bb33-79d746d63836' => ['store' => 'Gaisano Grand Mall', 'finalized_at' => '2026-09-02 15:19:56', 'items' => 1, 'digest' => 'c75ec4fe013a04f8d1273fd646214983'],
+        '410df4c8-eec2-4686-93d9-26bb796b0c09' => ['store' => 'Robinsons Supermarket Corp.', 'finalized_at' => '2026-09-06 10:35:27', 'items' => 1, 'digest' => '6660984de62766655c775552380a39b4'],
+        'fae9368f-4a7b-476f-89bf-0d16708d4617' => ['store' => 'Robinsons Supermarket Corp.', 'finalized_at' => '2026-09-06 10:37:32', 'items' => 4, 'digest' => '7bc95e37f828cf8e9d3289d5a392d7d9'],
+    ];
+
     public function run(): void
     {
         $references = app(FieldReferenceResolver::class);
@@ -39,7 +50,7 @@ class CapstoneMonitoringSeeder extends Seeder
             ->orderBy('store_name')->orderBy('id')->get();
         $period = MonitoringPeriod::for(CarbonImmutable::parse(self::TARGET_DATE.' 12:00', 'Asia/Manila'));
 
-        $this->preflight($stores, $period, $references);
+        $legacyRecords = $this->preflight($stores, $period, $references);
         $covered = $this->effectiveBulletins(true);
         $other = $this->effectiveBulletins(false);
         $expected = $this->expectedItems($stores, $covered, $other, $references);
@@ -58,7 +69,17 @@ class CapstoneMonitoringSeeder extends Seeder
             'evidence_hashes' => ['officer' => hash('sha256', $officerPng), 'representative' => hash('sha256', $representativePng)],
         ], JSON_UNESCAPED_SLASHES);
 
-        if ($this->existingDatasetIsComplete($stores, $expected, hash('sha256', $officerPng), hash('sha256', $representativePng))) {
+        $datasetComplete = $this->existingDatasetIsComplete($stores, $expected, hash('sha256', $officerPng), hash('sha256', $representativePng));
+        if ($datasetComplete && $this->replaceVerifiedLegacyRecords && $legacyRecords->where('status', 'accepted')->isNotEmpty()) {
+            DB::transaction(function () use ($period): void {
+                $this->lockApcPreparation();
+                $this->supersedeLegacyRecords($period);
+            });
+            $this->reportLegacySuperseded($legacyRecords);
+
+            return;
+        }
+        if ($datasetComplete) {
             $this->command?->info("Capstone monitoring dataset verified; no changes made. {$summary}");
 
             return;
@@ -67,7 +88,11 @@ class CapstoneMonitoringSeeder extends Seeder
         $writtenPaths = [];
         $disk = (string) config('filesystems.receipt_evidence_disk', 'receipt_evidence');
         try {
-            DB::transaction(function () use ($stores, $expected, $officerPng, $representativePng, $disk, &$writtenPaths): void {
+            DB::transaction(function () use ($stores, $expected, $officerPng, $representativePng, $disk, $period, &$writtenPaths): void {
+                if ($this->replaceVerifiedLegacyRecords) {
+                    $this->lockApcPreparation();
+                    $this->supersedeLegacyRecords($period);
+                }
                 $officers = $this->officers();
                 foreach ($stores as $storeIndex => $store) {
                     $finalizedAt = $this->visitAt($storeIndex);
@@ -166,10 +191,13 @@ class CapstoneMonitoringSeeder extends Seeder
             throw $exception;
         }
 
+        if ($this->replaceVerifiedLegacyRecords && $legacyRecords->where('status', 'accepted')->isNotEmpty()) {
+            $this->reportLegacySuperseded($legacyRecords);
+        }
         $this->command?->info("Capstone monitoring dataset created. {$summary}");
     }
 
-    private function preflight(Collection $stores, array $period, FieldReferenceResolver $references): void
+    private function preflight(Collection $stores, array $period, FieldReferenceResolver $references): Collection
     {
         if ($period['protocol_mode'] !== 'standard'
             || $period['starts_at']->toIso8601String() !== '2026-08-30T16:00:00+00:00'
@@ -225,9 +253,172 @@ class CapstoneMonitoringSeeder extends Seeder
             ->where(fn ($query) => $query->where('protocol_mode', 'standard')->orWhereNull('protocol_mode'))
             ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at'])
             ->where(fn ($query) => $query->whereNull('client_version')->orWhere('client_version', '!=', self::CLIENT_VERSION));
-        if ($foreignRoutine->exists()) {
+        if (! $this->replaceVerifiedLegacyRecords && $foreignRoutine->exists()) {
             throw new RuntimeException('A non-demo accepted standard routine record already exists in the source week.');
         }
+
+        return $this->replaceVerifiedLegacyRecords
+            ? $this->replacementRecords($foreignRoutine)
+            : collect();
+    }
+
+    private function replacementRecords($foreignRoutine, bool $lock = false): Collection
+    {
+        $query = MonitoringRecord::query()->whereIn('client_uuid', array_keys(self::LEGACY_RECORDS))
+            ->with(['store', 'officer', 'items']);
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+        $records = $query->get()->keyBy('client_uuid');
+        if ($records->count() !== count(self::LEGACY_RECORDS)) {
+            throw new RuntimeException('The verified legacy monitoring set is incomplete.');
+        }
+
+        $statuses = $records->pluck('status')->unique()->values();
+        if ($statuses->count() !== 1 || ! in_array($statuses->first(), ['accepted', 'superseded'], true)) {
+            throw new RuntimeException('The verified legacy monitoring set has unexpected statuses.');
+        }
+        $expectedAccepted = $statuses->first() === 'accepted' ? collect(array_keys(self::LEGACY_RECORDS))->sort()->values()->all() : [];
+        if ($foreignRoutine->pluck('client_uuid')->sort()->values()->all() !== $expectedAccepted) {
+            throw new RuntimeException('The source week contains monitoring records outside the verified legacy set.');
+        }
+
+        $disk = (string) config('filesystems.receipt_evidence_disk', 'receipt_evidence');
+        $itemIds = collect();
+        foreach (self::LEGACY_RECORDS as $uuid => $expected) {
+            $record = $records[$uuid];
+            if (DB::getDriverName() === 'pgsql') {
+                $snapshot = DB::selectOne(<<<'SQL'
+                    SELECT md5(jsonb_build_object(
+                        'record', to_jsonb(mr) - 'status' - 'updated_at',
+                        'items', (SELECT coalesce(jsonb_agg(to_jsonb(i) ORDER BY i.id), '[]'::jsonb) FROM monitoring_record_items i WHERE i.monitoring_record_id = mr.id),
+                        'temporals', (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.id), '[]'::jsonb) FROM temporal_inspections t WHERE t.monitoring_record_id = mr.id)
+                    )::text) AS digest
+                    FROM monitoring_records mr WHERE mr.client_uuid = ?
+                    SQL, [$uuid]);
+                if (! $snapshot || ! hash_equals($expected['digest'], $snapshot->digest)) {
+                    throw new RuntimeException("Legacy monitoring record {$uuid} differs from the trusted production digest.");
+                }
+            }
+            if ($record->store?->store_name !== $expected['store']
+                || $record->finalized_at->utc()->format('Y-m-d H:i:s') !== $expected['finalized_at']
+                || $record->client_version !== '1.0.0' || $record->field_verification_request_id !== null
+                || $record->officer?->name !== 'Kris' || $record->items->count() !== $expected['items']) {
+                throw new RuntimeException("Legacy monitoring record {$uuid} differs from the verified snapshot.");
+            }
+            $items = $record->items->keyBy('id');
+            $ids = $items->keys();
+            $temporals = TemporalInspection::query()->where('monitoring_record_id', $record->id)->get();
+            if ($temporals->count() !== $expected['items'] || $temporals->contains(function ($row) use ($record, $items): bool {
+                $item = $items->get($row->monitoring_record_item_id);
+
+                return ! $item || $row->validation_status !== 'verified'
+                    || $row->store_id !== $record->store_id || $row->srp_id !== $item->srp_id
+                    || abs($row->recorded_price - $item->recorded_price) > 0.0001
+                    || $row->is_flagged !== $item->is_anomaly || $row->officer_user_id !== $record->officer_user_id
+                    || $row->inspection_timestamp->utc()->format('Y-m-d H:i:s') !== $record->finalized_at->utc()->format('Y-m-d H:i:s');
+            }) || $temporals->pluck('monitoring_record_item_id')->sort()->values()->all() !== $ids->sort()->values()->all()) {
+                throw new RuntimeException("Legacy monitoring record {$uuid} has incomplete temporal history.");
+            }
+            foreach ([
+                [$record->officer_signature_disk, $record->officer_signature_path, $record->officer_signature_sha256],
+                [$record->representative_signature_disk, $record->representative_signature_path, $record->representative_signature_sha256],
+            ] as [$evidenceDisk, $path, $hash]) {
+                if ($evidenceDisk !== $disk || ! Storage::disk($disk)->exists($path)
+                    || ! hash_equals($hash, hash('sha256', Storage::disk($disk)->get($path)))) {
+                    throw new RuntimeException("Legacy monitoring record {$uuid} has invalid signature evidence.");
+                }
+            }
+            $itemIds = $itemIds->merge($ids);
+        }
+
+        if (RegulatoryPriceCandidate::query()->get()->contains(fn ($candidate) => collect($candidate->source_item_ids)->intersect($itemIds)->isNotEmpty())) {
+            throw new RuntimeException('The verified legacy monitoring set is already referenced by an APC candidate.');
+        }
+
+        $noticeQuery = LegalNotice::query()->whereIn('monitoring_record_id', $records->pluck('id'))->withCount('attachments');
+        if ($lock) {
+            $noticeQuery->lockForUpdate();
+        }
+        $notices = $noticeQuery->get();
+        $noticeRecord = $records['fae9368f-4a7b-476f-89bf-0d16708d4617'];
+        $notice = $notices->firstWhere('monitoring_record_id', $noticeRecord->id);
+        $expectedNoticeStatus = $statuses->first() === 'accepted' ? 'draft' : 'cancelled';
+        if ($notices->count() !== 1 || ! $notice || $notice->status !== $expectedNoticeStatus
+            || $notice->notice_type !== 'LOI' || $notice->control_number !== null || $notice->policy_version !== null
+            || $notice->issued_at !== null || $notice->delivered_at !== null || $notice->closed_at !== null
+            || $notice->response_received_at !== null
+            || ($expectedNoticeStatus === 'draft' && $notice->cancelled_at !== null)
+            || ($expectedNoticeStatus === 'cancelled' && $notice->cancelled_at === null)
+            || $notice->pdf_disk !== null || $notice->pdf_file_path !== null || $notice->attachments_count !== 0) {
+            throw new RuntimeException('The linked legal notice is not the verified unissued draft.');
+        }
+
+        return $records->values();
+    }
+
+    private function supersedeLegacyRecords(array $period): void
+    {
+        $foreignRoutine = MonitoringRecord::query()->where('status', 'accepted')->whereNull('field_verification_request_id')
+            ->where(fn ($query) => $query->where('protocol_mode', 'standard')->orWhereNull('protocol_mode'))
+            ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at'])
+            ->where(fn ($query) => $query->whereNull('client_version')->orWhere('client_version', '!=', self::CLIENT_VERSION));
+        $records = $this->replacementRecords($foreignRoutine, true);
+        if ($records->where('status', 'superseded')->count() === $records->count()) {
+            return;
+        }
+
+        foreach ($records as $record) {
+            $record->update(['status' => 'superseded']);
+            AuditEvent::create([
+                'actor_id' => $record->officer_user_id,
+                'action' => 'monitoring.capstone_legacy_superseded',
+                'subject_type' => MonitoringRecord::class,
+                'subject_id' => $record->id,
+                'metadata' => [
+                    'synthetic' => false, 'dataset_version' => self::DATASET_VERSION,
+                    'previous_status' => 'accepted', 'client_uuid' => $record->client_uuid,
+                    'store_name' => $record->store->store_name, 'finalized_at' => $record->finalized_at->toIso8601String(),
+                    'item_ids' => $record->items->pluck('id')->all(),
+                    'officer_signature' => ['disk' => $record->officer_signature_disk, 'path' => $record->officer_signature_path, 'sha256' => $record->officer_signature_sha256],
+                    'representative_signature' => ['disk' => $record->representative_signature_disk, 'path' => $record->representative_signature_path, 'sha256' => $record->representative_signature_sha256],
+                ],
+            ]);
+        }
+
+        $noticeRecord = $records->firstWhere('client_uuid', 'fae9368f-4a7b-476f-89bf-0d16708d4617');
+        $notice = LegalNotice::query()->where('monitoring_record_id', $noticeRecord->id)->lockForUpdate()->firstOrFail();
+        $notice->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+        AuditEvent::create([
+            'actor_id' => $notice->prepared_by,
+            'action' => 'legal.capstone_legacy_draft_cancelled',
+            'subject_type' => LegalNotice::class,
+            'subject_id' => $notice->id,
+            'metadata' => [
+                'synthetic' => false, 'dataset_version' => self::DATASET_VERSION,
+                'previous_status' => 'draft', 'monitoring_record_id' => $notice->monitoring_record_id,
+                'notice_type' => $notice->notice_type, 'issued' => false, 'attachment_count' => 0,
+            ],
+        ]);
+    }
+
+    private function lockApcPreparation(): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            DB::select('SELECT pg_advisory_xact_lock(?)', [20260901]);
+        }
+    }
+
+    private function reportLegacySuperseded(Collection $records): void
+    {
+        $this->command?->info('Capstone legacy monitoring set superseded. '.json_encode([
+            'dataset_version' => self::DATASET_VERSION,
+            'record_count' => $records->count(),
+            'item_count' => $records->sum(fn ($record) => $record->items->count()),
+            'temporal_count' => $records->sum(fn ($record) => $record->items->count()),
+            'cancelled_draft_count' => 1,
+            'preserved_evidence_file_count' => $records->count() * 2,
+        ]));
     }
 
     private function effectiveBulletins(bool $covered): Collection

@@ -645,6 +645,20 @@ class FieldMonitoringRecordTest extends TestCase
         ]);
     }
 
+    public function test_officer_history_excludes_superseded_records(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, [$this->bulletin('Rice', 100)]))
+            ->assertCreated()->json('data.results.0.record_id');
+        MonitoringRecord::query()->whereKey($recordId)->update(['status' => 'superseded']);
+
+        $this->withToken($token)->getJson('/api/field/monitoring-records?per_page=10')
+            ->assertOk()->assertJsonPath('data.total', 0);
+        $this->withToken($token)->getJson("/api/field/monitoring-records/{$recordId}")->assertNotFound();
+    }
+
     public function test_admin_monitoring_workspace_uses_captured_references_and_establishment_summaries(): void
     {
         Storage::fake('receipt_evidence');

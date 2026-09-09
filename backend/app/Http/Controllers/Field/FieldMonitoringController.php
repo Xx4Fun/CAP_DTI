@@ -34,6 +34,7 @@ class FieldMonitoringController extends Controller
 
         return response()->json(['data' => MonitoringRecord::query()
             ->where('officer_user_id', $user->id)
+            ->where('status', 'accepted')
             ->with(['store:id,store_name,address', 'items.bulletin:id,commodity_name,unit'])
             ->withCount(['items', 'items as anomaly_count' => fn ($query) => $query->where('is_anomaly', true)])
             ->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
@@ -42,7 +43,7 @@ class FieldMonitoringController extends Controller
     public function show(Request $request, MonitoringRecord $monitoringRecord)
     {
         $user = $this->fieldUser($request);
-        abort_unless($monitoringRecord->officer_user_id === $user->id, 404);
+        abort_unless($monitoringRecord->officer_user_id === $user->id && $monitoringRecord->status === 'accepted', 404);
         $monitoringRecord->load(['store:id,store_name,address,latitude,longitude', 'items.bulletin:id,commodity_name,unit']);
 
         return response()->json(['data' => [

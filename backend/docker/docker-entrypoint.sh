@@ -15,6 +15,10 @@ if [ "${RUN_CAPSTONE_COMMODITY_KEY_BACKFILL:-}" = "2026-09-01-v1" ]; then
     php artisan db:seed --class=CapstoneCommodityKeyBackfillSeeder --force
 fi
 
+if [ "${RUN_CAPSTONE_MONITORING_REPLACEMENT:-}" = "2026-09-01-v1" ]; then
+    php artisan db:seed --class=CapstoneMonitoringReplacementSeeder --force
+fi
+
 if [ "${RUN_CAPSTONE_MONITORING_SEED:-}" = "2026-09-01-v1" ]; then
     php artisan db:seed --class=CapstoneMonitoringSeeder --force
 fi

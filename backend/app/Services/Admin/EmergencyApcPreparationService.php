@@ -17,6 +17,9 @@ class EmergencyApcPreparationService
     public function prepare(RegulatoryEmergency $emergency, User $admin): RegulatoryEmergency
     {
         return DB::transaction(function () use ($emergency, $admin) {
+            if (DB::getDriverName() === 'pgsql') {
+                DB::select('SELECT pg_advisory_xact_lock(?)', [20260901]);
+            }
             $snapshot = $this->snapshot($emergency);
 
             $emergency->candidates()->delete();
