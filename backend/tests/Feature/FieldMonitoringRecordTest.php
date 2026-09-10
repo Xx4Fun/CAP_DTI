@@ -789,4 +789,49 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', false);
         Carbon::setTestNow();
     }
+
+    public function test_establishment_findings_endpoint_filters_anomalies_by_period(): void
+    {
+        $officer = User::create(['name' => 'Field Officer', 'email' => 'officer-findings@dti.test', 'password' => 'password', 'role' => 'field_officer']);
+        $manager = User::create(['name' => 'DTI Evaluator', 'email' => 'evaluator-findings@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
+        $store = $this->store();
+        $bulletin = $this->bulletin('Sugar', 80);
+        $bulletin2 = $this->bulletin('Cooking Oil', 50);
+
+        // Record 1: Anomaly 5 days ago
+        $record1 = MonitoringRecord::create([
+            'client_uuid' => '00000000-0000-4000-8000-000000000101', 'officer_user_id' => $officer->id,
+            'store_id' => $store->id, 'status' => 'accepted', 'started_at' => now()->subDays(5)->setTime(8, 0),
+            'finalized_at' => now()->subDays(5)->setTime(9, 0), 'received_at' => now()->subDays(5)->setTime(9, 5),
+            'latitude' => 10, 'longitude' => 121, 'location_accuracy_meters' => 8,
+            'location_captured_at' => now()->subDays(5)->setTime(8, 59),
+            'representative_name' => 'Owner', 'officer_signature_disk' => 'local', 'officer_signature_path' => 'a',
+            'officer_signature_sha256' => str_repeat('a', 64), 'representative_signature_disk' => 'local',
+            'representative_signature_path' => 'b', 'representative_signature_sha256' => str_repeat('b', 64), 'sync_source' => 'online',
+        ]);
+        MonitoringRecordItem::create([
+            'monitoring_record_id' => $record1->id, 'srp_id' => $bulletin->id, 'recorded_price' => 120,
+            'baseline_price' => 80, 'variance_percent' => 50, 'is_anomaly' => true,
+            'reference_status' => 'available', 'reference_type' => 'standard_srp',
+            'reference_label' => 'SRP', 'reference_value' => 80,
+        ]);
+
+        // Record 2 item: Non-anomaly
+        MonitoringRecordItem::create([
+            'monitoring_record_id' => $record1->id, 'srp_id' => $bulletin2->id, 'recorded_price' => 50,
+            'baseline_price' => 50, 'variance_percent' => 0, 'is_anomaly' => false,
+            'reference_status' => 'available', 'reference_type' => 'standard_srp',
+            'reference_label' => 'SRP', 'reference_value' => 50,
+        ]);
+
+        Sanctum::actingAs($manager, ['dti-admin']);
+
+        // Query findings for store
+        $response = $this->getJson("/api/admin/monitoring-establishments/{$store->id}/findings?period=last_4_weeks")
+            ->assertOk()
+            ->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.data.0.commodity_name', 'Sugar')
+            ->assertJsonPath('data.data.0.recorded_price', 120)
+            ->assertJsonPath('data.data.0.is_anomaly', true);
+    }
 }

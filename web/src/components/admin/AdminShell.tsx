@@ -2,21 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { AdminUser } from '../../types/admin'
 import {
-  Building2,
+  Activity,
+  ChevronDown,
+  ChevronLeft,
+  HelpCircle,
   LayoutDashboard,
+  LogOut,
+  MapPin,
+  Menu,
   MessageSquare,
   Receipt,
   Scale,
   ScrollText,
-  Siren,
-  ChevronDown,
-  ChevronLeft,
-  LogOut,
-  Shield,
-  Menu,
-  X,
   Settings,
-  HelpCircle,
+  Shield,
+  Siren,
+  Users,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -45,56 +47,42 @@ interface NavItemConfig {
   label: string
 }
 
-type NavGroupId = 'reports_monitoring' | 'establishments_engagement' | 'regulation_enforcement'
-
-interface NavGroupConfig {
-  id: NavGroupId
-  icon: LucideIcon
-  label: string
-  items: Pick<NavItemConfig, 'id' | 'label'>[]
+interface NavSectionConfig {
+  title?: string
+  items: NavItemConfig[]
 }
 
-const dashboardNavItem: NavItemConfig = { id: 'overview', icon: LayoutDashboard, label: 'Dashboard' }
-const communicationsNavItem: NavItemConfig = { id: 'communications', icon: MessageSquare, label: 'Communications' }
-const auditNavItem: NavItemConfig = { id: 'audit_trail', icon: ScrollText, label: 'Audit Trail' }
-const navGroups: NavGroupConfig[] = [
+const navSections: NavSectionConfig[] = [
   {
-    id: 'reports_monitoring',
-    icon: Receipt,
-    label: 'Monitoring',
     items: [
-      { id: 'consumer_reports', label: 'Consumer Reports' },
-      { id: 'field_monitoring', label: 'Field Monitoring' },
+      { id: 'overview', icon: LayoutDashboard, label: 'Dashboard' },
     ],
   },
   {
-    id: 'establishments_engagement',
-    icon: Building2,
-    label: 'Establishments',
+    title: 'Monitoring & Intake',
     items: [
-      { id: 'establishments_access', label: 'User Management' },
-      { id: 'gis_monitoring', label: 'GIS Monitoring' },
+      { id: 'field_monitoring', icon: Activity, label: 'Field Monitoring' },
+      { id: 'consumer_reports', icon: Receipt, label: 'Consumer Reports' },
+      { id: 'gis_monitoring', icon: MapPin, label: 'GIS Monitoring' },
     ],
   },
   {
-    id: 'regulation_enforcement',
-    icon: Scale,
-    label: 'Enforcement',
+    title: 'Regulation & Legal',
     items: [
-      { id: 'price_regulation', label: 'Price Regulation' },
-      { id: 'legal_actions', label: 'Legal Actions' },
-      { id: 'emergency_protocol', label: 'Emergency Protocol' },
+      { id: 'price_regulation', icon: Scale, label: 'Price Regulation' },
+      { id: 'legal_actions', icon: ScrollText, label: 'Legal Actions' },
+      { id: 'emergency_protocol', icon: Siren, label: 'Emergency Protocol' },
+    ],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { id: 'establishments_access', icon: Users, label: 'User Management' },
+      { id: 'communications', icon: MessageSquare, label: 'Store Communications' },
+      { id: 'audit_trail', icon: Shield, label: 'Audit Trail' },
     ],
   },
 ]
-
-const parentGroupByModule = new Map<ModuleId, NavGroupId>(
-  navGroups.flatMap((group) => group.items.map((item) => [item.id, group.id] as const)),
-)
-
-function parentGroupForModule(module: ModuleId): NavGroupId | null {
-  return parentGroupByModule.get(module) ?? null
-}
 
 const panels: Record<ModuleId, { title: string; description: string; component: (props: any) => ReactElement }> = {
   overview: { title: 'Dashboard', description: 'Current Admin workload and declared regulatory context.', component: OverviewPanel },
@@ -139,15 +127,13 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   const [currentUser, setCurrentUser] = useState<AdminUser>(user)
   const isFieldOfficer = currentUser.role === 'field_officer'
   const [activeModule, setActiveModule] = useState<ModuleId>(() => readModuleFromUrl(isFieldOfficer))
-  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(() => {
-    if (isFieldOfficer) return null
-    return parentGroupForModule(readModuleFromUrl(false))
-  })
   const [isCalamityActive, setIsCalamityActive] = useState<boolean | null>(null)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [logoutModalOpen, setLogoutModalOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
 
   const handleUserUpdate = (updated: Partial<AdminUser>) => {
     setCurrentUser((prev) => ({ ...prev, ...updated }))
@@ -163,20 +149,27 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     const restoreModule = () => {
       const restored = readModuleFromUrl(isFieldOfficer)
       setActiveModule(restored)
-      setOpenGroup(isFieldOfficer ? null : parentGroupForModule(restored))
+    }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
+        setAccountMenuOpen(false)
+      }
     }
     const closeMenus = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsMobileOpen(false)
         setHelpOpen(false)
         setLogoutModalOpen(false)
+        setAccountMenuOpen(false)
       }
     }
     window.addEventListener('popstate', restoreModule)
     window.addEventListener('keydown', closeMenus)
+    document.addEventListener('mousedown', handleClickOutside)
     return () => {
       window.removeEventListener('popstate', restoreModule)
       window.removeEventListener('keydown', closeMenus)
+      document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isFieldOfficer])
 
@@ -192,21 +185,12 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   const navigateTo = (module: ModuleId) => {
     if (!canAccessModule(module, isFieldOfficer)) return
     setActiveModule(module)
-    setOpenGroup(isFieldOfficer ? null : parentGroupForModule(module))
     if (isCollapsed) setIsCollapsed(false)
     const url = new URL(window.location.href)
     url.searchParams.set('module', module)
     window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
     setIsMobileOpen(false)
-  }
-
-  const toggleGroup = (group: NavGroupId) => {
-    if (isCollapsed) {
-      setIsCollapsed(false)
-      setOpenGroup(group)
-      return
-    }
-    setOpenGroup((current) => current === group ? null : group)
+    setAccountMenuOpen(false)
   }
 
   const Panel = panels[activeModule].component
@@ -257,7 +241,6 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               className="sidebar-collapse-btn"
               onClick={() => {
                 setIsCollapsed(true)
-                setOpenGroup(null)
               }}
               title="Collapse Sidebar"
               aria-label="Collapse Sidebar"
@@ -269,16 +252,26 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
 
         {/* Section 2: Workflow navigation */}
         <nav aria-label="DTI Admin modules">
-          <div className="nav-section">
-            {[dashboardNavItem].map((item) => {
+          {navSections.map((section, secIdx) => (
+            <div className="nav-section" key={section.title || `section-${secIdx}`}>
+              {section.title && !isCollapsed && (
+                <div className="admin-nav-category-header" role="presentation">
+                  <span>{section.title}</span>
+                </div>
+              )}
+              {section.title && isCollapsed && (
+                <div className="admin-nav-category-divider" role="presentation" />
+              )}
+              {section.items.map((item) => {
                 const IconComponent = item.icon
+                const isActive = activeModule === item.id
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    className={`admin-nav-item ${activeModule === item.id ? 'active' : ''}`}
+                    className={`admin-nav-item ${isActive ? 'active' : ''}`}
                     onClick={() => navigateTo(item.id)}
-                    aria-current={activeModule === item.id ? 'page' : undefined}
+                    aria-current={isActive ? 'page' : undefined}
                     title={isCollapsed ? item.label : undefined}
                     aria-label={isCollapsed ? item.label : undefined}
                   >
@@ -288,135 +281,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                     </div>
                   </button>
                 )
-            })}
-
-            {!isFieldOfficer && navGroups.map((group) => {
-              const IconComponent = group.icon
-              const isOpen = openGroup === group.id
-              const hasActiveChild = group.items.some((item) => item.id === activeModule)
-              const childListId = `admin-nav-group-${group.id}`
-
-              return (
-                <div className="nav-group" key={group.id}>
-                  <button
-                    type="button"
-                    className={`admin-nav-item admin-nav-parent ${hasActiveChild ? 'active' : ''}`}
-                    onClick={() => toggleGroup(group.id)}
-                    aria-expanded={isOpen}
-                    aria-controls={childListId}
-                    title={isCollapsed ? group.label : undefined}
-                    aria-label={isCollapsed ? group.label : undefined}
-                  >
-                    <div className="nav-item-content">
-                      <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
-                      {!isCollapsed && <span>{group.label}</span>}
-                    </div>
-                    {!isCollapsed && <ChevronDown className={`nav-group-chevron ${isOpen ? 'open' : ''}`} size={16} strokeWidth={2.3} aria-hidden="true" />}
-                  </button>
-                  {isOpen && (
-                    <div className="nav-group-children" id={childListId}>
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className={`admin-nav-child ${activeModule === item.id ? 'active' : ''}`}
-                          onClick={() => navigateTo(item.id)}
-                          aria-current={activeModule === item.id ? 'page' : undefined}
-                        >
-                          <span>{item.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {!isFieldOfficer && (() => {
-              const IconComponent = communicationsNavItem.icon
-              return (
-                <button
-                  type="button"
-                  className={`admin-nav-item ${activeModule === communicationsNavItem.id ? 'active' : ''}`}
-                  onClick={() => navigateTo(communicationsNavItem.id)}
-                  aria-current={activeModule === communicationsNavItem.id ? 'page' : undefined}
-                  title={isCollapsed ? communicationsNavItem.label : undefined}
-                  aria-label={isCollapsed ? communicationsNavItem.label : undefined}
-                >
-                  <div className="nav-item-content">
-                    <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
-                    {!isCollapsed && <span>{communicationsNavItem.label}</span>}
-                  </div>
-                </button>
-              )
-            })()}
-
-            {!isFieldOfficer && (() => {
-              const IconComponent = auditNavItem.icon
-              return (
-                <button
-                  type="button"
-                  className={`admin-nav-item ${activeModule === auditNavItem.id ? 'active' : ''}`}
-                  onClick={() => navigateTo(auditNavItem.id)}
-                  aria-current={activeModule === auditNavItem.id ? 'page' : undefined}
-                  title={isCollapsed ? auditNavItem.label : undefined}
-                  aria-label={isCollapsed ? auditNavItem.label : undefined}
-                >
-                  <div className="nav-item-content">
-                    <IconComponent size={18} strokeWidth={2.3} aria-hidden="true" />
-                    {!isCollapsed && <span>{auditNavItem.label}</span>}
-                  </div>
-                </button>
-              )
-            })()}
-          </div>
+              })}
+            </div>
+          ))}
         </nav>
-
-        {/* Section 3: Bottom Section (Settings, Help, Logout) */}
-        <div className="sidebar-section-divider" role="separator" />
-        <div className="admin-sidebar-bottom">
-          <button
-            type="button"
-            className={`admin-nav-item ${activeModule === 'settings' ? 'active' : ''}`}
-            onClick={() => {
-              navigateTo('settings')
-            }}
-            title="Settings"
-          >
-            <div className="nav-item-content">
-              <Settings size={18} strokeWidth={2.3} aria-hidden="true" />
-              {!isCollapsed && <span>Settings</span>}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className="admin-nav-item"
-            onClick={() => {
-              if (isCollapsed) setIsCollapsed(false)
-              setHelpOpen(true)
-            }}
-            title="Help & Support"
-          >
-            <div className="nav-item-content">
-              <HelpCircle size={18} strokeWidth={2.3} aria-hidden="true" />
-              {!isCollapsed && <span>Help &amp; Support</span>}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className="admin-nav-item admin-nav-logout"
-            onClick={() => setLogoutModalOpen(true)}
-            title={isCollapsed ? 'Logout' : undefined}
-            aria-label="Logout"
-          >
-            <div className="nav-item-content">
-              <LogOut size={18} strokeWidth={2.3} aria-hidden="true" />
-              {!isCollapsed && <span>Logout</span>}
-            </div>
-          </button>
-        </div>
 
       </aside>
 
@@ -453,6 +321,90 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
                 <span className="market-status-badge unavailable">
                   Emergency status unavailable
                 </span>
+              )}
+            </div>
+
+            {/* Officer Account Profile Trigger and Dropdown Menu */}
+            <div className="header-account-wrapper" ref={accountMenuRef}>
+              <button
+                type="button"
+                className={`header-account-trigger ${accountMenuOpen ? 'open' : ''}`}
+                onClick={() => setAccountMenuOpen((prev) => !prev)}
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="true"
+                aria-label="Officer account profile and options"
+              >
+                <div className="header-avatar-circle" aria-hidden="true">
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'O'}
+                </div>
+                <div className="header-account-copy">
+                  <span className="header-account-name">{currentUser.name || 'DTI Officer'}</span>
+                  <span className="header-account-role">
+                    {currentUser.role === 'super_admin' ? 'Super Admin' : currentUser.role === 'dti_evaluator' ? 'DTI Evaluator' : 'Officer'}
+                  </span>
+                </div>
+                <ChevronDown size={15} className={`header-account-chevron ${accountMenuOpen ? 'open' : ''}`} aria-hidden="true" />
+              </button>
+
+              {accountMenuOpen && (
+                <div className="header-account-dropdown" role="menu" aria-label="Account options">
+                  <div className="account-dropdown-user-info">
+                    <div className="account-dropdown-avatar" aria-hidden="true">
+                      {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'O'}
+                    </div>
+                    <div className="account-dropdown-texts">
+                      <p className="account-dropdown-name">{currentUser.name || 'DTI Officer'}</p>
+                      <p className="account-dropdown-email">{currentUser.email || 'evaluator@dti.gov.ph'}</p>
+                      <div className="account-dropdown-badge">
+                        <Shield size={11} aria-hidden="true" />
+                        <span>{currentUser.role === 'super_admin' ? 'Super Administrator' : 'DTI Price Evaluator'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="account-dropdown-divider" role="separator" />
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="account-dropdown-item"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      navigateTo('settings')
+                    }}
+                  >
+                    <Settings size={16} strokeWidth={2.2} aria-hidden="true" />
+                    <span>Settings</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="account-dropdown-item"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      setHelpOpen(true)
+                    }}
+                  >
+                    <HelpCircle size={16} strokeWidth={2.2} aria-hidden="true" />
+                    <span>Help &amp; Support</span>
+                  </button>
+
+                  <div className="account-dropdown-divider" role="separator" />
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="account-dropdown-item account-dropdown-item--danger"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      setLogoutModalOpen(true)
+                    }}
+                  >
+                    <LogOut size={16} strokeWidth={2.2} aria-hidden="true" />
+                    <span>Logout</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>

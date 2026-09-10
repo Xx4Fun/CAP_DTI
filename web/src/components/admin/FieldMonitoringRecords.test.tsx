@@ -8,6 +8,8 @@ vi.mock('../../services/adminApi', () => ({ adminApi: {
   getMonitoringEstablishments: vi.fn(), getMonitoringEstablishment: vi.fn(), getMonitoringPriceHistory: vi.fn(),
   getMonitoringRecords: vi.fn(), getMonitoringRecord: vi.fn(), getMonitoringSignature: vi.fn(),
   getFieldVerificationRequests: vi.fn(), cancelFieldVerification: vi.fn(), reopenFieldVerification: vi.fn(),
+  getManagedUsers: vi.fn(), createAdditionalVisit: vi.fn(), assignFieldVerification: vi.fn(),
+  getMonitoringFindings: vi.fn(),
 } }))
 
 const record = {
@@ -22,9 +24,11 @@ const record = {
 }
 
 const workspace = {
+  monitoring_period: { cadence: 'weekly' as const, timezone: 'Asia/Manila' as const, starts_at: '2026-08-23T16:00:00Z', ends_at: '2026-08-30T16:00:00Z', protocol_mode: 'standard' as const, declaration_reference: null },
+  routine_summary: { total_establishments: 1, due: 0, completed: 1, additional_visits: 1 },
   monitoring_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-23T16:00:00Z', ends_at: '2026-08-30T16:00:00Z' },
   weekly_summary: { total_establishments: 1, not_yet_monitored: 0, monitored_this_week: 1, verification_required: 1 },
-  establishments: { data: [{ id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, weekly_routine_status: 'monitored_this_week' as const, has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, verification_task_status: 'claimed' as const, verification_claimant: record.officer, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_officer: record.officer, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
+  establishments: { data: [{ id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', is_active: true, is_verified: true, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, routine_status: 'completed' as const, weekly_routine_status: 'monitored_this_week' as const, has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, verification_task_status: 'claimed' as const, verification_claimant: record.officer, latest_monitoring_at: record.finalized_at, latest_record_id: 14, latest_protocol_mode: 'standard' as const, latest_officer: record.officer, latest_result: 'with_observations' as const }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 },
 }
 
 describe('FieldMonitoringRecords', () => {
@@ -32,11 +36,14 @@ describe('FieldMonitoringRecords', () => {
     vi.clearAllMocks()
     window.history.replaceState({}, '', '/?module=field_monitoring')
     vi.mocked(adminApi.getMonitoringEstablishments).mockResolvedValue(workspace)
-    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_period: workspace.monitoring_period, routine_status: 'completed', monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
     vi.mocked(adminApi.getMonitoringPriceHistory).mockResolvedValue({ data: [{ id: 1, monitoring_record_id: 14, monitoring_date: record.finalized_at, protocol_mode: 'standard', protocol_reference: null, commodity_name: 'Rice', unit: 'kg', reference_status: 'available', reference_label: 'SRP baseline', reference_value: 50, reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', recorded_price: 62, difference: 12, variance_percent: 24, is_anomaly: true }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [record], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(record)
-    vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 301, status: 'completed', reason: 'Verify the shelf price.', requested_at: '2026-08-24T06:00:00Z', completed_at: record.finalized_at, store: record.store, report: { id: 101, report_reference: 'RPT-101', status: 'Under regulatory review' }, claimant: record.officer, monitoring_record: { id: 14 } }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 301, source_type: 'complaint', status: 'completed', reason: 'Verify the shelf price.', requested_at: '2026-08-24T06:00:00Z', completed_at: record.finalized_at, store: record.store, report: { id: 101, report_reference: 'RPT-101', status: 'Under regulatory review' }, claimant: record.officer, monitoring_record: { id: 14 } }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
+    vi.mocked(adminApi.createAdditionalVisit).mockResolvedValue({ id: 401, source_type: 'supervisor_directive', status: 'claimed', reason: 'Recheck display.', store_id: 2, claimed_by: 9, requested_at: '2026-08-24T09:00:00Z', claimed_at: '2026-08-24T09:00:00Z', completed_at: null, cancelled_at: null })
+    vi.mocked(adminApi.getMonitoringFindings).mockResolvedValue({ data: [], current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null })
   })
 
   it('opens on the establishment overview with operational summary filters', async () => {
@@ -46,7 +53,7 @@ describe('FieldMonitoringRecords', () => {
     const summary = screen.getByRole('region', { name: 'Field Monitoring overview' })
     expect(summary).toHaveTextContent('Total Establishments1')
     expect(summary).toHaveTextContent('Monitored This Week1')
-    expect(summary).toHaveTextContent('Verification Required1')
+    expect(summary).toHaveTextContent('Additional Visits1')
     expect(screen.getAllByText('Monitored This Week').length).toBeGreaterThan(1)
     expect(screen.getAllByText('Verification Required').length).toBeGreaterThan(1)
     expect(screen.getByText('Ana Officer')).toBeInTheDocument()
@@ -94,10 +101,21 @@ describe('FieldMonitoringRecords', () => {
   it('links a completed verification request directly to its monitoring record', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
-    await user.click(screen.getByRole('tab', { name: 'Verification Requests' }))
+    await user.click(screen.getByRole('tab', { name: 'Additional Visits' }))
     expect(await screen.findByText('RPT-101')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open monitoring record 14' }))
     expect(await screen.findByRole('heading', { name: 'Visit #14' })).toBeInTheDocument()
+  })
+
+  it('assigns a supervisor-directed visit from an establishment profile', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    await user.click(screen.getByRole('button', { name: 'Assign additional visit' }))
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
+    await user.type(screen.getByRole('textbox', { name: 'Reason' }), 'Recheck display.')
+    await user.click(screen.getByRole('button', { name: 'Assign visit' }))
+    await waitFor(() => expect(adminApi.createAdditionalVisit).toHaveBeenCalledWith(2, { reason: 'Recheck display.', field_officer_id: 9 }))
   })
 
   it('stores the active workspace and list controls in the URL', async () => {
@@ -105,16 +123,16 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     await screen.findByRole('region', { name: 'Monitoring establishments' })
     await user.type(screen.getByRole('searchbox', { name: 'Search establishments' }), 'Central')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Weekly status' }), 'monitored_this_week')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'completed')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Additional task' }), 'verification_required')
     await user.selectOptions(screen.getByRole('combobox', { name: 'Latest observation' }), 'with_observations')
     await user.click(screen.getByRole('tab', { name: 'All Records' }))
     await waitFor(() => expect(window.location.search).toContain('establishment_search=Central'))
     expect(window.location.search).toContain('monitor_tab=records')
-    expect(window.location.search).toContain('weekly_status=monitored_this_week')
+    expect(window.location.search).toContain('routine_status=completed')
     expect(window.location.search).toContain('additional_task=verification_required')
     expect(window.location.search).toContain('observation=with_observations')
-    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ weekly_status: 'monitored_this_week', additional_task: 'verification_required', observation: 'with_observations' }))
+    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ routine_status: 'completed', additional_task: 'verification_required', observation: 'with_observations' }))
     expect(screen.getByRole('searchbox', { name: 'Search monitoring visits' })).toHaveValue('')
   })
 
@@ -122,7 +140,7 @@ describe('FieldMonitoringRecords', () => {
     window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
     render(<FieldMonitoringRecords />)
     expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
-    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, { commodity: 'key:rice', per_page: 10 })
+    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, expect.objectContaining({ commodity: 'key:rice' }))
   })
 
   it('opens the scoped verification queue from an establishment and can clear it', async () => {
@@ -131,7 +149,7 @@ describe('FieldMonitoringRecords', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
     expect(screen.getByText('Latest accepted routine monitoring').closest('div')).toHaveTextContent('Aug 24, 2026')
     expect(screen.getByText('Verification claimed by Ana Officer')).toBeInTheDocument()
-    await user.click(await screen.findByRole('button', { name: 'View Verification Requests' }))
+    await user.click(screen.getByRole('button', { name: 'View Additional Visits' }))
     expect(await screen.findByText('Gaisano Grand Mall', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
     expect(adminApi.getFieldVerificationRequests).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
     await user.click(screen.getByRole('button', { name: 'Clear establishment filter' }))
@@ -147,11 +165,66 @@ describe('FieldMonitoringRecords', () => {
   })
 
   it('cancels an open verification request from the operational queue', async () => {
-    vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 302, status: 'open', reason: 'Follow up.', requested_at: '2026-08-24T06:00:00Z', store: record.store, report: { id: 102, report_reference: 'RPT-102', status: 'Referred' }, claimant: null, monitoring_record: null }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 302, source_type: 'supervisor_directive', status: 'open', reason: 'Follow up.', requested_at: '2026-08-24T06:00:00Z', store: record.store, report: null, claimant: null, monitoring_record: null }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
-    await user.click(screen.getByRole('tab', { name: 'Verification Requests' }))
+    await user.click(screen.getByRole('tab', { name: 'Additional Visits' }))
     await user.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(adminApi.cancelFieldVerification).toHaveBeenCalledWith(302)
+  })
+
+  it('filters establishment information by period preset', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
+
+    // Switch period to This Week
+    await user.click(screen.getByRole('button', { name: 'This Week' }))
+    await waitFor(() => {
+      expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledWith(2, expect.objectContaining({ period: 'this_week' }))
+    })
+  })
+
+  it('renders findings & anomalies tab and allows preparing legal notices', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    vi.mocked(adminApi.getMonitoringFindings).mockResolvedValue({
+      data: [{
+        id: 88,
+        monitoring_record_id: 14,
+        finalized_at: record.finalized_at,
+        officer_name: 'Ana Officer',
+        commodity_name: 'Rice',
+        unit: 'kg',
+        recorded_price: 62,
+        reference_value: 50,
+        difference: 12,
+        variance_percent: 24,
+        protocol_mode: 'standard',
+        reference_label: 'SRP baseline',
+        reference_source: 'SRP-2026-01',
+      }],
+      current_page: 1,
+      last_page: 1,
+      per_page: 10,
+      total: 1,
+      from: 1,
+      to: 1,
+    })
+
+    render(<FieldMonitoringRecords onNavigate={onNavigate} />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+
+    // Open Findings & Anomalies tab
+    await user.click(screen.getByRole('tab', { name: /Findings & Anomalies/i }))
+    expect(await screen.findByRole('table', { name: 'Establishment price findings and anomalies' })).toBeInTheDocument()
+    expect(screen.getByText('₱62.00')).toBeInTheDocument()
+
+    // Click Prepare Notice
+    await user.click(screen.getByRole('button', { name: 'Prepare Notice' }))
+    expect(onNavigate).toHaveBeenCalledWith('legal_actions')
+    expect(new URLSearchParams(window.location.search).get('source_record')).toBe('14')
+    expect(new URLSearchParams(window.location.search).get('source_store')).toBe('2')
   })
 })

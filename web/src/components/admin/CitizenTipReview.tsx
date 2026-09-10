@@ -16,7 +16,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest } from '../../types/admin'
+import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest } from '../../types/admin'
 
 type ItemDecision = {
   item_id: number
@@ -41,6 +41,8 @@ export const CitizenTipReview: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [decisionIntent, setDecisionIntent] = useState<'verify' | 'close'>('verify')
   const [verificationChosen, setVerificationChosen] = useState(false)
+  const [fieldOfficers, setFieldOfficers] = useState<ManagedUserRecord[]>([])
+  const [fieldOfficerId, setFieldOfficerId] = useState('')
 
   // Evidence image controls state
   const [zoom, setZoom] = useState(1)
@@ -76,6 +78,13 @@ export const CitizenTipReview: React.FC = () => {
   }, [reportPage.current_page, reportPage.per_page])
 
   useEffect(() => {
+    if (!verificationChosen) return
+    void adminApi.getManagedUsers({ role: 'field_officer', status: 'active', per_page: 50 })
+      .then((page) => setFieldOfficers(page.records))
+      .catch(() => setError('Active Field Officers could not be loaded.'))
+  }, [verificationChosen])
+
+  useEffect(() => {
     return () => {
       if (evidenceUrl) {
         URL.revokeObjectURL(evidenceUrl)
@@ -95,6 +104,7 @@ export const CitizenTipReview: React.FC = () => {
     setSelectedAsset(null)
     setDecisionIntent(report.status.toLowerCase().includes('dismiss') ? 'close' : 'verify')
     setVerificationChosen(false)
+    setFieldOfficerId('')
     setItemDecisions(Object.fromEntries((report.items ?? []).map((item) => [item.id, {
       item_id: item.id,
       commodity_key: item.commodity_key || '',
@@ -215,10 +225,10 @@ export const CitizenTipReview: React.FC = () => {
   }
 
   const requestVerification = async () => {
-    if (!selected || !reason.trim()) return
+    if (!selected || !reason.trim() || !fieldOfficerId) return
     setDecisionSaving(true)
     try {
-      const request = await adminApi.requestFieldVerification(selected.id, { reason: reason.trim() })
+      const request = await adminApi.requestFieldVerification(selected.id, { reason: reason.trim(), field_officer_id: Number(fieldOfficerId) })
       const updated = { ...selected, status: 'Referred for field verification', verification_request: request }
       setSelected(updated)
       setReports((current) => current.map((report) => report.id === updated.id ? updated : report))
@@ -1136,6 +1146,12 @@ export const CitizenTipReview: React.FC = () => {
                     </div>
 
                     <div style={{ display: 'grid', gap: '0.35rem' }}>
+                      {verificationChosen && <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>Field Officer
+                        <select aria-label="Field Officer" required value={fieldOfficerId} onChange={(event) => setFieldOfficerId(event.target.value)} style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' }}>
+                          <option value="">Select active officer</option>
+                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                        </select>
+                      </label>}
                       <label htmlFor="decision-reason-text" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
                         {decisionIntent === 'verify' ? 'Verification reason' : 'Closure reason'}
                       </label>
@@ -1178,7 +1194,7 @@ export const CitizenTipReview: React.FC = () => {
                   <button
                     type="button"
                     aria-label="Mark for Field Verification — Validate findings"
-                    disabled={decisionSaving || !reason || (hasItemReview ? !itemReviewComplete : !finding)}
+                    disabled={decisionSaving || !reason || (verificationChosen && !fieldOfficerId) || (hasItemReview ? !itemReviewComplete : !finding)}
                     onClick={() => void (verificationChosen ? requestVerification() : decide('validate'))}
                     style={{
                       flex: 1,

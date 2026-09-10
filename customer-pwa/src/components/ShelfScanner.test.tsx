@@ -203,8 +203,10 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
       displayed_price: 37,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(postSpy.mock.calls.some(([url]) => String(url).includes('/scan-tag'))).toBe(false);
-    expect(screen.getByText('Manual entry')).toBeInTheDocument();
+    expect(screen.queryByText('Manual entry')).not.toBeInTheDocument();
     expect(screen.queryByText(/OCR-Detected/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Shelf Price')).toBeInTheDocument();
+    expect(screen.queryByText('Displayed Shelf Price')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Report using receipt/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit item or price' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compare another item' })).toBeInTheDocument();

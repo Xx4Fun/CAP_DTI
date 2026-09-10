@@ -293,6 +293,7 @@ export const App: React.FC = () => {
 
   const isScanTab = activeTab === 'scan' || activeTab === 'compare';
   const isHomeTab = activeTab === 'home';
+  const isProductRoute = route.name === 'product';
 
   const recordSubmittedReport = (report: FormalReportResponse, storeName: string) => {
     setRecentReports(saveRecentReport({
@@ -370,12 +371,13 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         stateOfCalamity={config?.state_of_calamity}
+        hideTopHeader={isProductRoute}
       />
 
       <InstallPrompt visible={activeTab === 'home'} />
       <PwaUpdatePrompt />
 
-      <main className={isScanTab ? 'app-scan-container' : isHomeTab ? 'app-container home-app-container' : 'app-container'}>
+      <main className={isScanTab ? 'app-scan-container' : isHomeTab ? 'app-container home-app-container' : isProductRoute ? 'app-container product-app-container' : 'app-container'}>
         <OfflineBanner isOffline={isOffline} lastSyncTime={lastSyncTime} />
         <ServiceStartStatus
           active={shouldShowServiceStartStatus(publicRefreshPending, publicDataSource, routeChunkPending)}

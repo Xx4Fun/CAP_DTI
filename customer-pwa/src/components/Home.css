@@ -39,7 +39,7 @@
 .home-hero-copy {
   position: relative;
   z-index: 2;
-  width: 58%;
+  width: 60%;
   padding: 34px 0 92px 20px;
 }
 
@@ -53,7 +53,7 @@
 }
 
 .home-hero-copy p {
-  max-width: 210px;
+  max-width: 240px;
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.92);
   font-size: clamp(0.86rem, 3.4vw, 1.02rem);
@@ -724,13 +724,13 @@
   }
 
   .home-hero-copy {
-    width: 58%;
+    width: 60%;
     padding-top: 28px;
     padding-left: 18px;
   }
 
   .home-hero-copy p {
-    max-width: 185px;
+    max-width: 230px;
   }
 
   .home-hero-art-frame {
@@ -797,12 +797,12 @@
   }
 
   .home-hero-copy {
-    width: 56%;
+    width: 60%;
     padding-left: 14px;
   }
 
   .home-hero-copy p {
-    max-width: 160px;
+    max-width: 215px;
   }
 
   .home-action-grid {

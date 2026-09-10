@@ -5,29 +5,39 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   stateOfCalamity?: boolean;
+  hideTopHeader?: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, stateOfCalamity }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  setActiveTab,
+  stateOfCalamity,
+  hideTopHeader = false,
+}) => {
   return (
     <>
-      <header className="navbar-top">
-        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-          <span className="brand-logo-frame">
-            <img
-              className="brand-logo"
-              src="/branding/dti-logo.png"
-              alt=""
-            />
-          </span>
-          <div className="brand-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
-            <div className="brand-name" style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: '1.1', whiteSpace: 'nowrap', letterSpacing: '-0.025em' }}>
-              <span className="brand-price">PRICE-</span>
-              <span className="brand-watch">Watch</span>
+      {!hideTopHeader && (
+        <>
+          <header className="navbar-top">
+            <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span className="brand-logo-frame">
+                <img
+                  className="brand-logo"
+                  src="/branding/dti-logo.png"
+                  alt=""
+                />
+              </span>
+              <div className="brand-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
+                <div className="brand-name" style={{ fontSize: '1.25rem', fontWeight: 700, lineHeight: '1.1', whiteSpace: 'nowrap', letterSpacing: '-0.025em' }}>
+                  <span className="brand-price">PRICE-</span>
+                  <span className="brand-watch">Watch</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </header>
-      <div className="navbar-top-offset" aria-hidden="true" />
+          </header>
+          <div className="navbar-top-offset" aria-hidden="true" />
+        </>
+      )}
 
       {/* Exceptional Status Notices */}
       {stateOfCalamity && (

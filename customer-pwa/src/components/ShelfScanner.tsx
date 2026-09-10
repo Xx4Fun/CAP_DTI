@@ -22,7 +22,8 @@ import {
   type ScanTagResponse,
   type ComparisonResultResponse
 } from '../api/client';
-import { consumeHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
+import { peekHandoff, clearHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
+import { saveRecentComparison } from '../app/recentComparisons';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
 import { haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
@@ -160,11 +161,31 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   locationError = '',
   mode = 'ocr',
 }) => {
-  const [scannerState, setScannerState] = useState<ScannerStepState>('SELECT_STORE');
+  const handoffRef = useRef<FlowHandoff | null>(null);
+  if (handoffRef.current === null) {
+    handoffRef.current = peekHandoff();
+  }
+  const initialComparison = handoffRef.current?.kind === 'view-comparison'
+    ? handoffRef.current.comparison
+    : null;
+
+  const [scannerState, setScannerState] = useState<ScannerStepState>(() => (initialComparison ? 'RESULT' : 'SELECT_STORE'));
 
   // Store Selection State
   const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
-  const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
+  const [selectedStore, setSelectedStore] = useState<Establishment | null>(() => {
+    if (initialComparison?.store) {
+      return {
+        id: initialComparison.store.id,
+        store_name: initialComparison.store.store_name,
+        address: initialComparison.store.address,
+        dti_sec_number: initialComparison.store.dti_sec_number,
+        latitude: 0,
+        longitude: 0,
+      };
+    }
+    return null;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilterChip, setActiveFilterChip] = useState<'all' | 'recent' | 'favorite'>('all');
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<number[]>(getFavoriteStoreIds);
@@ -181,10 +202,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   const [processingStage, setProcessingStage] = useState<string>('Uploading shelf tag...');
   const [scanResponse, setScanResponse] = useState<ScanTagResponse | null>(null);
   const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<ProductChoice | null>(null);
-  const [selectedProductSource, setSelectedProductSource] = useState<ProductSource>('OCR');
-  const [userPriceInput, setUserPriceInput] = useState<string>('');
-  const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<ProductChoice | null>(() => {
+    if (initialComparison?.product) {
+      return initialComparison.product as Commodity;
+    }
+    return null;
+  });
+  const [selectedProductSource, setSelectedProductSource] = useState<ProductSource>(() => {
+    if (initialComparison?.product_source === 'MANUAL_SEARCH') return 'MANUAL_SEARCH';
+    return 'OCR';
+  });
+  const [userPriceInput, setUserPriceInput] = useState<string>(() => {
+    if (initialComparison?.displayed_price != null) return String(initialComparison.displayed_price);
+    return '';
+  });
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(initialComparison);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   // Manual Commodity Directory Search State inside Scanner
@@ -202,8 +234,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   const guideRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const handoffRef = useRef<FlowHandoff | null>(consumeHandoff());
   const handedOffCommodityRef = useRef<Commodity | null>(null);
+
+  useEffect(() => {
+    // Clear handoff once mounted
+    if (peekHandoff()) {
+      clearHandoff();
+    }
+  }, []);
 
   useEffect(() => {
     fetchStores();
@@ -283,16 +321,21 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
         setStores(apiStores);
         const requestedStoreId = handoffRef.current?.kind === 'store-to-scan'
           ? handoffRef.current.storeId
-          : undefined;
-        setSelectedStore(apiStores.find((store) => store.id === requestedStoreId) || null);
+          : handoffRef.current?.kind === 'view-comparison'
+            ? handoffRef.current.comparison.store.id
+            : undefined;
+        if (requestedStoreId) {
+          const matchedStore = apiStores.find((store) => store.id === requestedStoreId);
+          if (matchedStore) setSelectedStore(matchedStore);
+        }
       } else {
         setStores([]);
-        setSelectedStore(null);
+        if (!initialComparison) setSelectedStore(null);
       }
     } catch (err) {
       console.error('API connection offline when fetching stores:', err);
       setStores([]);
-      setSelectedStore(null);
+      if (!initialComparison) setSelectedStore(null);
       setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
     }
   };
@@ -575,6 +618,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
             setSelectedCandidate(scanData.comparison.product);
           }
           setScannerState('RESULT');
+          saveRecentComparison(scanData.comparison);
         } else {
           setScannerState('RECOVERY');
         }
@@ -692,12 +736,14 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
       if (res.data && res.data.success && res.data.data) {
         const data = res.data.data;
-        setComparisonResult({
+        const finalComparison: ComparisonResultResponse = {
           ...data,
           product_source: data.product_source || pSource,
           price_source: data.price_source || prSource,
-        });
+        };
+        setComparisonResult(finalComparison);
         setScannerState('RESULT');
+        saveRecentComparison(finalComparison);
       } else {
         throw new Error('Regulatory comparison service returned an invalid response.');
       }
@@ -1754,43 +1800,39 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
         return (
           <div className="shelf-compare-page">
-            <div style={{ textAlign: 'center', paddingTop: '4px' }}>
-              <div
-                style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '50%',
-                  background: isAbove ? '#fef3c7' : '#dcfce7',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 10px auto',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-                }}
+            {/* TOP HEADER: BACK BUTTON + SCALE ICON + COMPARISON RESULT TITLE (IN SAME ROW) */}
+            <div className="shelf-compare-header" style={{ alignItems: 'center' }}>
+              <button
+                type="button"
+                className="shelf-compare-back-btn"
+                onClick={mode === 'manual' ? handleCompareAnotherManualItem : handleRetake}
+                aria-label="Compare another item"
               >
-                <Scale size={28} color={isAbove ? '#d97706' : '#16a34a'} />
-              </div>
-              <h1 className="shelf-compare-title" style={{ fontSize: '1.4rem' }}>
-                Comparison Result
-              </h1>
-            </div>
-
-            {/* Mandatory Consumer Disclaimer Banner */}
-            <div
-              className="disclaimer-banner"
-              style={{
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                display: 'flex',
-                gap: '10px',
-                alignItems: 'flex-start'
-              }}
-            >
-              <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.35 }}>
-                This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
+                <ArrowLeft size={20} />
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: isAbove ? '#fef3c7' : '#dcfce7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Scale size={20} color={isAbove ? '#d97706' : '#16a34a'} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <h1 className="shelf-compare-title" style={{ fontSize: '1.25rem', margin: 0, lineHeight: 1.2 }}>
+                    Comparison Result
+                  </h1>
+                  <p className="shelf-compare-subtitle" style={{ margin: '2px 0 0', fontSize: '0.78rem' }}>
+                    Official DTI Price Check
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1812,26 +1854,26 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
               {/* Price Grid */}
               <div className="shelf-result-price-grid">
                 <div className="shelf-result-price-card shelf-result-price-card--shelf">
-                  <div className="shelf-result-price-label">Displayed Shelf Price</div>
+                  <div className="shelf-result-price-label">Shelf Price</div>
                   <div className="shelf-result-price-amount">
                     ₱{Number(comparisonResult.displayed_price).toFixed(2)}
                   </div>
-                  <div className="shelf-result-price-subtext">
-                    <span style={{
-                      background: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#fef3c7' : '#dcfce7',
-                      color: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#b45309' : '#15803d',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.68rem',
-                      fontWeight: 700
-                    }}>
-                      {mode === 'manual'
-                        ? 'Consumer-entered price'
-                        : (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED')
+                  {mode === 'ocr' && (
+                    <div className="shelf-result-price-subtext">
+                      <span style={{
+                        background: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#fef3c7' : '#dcfce7',
+                        color: (comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED') ? '#b45309' : '#15803d',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700
+                      }}>
+                        {comparisonResult.price_source === 'USER_ENTERED' || comparisonResult.price_source === 'USER_CORRECTED'
                           ? '✏️ Consumer-Entered Price'
                           : '✔ OCR-Detected Tag Price'}
-                    </span>
-                  </div>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="shelf-result-price-card shelf-result-price-card--srp">
@@ -1841,13 +1883,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   <div className="shelf-result-price-amount">
                     ₱{Number(comparisonResult.reference_price ?? comparisonResult.baseline_price ?? 0).toFixed(2)}
                   </div>
-                  <div className="shelf-result-price-subtext">
-                    {comparisonResult.product?.effective_date ? (
-                      `Effective ${comparisonResult.product.effective_date.split('T')[0]}`
-                    ) : (
-                      'Official reference baseline'
-                    )}
-                  </div>
+                  {mode === 'ocr' && comparisonResult.product?.effective_date && (
+                    <div className="shelf-result-price-subtext">
+                      Effective {comparisonResult.product.effective_date.split('T')[0]}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1877,20 +1917,20 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   <span>Product</span>
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
                     <span>{resultProductName}</span>
-                    <span style={{
-                      background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
-                      color: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#6b21a8' : '#1e40af',
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      fontSize: '0.72rem',
-                      fontWeight: 700
-                    }}>
-                      {mode === 'manual'
-                        ? 'Manual entry'
-                        : (comparisonResult.product_source === 'MANUAL_SEARCH')
+                    {mode === 'ocr' && comparisonResult.product_source && (
+                      <span style={{
+                        background: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#f3e8ff' : '#dbeafe',
+                        color: (comparisonResult.product_source === 'MANUAL_SEARCH') ? '#6b21a8' : '#1e40af',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700
+                      }}>
+                        {comparisonResult.product_source === 'MANUAL_SEARCH'
                           ? 'Manual Directory Selection'
                           : 'OCR-Detected'}
-                    </span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="shelf-result-meta-row">
@@ -1905,7 +1945,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
               data-testid="scan-result-actions"
               style={{
                 marginTop: '4px',
-                padding: '4px 0 8px',
+                padding: '4px 0 0',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '10px'
@@ -1922,34 +1962,26 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
               )}
 
               {mode === 'manual' ? (
-                <>
+                <div className="shelf-compare-actions-2col">
                   <button
                     type="button"
                     onClick={handleEditManualComparison}
-                    style={{ width: '100%', height: '44px', borderRadius: '10px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer' }}
+                    className="shelf-compare-action-btn shelf-compare-action-btn--secondary"
                   >
                     Edit item or price
                   </button>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={handleCompareAnotherManualItem}
-                      style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
-                    >
-                      Compare another item
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab?.('prices')}
-                      style={{ minHeight: '44px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#1d4ed8', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', padding: '8px' }}
-                    >
-                      Return to Prices
-                    </button>
-                  </div>
-                </>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab?.('prices')}
+                    className="shelf-compare-action-btn shelf-compare-action-btn--primary"
+                  >
+                    Return to Prices
+                  </button>
+                </div>
               ) : (
                 <>
                   <button
+                    type="button"
                     onClick={handleCorrectResult}
                     style={{
                       width: '100%',
@@ -1968,6 +2000,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <button
+                      type="button"
                       onClick={handleRetake}
                       style={{
                         height: '42px',
@@ -1983,6 +2016,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                       Scan another item
                     </button>
                     <button
+                      type="button"
                       onClick={() => setActiveTab && setActiveTab('prices')}
                       style={{
                         height: '42px',
@@ -2000,6 +2034,25 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   </div>
                 </>
               )}
+            </div>
+
+            {/* Mandatory Consumer Disclaimer Banner (at the very bottom) */}
+            <div
+              className="disclaimer-banner"
+              style={{
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'flex-start'
+              }}
+            >
+              <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: 1.35 }}>
+                This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
+              </div>
             </div>
           </div>
         );

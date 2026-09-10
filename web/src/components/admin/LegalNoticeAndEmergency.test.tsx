@@ -16,8 +16,10 @@ vi.mock('../../services/adminApi', () => ({
     getMonitoringRecord: vi.fn(),
     dispatchLegal: vi.fn(),
     getEmergencies: vi.fn(),
+    getEmergency: vi.fn(),
     createEmergency: vi.fn(),
-    createEmergencyPrice: vi.fn(),
+    prepareEmergency: vi.fn(),
+    activateEmergency: vi.fn(),
     updateEmergency: vi.fn(),
   },
 }))
@@ -103,16 +105,43 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       starts_on: '2026-07-26',
       ends_on: null,
       status: 'active',
+      effective_state: 'in_effect',
+      preparation_hash: 'a'.repeat(64),
+      source_week: { timezone: 'Asia/Manila', starts_at: '2026-07-13T16:00:00Z', ends_at: '2026-07-20T16:00:00Z' },
+      candidates: [],
+      official_prices: [{ id: 11, regulatory_emergency_id: 7, commodity_key: 'rice', price_type: 'APC', authoritative_price: 45, effective_from: '2026-07-26', effective_until: null, source_reference: 'PDRRMC-2026-07 | Monitoring week' }],
     }])
 
     render(<><EmergencyToggle /><AdminToastHost /></>)
 
     expect(await screen.findByText('State of Calamity Regulatory Command Bar')).toBeInTheDocument()
     expect(screen.getAllByText('PDRRMC-2026-07').length).toBeGreaterThan(0)
-    expect(screen.getByText('Authoritative APC Ceiling & Price Freeze Lookup Table')).toBeInTheDocument()
-    expect(screen.queryByText('rice-well-milled-1kg')).not.toBeInTheDocument()
-    expect(screen.getByText(/No authoritative emergency price records are available/i)).toBeInTheDocument()
+    expect(screen.getByText('Official APC / Price Freeze References')).toBeInTheDocument()
+    expect(screen.getByText('rice')).toBeInTheDocument()
+    expect(screen.getByText('₱45.00')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /SCO.*Sweep/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps the inclusive end date in effect after ending without dropping emergency detail', async () => {
+    const active = {
+      id: 7, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-7',
+      starts_on: '2026-09-09', ends_on: null, status: 'active' as const, effective_state: 'in_effect' as const,
+      preparation_hash: 'a'.repeat(64),
+      source_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-30T16:00:00Z', ends_at: '2026-09-06T16:00:00Z' },
+      candidates: [],
+      official_prices: [{ id: 11, regulatory_emergency_id: 7, commodity_key: 'rice', price_type: 'APC' as const, authoritative_price: 45, effective_from: '2026-09-09', effective_until: null, source_reference: 'DECL-7' }],
+    }
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([active])
+    vi.mocked(adminApi.updateEmergency).mockResolvedValue({ ...active, status: 'ended', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+
+    render(<EmergencyToggle />)
+    await user.click(await screen.findByRole('button', { name: 'End Price Freeze' }))
+
+    expect(adminApi.updateEmergency).toHaveBeenCalledWith(7, expect.objectContaining({ status: 'ended', confirmed: true }))
+    expect(screen.getByText('Confirmed APC references are in effect.')).toBeInTheDocument()
+    expect(screen.getByText('rice')).toBeInTheDocument()
   })
 
   it('shows an unavailable state when emergency declarations cannot be loaded', async () => {
@@ -131,14 +160,44 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
     render(<><EmergencyToggle /><AdminToastHost /></>)
     await screen.findByText('No emergency declarations recorded.')
-    await user.type(screen.getByLabelText('Location'), 'Antique')
     await user.type(screen.getByLabelText('Declaration reference'), 'DECL-7')
     await user.type(screen.getByLabelText('Start date'), '2026-08-29')
-    await user.click(screen.getByRole('checkbox', { name: /I confirm this declaration/i }))
-    await user.click(screen.getByRole('button', { name: 'Record declaration' }))
+    await user.click(screen.getByRole('button', { name: 'Prepare APC' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Audit storage unavailable.')
     expect(screen.queryByText('Emergency declaration recorded.')).not.toBeInTheDocument()
     expect(adminApi.getEmergencies).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows computed APC values as read only and activates only the reviewed preparation hash', async () => {
+    const draft = {
+      id: 7, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-7',
+      starts_on: '2026-09-09', ends_on: null, status: 'draft' as const, effective_state: 'draft' as const,
+      preparation_hash: 'b'.repeat(64),
+      source_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-30T16:00:00Z', ends_at: '2026-09-06T16:00:00Z' },
+      candidates: [{ id: 3, commodity_key: 'rice', minimum_price: 40, maximum_price: 50, observed_average_price: 44, computed_apc_price: 45, observation_count: 3, establishment_count: 2, source_item_ids: [1, 2, 3], dataset_hash: 'c'.repeat(64), source_observations: [{ item_id: 1, monitoring_record_id: 9, store_name: 'Market A', finalized_at: '2026-09-01T01:00:00Z', recorded_price: 40 }] }],
+      official_prices: [],
+    }
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([draft])
+    vi.mocked(adminApi.prepareEmergency).mockResolvedValue(draft)
+    vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect' })
+    const user = userEvent.setup()
+
+    render(<EmergencyToggle />)
+
+    expect(await screen.findByRole('heading', { name: 'APC Preparation' })).toBeInTheDocument()
+    expect(screen.getByText('₱40.00')).toBeInTheDocument()
+    expect(screen.getByText('₱50.00')).toBeInTheDocument()
+    expect(screen.getByText('₱44.00')).toBeInTheDocument()
+    expect(screen.getByText('₱45.00')).toBeInTheDocument()
+    await user.click(screen.getByText('Source records for rice'))
+    expect(screen.getByText('Market A')).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Refresh preparation' }))
+    expect(adminApi.prepareEmergency).toHaveBeenCalledWith(7)
+    await user.click(screen.getByRole('checkbox', { name: /reviewed the source week/i }))
+    await user.click(screen.getByRole('button', { name: 'Confirm and activate' }))
+    expect(adminApi.activateEmergency).toHaveBeenCalledWith(7, { confirmed: true, preparation_hash: 'b'.repeat(64) })
   })
 })

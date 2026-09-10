@@ -116,7 +116,9 @@ describe('DTI Admin application session', () => {
 
     render(<><App /><AdminToastHost /></>)
     await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
-    await user.click(screen.getByRole('button', { name: /^logout$/i }))
+    const accountTrigger = await screen.findByRole('button', { name: /Officer account profile and options/i })
+    await user.click(accountTrigger)
+    await user.click(screen.getByRole('menuitem', { name: /^logout$/i }))
     await user.click(screen.getByRole('button', { name: /log out/i }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/logout'))

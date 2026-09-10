@@ -51,7 +51,7 @@ export const Home: React.FC<HomeProps> = ({
         <div className="home-hero-inner">
           <div className="home-hero-copy">
             <h1 id="home-welcome-title" aria-label="Check prices with confidence">Check prices<br />with confidence</h1>
-            <p>Verify prices, report concerns, and stay informed.</p>
+            <p>Verify prices, report concerns,<br /> and stay informed.</p>
           </div>
           <div className="home-hero-art-frame">
             <img

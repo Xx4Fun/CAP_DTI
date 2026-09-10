@@ -38,3 +38,16 @@ it('rejects handoffs containing unapproved fields such as tokens', () => {
   expect(peekHandoff()).toBeNull();
   expect(sessionStorage.getItem('price-watch-flow-handoff')).toBeNull();
 });
+
+it('supports view-comparison handoff to restore a comparison result', () => {
+  const comparison = {
+    scan_id: 'test-scan',
+    store: { id: 3, store_name: 'Super Metro', address: 'San Jose' },
+    displayed_price: 25.0,
+    reference_price: 24.0,
+  };
+  writeHandoff({ kind: 'view-comparison', comparison: comparison as any });
+  expect(peekHandoff()?.kind).toBe('view-comparison');
+  expect(consumeHandoff()).toEqual({ kind: 'view-comparison', comparison });
+});
+

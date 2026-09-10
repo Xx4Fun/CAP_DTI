@@ -8,6 +8,23 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-09 - APC preparation and immutable monitoring references
+
+- San Jose APC preparation uses accepted routine records from the latest completed Manila monitoring week before the declaration; verification visits and post-declaration observations are excluded.
+- For each Price Freeze-covered product, the computed APC candidate is the centavo-rounded midpoint of the observed minimum and maximum. The observed mean and counts remain supporting review statistics.
+- A preparation remains a draft until DTI Admin reviews the source records and confirms its dataset hash. Only that confirmation creates separate official APC records and activates Price Freeze; arbitrary manual APC entry is not allowed.
+- The backend issues per-product reference packages. During an effective Price Freeze, covered products use confirmed APC records and non-covered products continue using temporal SRP.
+- Every new field line pins the issued reference value, type, source identity, effective date, and version. Sync validates the snapshot at the visit finalization time; historical views and analytics use the stored reference rather than recalculating it.
+- Price Freeze end dates are inclusive. From the following Manila day, normal weekly cadence and the then-applicable temporal SRP resume without overwriting APC or monitoring history.
+
+## 2026-09-08 - Cadence-aware routine monitoring and assigned additional visits
+
+- Routine monitoring is limited to one accepted visit per active establishment and monitoring period: Monday-to-Monday in `Asia/Manila` normally, or one Manila calendar day while a systemwide Price Freeze is effective.
+- A Price Freeze period requires an emergency-protocol routine visit. A standard routine visit from earlier that day does not satisfy the emergency daily requirement.
+- Complaint verification and supervisor-directed work share the Additional Visits queue and never satisfy routine coverage. DTI Admin must assign an active Field Officer; officers cannot self-claim and may return untouched assignments to Admin for reassignment.
+- The backend is authoritative for duplicate routine rejection. A rejected offline upload remains encrypted device-local work in Needs Attention; completed routine establishments remain visible but disabled in Choose Store.
+- This entry supersedes the 2026-09-07 weekly-only cadence and unassigned verification-queue behavior while preserving its evidence and device-local status boundaries.
+
 ## 2026-09-07 - Weekly field monitoring status
 
 - The monitoring week runs from Monday 00:00 in `Asia/Manila` to the following Monday 00:00, exclusive. Backend queries convert those boundaries to UTC.

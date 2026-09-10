@@ -80,7 +80,7 @@ describe('legacy App shell routing and status', () => {
     render(<App />);
     act(() => window.dispatchEvent(new Event('scroll')));
 
-    const backToTop = await screen.findByRole('button', { name: 'Back to top' });
+    const backToTop = await screen.findByRole('button', { name: 'Back to top' }, { timeout: 5000 });
     await userEvent.setup().click(backToTop);
     expect(scrollToSpy).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
   });

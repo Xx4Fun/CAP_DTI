@@ -1,4 +1,5 @@
 import { safeSessionStorage } from './safeStorage';
+import type { ComparisonResultResponse } from '../api/client';
 
 const HANDOFF_KEY = 'price-watch-flow-handoff';
 
@@ -13,6 +14,10 @@ export type FlowHandoff =
       commodityId: number;
       displayedPrice: number;
       baselinePrice: number;
+    }
+  | {
+      kind: 'view-comparison';
+      comparison: ComparisonResultResponse;
     };
 
 export function writeHandoff(value: FlowHandoff): void {
@@ -57,6 +62,14 @@ function isFlowHandoff(value: unknown): value is FlowHandoff {
       && Number.isFinite(item.displayedPrice)
       && typeof item.baselinePrice === 'number'
       && Number.isFinite(item.baselinePrice);
+  }
+  if (item.kind === 'view-comparison') {
+    return hasExactKeys(item, ['kind', 'comparison'])
+      && item.comparison !== null
+      && typeof item.comparison === 'object'
+      && typeof (item.comparison as Record<string, unknown>).store === 'object'
+      && (item.comparison as Record<string, unknown>).store !== null
+      && isPositiveId(((item.comparison as Record<string, unknown>).store as Record<string, unknown>).id);
   }
   return false;
 }

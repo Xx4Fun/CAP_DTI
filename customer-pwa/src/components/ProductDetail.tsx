@@ -6,7 +6,6 @@ import {
   Info,
   Maximize2,
   Minus,
-  ShieldCheck,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
@@ -154,6 +153,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const imageTriggerRef = useRef<HTMLButtonElement>(null);
   const requestSequence = useRef(0);
   const tabRefs = useRef<Partial<Record<DetailTab, HTMLButtonElement | null>>>({});
+  const tabPanelRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async () => {
     const requestId = ++requestSequence.current;
@@ -213,6 +213,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   const selectTab = (tab: DetailTab, focus = false) => {
     setActiveTab(tab);
+    if (tabPanelRef.current) {
+      tabPanelRef.current.scrollTop = 0;
+    }
     if (focus) tabRefs.current[tab]?.focus();
   };
 
@@ -230,8 +233,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   return (
     <div className="product-detail">
-      <section className="product-detail-hero" aria-labelledby="product-detail-title">
-        <div className="product-detail-image-stage">
+      <div className="product-detail-image-stage">
           <button
             type="button"
             className="product-detail-circle-back"
@@ -252,11 +254,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             <div className="product-detail-pedestal" aria-hidden="true" />
           </div>
 
-          <div className="product-detail-floating-pill">
-            <ShieldCheck size={14} aria-hidden="true" />
-            <span>{classification !== 'Not provided' ? classification : 'Official SRP'}</span>
-          </div>
-
           {imageStatus === 'loaded' && resolvedImageUrl && (
             <button
               ref={imageTriggerRef}
@@ -272,7 +269,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           )}
         </div>
 
-        <div className="product-detail-summary">
+        <div className="product-detail-sheet">
+        <section className="product-detail-summary" aria-labelledby="product-detail-title">
           <div className="product-detail-category">{subtitle}</div>
           <h1 id="product-detail-title">{title}</h1>
           <div className="product-detail-summary-metrics">
@@ -289,10 +287,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <strong>{effectiveDate || 'Not provided'}</strong>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {hasActivePriceFreezeCoverage && (
+        {hasActivePriceFreezeCoverage && (
         <section className="product-detail-freeze">
           <button
             type="button"
@@ -339,6 +336,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         </div>
 
         <div
+          ref={tabPanelRef}
           className="product-detail-tab-panel"
           role="tabpanel"
           id={`product-detail-panel-${activeTab}`}
@@ -393,6 +391,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           )}
         </div>
       </section>
+      </div>
 
       {resolvedImageUrl && (
         <ProductImageLightbox

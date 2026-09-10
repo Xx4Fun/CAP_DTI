@@ -129,6 +129,7 @@ export interface MonitoringEstablishmentSummary {
   completed_records_count: number
   records_with_observations_count: number
   open_verification_requests_count: number
+  routine_status?: 'due' | 'completed'
   weekly_routine_status: 'not_yet_monitored' | 'monitored_this_week'
   has_prior_routine_monitoring: boolean
   latest_routine_monitoring_at: string | null
@@ -144,11 +145,18 @@ export interface MonitoringEstablishmentSummary {
 
 export interface MonitoringWorkspace {
   monitoring_week: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
+  monitoring_period?: { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
   weekly_summary: {
     total_establishments: number
     not_yet_monitored: number
     monitored_this_week: number
     verification_required: number
+  }
+  routine_summary?: {
+    total_establishments: number
+    due: number
+    completed: number
+    additional_visits: number
   }
   establishments: {
     data: MonitoringEstablishmentSummary[]
@@ -167,13 +175,18 @@ export interface MonitoringEstablishmentProfile {
   records_with_observations_count: number
   open_verification_requests_count: number
   monitoring_week: MonitoringWorkspace['monitoring_week']
+  monitoring_period?: { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
   weekly_routine_status: MonitoringEstablishmentSummary['weekly_routine_status']
+  routine_status?: 'due' | 'completed'
   has_prior_routine_monitoring: boolean
   latest_routine_monitoring_at: string | null
   latest_routine_record: MonitoringRecordRecord | null
   verification_task_status: 'none' | 'open' | 'claimed'
   verification_claimant: { id: number; name: string; email: string } | null
   latest_record: MonitoringRecordRecord | null
+  period_completed_records_count?: number
+  period_records_with_observations_count?: number
+  period_commodities_count?: number
   monitored_commodities: Array<{
     selector: `key:${string}` | `srp:${number}`
     commodity_name: string
@@ -211,8 +224,44 @@ export interface MonitoringPriceHistoryPage {
   to: number | null
 }
 
+export type MonitoringPeriodPreset = 'this_week' | 'last_4_weeks' | 'this_month' | 'last_month' | 'all_time' | 'custom'
+
+export interface MonitoringPeriodFilter {
+  period?: MonitoringPeriodPreset
+  date_from?: string
+  date_to?: string
+}
+
+export interface MonitoringFindingItem {
+  id: number
+  monitoring_record_id: number
+  finalized_at: string
+  officer_name: string
+  commodity_name: string
+  unit: string | null
+  recorded_price: number | string
+  reference_value: number | string | null
+  difference: number | string | null
+  variance_percent: number | null
+  is_anomaly?: boolean
+  protocol_mode?: 'standard' | 'emergency' | null
+  reference_label?: string | null
+  reference_source?: string | null
+}
+
+export interface MonitoringFindingsPage {
+  data: MonitoringFindingItem[]
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+  from: number | null
+  to: number | null
+}
+
 export interface FieldVerificationRequestRecord {
   id: number
+  source_type?: 'complaint' | 'supervisor_directive'
   status: 'open' | 'claimed' | 'completed' | 'cancelled'
   reason: string
   requested_at: string
@@ -220,7 +269,7 @@ export interface FieldVerificationRequestRecord {
   completed_at?: string | null
   cancelled_at?: string | null
   store: { id: number; store_name: string; address: string; dti_sec_number?: string | null }
-  report: { id: number; report_reference: string; status: string }
+  report?: { id: number; report_reference: string; status: string } | null
   claimant?: { id: number; name: string; email: string } | null
   monitoring_record?: { id: number } | null
 }
@@ -237,6 +286,7 @@ export interface FieldVerificationRequestPage {
 
 export interface FieldVerificationRequestActionRecord {
   id: number
+  source_type?: 'complaint' | 'supervisor_directive'
   status: 'open' | 'claimed' | 'completed' | 'cancelled'
   reason: string
   store_id: number
@@ -322,13 +372,56 @@ export interface AuditRecord {
   created_at: string
 }
 
+export interface RegulatoryEmergencyCandidateObservation {
+  item_id: number
+  store_name: string
+  finalized_at: string
+  recorded_price: number
+  monitoring_record_id: number
+}
+
+export interface RegulatoryEmergencyCandidate {
+  id: number
+  commodity_key: string
+  minimum_price: number
+  maximum_price: number
+  observed_average_price: number
+  computed_apc_price: number
+  observation_count: number
+  establishment_count: number
+  source_observations?: RegulatoryEmergencyCandidateObservation[]
+}
+
+export interface OfficialPriceRecord {
+  id: number
+  regulatory_emergency_id?: number
+  commodity_key: string
+  price_type: string
+  authoritative_price: number
+  effective_from: string
+  effective_until?: string | null
+  source_reference: string
+}
+
 export interface RegulatoryEmergencyRecord {
   id: number
   location: string
   declaration_reference: string
   starts_on: string
   ends_on: string | null
-  status: 'active' | 'ended' | 'cancelled'
+  status: 'draft' | 'active' | 'ended' | 'cancelled'
+  effective_state: 'draft' | 'in_effect' | 'ended' | 'cancelled' | string
+  preparation_hash?: string | null
+  source_week: {
+    timezone: string
+    starts_at: string
+    ends_at: string
+    starts_on?: string
+    ends_on?: string
+  }
+  candidates: RegulatoryEmergencyCandidate[]
+  missing_commodity_keys?: string[]
+  official_prices?: OfficialPriceRecord[]
 }
 
 export interface SrpRecord {

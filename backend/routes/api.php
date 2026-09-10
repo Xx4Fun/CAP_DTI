@@ -94,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-establishments/{store}', [MonitoringRecordController::class, 'establishment']);
         Route::post('/monitoring-establishments/{store}/additional-visits', [MonitoringRecordController::class, 'additionalVisit']);
         Route::get('/monitoring-establishments/{store}/price-history', [MonitoringRecordController::class, 'priceHistory']);
+        Route::get('/monitoring-establishments/{store}/findings', [MonitoringRecordController::class, 'findings']);
         Route::get('/verification-requests', [MonitoringRecordController::class, 'verificationRequests']);
         Route::post('/verification-requests/{verificationRequest}/assign', [MonitoringRecordController::class, 'assignVerification']);
         Route::post('/users/field-officers', [UserManagementController::class, 'storeFieldOfficer']);

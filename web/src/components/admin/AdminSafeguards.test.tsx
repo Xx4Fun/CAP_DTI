@@ -17,7 +17,8 @@ vi.mock('../../services/adminApi', () => ({
     issueLegalNotice: vi.fn(),
     getEmergencies: vi.fn(),
     createEmergency: vi.fn(),
-    createEmergencyPrice: vi.fn(),
+    prepareEmergency: vi.fn(),
+    activateEmergency: vi.fn(),
     updateEmergency: vi.fn(),
     getSrp: vi.fn(),
     previewSrp: vi.fn(),
@@ -145,7 +146,7 @@ describe('DTI Admin safeguards', () => {
     expect(adminApi.previewLegalNotice).toHaveBeenCalledWith(4)
   })
 
-  it('stores authoritative emergency prices against a confirmed declaration', async () => {
+  it('shows confirmed APC records without manual authoritative-price controls', async () => {
     vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
       id: 7,
       location: 'San Jose, Antique',
@@ -153,39 +154,17 @@ describe('DTI Admin safeguards', () => {
       starts_on: '2026-07-26',
       ends_on: null,
       status: 'active',
+      effective_state: 'in_effect',
+      preparation_hash: 'a'.repeat(64),
+      source_week: { timezone: 'Asia/Manila', starts_at: '2026-07-12T16:00:00Z', ends_at: '2026-07-19T16:00:00Z' },
+      candidates: [],
+      official_prices: [{ id: 21, regulatory_emergency_id: 7, commodity_key: 'rice-1kg', price_type: 'APC', authoritative_price: 45.5, effective_from: '2026-07-26', effective_until: null, source_reference: 'PDRRMC-2026-07' }],
     }])
-    vi.mocked(adminApi.createEmergencyPrice).mockResolvedValue({
-      id: 21,
-      regulatory_emergency_id: 7,
-      commodity_key: 'rice-1kg',
-      price_type: 'APC',
-      authoritative_price: 45.5,
-      effective_from: '2026-07-26',
-      effective_until: null,
-      source_reference: 'DTI-APC-2026-07',
-    })
-    const user = userEvent.setup()
 
     render(<EmergencyPanel />)
-    await screen.findByRole('option', { name: /PDRRMC-2026-07/i })
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Confirmed declaration' }),
-      '7',
-    )
-    await user.type(screen.getByRole('textbox', { name: 'Commodity key' }), 'rice-1kg')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Price authority' }), 'APC')
-    await user.type(screen.getByRole('spinbutton', { name: 'Authoritative price' }), '45.50')
-    fireEvent.change(screen.getByLabelText('Effective from'), { target: { value: '2026-07-26' } })
-    await user.type(screen.getByRole('textbox', { name: 'Source reference' }), 'DTI-APC-2026-07')
-    await user.click(screen.getByRole('button', { name: 'Save authoritative price record' }))
-
-    expect(adminApi.createEmergencyPrice).toHaveBeenCalledWith(expect.objectContaining({
-      regulatory_emergency_id: 7,
-      commodity_key: 'rice-1kg',
-      price_type: 'APC',
-      authoritative_price: 45.5,
-      source_reference: 'DTI-APC-2026-07',
-    }))
+    expect(await screen.findByText('rice-1kg')).toBeInTheDocument()
+    expect(screen.getByText(/45\.50/)).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 
   it('shows historical SRP versions and opens the manual item creation modal', async () => {

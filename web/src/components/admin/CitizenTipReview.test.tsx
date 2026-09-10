@@ -13,6 +13,7 @@ vi.mock('../../services/adminApi', () => ({
     getReports: vi.fn(),
     decideReport: vi.fn(),
     requestFieldVerification,
+    getManagedUsers: vi.fn(),
     cancelFieldVerification,
     reopenFieldVerification,
     getReportEvidence: vi.fn(),
@@ -61,6 +62,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(adminApi.getReports).mockResolvedValue(mockReports)
+    vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
     vi.mocked(adminApi.getReportEvidence).mockResolvedValue(new Blob(['fake-image-bytes'], { type: 'image/jpeg' }))
     vi.mocked(adminApi.decideReport).mockResolvedValue({
       ...mockReports[0],
@@ -182,10 +184,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   it('refers a report for field verification without deciding a violation', async () => {
     requestFieldVerification.mockResolvedValue({
       id: 301,
-      status: 'open',
+      status: 'claimed',
       reason: 'Verify the shelf price in person.',
       store_id: 22,
-      claimed_by: null,
+      claimed_by: 9,
       requested_at: '2026-08-02T10:00:00Z',
       claimed_at: null,
       completed_at: null,
@@ -196,10 +198,11 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
     await user.click(await screen.findByText('RPT-2026-001'))
     await user.click(screen.getByRole('button', { name: /Require Field Verification/i }))
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the shelf price in person.')
     await user.click(screen.getByRole('button', { name: /Mark for Field Verification/i }))
 
-    expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.' })
+    expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.', field_officer_id: 9 })
     expect(adminApi.decideReport).not.toHaveBeenCalled()
     expect(await screen.findByText('Referred for field verification')).toBeInTheDocument()
     expect(screen.getByText('Verify the shelf price in person.')).toBeInTheDocument()

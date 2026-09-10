@@ -1,11 +1,11 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
 export const adminApi = {
-  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
+  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
   },
   async getMonitoringRecord(id: number): Promise<MonitoringRecordRecord> {
@@ -14,20 +14,38 @@ export const adminApi = {
   async getMonitoringSignature(id: number, kind: 'officer' | 'representative'): Promise<Blob> {
     return (await api.get(`/admin/monitoring-records/${id}/signatures/${kind}`, { responseType: 'blob' })).data
   },
-  async getMonitoringEstablishments(filters: { search?: string; weekly_status?: 'all' | 'not_yet_monitored' | 'monitored_this_week'; additional_task?: 'all' | 'verification_required'; observation?: 'all' | 'with_observations' | 'reference_unavailable' | 'no_observations'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringWorkspace> {
+  async getMonitoringEstablishments(filters: { search?: string; routine_status?: 'all' | 'due' | 'completed'; weekly_status?: 'all' | 'not_yet_monitored' | 'monitored_this_week'; additional_task?: 'all' | 'verification_required'; observation?: 'all' | 'with_observations' | 'reference_unavailable' | 'no_observations'; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringWorkspace> {
     return data(await api.get('/admin/monitoring-establishments', { params: filters }))
   },
-  async getMonitoringEstablishment(storeId: number): Promise<MonitoringEstablishmentProfile> {
-    return data(await api.get(`/admin/monitoring-establishments/${storeId}`))
+  async getMonitoringEstablishment(storeId: number, filters?: MonitoringPeriodFilter): Promise<MonitoringEstablishmentProfile> {
+    const url = `/admin/monitoring-establishments/${storeId}`
+    const response = filters && Object.keys(filters).length > 0 ? await api.get(url, { params: filters }) : await api.get(url)
+    return data(response)
   },
-  async getMonitoringPriceHistory(storeId: number, filters: { commodity?: `key:${string}` | `srp:${number}`; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringPriceHistoryPage> {
+  async getMonitoringPriceHistory(storeId: number, filters: { commodity?: `key:${string}` | `srp:${number}`; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringPriceHistoryPage> {
     return data(await api.get(`/admin/monitoring-establishments/${storeId}/price-history`, { params: filters }))
+  },
+  async getMonitoringFindings(storeId: number, filters: { period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringFindingsPage> {
+    try {
+      return data(await api.get(`/admin/monitoring-establishments/${storeId}/findings`, { params: filters }))
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { data: [], current_page: 1, last_page: 1, per_page: filters.per_page ?? 10, total: 0, from: null, to: null }
+      }
+      throw err
+    }
   },
   async getFieldVerificationRequests(filters: { search?: string; status?: 'all' | 'open' | 'claimed' | 'completed' | 'cancelled'; store_id?: number; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<FieldVerificationRequestPage> {
     return data(await api.get('/admin/verification-requests', { params: filters }))
   },
-  async requestFieldVerification(reportId: number, payload: { reason: string }): Promise<FieldVerificationRequestActionRecord> {
+  async requestFieldVerification(reportId: number, payload: { reason: string; field_officer_id: number }): Promise<FieldVerificationRequestActionRecord> {
     return data(await api.post(`/admin/reports/${reportId}/verification-request`, payload))
+  },
+  async createAdditionalVisit(storeId: number, payload: { reason: string; field_officer_id: number }): Promise<FieldVerificationRequestActionRecord> {
+    return data(await api.post(`/admin/monitoring-establishments/${storeId}/additional-visits`, payload))
+  },
+  async assignFieldVerification(requestId: number, fieldOfficerId: number): Promise<FieldVerificationRequestActionRecord> {
+    return data(await api.post(`/admin/verification-requests/${requestId}/assign`, { field_officer_id: fieldOfficerId }))
   },
   async cancelFieldVerification(requestId: number): Promise<FieldVerificationRequestActionRecord> {
     return data(await api.post(`/admin/verification-requests/${requestId}/cancel`))
@@ -146,14 +164,20 @@ export const adminApi = {
   async getEmergencies(): Promise<RegulatoryEmergencyRecord[]> {
     return data(await api.get('/admin/emergencies'))
   },
-  async createEmergency(payload: unknown) {
+  async createEmergency(payload: unknown): Promise<RegulatoryEmergencyRecord> {
     return data(await api.post('/admin/emergencies', payload))
   },
-  async updateEmergency(id: number, payload: unknown) {
-    return data(await api.patch(`/admin/emergencies/${id}`, payload))
+  async getEmergency(id: number): Promise<RegulatoryEmergencyRecord> {
+    return data(await api.get(`/admin/emergencies/${id}`))
   },
-  async createEmergencyPrice(payload: unknown) {
-    return data(await api.post('/admin/emergency-prices', payload))
+  async prepareEmergency(id: number): Promise<RegulatoryEmergencyRecord> {
+    return data(await api.post(`/admin/emergencies/${id}/prepare`))
+  },
+  async activateEmergency(id: number, payload: { confirmed: true; preparation_hash: string }): Promise<RegulatoryEmergencyRecord> {
+    return data(await api.post(`/admin/emergencies/${id}/activate`, payload))
+  },
+  async updateEmergency(id: number, payload: unknown): Promise<RegulatoryEmergencyRecord> {
+    return data(await api.patch(`/admin/emergencies/${id}`, payload))
   },
   async getLegalNotices(params: { search?: string; status?: string } = {}): Promise<LegalNoticePage> {
     return data(await api.get('/admin/legal-notices', { params }))

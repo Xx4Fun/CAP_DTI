@@ -14,6 +14,7 @@ use App\Services\FieldNotificationService;
 use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -78,6 +79,9 @@ class MonitoringRecordController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
             'anomaly' => ['nullable', Rule::in(['all', 'yes', 'no'])],
             'store_id' => ['nullable', 'integer', 'exists:stores,id'],
+            'period' => ['nullable', Rule::in(['this_week', 'last_4_weeks', 'this_month', 'last_month', 'all_time', 'custom'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
         $query = MonitoringRecord::query()->where('status', 'accepted')
@@ -94,6 +98,8 @@ class MonitoringRecordController extends Controller
         if (isset($filters['store_id'])) {
             $query->where('store_id', $filters['store_id']);
         }
+        $dates = $this->parsePeriodDates($request);
+        $this->applyPeriodConstraint($query, $dates, 'finalized_at');
 
         return response()->json(['data' => $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
     }
@@ -191,9 +197,17 @@ class MonitoringRecordController extends Controller
         $auth->requireManager($request->user());
         $week = MonitoringWeek::current();
         $period = MonitoringPeriod::current();
+        $dates = $this->parsePeriodDates($request);
+
+        $periodRecordsQuery = fn ($records) => $this->applyPeriodConstraint($records->where('status', 'accepted'), $dates, 'finalized_at');
+        $periodObservationsQuery = fn ($records) => $this->applyPeriodConstraint($records->where('status', 'accepted'), $dates, 'finalized_at')
+            ->whereHas('items', fn ($items) => $items->where('is_anomaly', true));
+
         $store->loadCount([
             'monitoringRecords as completed_records_count' => fn ($records) => $records->where('status', 'accepted'),
             'monitoringRecords as records_with_observations_count' => fn ($records) => $records->where('status', 'accepted')->whereHas('items', fn ($items) => $items->where('is_anomaly', true)),
+            'monitoringRecords as period_completed_records_count' => $periodRecordsQuery,
+            'monitoringRecords as period_records_with_observations_count' => $periodObservationsQuery,
             'verificationRequests as open_verification_requests_count' => fn ($requests) => $requests->whereIn('status', ['open', 'claimed']),
         ])->load(['latestMonitoringRecord' => fn ($record) => $record
             ->with(['officer:id,name,email', 'store:id,store_name,address'])
@@ -203,11 +217,13 @@ class MonitoringRecordController extends Controller
                 'items as unavailable_reference_count' => fn ($items) => $items->where('reference_status', 'unavailable'),
             ]), 'latestRoutineMonitoringRecord.officer:id,name,email', 'activeVerificationRequest.claimant:id,name,email']);
 
-        $commodities = MonitoringRecordItem::query()
-            ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)->where('status', 'accepted'))
+        $commoditiesQuery = MonitoringRecordItem::query()
+            ->whereHas('record', fn ($record) => $this->applyPeriodConstraint($record->where('store_id', $store->id)->where('status', 'accepted'), $dates, 'finalized_at'))
             ->with('bulletin:id,commodity_name,unit,commodity_key')
             ->join('monitoring_records', 'monitoring_records.id', '=', 'monitoring_record_items.monitoring_record_id')
-            ->select('monitoring_record_items.*')->latest('monitoring_records.finalized_at')->get()
+            ->select('monitoring_record_items.*');
+
+        $commodities = $commoditiesQuery->latest('monitoring_records.finalized_at')->get()
             ->map(fn (MonitoringRecordItem $item) => [
                 'selector' => $item->bulletin?->commodity_key ? 'key:'.$item->bulletin->commodity_key : 'srp:'.$item->srp_id,
                 'commodity_name' => $item->bulletin?->commodity_name ?? 'SRP #'.$item->srp_id,
@@ -218,6 +234,9 @@ class MonitoringRecordController extends Controller
             'store' => $store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public']),
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
+            'period_completed_records_count' => $store->period_completed_records_count ?? $store->completed_records_count,
+            'period_records_with_observations_count' => $store->period_records_with_observations_count ?? $store->records_with_observations_count,
+            'period_commodities_count' => $commodities->count(),
             'open_verification_requests_count' => $store->open_verification_requests_count,
             'latest_record' => $store->latestMonitoringRecord,
             'latest_routine_record' => $store->latestRoutineMonitoringRecord,
@@ -241,6 +260,9 @@ class MonitoringRecordController extends Controller
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'commodity' => ['nullable', 'string', 'regex:/^(key:[A-Za-z0-9._-]+|srp:[1-9][0-9]*)$/'],
+            'period' => ['nullable', Rule::in(['this_week', 'last_4_weeks', 'this_month', 'last_month', 'all_time', 'custom'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
         $history = MonitoringRecordItem::query()
@@ -254,6 +276,9 @@ class MonitoringRecordController extends Controller
                 ? $history->whereHas('bulletin', fn ($bulletin) => $bulletin->where('commodity_key', $value))
                 : $history->where('monitoring_record_items.srp_id', (int) $value);
         }
+        $dates = $this->parsePeriodDates($request);
+        $this->applyPeriodConstraint($history, $dates, 'monitoring_records.finalized_at');
+
         $history = $history->latest('monitoring_records.finalized_at')
             ->paginate($filters['per_page'] ?? 10);
         $history->setCollection($history->getCollection()->map(fn (MonitoringRecordItem $item) => [
@@ -382,6 +407,103 @@ class MonitoringRecordController extends Controller
     {
         MonitoringPeriod::constrainProtocol($query, $period['protocol_mode'])
             ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
+
+        return $query;
+    }
+
+    public function findings(Request $request, Store $store, AdminAuthorizationService $auth)
+    {
+        $auth->requireManager($request->user());
+        $filters = $request->validate([
+            'period' => ['nullable', Rule::in(['this_week', 'last_4_weeks', 'this_month', 'last_month', 'all_time', 'custom'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
+        ]);
+
+        $query = MonitoringRecordItem::query()
+            ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)->where('status', 'accepted'))
+            ->where('is_anomaly', true)
+            ->with([
+                'record:id,store_id,officer_user_id,finalized_at,protocol_mode,protocol_reference',
+                'record.officer:id,name,email',
+                'bulletin:id,commodity_name,unit,commodity_key,baseline_price',
+            ])
+            ->join('monitoring_records', 'monitoring_records.id', '=', 'monitoring_record_items.monitoring_record_id')
+            ->select('monitoring_record_items.*');
+
+        $dates = $this->parsePeriodDates($request);
+        $this->applyPeriodConstraint($query, $dates, 'monitoring_records.finalized_at');
+
+        $findings = $query->latest('monitoring_records.finalized_at')->paginate($filters['per_page'] ?? 10);
+
+        $findings->setCollection($findings->getCollection()->map(fn (MonitoringRecordItem $item) => [
+            'id' => $item->id,
+            'monitoring_record_id' => $item->monitoring_record_id,
+            'finalized_at' => $item->record->finalized_at,
+            'officer_name' => $item->record->officer?->name ?? 'Officer unavailable',
+            'commodity_name' => $item->bulletin?->commodity_name ?? 'Commodity #'.$item->srp_id,
+            'unit' => $item->bulletin?->unit,
+            'recorded_price' => $item->recorded_price,
+            'reference_value' => $item->reference_value,
+            'difference' => $item->reference_value === null ? null : round($item->recorded_price - $item->reference_value, 2),
+            'variance_percent' => $item->variance_percent,
+            'is_anomaly' => (bool) $item->is_anomaly,
+            'protocol_mode' => $item->record->protocol_mode,
+            'reference_label' => $item->reference_label,
+            'reference_source' => $item->reference_source,
+        ]));
+
+        return response()->json(['data' => $findings]);
+    }
+
+    private function parsePeriodDates(Request $request, string $defaultPreset = 'all_time'): ?array
+    {
+        $period = $request->query('period', $defaultPreset);
+        $dateFrom = $request->query('date_from');
+        $dateTo = $request->query('date_to');
+
+        if ($period === 'custom' && ($dateFrom || $dateTo)) {
+            $from = $dateFrom ? Carbon::parse($dateFrom)->startOfDay() : null;
+            $to = $dateTo ? Carbon::parse($dateTo)->endOfDay() : null;
+
+            return ['from' => $from, 'to' => $to];
+        }
+
+        $now = now();
+
+        return match ($period) {
+            'this_week' => [
+                'from' => $now->copy()->startOfWeek(),
+                'to' => $now->copy()->endOfWeek(),
+            ],
+            'last_4_weeks' => [
+                'from' => $now->copy()->subWeeks(4)->startOfDay(),
+                'to' => $now->copy()->endOfDay(),
+            ],
+            'this_month' => [
+                'from' => $now->copy()->startOfMonth(),
+                'to' => $now->copy()->endOfMonth(),
+            ],
+            'last_month' => [
+                'from' => $now->copy()->subMonth()->startOfMonth(),
+                'to' => $now->copy()->subMonth()->endOfMonth(),
+            ],
+            default => null,
+        };
+    }
+
+    private function applyPeriodConstraint($query, ?array $dates, string $column = 'finalized_at')
+    {
+        if (! $dates) {
+            return $query;
+        }
+        if ($dates['from']) {
+            $query->where($column, '>=', $dates['from']);
+        }
+        if ($dates['to']) {
+            $query->where($column, '<=', $dates['to']);
+        }
 
         return $query;
     }

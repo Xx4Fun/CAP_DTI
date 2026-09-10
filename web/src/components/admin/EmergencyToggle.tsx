@@ -1,669 +1,156 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Calendar, Database, RefreshCw, Shield, ShieldAlert } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
 import type { RegulatoryEmergencyRecord } from '../../types/admin'
-import {
-  Calendar,
-  Database,
-  Search,
-  Shield,
-  ShieldAlert,
-} from 'lucide-react'
 
-export interface AuthoritativePriceRecord {
-  id: number
-  regulatory_emergency_id: number
-  commodity_key: string
-  price_type: 'PRICE_FREEZE' | 'APC'
-  authoritative_price: number
-  effective_from: string
-  effective_until: string | null
-  source_reference: string
-  declaration_reference?: string
+const SAN_JOSE = 'San Jose de Buenavista, Antique'
+const money = (value: number) => `₱${Number(value).toFixed(2)}`
+const day = (value: string | null) => value ? value.slice(0, 10) : '—'
+const manilaToday = () => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).map(({ type, value }) => [type, value]))
+  return `${parts.year}-${parts.month}-${parts.day}`
 }
 
 export const EmergencyToggle: React.FC = () => {
   const [emergencies, setEmergencies] = useState<RegulatoryEmergencyRecord[]>([])
-  const [emergencyPrices, setEmergencyPrices] = useState<AuthoritativePriceRecord[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [reviewed, setReviewed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [savingAction, setSavingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [savingAction, setSavingAction] = useState<string | null>(null)
-  const [apcSearch, setApcSearch] = useState('')
-  const [apcTypeFilter, setApcTypeFilter] = useState<'ALL' | 'PRICE_FREEZE' | 'APC'>('ALL')
 
-  const loadEmergencies = () => {
-    setLoading(true)
-    setLoadError(null)
-    void adminApi.getEmergencies().then((data) => {
-      setEmergencies(data)
-      setLoading(false)
-    }).catch(() => {
-      setEmergencies([])
-      setLoadError('Could not load emergency declarations. Current market protocol is unavailable until the connection is restored.')
-      setLoading(false)
-    })
+  const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
+    setEmergencies((current) => current.some((item) => item.id === record.id)
+      ? current.map((item) => item.id === record.id ? record : item)
+      : [record, ...current])
+    setSelectedId(record.id)
   }
 
-  useEffect(() => {
-    loadEmergencies()
-  }, [])
+  const loadEmergencies = async () => {
+    setLoading(true); setLoadError(null)
+    try {
+      const records = await adminApi.getEmergencies()
+      setEmergencies(records)
+      setSelectedId((current) => current && records.some((item) => item.id === current)
+        ? current
+        : records.find((item) => item.status === 'draft')?.id ?? records[0]?.id ?? null)
+    } catch {
+      setEmergencies([])
+      setLoadError('Could not load emergency declarations. Current market protocol is unavailable until the connection is restored.')
+    } finally { setLoading(false) }
+  }
 
-  const activeEmergencies = emergencies.filter((e) => e.status === 'active')
-  const isCalamityActive = activeEmergencies.length > 0
+  useEffect(() => { void loadEmergencies() }, [])
 
-  const filteredPrices = emergencyPrices.filter((price) => {
-    const matchesSearch = price.commodity_key.toLowerCase().includes(apcSearch.toLowerCase())
-      || price.source_reference.toLowerCase().includes(apcSearch.toLowerCase())
-    const matchesType = apcTypeFilter === 'ALL' || price.price_type === apcTypeFilter
-    return matchesSearch && matchesType
-  })
+  const selected = emergencies.find((item) => item.id === selectedId) ?? null
+  const inEffect = emergencies.some((item) => item.effective_state === 'in_effect')
+  const officialPrices = useMemo(() => emergencies.flatMap((item) => item.official_prices || []), [emergencies])
+  const completePreparation = !!selected?.candidates.length
+    && selected.candidates.every((candidate) => candidate.observation_count > 0)
+    && !(selected.missing_commodity_keys?.length)
 
-  return (
-    <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
-      {/* Prominent Emergency Command Bar */}
-      <section
-        style={{
-          background: isCalamityActive ? 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%)' : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-          color: '#ffffff',
-          borderRadius: '12px',
-          padding: '1.25rem 1.5rem',
-          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.15)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '1rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '10px',
-              background: isCalamityActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(37, 99, 235, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {isCalamityActive ? <ShieldAlert size={28} className="pulse" /> : <Shield size={28} style={{ color: '#60a5fa' }} />}
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>
-                State of Calamity Regulatory Command Bar
-              </h2>
-              <span
-                style={{
-                  padding: '0.25rem 0.65rem',
-                  borderRadius: '20px',
-                  fontSize: '0.72rem',
-                  fontWeight: 800,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  background: loadError ? '#fef3c7' : isCalamityActive ? '#fee2e2' : '#dcfce7',
-                  color: loadError ? '#92400e' : isCalamityActive ? '#991b1b' : '#166534',
-                  border: loadError ? '1px solid #fcd34d' : isCalamityActive ? '1px solid #fca5a5' : '1px solid #86efac',
-                }}
-              >
-                {loadError ? 'MARKET PROTOCOL UNAVAILABLE' : isCalamityActive ? 'CALAMITY PROTOCOL ACTIVE' : 'NORMAL MARKET PROTOCOL'}
-              </span>
-            </div>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.8)' }}>
-              {loadError
-                ? 'The declaration service could not be reached. No market status is being inferred.'
-                : isCalamityActive
-                  ? `Emergency price controls active across ${activeEmergencies.length} declared jurisdiction(s).`
-                  : 'No active emergency declaration is recorded.'}
-            </p>
-          </div>
+  return <div className="admin-stack" style={{ display: 'grid', gap: '1.25rem' }}>
+    <section className="admin-card" style={{ background: inEffect ? '#991b1b' : '#0f274f', color: '#fff', padding: '1.25rem', borderRadius: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '.8rem' }}>
+        {inEffect ? <ShieldAlert size={28} /> : <Shield size={28} />}
+        <div><h2 style={{ margin: 0, color: '#fff' }}>State of Calamity Regulatory Command Bar</h2>
+          <p style={{ margin: '.25rem 0 0' }}>{inEffect ? 'Confirmed APC references are in effect.' : 'Normal weekly SRP monitoring remains in effect.'}</p></div>
+      </div>
+    </section>
+
+    {loadError && <div role="alert" className="admin-alert admin-alert--error"><p>{loadError}</p><button type="button" onClick={() => void loadEmergencies()}>Retry</button></div>}
+    {actionError && <div role="alert" className="admin-alert admin-alert--error">{actionError}</div>}
+
+    <section className="admin-card" style={{ padding: '1.25rem' }}>
+      <h3>Prepare a Price Freeze declaration</h3>
+      <p>The system uses the latest completed San Jose weekly monitoring cycle and calculates APC as (minimum + maximum) ÷ 2.</p>
+      <form className="admin-form" onSubmit={async (event) => {
+        event.preventDefault()
+        const element = event.currentTarget
+        const form = new FormData(element)
+        setActionError(null); setSavingAction('create')
+        try {
+          const record = await adminApi.createEmergency({
+            location: SAN_JOSE, declaration_reference: form.get('reference'),
+            starts_on: form.get('starts_on'), ends_on: form.get('ends_on') || null,
+          })
+          replaceEmergency(record); element.reset()
+          adminToast.success('APC preparation created.', { id: 'emergency-declaration-created' })
+        } catch (error: any) {
+          const message = error.response?.data?.message || 'The emergency declaration could not be recorded.'
+          setActionError(message); adminToast.error(message, { id: 'emergency-declaration-error' })
+        } finally { setSavingAction(null) }
+      }} style={{ display: 'grid', gap: '.75rem' }}>
+        <div className="monitor-detail-facts"><div><span>Location</span><strong>{SAN_JOSE}</strong></div></div>
+        <label>Declaration reference<input name="reference" required /></label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: '.75rem' }}>
+          <label>Start date<input name="starts_on" type="date" required /></label>
+          <label>End date<input name="ends_on" type="date" /></label>
         </div>
+        <button className="admin-button primary" type="submit" disabled={savingAction !== null}>{savingAction === 'create' ? 'Preparing…' : 'Prepare APC'}</button>
+      </form>
+    </section>
 
-      </section>
+    <section className="admin-card" style={{ padding: '1.25rem' }}>
+      <h3><Calendar size={18} /> Declarations</h3>
+      {loading ? <p>Loading emergency records…</p> : emergencies.length === 0 ? <p>No emergency declarations recorded.</p> : <div style={{ display: 'grid', gap: '.5rem' }}>
+        {emergencies.map((record) => <button key={record.id} type="button" className="admin-button secondary" aria-pressed={record.id === selectedId} onClick={() => { setSelectedId(record.id); setReviewed(false) }}>
+          <strong>{record.declaration_reference}</strong><span>{record.effective_state.replace('_', ' ')}</span><span>{record.starts_on} to {record.ends_on || 'open'}</span>
+        </button>)}
+      </div>}
+    </section>
 
-      {loadError && (
-        <div role="alert" className="admin-alert admin-alert--error">
-          <p>{loadError}</p>
-          <button type="button" onClick={loadEmergencies}>Retry</button>
-        </div>
-      )}
-      {actionError && <div role="alert" className="admin-alert admin-alert--error">{actionError}</div>}
+    {selected?.status === 'draft' && <section className="admin-card" style={{ padding: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'start', flexWrap: 'wrap' }}>
+        <div><h3>APC Preparation</h3><p>Source week: {selected.source_week.starts_on || day(selected.source_week.starts_at)} to {selected.source_week.ends_on || day(selected.source_week.ends_at)} · Asia/Manila</p></div>
+        <button type="button" className="admin-button secondary" disabled={savingAction !== null} onClick={async () => {
+          setActionError(null); setSavingAction('prepare')
+          try { replaceEmergency(await adminApi.prepareEmergency(selected.id)); setReviewed(false); adminToast.success('APC preparation refreshed.', { id: 'apc-preparation-refreshed' }) }
+          catch (error: any) { setActionError(error.response?.data?.message || 'The APC preparation could not be refreshed.') }
+          finally { setSavingAction(null) }
+        }}><RefreshCw size={16} />{savingAction === 'prepare' ? 'Refreshing…' : 'Refresh preparation'}</button>
+      </div>
+      <div className="admin-table-wrap"><table className="admin-data-table"><thead><tr><th>Product</th><th>Minimum</th><th>Maximum</th><th>Observed average</th><th>Computed APC</th><th>Observations</th><th>Establishments</th></tr></thead>
+        <tbody>{selected.candidates.length ? selected.candidates.map((candidate) => <tr key={candidate.id}><td><strong>{candidate.commodity_key}</strong></td><td>{money(candidate.minimum_price)}</td><td>{money(candidate.maximum_price)}</td><td>{money(candidate.observed_average_price)}</td><td><strong>{money(candidate.computed_apc_price)}</strong><small style={{ display: 'block' }}>(min + max) ÷ 2</small></td><td>{candidate.observation_count}</td><td>{candidate.establishment_count}</td></tr>) : <tr><td colSpan={7}>No covered product has qualifying data in the selected completed week. Activation is blocked.</td></tr>}</tbody>
+      </table></div>
+      {!!selected.missing_commodity_keys?.length && <p role="alert" className="admin-inline-alert">Activation is blocked: no qualifying source-week observation for {selected.missing_commodity_keys.join(', ')}.</p>}
+      {selected.candidates.map((candidate) => candidate.source_observations?.length ? <details key={`source-${candidate.id}`}>
+        <summary>Source records for {candidate.commodity_key}</summary>
+        <ul>{candidate.source_observations.map((observation) => <li key={observation.item_id}><strong>{observation.store_name}</strong> · {day(observation.finalized_at)} · {money(observation.recorded_price)} · Record #{observation.monitoring_record_id}</li>)}</ul>
+      </details> : null)}
+      <label className="check-label"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /> I reviewed the source week, supporting statistics, and computed APC values.</label>
+      <button type="button" className="admin-button primary" disabled={!reviewed || !completePreparation || !selected.preparation_hash || savingAction !== null} onClick={async () => {
+        if (!selected.preparation_hash) return
+        setActionError(null); setSavingAction('activate')
+        try {
+          replaceEmergency(await adminApi.activateEmergency(selected.id, { confirmed: true, preparation_hash: selected.preparation_hash }))
+          setReviewed(false); adminToast.success('Official APC references confirmed and Price Freeze activated.', { id: 'price-freeze-activated' })
+        } catch (error: any) {
+          const message = error.response?.data?.message || 'Price Freeze could not be activated.'
+          setActionError(message)
+          if (error.response?.data?.status === 'APC_PREPARATION_STALE') setReviewed(false)
+        } finally { setSavingAction(null) }
+      }}>{savingAction === 'activate' ? 'Activating…' : 'Confirm and activate'}</button>
+    </section>}
 
-      {/* Active Freeze Date Range Indicators Card */}
-      <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Calendar size={18} style={{ color: '#2563eb' }} /> Active Price Freeze & Calamity Date Range Indicators
-            </h3>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-              Real-time monitoring of municipal declaration start dates and effective price freeze duration.
-            </p>
-          </div>
-        </div>
+    <section className="admin-card" style={{ padding: '1.25rem' }}>
+      <h3><Database size={18} /> Official APC / Price Freeze References</h3>
+      <p>These references are separate from SRP and exist only after DTI Admin confirmation.</p>
+      <div className="admin-table-wrap"><table className="admin-data-table"><thead><tr><th>Product</th><th>Reference</th><th>Official APC</th><th>Effective period</th><th>Source</th></tr></thead>
+        <tbody>{officialPrices.length ? officialPrices.map((price) => <tr key={price.id}><td>{price.commodity_key}</td><td>{price.price_type}</td><td><strong>{money(price.authoritative_price)}</strong></td><td>{price.effective_from} to {price.effective_until || 'open'}</td><td>{price.source_reference}</td></tr>) : <tr><td colSpan={5}>No official APC references have been confirmed.</td></tr>}</tbody>
+      </table></div>
+    </section>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.85rem' }}>
-          {emergencies.length === 0 && (
-            <div style={{ padding: '1.25rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem' }}>
-              No price freeze declarations currently recorded in system memory.
-            </div>
-          )}
-
-          {emergencies.map((decl) => {
-            const isActive = decl.status === 'active'
-            const startDate = new Date(decl.starts_on)
-            const today = new Date()
-            const daysActive = Math.max(1, Math.floor((today.getTime() - startDate.getTime()) / (1000 * 3600 * 24)))
-
-            return (
-              <div
-                key={decl.id}
-                style={{
-                  padding: '1rem',
-                  borderRadius: '10px',
-                  border: '1px solid',
-                  borderColor: isActive ? '#fca5a5' : '#e2e8f0',
-                  background: isActive ? '#fff5f5' : '#f8fafc',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <strong style={{ fontSize: '0.92rem', color: '#0f172a', fontFamily: 'monospace' }}>{decl.declaration_reference}</strong>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#475569', fontWeight: 600 }}>{decl.location}</span>
-                  </div>
-                  <span
-                    style={{
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '12px',
-                      fontSize: '0.7rem',
-                      fontWeight: 800,
-                      background: isActive ? '#dc2626' : '#94a3b8',
-                      color: '#ffffff',
-                    }}
-                  >
-                    {isActive ? `ACTIVE (Day ${daysActive})` : decl.status.toUpperCase()}
-                  </span>
-                </div>
-
-                <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px dashed #cbd5e1', fontSize: '0.8rem', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Start: <strong>{decl.starts_on}</strong></span>
-                  <span>End: <strong>{decl.ends_on || 'Open / Indefinite'}</strong></span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Declaration Control Card */}
-      <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-        <h3 style={{ margin: '0 0 0.4rem', fontSize: '1.1rem', color: '#0f172a', fontWeight: 700 }}>
-          Declaration control
-        </h3>
-
-        <form
-          className="admin-form"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            const element = event.currentTarget
-            const form = new FormData(element)
-            setActionError(null)
-            setSavingAction('declaration')
-            try {
-              await adminApi.createEmergency({
-                location: form.get('location'),
-                starts_on: form.get('starts_on'),
-                ends_on: form.get('ends_on') || null,
-                declaration_reference: form.get('reference'),
-                confirmed: form.get('confirmed') === 'on',
-              })
-              adminToast.success('Emergency declaration recorded.', { id: 'emergency-declaration-created' })
-              await loadEmergencies()
-              element.reset()
-            } catch (error: any) {
-              const message = error.response?.data?.message || 'The emergency declaration could not be recorded.'
-              setActionError(message)
-              adminToast.error(message, { id: 'emergency-declaration-error' })
-            } finally {
-              setSavingAction(null)
-            }
-          }}
-          style={{ display: 'grid', gap: '0.85rem' }}
-        >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-            <div>
-              <label htmlFor="decl-location" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Location
-              </label>
-              <input
-                id="decl-location"
-                name="location"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="decl-reference" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Declaration reference
-              </label>
-              <input
-                id="decl-reference"
-                name="reference"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-            <div>
-              <label htmlFor="decl-starts-on" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Start date
-              </label>
-              <input
-                id="decl-starts-on"
-                name="starts_on"
-                type="date"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="decl-ends-on" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                End date
-              </label>
-              <input
-                id="decl-ends-on"
-                name="ends_on"
-                type="date"
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-          </div>
-
-          <label className="check-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#0f172a', cursor: 'pointer' }}>
-            <input name="confirmed" type="checkbox" required style={{ width: '18px', height: '18px' }} />
-            I confirm this declaration and accept responsibility for the record.
-          </label>
-
-          <button
-            type="submit"
-            disabled={savingAction !== null}
-            style={{
-              padding: '0.65rem 1.2rem',
-              background: '#dc2626',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              justifySelf: 'start',
-            }}
-          >
-            {savingAction === 'declaration' ? 'Recording declaration...' : 'Record declaration'}
-          </button>
-        </form>
-
-        <div className="admin-table-wrap" style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff', marginTop: '1rem' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Declaration</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Location</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Dates</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                    Loading emergency records...
-                  </td>
-                </tr>
-              )}
-              {!loading && emergencies.length === 0 && (
-                <tr>
-                  <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                    No emergency declarations recorded.
-                  </td>
-                </tr>
-              )}
-              {emergencies.map((emergency) => (
-                <tr key={emergency.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 700, color: '#1e3a8a' }}>
-                    {emergency.declaration_reference}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem', fontSize: '0.88rem', color: '#0f172a' }}>{emergency.location}</td>
-                  <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#64748b' }}>
-                    {emergency.starts_on} to {emergency.ends_on || 'open'}
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    {emergency.status === 'active' ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span>active</span>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!window.confirm('Confirm that this emergency declaration has ended?')) return
-                            setActionError(null)
-                            setSavingAction(`end-${emergency.id}`)
-                            try {
-                              await adminApi.updateEmergency(emergency.id, {
-                                status: 'ended',
-                                ends_on: new Date().toISOString().slice(0, 10),
-                                confirmed: true,
-                              })
-                              await loadEmergencies()
-                              adminToast.success('Emergency declaration ended.', { id: 'emergency-declaration-ended' })
-                            } catch (error: any) {
-                              const message = error.response?.data?.message || 'The emergency declaration could not be ended.'
-                              setActionError(message)
-                              adminToast.error(message, { id: 'emergency-declaration-end-error' })
-                            } finally {
-                              setSavingAction(null)
-                            }
-                          }}
-                          disabled={savingAction !== null}
-                          style={{
-                            padding: '0.25rem 0.55rem',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                            background: '#ffffff',
-                            color: '#0f172a',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {savingAction === `end-${emergency.id}` ? 'Ending...' : 'End declaration'}
-                        </button>
-                      </div>
-                    ) : (
-                      <span>{emergency.status}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* APC Ceiling Lookup Table & Search Workspace */}
-      <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Database size={18} style={{ color: '#1d4ed8' }} /> Authoritative APC Ceiling & Price Freeze Lookup Table
-            </h3>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-              Registered emergency ceiling prices under active municipal and provincial declarations.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-            <div className="admin-search-field" style={{ width: '220px' }}>
-              <Search size={16} aria-hidden="true" />
-              <input
-                type="text"
-                placeholder="Filter commodity key..."
-                value={apcSearch}
-                onChange={(e) => setApcSearch(e.target.value)}
-                style={{ padding: '0.45rem 0.65rem 0.45rem 2.2rem', fontSize: '0.82rem' }}
-              />
-            </div>
-
-            <select
-              value={apcTypeFilter}
-              onChange={(e) => setApcTypeFilter(e.target.value as any)}
-              style={{ padding: '0.45rem 0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
-            >
-              <option value="ALL">All Authorities</option>
-              <option value="PRICE_FREEZE">Price Freeze</option>
-              <option value="APC">APC Ceiling</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="admin-table-wrap" style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Commodity Key</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Authority</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Authoritative Price (₱)</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Source Reference</th>
-                <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Effective Period</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPrices.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b' }}>
-                    {emergencyPrices.length === 0
-                      ? 'No authoritative emergency price records are available. Records appear here only after the API confirms a saved source.'
-                      : 'No authoritative price records matched the current filter.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredPrices.map((item) => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>
-                      {item.commodity_key}
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <span
-                        style={{
-                          padding: '0.2rem 0.55rem',
-                          borderRadius: '12px',
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          background: item.price_type === 'APC' ? '#eff6ff' : '#fef2f2',
-                          color: item.price_type === 'APC' ? '#1d4ed8' : '#dc2626',
-                          border: item.price_type === 'APC' ? '1px solid #bfdbfe' : '1px solid #fca5a5',
-                        }}
-                      >
-                        {item.price_type === 'APC' ? 'APC Ceiling' : 'Price Freeze'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 800, color: '#1e3a8a', fontSize: '0.95rem' }}>
-                      ₱{item.authoritative_price.toFixed(2)}
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#475569' }}>
-                      {item.source_reference}
-                    </td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#64748b' }}>
-                      {item.effective_from} to {item.effective_until || 'active'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Price Freeze & APC Ceiling Form Card */}
-      <section className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-        <h3 style={{ margin: '0 0 0.4rem', fontSize: '1.1rem', color: '#0f172a', fontWeight: 700 }}>
-          Authoritative emergency price
-        </h3>
-        <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#64748b' }}>
-          Enter only an official Price Freeze or APC source. Normal SRP is not accepted here.
-        </p>
-
-        <form
-          className="admin-form"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            const element = event.currentTarget
-            const form = new FormData(element)
-            const emId = Number(form.get('emergency_id'))
-            const commKey = String(form.get('commodity_key'))
-            const pType = form.get('price_type') as 'PRICE_FREEZE' | 'APC'
-            const authPrice = Number(form.get('authoritative_price'))
-            const effFrom = String(form.get('effective_from'))
-            const effUntil = (form.get('effective_until') as string) || null
-            const srcRef = String(form.get('source_reference'))
-
-            setActionError(null)
-            setSavingAction('price')
-            try {
-              const savedRecord = await adminApi.createEmergencyPrice({
-                regulatory_emergency_id: emId,
-                commodity_key: commKey,
-                price_type: pType,
-                authoritative_price: authPrice,
-                effective_from: effFrom,
-                effective_until: effUntil,
-                source_reference: srcRef,
-              }) as AuthoritativePriceRecord
-              setEmergencyPrices((prev) => [savedRecord, ...prev])
-              adminToast.success('Authoritative emergency price recorded.', { id: 'emergency-price-created' })
-              element.reset()
-            } catch (error: any) {
-              const message = error.response?.data?.message || 'The authoritative emergency price could not be recorded.'
-              setActionError(message)
-              adminToast.error(message, { id: 'emergency-price-error' })
-            } finally {
-              setSavingAction(null)
-            }
-          }}
-          style={{ display: 'grid', gap: '0.85rem' }}
-        >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-            <div>
-              <label htmlFor="em-decl-select" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Confirmed declaration
-              </label>
-              <select
-                id="em-decl-select"
-                name="emergency_id"
-                required
-                defaultValue=""
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              >
-                <option value="" disabled>Select an active declaration</option>
-                {emergencies
-                  .filter((item) => item.status === 'active')
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.declaration_reference} | {item.location}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="commodity-key-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Commodity key
-              </label>
-              <input
-                id="commodity-key-input"
-                name="commodity_key"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.85rem' }}>
-            <div>
-              <label htmlFor="price-authority-select" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Price authority
-              </label>
-              <select
-                id="price-authority-select"
-                name="price_type"
-                required
-                defaultValue=""
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              >
-                <option value="" disabled>Select authority</option>
-                <option value="PRICE_FREEZE">Price Freeze</option>
-                <option value="APC">APC ceiling</option>
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="authoritative-price-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Authoritative price
-              </label>
-              <input
-                id="authoritative-price-input"
-                name="authoritative_price"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a', fontFamily: 'monospace' }}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="source-ref-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Source reference
-              </label>
-              <input
-                id="source-ref-input"
-                name="source_reference"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-            <div>
-              <label htmlFor="effective-from-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Effective from
-              </label>
-              <input
-                id="effective-from-input"
-                name="effective_from"
-                type="date"
-                required
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="effective-until-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.3rem' }}>
-                Effective until
-              </label>
-              <input
-                id="effective-until-input"
-                name="effective_until"
-                type="date"
-                style={{ width: '100%', padding: '0.6rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#ffffff', color: '#0f172a' }}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={savingAction !== null}
-            style={{
-              padding: '0.6rem 1.1rem',
-              background: '#1d4ed8',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              justifySelf: 'start',
-            }}
-          >
-            {savingAction === 'price' ? 'Saving authoritative price...' : 'Save authoritative price record'}
-          </button>
-        </form>
-      </section>
-
-    </div>
-  )
+    {selected?.status === 'active' && <button type="button" className="admin-button secondary" disabled={savingAction !== null} onClick={async () => {
+      if (!window.confirm('Confirm that this Price Freeze has ended?')) return
+      setSavingAction('end'); setActionError(null)
+      try { replaceEmergency(await adminApi.updateEmergency(selected.id, { status: 'ended', ends_on: manilaToday(), confirmed: true })) }
+      catch (error: any) { setActionError(error.response?.data?.message || 'The Price Freeze could not be ended.') }
+      finally { setSavingAction(null) }
+    }}>{savingAction === 'end' ? 'Ending…' : 'End Price Freeze'}</button>}
+  </div>
 }
