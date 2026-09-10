@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Building2, Search, TriangleAlert, X } from 'lucide-react'
-import { analyzeWithReference, resolveClientReference } from '../app/workflow'
-import type { Bulletin, MonitoringProtocol, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
+import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
+import type { Bulletin, MonitoringProtocol, MonitoringReference, ReferenceSnapshot, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
 
 interface DtiMonitoringSheetProps {
   store: StoreRecord | undefined
@@ -9,7 +9,8 @@ interface DtiMonitoringSheetProps {
   bulletins: Bulletin[]
   protocol?: MonitoringProtocol
   regulatoryPrices?: RegulatoryPrice[]
-  onUpdatePrice: (srpId: number, price: number | null) => void
+  monitoringReferences?: MonitoringReference[]
+  onUpdatePrice: (srpId: number, price: number | null, reference?: ReferenceSnapshot) => void
   onProceedToReview?: () => void
   onPrevious?: () => void
 }
@@ -20,6 +21,7 @@ export function DtiMonitoringSheet({
   bulletins,
   protocol,
   regulatoryPrices = [],
+  monitoringReferences = [],
   onUpdatePrice,
   onProceedToReview,
   onPrevious,
@@ -43,13 +45,16 @@ export function DtiMonitoringSheet({
     return map
   }, [bulletins])
 
+  const referenceFor = (bulletin: Bulletin, line = draft.items.find((item) => item.srp_id === bulletin.id)) =>
+    resolveVisitReference(line, bulletin, protocol?.mode || 'standard', regulatoryPrices, monitoringReferences)
+
   // Count anomalies & compliance
   const { encodedCount, anomalyCount, compliantCount } = useMemo(() => {
     let anomalies = 0
     draft.items.forEach((item) => {
       const bulletin = bulletinMap.get(item.srp_id)
       if (bulletin) {
-        if (analyzeWithReference(item, resolveClientReference(bulletin, protocol?.mode || 'standard', regulatoryPrices)).is_anomaly) anomalies++
+        if (analyzeWithReference(item, referenceFor(bulletin, item)).is_anomaly) anomalies++
       }
     })
     return {
@@ -57,10 +62,10 @@ export function DtiMonitoringSheet({
       anomalyCount: anomalies,
       compliantCount: draft.items.filter((item) => {
         const bulletin = bulletinMap.get(item.srp_id)
-        return bulletin && analyzeWithReference(item, resolveClientReference(bulletin, protocol?.mode || 'standard', regulatoryPrices)).label === 'Within reference'
+        return bulletin && analyzeWithReference(item, referenceFor(bulletin, item)).label === 'Within reference'
       }).length,
     }
-  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices])
+  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices, monitoringReferences])
 
   // Distinct categories
   const uniqueCategories = useMemo(() => {
@@ -91,7 +96,8 @@ export function DtiMonitoringSheet({
       // 3. View Filter (All / Encoded / In Compliance / Flagged)
       const recorded = recordedMap.get(item.id)
       const isRecorded = recorded !== undefined
-      const reference = resolveClientReference(item, protocol?.mode || 'standard', regulatoryPrices)
+      const recordedLine = draft.items.find((line) => line.srp_id === item.id)
+      const reference = referenceFor(item, recordedLine)
       const analysis = isRecorded ? analyzeWithReference({ srp_id: item.id, recorded_price: recorded }, reference) : null
       const isAnomaly = analysis?.is_anomaly || false
 
@@ -107,7 +113,7 @@ export function DtiMonitoringSheet({
 
       return true
     })
-  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, protocol?.mode, regulatoryPrices])
+  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, draft.items, protocol?.mode, regulatoryPrices, monitoringReferences])
 
   // Group filtered bulletins by Major Classification -> Category
   const groupedSections = useMemo(() => {
@@ -334,11 +340,9 @@ export function DtiMonitoringSheet({
                       {catGroup.items.map((item) => {
                         const recordedPrice = recordedMap.get(item.id)
                         const hasRecorded = recordedPrice !== undefined && Number.isFinite(recordedPrice)
-                        const reference = resolveClientReference(item, protocol?.mode || 'standard', regulatoryPrices)
-                        const baseline = Number(item.baseline_price)
-                        const displayedReference = protocol?.mode === 'emergency'
-                          ? reference.value
-                          : Number.isFinite(baseline) && baseline > 0 ? baseline : null
+                        const recordedLine = draft.items.find((line) => line.srp_id === item.id)
+                        const reference = referenceFor(item, recordedLine)
+                        const displayedReference = reference.value
                         const analysis = hasRecorded ? analyzeWithReference({ srp_id: item.id, recorded_price: recordedPrice }, reference) : null
                         const isAnomaly = analysis?.is_anomaly || false
                         const variance = analysis?.variance_percent ?? null
@@ -385,7 +389,14 @@ export function DtiMonitoringSheet({
                                       } else {
                                         const num = Number(text)
                                         if (Number.isFinite(num) && num >= 0) {
-                                          onUpdatePrice(item.id, num)
+                                          const snapshot = 'reference_version' in reference ? {
+                                            status: reference.status, type: reference.type, source_id: reference.source_id,
+                                            value: reference.value, label: reference.label,
+                                            source_reference: reference.source, effective_date: reference.effective_date,
+                                            reference_version: reference.reference_version,
+                                          } : undefined
+                                          if (snapshot) onUpdatePrice(item.id, num, snapshot)
+                                          else onUpdatePrice(item.id, num)
                                         }
                                       }
                                     }}
@@ -399,7 +410,7 @@ export function DtiMonitoringSheet({
                               {hasRecorded && reference.status === 'unavailable' ? <span className="dti-variance-pill pill-unavailable">Reference unavailable</span> : hasRecorded && variance !== null ? (
                                 <span
                                   className={`dti-variance-pill ${isAnomaly ? 'pill-anomaly' : variance === 0 ? 'pill-exact' : variance > 0 ? 'pill-ok' : 'pill-discount'}`}
-                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the current reference and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to SRP`}
+                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the current reference and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to the active reference`}
                                 >
                                   {variance > 0 ? `+${variance.toFixed(1)}%` : `${variance.toFixed(1)}%`}
                                 </span>
@@ -421,32 +432,34 @@ export function DtiMonitoringSheet({
 
       {/* 4. Unified Sticky Bottom Navigation Bar */}
       <div className="dti-floating-bottom-bar">
-        {onPrevious ? (
-          <button
-            type="button"
-            className="secondary-button bottom-prev-btn"
-            aria-label="Back to Choose Store"
-            onClick={onPrevious}
-          >
-            <ArrowLeft size={16} />
-            <span>Previous</span>
-          </button>
-        ) : (
-          <div />
-        )}
+        <div className="dti-floating-bottom-bar-inner dti-matrix-bar-inner">
+          {onPrevious ? (
+            <button
+              type="button"
+              className="secondary-button bottom-prev-btn"
+              aria-label="Back to Choose Store"
+              onClick={onPrevious}
+            >
+              <ArrowLeft size={16} />
+              <span>Previous</span>
+            </button>
+          ) : (
+            <div />
+          )}
 
-        {onProceedToReview && (
-          <button
-            type="button"
-            className="primary-button proceed-review-btn"
-            disabled={encodedCount === 0}
-            aria-label="Review visit evidence"
-            onClick={onProceedToReview}
-          >
-            <span>Next</span>
-            <ArrowRight size={16} />
-          </button>
-        )}
+          {onProceedToReview && (
+            <button
+              type="button"
+              className="primary-button proceed-review-btn"
+              disabled={encodedCount === 0}
+              aria-label="Review visit evidence"
+              onClick={onProceedToReview}
+            >
+              <span>Next</span>
+              <ArrowRight size={16} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

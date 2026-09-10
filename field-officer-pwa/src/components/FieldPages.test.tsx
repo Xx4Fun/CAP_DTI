@@ -114,9 +114,9 @@ describe('Field top-level pages', () => {
         online
         syncing={false}
         authorizationValid
-        requests={[{ id: 8, status: 'open', reason: 'Consumer price report requires a store visit.', requested_at: '2026-08-30T00:00:00Z', claimed_at: null, claimed_by: null, store: bootstrap.stores[0] }]}
+        requests={[{ id: 8, source_type: 'complaint', status: 'claimed', reason: 'Consumer price report requires a store visit.', requested_at: '2026-08-30T00:00:00Z', claimed_at: '2026-08-30T00:05:00Z', claimed_by: 1, store: bootstrap.stores[0] }]}
         requestsState="ready"
-        onClaim={vi.fn()}
+        onStartAssigned={vi.fn()}
         onRelease={vi.fn()}
         onRetry={vi.fn()}
         onResume={resume}
@@ -128,7 +128,7 @@ describe('Field top-level pages', () => {
 
     expect(screen.getByRole('heading', { name: 'Monitoring' })).toHaveClass('sr-only')
     expect(screen.queryByText('Handle verification work, resume encrypted drafts, and synchronize completed visits.')).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Verification 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Assigned Visits 1/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Current Work 2' })).toBeInTheDocument()
     expect(screen.getAllByText('Market One').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('Inspection Draft')).toHaveLength(2)
@@ -166,9 +166,9 @@ describe('Field top-level pages', () => {
         online={false}
         syncing={false}
         authorizationValid
-        requests={[{ id: 8, status: 'open', reason: 'Check the reported shelf price.', requested_at: '2026-08-30T00:00:00Z', claimed_at: null, claimed_by: null, store: bootstrap.stores[0] }]}
+        requests={[{ id: 8, source_type: 'supervisor_directive', status: 'claimed', reason: 'Check the reported shelf price.', requested_at: '2026-08-30T00:00:00Z', claimed_at: '2026-08-30T00:05:00Z', claimed_by: 1, store: bootstrap.stores[0] }]}
         requestsState="unavailable"
-        onClaim={vi.fn()}
+        onStartAssigned={vi.fn()}
         onRelease={vi.fn()}
         onRetry={vi.fn()}
         onResume={vi.fn()}
@@ -178,9 +178,10 @@ describe('Field top-level pages', () => {
       />
     )
 
-    expect(screen.getByText('Showing saved verification requests')).toBeInTheDocument()
+    expect(screen.getByText('Showing saved assigned visits')).toBeInTheDocument()
     expect(screen.getByText('Market One')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Claim and start' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start assigned visit' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Return to Admin' })).toBeDisabled()
   })
 
   it('shows accepted server records in History without a local queue section', async () => {

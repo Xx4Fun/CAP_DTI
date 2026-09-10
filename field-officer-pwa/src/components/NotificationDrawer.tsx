@@ -44,6 +44,7 @@ export function NotificationDrawer({ open, online, state, notifications, onClose
 }
 
 function notificationTitle(event: string | null) {
+  if (event === 'verification_assigned') return 'Additional visit assigned'
   if (event === 'verification_requested' || event === 'field_verification_requested') return 'New field verification request'
   if (event === 'monitoring_record_accepted') return 'Monitoring record synchronized'
   if (event?.includes('emergency') || event?.includes('protocol')) return 'Monitoring protocol updated'
@@ -54,7 +55,7 @@ function notificationTitle(event: string | null) {
 function notificationMessage(notification: FieldNotification) {
   const payload = notification.payload
   if (typeof payload.message === 'string') return payload.message
-  if (typeof payload.store_name === 'string') return `${payload.store_name} needs field verification.`
+  if (typeof payload.store_name === 'string') return notification.event === 'verification_assigned' ? `Visit ${payload.store_name} for the assigned follow-up.` : `${payload.store_name} needs field verification.`
   return 'Open PRICE-Watch to review this update.'
 }
 

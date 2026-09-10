@@ -24,7 +24,7 @@ import {
 } from './app/vault'
 import type { BiometricAvailability, VaultUnlockResult } from './app/vault'
 import { applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldLockAfterBackground } from './app/sessionPolicy'
-import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, VisitDraft } from './types'
+import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, StoreRecord, VisitDraft } from './types'
 
 type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'repair-login' | 'repair-unlock' | 'migration' | 'attention' | 'recovery' | 'ready'
 type View = TopLevelView | 'visit'
@@ -530,12 +530,8 @@ export default function App() {
   const claimVerification = async (request: FieldVerificationRequest) => {
     const existing = drafts.find((item) => item.verification_request_id === request.id)
     if (existing) { setActiveDraftId(existing.client_uuid); setVisitStep(existing.items.length ? 2 : existing.store_id ? 1 : 0); setView('visit'); return }
-    if (!session || !online) return
-    try {
-      if (request.status === 'open') await fieldApi.claimVerification(session.token, request.id)
-      startVisit(request.store.id, request.id)
-      await refreshOperationalData(session.token)
-    } catch (error) { setNotice({ kind: 'error', title: 'Request unavailable', message: apiError(error, 'Another officer may have claimed this verification request. Refresh and try again.') }) }
+    if (!session) return
+    startVisit(request.store.id, request.id)
   }
   const releaseVerification = async (request: FieldVerificationRequest) => {
     if (!session || !online) return
@@ -606,7 +602,7 @@ export default function App() {
           {view === 'home' && (completion
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
             : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} onViewHistory={() => setView('history')} />)}
-          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onClaim={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
+          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onStartAssigned={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
           {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} verificationRequests={verificationRequests} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
@@ -1037,9 +1033,13 @@ function VisitWizard({
   onChooseStore,
   onFinish,
 }: VisitWizardProps) {
+  const cadence = bootstrap.monitoring_period?.cadence ?? 'weekly'
+  const routineStatusOf = (store: StoreRecord): 'due' | 'completed' => {
+    if (store.routine_status) return store.routine_status
+    return store.weekly_routine_status === 'monitored_this_week' ? 'completed' : 'due'
+  }
   const [query, setQuery] = useState('')
-  const [routineStatus, setRoutineStatus] = useState<'all' | 'not_yet_monitored' | 'monitored_this_week'>('all')
-  const [additionalTask, setAdditionalTask] = useState<'all' | 'verification_required'>('all')
+  const [routineStatus, setRoutineStatus] = useState<'all' | 'due' | 'completed'>('all')
   const [error, setError] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [gpsRetryVisible, setGpsRetryVisible] = useState(false)
@@ -1054,8 +1054,7 @@ function VisitWizard({
     const verificationStoreIds = new Set(verificationRequests.map((request) => request.store.id))
     return bootstrap.stores
       .filter((store) => `${store.store_name} ${store.address}`.toLowerCase().includes(normalizedQuery))
-      .filter((store) => routineStatus === 'all' || store.weekly_routine_status === routineStatus)
-      .filter((store) => additionalTask === 'all' || verificationStoreIds.has(store.id))
+      .filter((store) => routineStatus === 'all' || routineStatusOf(store) === routineStatus)
       .map((store) => ({
         ...store,
         verificationRequired: verificationStoreIds.has(store.id),
@@ -1065,11 +1064,11 @@ function VisitWizard({
           : null,
       }))
       .sort((left, right) => {
-        const leftRank = left.weekly_routine_status === 'not_yet_monitored' ? 0 : left.weekly_routine_status === 'monitored_this_week' ? 1 : 2
-        const rightRank = right.weekly_routine_status === 'not_yet_monitored' ? 0 : right.weekly_routine_status === 'monitored_this_week' ? 1 : 2
+        const leftRank = routineStatusOf(left) === 'due' ? 0 : 1
+        const rightRank = routineStatusOf(right) === 'due' ? 0 : 1
         return leftRank - rightRank || left.store_name.localeCompare(right.store_name)
       })
-  }, [additionalTask, bootstrap.stores, officerPosition, query, routineStatus, verificationRequests])
+  }, [bootstrap.stores, officerPosition, query, routineStatus, verificationRequests])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
 
@@ -1220,21 +1219,60 @@ function VisitWizard({
         {step === 0 && (
           <div className="step-content store-step-content">
             <h2>Choose a store</h2>
-            <p>Select the establishment you are visiting.</p>
-            <div className="search-box">
-              <Search size={18} />
-              <input
-                aria-label="Search establishments"
-                placeholder="Search establishment name or address"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {query && <button type="button" className="store-search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={16} /></button>}
+
+            <div className="store-search-filter-row">
+              <div className="search-box">
+                <Search size={18} />
+                <input
+                  aria-label="Search establishments"
+                  placeholder="Search establishment name or address"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                {query && <button type="button" className="store-search-clear" aria-label="Clear search" onClick={() => setQuery('')}><X size={16} /></button>}
+              </div>
+              <div className="store-filter-dropdown-wrap">
+                <label htmlFor="store-routine-select" className="sr-only">Routine status</label>
+                <select
+                  id="store-routine-select"
+                  aria-label="Routine status"
+                  value={routineStatus}
+                  onChange={(event) => setRoutineStatus(event.target.value as typeof routineStatus)}
+                >
+                  <option value="all">All</option>
+                  <option value="due">{cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored'}</option>
+                  <option value="completed">{cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week'}</option>
+                </select>
+              </div>
             </div>
-            <div className="store-filter-row">
-              <label>Routine status<select aria-label="Routine status" value={routineStatus} onChange={(event) => setRoutineStatus(event.target.value as typeof routineStatus)}><option value="all">All</option><option value="not_yet_monitored">Not Yet Monitored</option><option value="monitored_this_week">Monitored This Week</option></select></label>
-              <label>Additional task<select aria-label="Additional task" value={additionalTask} onChange={(event) => setAdditionalTask(event.target.value as typeof additionalTask)}><option value="all">All</option><option value="verification_required">Verification Required</option></select></label>
+
+            <div className="store-pills-filter" role="group" aria-label="Filter stores by routine status">
+              <button
+                type="button"
+                className={`store-pill-btn ${routineStatus === 'all' ? 'active' : ''}`}
+                onClick={() => setRoutineStatus('all')}
+                aria-pressed={routineStatus === 'all'}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`store-pill-btn ${routineStatus === 'due' ? 'active' : ''}`}
+                onClick={() => setRoutineStatus('due')}
+                aria-pressed={routineStatus === 'due'}
+              >
+                {cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored'}
+              </button>
+              <button
+                type="button"
+                className={`store-pill-btn ${routineStatus === 'completed' ? 'active' : ''}`}
+                onClick={() => setRoutineStatus('completed')}
+                aria-pressed={routineStatus === 'completed'}
+              >
+                {cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week'}
+              </button>
             </div>
+
             <div className="store-results-summary" aria-live="polite">
               {stores.length} {stores.length === 1 ? 'store' : 'stores'} · Routine priority
             </div>
@@ -1246,6 +1284,7 @@ function VisitWizard({
                     className="store-selection-card"
                     key={store.id}
                     aria-label={`Choose ${store.store_name} to record prices`}
+                    disabled={routineStatusOf(store) === 'completed'}
                     onClick={() => {
                       onDraft({
                         ...draft,
@@ -1275,7 +1314,7 @@ function VisitWizard({
                     <span className="store-card-copy">
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
-                      <span className="store-status-row"><span>{store.weekly_routine_status === 'monitored_this_week' ? 'Monitored This Week' : store.weekly_routine_status === 'not_yet_monitored' ? 'Not Yet Monitored' : 'Routine status unavailable'}</span>{store.verificationRequired && <span>Verification Required</span>}</span>
+                      <span className="store-status-row"><span>{routineStatusOf(store) === 'completed' ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}</span>{store.verificationRequired && <span>Verification Required</span>}</span>
                       <small>{store.latest_routine_monitoring_at ? `Latest routine: ${new Date(store.latest_routine_monitoring_at).toLocaleDateString('en-PH')}` : store.has_prior_routine_monitoring === false ? 'No previous routine visits' : ''}</small>
                     </span>
                   </button>
@@ -1332,7 +1371,7 @@ function VisitWizard({
 
         {/* Step 3: Review and sign */}
         {step === 2 && (
-          <div className="step-content">
+          <div className="step-content signatures-step-content">
             <h2>Store Representative & Dual Signatures</h2>
             <p>Enter on-duty personnel details and secure dual official signatures.</p>
             <div className="representative-fields">
@@ -1448,33 +1487,37 @@ function VisitWizard({
         )}
 
         {step === 2 && (
-          <div className="wizard-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setError('')
-                onStep(1)
-              }}
-            >
-              <ChevronLeft size={17} />
-              <span>Back</span>
-            </button>
-            <span />
-            <button
-              type="button"
-              className="primary-button"
-              aria-label={!authorizationValid ? 'Authorization expired' : finishing ? 'Securing visit…' : online ? 'Finalize and submit' : 'Finalize and save offline'}
-              disabled={finishing || !authorizationValid}
-              onClick={() => void requestFinish()}
-            >
-              {!authorizationValid
-                ? 'Authorization expired'
-                : finishing
-                  ? 'Securing visit…'
-                  : 'Submit'}
-              <ShieldCheck size={18} />
-            </button>
+          <div className="dti-floating-bottom-bar">
+            <div className="dti-floating-bottom-bar-inner dti-signatures-bar-inner">
+              <button
+                type="button"
+                className="secondary-button bottom-prev-btn"
+                aria-label="Back to Record Prices"
+                onClick={() => {
+                  setError('')
+                  onStep(1)
+                }}
+              >
+                <ArrowLeft size={16} />
+                <span>Back</span>
+              </button>
+              <button
+                type="button"
+                className="primary-button proceed-review-btn"
+                aria-label={!authorizationValid ? 'Authorization expired' : finishing ? 'Securing visit…' : online ? 'Finalize and submit' : 'Finalize and save offline'}
+                disabled={finishing || !authorizationValid}
+                onClick={() => void requestFinish()}
+              >
+                <span>
+                  {!authorizationValid
+                    ? 'Authorization expired'
+                    : finishing
+                      ? 'Securing visit…'
+                      : 'Submit'}
+                </span>
+                <ShieldCheck size={16} />
+              </button>
+            </div>
           </div>
         )}
       </section>

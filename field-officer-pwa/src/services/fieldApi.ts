@@ -29,9 +29,6 @@ export const fieldApi = {
   async verificationRequests(token: string): Promise<FieldVerificationRequest[]> {
     return (await client.get('/field/verification-requests', auth(token))).data.data
   },
-  async claimVerification(token: string, id: number): Promise<FieldVerificationRequest> {
-    return (await client.post(`/field/verification-requests/${id}/claim`, {}, auth(token))).data.data
-  },
   async releaseVerification(token: string, id: number): Promise<FieldVerificationRequest> {
     return (await client.post(`/field/verification-requests/${id}/release`, {}, auth(token))).data.data
   },

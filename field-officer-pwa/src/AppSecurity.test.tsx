@@ -463,22 +463,22 @@ describe('field workspace security flow', () => {
     await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', []))
   })
 
-  it('filters Choose Store by independent weekly and verification status without starting a verification draft', async () => {
+  it('keeps completed routine stores visible but disabled and keeps assigned work out of Choose Store', async () => {
     localStorage.setItem('field-guide:1:v1', 'complete')
     fixtures.vault.hasVault.mockResolvedValue(true)
     fixtures.vault.restoreVaultSession.mockResolvedValue(true)
-    fixtures.api.verificationRequests.mockResolvedValue([{ id: 44, status: 'open', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: null, claimed_by: null, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }])
+    fixtures.api.verificationRequests.mockResolvedValue([{ id: 44, source_type: 'complaint', status: 'claimed', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: '2026-09-07T00:05:00Z', claimed_by: 1, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }])
     fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
       session: fixtures.session,
       bootstrap: {
-        version: 'v1', is_delta: false, recent_prices: [], srp_bulletins: [],
+        version: 'v1', is_delta: false, recent_prices: [], srp_bulletins: [], monitoring_period: { cadence: 'daily', timezone: 'Asia/Manila', starts_at: '2026-09-07T00:00:00+08:00', ends_at: '2026-09-07T23:59:59+08:00', protocol_mode: 'emergency', declaration_reference: 'PF-2026-01' },
         stores: [
-          { id: 3, store_name: 'Charlie Store', address: 'South', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T01:00:00Z' },
-          { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T02:00:00Z' },
-          { id: 2, store_name: 'Beta Store', address: 'West', latitude: 0, longitude: 0, is_active: true, weekly_routine_status: 'not_yet_monitored', has_prior_routine_monitoring: false, latest_routine_monitoring_at: null },
+          { id: 3, store_name: 'Charlie Store', address: 'South', latitude: 0, longitude: 0, is_active: true, routine_status: 'completed', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T01:00:00Z' },
+          { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0, is_active: true, routine_status: 'completed', has_prior_routine_monitoring: true, latest_routine_monitoring_at: '2026-09-07T02:00:00Z' },
+          { id: 2, store_name: 'Beta Store', address: 'West', latitude: 0, longitude: 0, is_active: true, routine_status: 'due', has_prior_routine_monitoring: false, latest_routine_monitoring_at: null },
         ],
       },
-      'verification-requests': [{ id: 44, status: 'open', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: null, claimed_by: null, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }],
+      'verification-requests': [{ id: 44, source_type: 'complaint', status: 'claimed', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: '2026-09-07T00:05:00Z', claimed_by: 1, store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0 } }],
       drafts: [],
     })[key])
 
@@ -490,12 +490,13 @@ describe('field workspace security flow', () => {
     expect(choices.map((choice) => choice.getAttribute('aria-label'))).toEqual([
       'Choose Beta Store to record prices', 'Choose Alpha Store to record prices', 'Choose Charlie Store to record prices',
     ])
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'monitored_this_week')
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Additional task' }), 'verification_required')
-    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Monitored This Week')
-    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Verification Required')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'completed')
+    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Monitored Today')
+    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toBeDisabled()
+    expect(screen.queryByRole('combobox', { name: 'Additional task' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'due')
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Beta Store to record prices' }))
     await waitFor(() => {
       const persisted = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').at(-1)?.[1] as Array<{ verification_request_id?: number }>
       expect(persisted[0]?.verification_request_id).toBeUndefined()

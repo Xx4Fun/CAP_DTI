@@ -10,9 +10,10 @@ describe('NotificationDrawer', () => {
     const readAll = vi.fn()
     const close = vi.fn()
     render(<NotificationDrawer open online state="ready" notifications={[{
-      id: 'n1', event: 'verification_requested', read_at: null, created_at: '2026-08-30T00:00:00Z', payload: { store_name: 'Market One' },
+      id: 'n1', event: 'verification_assigned', read_at: null, created_at: '2026-08-30T00:00:00Z', payload: { store_name: 'Market One' },
     }]} onClose={close} onRead={read} onReadAll={readAll} />)
-    expect(screen.getByText('New field verification request')).toBeInTheDocument()
+    expect(screen.getByText('Additional visit assigned')).toBeInTheDocument()
+    expect(screen.getByText('Visit Market One for the assigned follow-up.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Mark notification as read' }))
     expect(read).toHaveBeenCalledWith('n1')
     fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }))

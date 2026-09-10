@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import { readSecret, writeSecret, type BiometricAvailability } from '../app/vault'
-import { analyzeWithReference, resolveClientReference } from '../app/workflow'
+import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
 import { apiError, fieldApi } from '../services/fieldApi'
 import type { BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
 
@@ -274,7 +274,7 @@ interface MonitoringPageProps {
   onDiscard: (draftId: string) => void
   onSync: () => void
   onRetry: (clientUuid: string) => void
-  onClaim: (request: FieldVerificationRequest) => void
+  onStartAssigned: (request: FieldVerificationRequest) => void
   onRelease: (request: FieldVerificationRequest) => void
 }
 
@@ -293,7 +293,7 @@ export function MonitoringPage({
   onDiscard,
   onSync,
   onRetry,
-  onClaim,
+  onStartAssigned,
   onRelease,
 }: MonitoringPageProps) {
   const [tab, setTab] = useState<'work' | 'verification' | 'sync'>(initialTab)
@@ -311,22 +311,23 @@ export function MonitoringPage({
       <h1 className="sr-only" tabIndex={-1}>Monitoring</h1>
       <div className="field-monitoring-tabs" role="tablist" aria-label="Monitoring work">
         <button type="button" role="tab" aria-selected={tab === 'work'} onClick={() => setTab('work')}>Current Work <span className="tab-badge">{actionableDrafts.length}</span></button>
-        <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Verification <span className="tab-badge">{requests.length}</span></button>
+        <button type="button" role="tab" aria-selected={tab === 'verification'} onClick={() => setTab('verification')}>Assigned Visits <span className="tab-badge">{requests.length}</span></button>
         <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span className="tab-badge">{queue.length}</span></button>
       </div>
 
       {tab === 'verification' && <section className="field-card-section field-verification-section" role="tabpanel">
-        {requestsState === 'unavailable' && <div className="field-offline-state"><WifiOff /><div><h2>Showing saved verification requests</h2><p>Reconnect to refresh or claim requests. Already claimed drafts remain available in Current Work.</p></div></div>}
-        {requestsState === 'loading' && requests.length === 0 ? <div role="status">Loading field verification requests…</div>
+        {requestsState === 'unavailable' && <div className="field-offline-state"><WifiOff /><div><h2>Showing saved assigned visits</h2><p>Reconnect to refresh assignments. Saved assignments remain available offline.</p></div></div>}
+        {requestsState === 'loading' && requests.length === 0 ? <div role="status">Loading assigned visits…</div>
           : requests.length ? <div className="field-verification-list">{requests.map((request) => <article key={request.id}>
               <div><strong>{request.store.store_name}</strong><small>{request.store.address}</small></div>
+              <small>{request.source_type === 'complaint' ? 'Complaint verification' : 'Supervisor directive'}</small>
               <p>{request.reason}</p>
               <small>Requested {formatDate(request.requested_at)}</small>
               <div className="field-verification-actions">
-                <button type="button" className="primary-button" disabled={!online} onClick={() => onClaim(request)}>{request.status === 'claimed' ? 'Start verification' : 'Claim and start'}</button>
-                {request.status === 'claimed' && !drafts.some((draft) => draft.verification_request_id === request.id) && <button type="button" className="secondary-button" disabled={!online} onClick={() => onRelease(request)}>Release</button>}
+                <button type="button" className="primary-button" onClick={() => onStartAssigned(request)}>Start assigned visit</button>
+                {!drafts.some((draft) => draft.verification_request_id === request.id) && <button type="button" className="secondary-button" disabled={!online} onClick={() => onRelease(request)}>Return to Admin</button>}
               </div>
-            </article>)}</div> : requestsState === 'ready' ? <div className="field-quiet-state"><CheckCircle2 /><strong>No verification requests</strong><span>New requests that need a store visit will appear here.</span></div> : null}
+            </article>)}</div> : requestsState === 'ready' ? <div className="field-quiet-state"><CheckCircle2 /><strong>No assigned visits</strong><span>Complaint and supervisor assignments will appear here.</span></div> : null}
       </section>}
 
       {tab === 'work' && <div role="tabpanel">
@@ -337,7 +338,7 @@ export function MonitoringPage({
         const activeAnomalies = activeDraft.items.reduce((count, item) => {
           const srp = bootstrap.srp_bulletins.find((bulletin) => bulletin.id === item.srp_id)
           if (!srp) return count
-          return analyzeWithReference(item, resolveClientReference(srp, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [])).is_anomaly ? count + 1 : count
+          return analyzeWithReference(item, resolveVisitReference(item, srp, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || [])).is_anomaly ? count + 1 : count
         }, 0)
         return (
         <section key={activeDraft.client_uuid} className="field-active-work-card" aria-label={`Unfinished visit for ${activeStoreName}`}>
@@ -366,7 +367,7 @@ export function MonitoringPage({
                 <strong>{activeDraft.items.length} line{activeDraft.items.length === 1 ? '' : 's'}</strong>
               </div>
               <div className="field-draft-stat">
-                <small>SRP Assessment</small>
+                <small>Reference assessment</small>
                 <strong className={activeAnomalies > 0 ? 'stat-warn' : 'stat-ok'}>
                   {activeAnomalies > 0 ? `${activeAnomalies} for review` : 'Within reference range'}
                 </strong>
@@ -546,7 +547,7 @@ export function MonitoringPage({
                         </div>
                         {item.items.map((line) => {
                           const bulletin = bootstrap.srp_bulletins.find((b) => b.id === line.srp_id)
-                          const reference = bulletin ? resolveClientReference(bulletin, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || []) : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
+                          const reference = bulletin ? resolveVisitReference(line, bulletin, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || []) : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
                           const analysis = analyzeWithReference(line, reference)
                           return (
                             <div key={line.srp_id} className="field-queue-table-row">

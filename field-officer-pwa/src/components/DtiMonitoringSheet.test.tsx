@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DtiMonitoringSheet } from './DtiMonitoringSheet'
-import type { Bulletin, StoreRecord, VisitDraft } from '../types'
+import type { Bulletin, MonitoringReference, StoreRecord, VisitDraft } from '../types'
 
 const mockStore: StoreRecord = {
   id: 1,
@@ -221,6 +221,48 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     fireEvent.change(input, { target: { value: '44.50' } })
 
     expect(updatePrice).toHaveBeenCalledWith(3, 44.5)
+  })
+
+  it('submits the exact server-issued APC reference with a newly entered price', () => {
+    const updatePrice = vi.fn()
+    const reference: MonitoringReference = {
+      srp_id: 3, commodity_key: null, covered_by_price_freeze: true,
+      status: 'available', type: 'emergency_ceiling', source_id: 91, value: 45,
+      label: 'Official APC / Price Freeze', source: 'DECL-7', effective_date: '2026-09-09', reference_version: 'refs-v2',
+    }
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={{ ...mockDraft, items: [] }}
+        bulletins={[mockBulletins[2]]}
+        protocol={{ labels_are_provisional: true, standard_review_threshold_percent: 10, emergency_review_rule: 'recorded_price_above_ceiling', mode: 'emergency', declaration_reference: 'DECL-7', starts_on: '2026-09-09', ends_on: null }}
+        monitoringReferences={[reference]}
+        onUpdatePrice={updatePrice}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText('Observed shelf price for Argentina Corned Beef (150g)'), { target: { value: '46' } })
+
+    expect(screen.getByText(/45\.00/)).toBeInTheDocument()
+    expect(updatePrice).toHaveBeenCalledWith(3, 46, {
+      status: 'available', type: 'emergency_ceiling', source_id: 91, value: 45,
+      label: 'Official APC / Price Freeze', source_reference: 'DECL-7', effective_date: '2026-09-09', reference_version: 'refs-v2',
+    })
+  })
+
+  it('keeps a draft line compared with the reference originally pinned to it', () => {
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={{ ...mockDraft, items: [{ srp_id: 3, recorded_price: 44, reference_snapshot: { status: 'available', type: 'standard_srp', source_id: 3, value: 41, label: 'Current SRP', source_reference: 'SRP-2026', effective_date: '2026-08-01', reference_version: 'refs-v1' } }] }}
+        bulletins={[mockBulletins[2]]}
+        monitoringReferences={[{ srp_id: 3, commodity_key: null, covered_by_price_freeze: true, status: 'available', type: 'emergency_ceiling', source_id: 91, value: 45, label: 'Official APC / Price Freeze', source: 'DECL-7', effective_date: '2026-09-09', reference_version: 'refs-v2' }]}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/41\.00/)).toBeInTheDocument()
+    expect(screen.getByText('+7.3%')).toBeInTheDocument()
   })
 
   it('filters items by search query', () => {

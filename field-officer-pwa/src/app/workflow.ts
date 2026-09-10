@@ -1,4 +1,4 @@
-import type { Bulletin, RegulatoryPrice, VisitDraft, VisitItem } from '../types'
+import type { Bulletin, MonitoringReference, RegulatoryPrice, VisitDraft, VisitItem } from '../types'
 
 export function createDraft(offlineLeaseId: string, verificationRequestId?: number): VisitDraft {
   return {
@@ -6,7 +6,7 @@ export function createDraft(offlineLeaseId: string, verificationRequestId?: numb
     ...(verificationRequestId ? { verification_request_id: verificationRequestId } : {}),
     started_at: new Date().toISOString(), items: [], representative: { name: '', title: '' },
     signatures: { officer_png_base64: '', representative_png_base64: '' }, location: null,
-    sync_source: navigator.onLine ? 'online' : 'offline_queue', client_version: '1.0.0'
+    sync_source: navigator.onLine ? 'online' : 'offline_queue', client_version: '1.1.0'
   }
 }
 
@@ -45,7 +45,9 @@ export function analyzeWithReference(
   return { variance_percent: Number(variance.toFixed(2)), is_anomaly: isAnomaly, label: isAnomaly ? 'For review' as const : 'Within reference' as const }
 }
 
-export function resolveClientReference(bulletin: Bulletin, mode: 'standard' | 'emergency', regulatoryPrices: RegulatoryPrice[]) {
+export function resolveClientReference(bulletin: Bulletin, mode: 'standard' | 'emergency', regulatoryPrices: RegulatoryPrice[], monitoringReferences: MonitoringReference[] = []) {
+  const issued = monitoringReferences.find((reference) => reference.srp_id === bulletin.id)
+  if (issued) return issued
   if (mode === 'emergency') {
     const record = [...regulatoryPrices].reverse().find((item) => item.commodity_key === bulletin.commodity_key)
     const value = record ? Number(record.authoritative_price) : null
@@ -57,6 +59,12 @@ export function resolveClientReference(bulletin: Bulletin, mode: 'standard' | 'e
   return value > 0 && Boolean(bulletin.effective_date)
     ? { status: 'available' as const, type: 'standard_srp' as const, value }
     : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
+}
+
+export function resolveVisitReference(line: VisitItem | undefined, bulletin: Bulletin, mode: 'standard' | 'emergency', regulatoryPrices: RegulatoryPrice[], monitoringReferences: MonitoringReference[] = []) {
+  return line?.reference_snapshot
+    ? { ...line.reference_snapshot, source: line.reference_snapshot.source_reference }
+    : resolveClientReference(bulletin, mode, regulatoryPrices, monitoringReferences)
 }
 
 export function canFinalizeVisit(draft: VisitDraft): string[] {

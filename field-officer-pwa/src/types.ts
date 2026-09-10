@@ -4,6 +4,7 @@ export interface FieldSession { token: string; user: FieldUser; offline_lease: O
 export interface StoreRecord {
   id: number; store_name: string; address: string; latitude: number; longitude: number; is_active: boolean; image_path?: string | null
   weekly_routine_status?: 'not_yet_monitored' | 'monitored_this_week'
+  routine_status?: 'due' | 'completed'
   has_prior_routine_monitoring?: boolean
   latest_routine_monitoring_at?: string | null
 }
@@ -15,6 +16,7 @@ export interface Bulletin {
   category?: string | null
   regulatory_classification?: string | null
   commodity_key?: string | null
+  price_freeze_applicable?: boolean
   effective_date?: string | null
   source_reference?: string | null
 }
@@ -37,12 +39,36 @@ export interface RegulatoryPrice {
   effective_until: string | null
   source_reference: string | null
 }
+export interface MonitoringReference {
+  srp_id: number
+  commodity_key: string | null
+  covered_by_price_freeze: boolean
+  status: 'available' | 'unavailable'
+  type: 'standard_srp' | 'emergency_ceiling'
+  source_id: number | null
+  value: number | null
+  label: string
+  source: string | null
+  effective_date: string | null
+  reference_version: string
+}
+export interface ReferenceSnapshot {
+  status: 'available' | 'unavailable'
+  type: 'standard_srp' | 'emergency_ceiling'
+  source_id: number | null
+  value: number | null
+  label: string
+  source_reference: string | null
+  effective_date: string | null
+  reference_version: string
+}
 export interface BootstrapData {
   version: string; reference_version?: string; is_delta: boolean; stores: StoreRecord[]; srp_bulletins: Bulletin[]
-  regulatory_prices?: RegulatoryPrice[]; recent_prices: RecentPrice[]; accepted_today?: number; protocol?: MonitoringProtocol
+  regulatory_prices?: RegulatoryPrice[]; monitoring_references?: MonitoringReference[]; recent_prices: RecentPrice[]; accepted_today?: number; protocol?: MonitoringProtocol
   monitoring_week?: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
+  monitoring_period?: { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
 }
-export interface VisitItem { srp_id: number; recorded_price: number }
+export interface VisitItem { srp_id: number; recorded_price: number; reference_snapshot?: ReferenceSnapshot }
 export interface VisitLocation { latitude: number; longitude: number; accuracy_meters: number; captured_at: string }
 export interface GeoPosition { latitude: number; longitude: number; accuracy_meters: number }
 export interface VisitDraft {
@@ -65,7 +91,8 @@ export interface VisitDraft {
 export interface QueuedVisit extends VisitDraft { sync_error?: string; sync_attempted_at?: string }
 export interface FieldVerificationRequest {
   id: number
-  status: 'open' | 'claimed'
+  status: 'claimed'
+  source_type: 'complaint' | 'supervisor_directive'
   reason: string
   requested_at: string
   claimed_at: string | null
@@ -97,7 +124,7 @@ export interface MonitoringRecordDetail {
     id: number; commodity_name: string | null; unit: string | null; recorded_price: number; previous_price: number | null
     variance_percent: number | null; is_anomaly: boolean; reference_status: 'available' | 'unavailable'
     reference_type: 'standard_srp' | 'emergency_ceiling'; reference_label: string | null; reference_value: number | null
-    reference_source: string | null; reference_effective_date: string | null
+    reference_source_id: number | null; reference_source: string | null; reference_effective_date: string | null; reference_version: string | null
   }>
 }
 export interface Page<T> { data: T[]; current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null }

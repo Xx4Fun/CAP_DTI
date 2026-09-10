@@ -61,4 +61,15 @@ describe('field visit workflow', () => {
     const bulletin = { id: 1, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, commodity_key: null, source_reference: null, effective_date: '2026-08-01' }
     expect(resolveClientReference(bulletin, 'standard', [])).toEqual({ status: 'available', type: 'standard_srp', value: 50 })
   })
+
+  it('uses the backend-issued reference, including SRP for products outside Price Freeze coverage', () => {
+    const bulletin = { id: 1, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, commodity_key: 'rice', source_reference: 'SRP-2026', effective_date: '2026-08-01' }
+    const reference = {
+      srp_id: 1, commodity_key: 'rice', covered_by_price_freeze: false,
+      status: 'available' as const, type: 'standard_srp' as const, source_id: 1,
+      value: 50, label: 'Current SRP', source: 'SRP-2026', effective_date: '2026-08-01', reference_version: 'refs-v2',
+    }
+
+    expect(resolveClientReference(bulletin, 'emergency', [], [reference])).toEqual(reference)
+  })
 })
