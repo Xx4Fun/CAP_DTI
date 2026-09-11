@@ -24,8 +24,11 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-3.8-flash'),
         'endpoint' => env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/interactions'),
         'thinking_level' => env('GEMINI_THINKING_LEVEL', 'low'),
-        'media_resolution' => env('GEMINI_MEDIA_RESOLUTION'),
+        // Per-image resolution sent with each receipt section: low, medium, high, or ultra_high (Phase 1a probe).
+        'image_resolution' => env('GEMINI_IMAGE_RESOLUTION', 'high'),
         'timeout_seconds' => (int) env('GEMINI_TIMEOUT_SECONDS', 90),
+        // Optional CA bundle for local development machines without system CA configuration; TLS is always verified.
+        'ca_bundle' => env('GEMINI_CA_BUNDLE'),
         // Procedural gate: set to 'paid' only once the key belongs to a billing-enabled project.
         'billing_attested' => env('GEMINI_BILLING_ATTESTED'),
     ],

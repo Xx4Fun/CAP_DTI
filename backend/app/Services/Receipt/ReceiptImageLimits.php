@@ -15,7 +15,7 @@ final class ReceiptImageLimits
      * Reads dimensions from the image header without decoding pixels.
      * Returns null for an unreadable header; throws when the image is too large to decode safely.
      *
-     * @return array{width: int, height: int}|null
+     * @return array{width: int, height: int, mime: ?string}|null
      */
     public static function safeDimensions(string $path): ?array
     {
@@ -28,6 +28,6 @@ final class ReceiptImageLimits
             throw new UnsafeReceiptImageException($width, $height);
         }
 
-        return ['width' => $width, 'height' => $height];
+        return ['width' => $width, 'height' => $height, 'mime' => is_string($info['mime'] ?? null) ? $info['mime'] : null];
     }
 }

@@ -4,9 +4,17 @@ namespace App\Services\Receipt;
 
 use App\Models\ConsumerReport;
 use App\Models\ReceiptEvidenceAsset;
+use App\Models\ReceiptEvidenceBundle;
 use App\Services\Ocr\ShelfTagImagePreprocessor;
 use App\Services\Ocr\ShelfTagOcrService;
+use App\Services\Receipt\Extraction\ExtractionFailedException;
+use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
+use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
+use App\Services\Receipt\Extraction\ReceiptExtractionValidator;
+use App\Services\Receipt\Extraction\ReceiptExtractor;
+use App\Services\Receipt\Extraction\RetryableExtractionException;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -39,9 +47,26 @@ class ReceiptEvidencePipeline
         private readonly ReceiptTotalExtractor $totalExtractor,
         private readonly ReceiptDateExtractor $dateExtractor = new ReceiptDateExtractor,
         private readonly ReceiptLineFilter $lineFilter = new ReceiptLineFilter,
+        private readonly ReceiptExtractionRouter $extractionRouter = new ReceiptExtractionRouter,
+        private readonly ReceiptExtractionBudget $extractionBudget = new ReceiptExtractionBudget,
+        private readonly ReceiptExtractionValidator $extractionValidator = new ReceiptExtractionValidator,
     ) {}
 
+    /**
+     * Processes a report's receipt evidence. Every result carries an `engine` block naming the extraction path taken.
+     *
+     * @throws RetryableExtractionException for transient provider failures the queue may retry
+     */
     public function process(ConsumerReport $report): array
+    {
+        $engine = ['provider' => ReceiptExtractionRouter::TESSERACT, 'route' => null];
+        $result = $this->run($report, $engine);
+        $result['engine'] ??= $engine;
+
+        return $result;
+    }
+
+    private function run(ConsumerReport $report, array &$engine): array
     {
         // Leave time for cleanup and persistence before the 360-second job timeout.
         $budget = max(1, min(300, (int) config('services.tesseract.receipt_processing_budget_seconds', 300)));
@@ -72,6 +97,12 @@ class ReceiptEvidencePipeline
             $minimumFrames = $report->capture_mode === 'continuous_video_v1' ? 2 : 1;
             if (count($frameCandidates) < $minimumFrames) {
                 return $this->recaptureResult('INSUFFICIENT_FRAMES');
+            }
+
+            $route = $this->extractionRouter->route($report);
+            $engine['route'] = $route['route'];
+            if ($route['provider'] === ReceiptExtractionRouter::GEMINI) {
+                return $this->extractWithProvider($report, $bundle, $frameCandidates, $route['route']);
             }
 
             $frames = [];
@@ -183,7 +214,7 @@ class ReceiptEvidencePipeline
 
             $warnings = [];
             if (count($frames) < count($frameCandidates)) {
-                $warnings[] = $this->warning('OCR_INCOMPLETE');
+                $warnings[] = ReceiptWarning::make('OCR_INCOMPLETE');
             }
 
             if (count($frameCandidates) === 1) {
@@ -197,7 +228,7 @@ class ReceiptEvidencePipeline
                         return $this->recaptureResult('INCOMPLETE_SCAN', ['continuity' => $continuity, 'ocr' => $ocrDiagnostics]);
                     }
                     $continuity['status'] = 'unverified';
-                    $warnings[] = $this->warning('INCOMPLETE_SCAN');
+                    $warnings[] = ReceiptWarning::make('INCOMPLETE_SCAN');
                 }
             }
 
@@ -207,10 +238,10 @@ class ReceiptEvidencePipeline
                 ? ['status' => 'unverified']
                 : $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines);
             if ($merchant['status'] !== 'matched') {
-                $warnings[] = $this->warning('STORE_NOT_CONFIRMED');
+                $warnings[] = ReceiptWarning::make('STORE_NOT_CONFIRMED');
             }
             if ($guided && is_string($merchant['display_name'] ?? null)) {
-                $merchant['display_name'] = $this->cleanDisplayName($merchant['display_name']);
+                $merchant['display_name'] = ReceiptWarning::cleanDisplayName($merchant['display_name']);
             }
 
             $lines = $this->textAggregator->merge(array_column($frames, 'lines'));
@@ -219,18 +250,18 @@ class ReceiptEvidencePipeline
             $rejectedItemLines = $itemAnalysis['rejected_lines'];
             $total = $this->totalExtractor->extract($lines);
             if ($rejectedItemLines !== []) {
-                $warnings[] = $this->warning('OCR_INCOMPLETE');
+                $warnings[] = ReceiptWarning::make('OCR_INCOMPLETE');
             }
             if ($items === []) {
-                $warnings[] = $this->warning('ITEMS_NOT_FOUND');
+                $warnings[] = ReceiptWarning::make('ITEMS_NOT_FOUND');
             }
             if ($total === null) {
-                $warnings[] = $this->warning('TOTAL_NOT_FOUND');
+                $warnings[] = ReceiptWarning::make('TOTAL_NOT_FOUND');
             }
 
             $itemSum = $items === [] ? null : round(array_sum(array_column($items, 'observed_price')), 2);
             if ($itemSum !== null && $total !== null && abs($itemSum - $total) > 0.05) {
-                $warnings[] = $this->warning('TOTAL_MISMATCH');
+                $warnings[] = ReceiptWarning::make('TOTAL_MISMATCH');
             }
 
             if (hrtime(true) / 1e9 >= $deadline) {
@@ -266,9 +297,73 @@ class ReceiptEvidencePipeline
             $result['diagnostics']['integrity_failure'] = ['kind' => $exception->kind, 'sequence' => $exception->sequence];
 
             return $result;
+        } catch (ExtractionFailedException $exception) {
+            // A technical or configuration failure of the extraction service: never a bad capture, never fallback values.
+            $result = $this->failureResult($exception->failureCode, []);
+            $result['engine'] = ['provider' => ReceiptExtractionRouter::GEMINI, ...$exception->engine, 'failure_code' => $exception->failureCode];
+            Log::warning('receipt_extraction.failed', ['report_id' => $report->id, 'code' => $exception->failureCode,
+                'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
+
+            return $result;
         } finally {
             File::deleteDirectory($temporaryDirectory);
         }
+    }
+
+    /**
+     * Sends the integrity-verified frames to the configured extraction provider and validates its output.
+     *
+     * @throws RetryableExtractionException
+     * @throws ExtractionFailedException
+     */
+    private function extractWithProvider(ConsumerReport $report, ReceiptEvidenceBundle $bundle, array $frameCandidates, string $route): array
+    {
+        $frames = array_map(fn (array $frame) => [
+            'path' => $frame['path'],
+            'mime_type' => $frame['mime_type'],
+            'sequence' => $frame['source_sequence'],
+        ], $frameCandidates);
+        $reservation = $this->extractionBudget->reserve($report, $bundle, count($frames));
+        try {
+            $extraction = app(ReceiptExtractor::class)->extract($frames);
+        } catch (RetryableExtractionException|ExtractionFailedException $exception) {
+            $this->extractionBudget->reconcile($reservation, $exception->engine['usage']['total_tokens'] ?? null);
+            if ($exception instanceof RetryableExtractionException) {
+                Log::warning('receipt_extraction.transient_failure', ['report_id' => $report->id, 'code' => $exception->failureCode,
+                    'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
+            }
+            throw $exception;
+        }
+        $this->extractionBudget->reconcile($reservation, $extraction->engine['usage']['total_tokens'] ?? null);
+
+        $result = $this->extractionValidator->validate($extraction->payload, [
+            'store_name' => $report->store?->store_name,
+            'owner_name' => $report->store?->owner_name,
+            'frame_count' => count($frames),
+            'prior_recapture_reasons' => ReceiptEvidenceBundle::query()
+                ->where('consumer_report_id', $report->id)
+                ->whereKeyNot($bundle->id)
+                ->orderByDesc('attempt_number')
+                ->limit(2)
+                ->pluck('failure_code')
+                ->all(),
+        ]);
+        $result['engine'] = [...$extraction->engine, 'route' => $route, 'status' => $result['status']];
+        $result['extraction_raw'] = $extraction->payload;
+        Log::info('receipt_extraction.completed', [
+            'report_id' => $report->id,
+            'provider' => $extraction->engine['provider'] ?? null,
+            'model' => $extraction->engine['model'] ?? null,
+            'status' => $result['status'],
+            'reason_code' => $result['reason_code'],
+            'duration_ms' => $extraction->engine['duration_ms'] ?? null,
+            'input_tokens' => $extraction->engine['usage']['input_tokens'] ?? null,
+            'output_tokens' => $extraction->engine['usage']['output_tokens'] ?? null,
+            'frames' => count($frames),
+            'reconciliation' => $result['reconciliation']['status'] ?? null,
+        ]);
+
+        return $result;
     }
 
     /** The exact local copy that will be decoded must match the canonical evidence hash recorded at upload. */
@@ -318,13 +413,6 @@ class ReceiptEvidencePipeline
         return null;
     }
 
-    private function cleanDisplayName(string $name): ?string
-    {
-        $name = (string) preg_replace('/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/u', '', (string) preg_replace('/\s+/u', ' ', $name));
-
-        return preg_match_all('/\p{L}/u', $name) >= 3 ? $name : null;
-    }
-
     private function prepareVideoFrames(ConsumerReport $report, string $temporaryDirectory): array
     {
         $video = $report->evidenceBundle->assets->firstWhere('kind', 'original_video');
@@ -361,12 +449,14 @@ class ReceiptEvidencePipeline
             $path = $temporaryDirectory.DIRECTORY_SEPARATOR.sprintf('frame-%03d', $asset->sequence);
             File::put($path, Storage::disk($asset->disk)->get($asset->path));
             $this->assertOriginal($asset, $path);
-            if ($guided && ReceiptImageLimits::safeDimensions($path) === null) {
+            $dimensions = $guided ? ReceiptImageLimits::safeDimensions($path) : null;
+            if ($guided && $dimensions === null) {
                 // Size is checked from the header before the quality evaluator decodes pixels.
                 throw new UnreadableReceiptImageException((int) $asset->sequence);
             }
             $paths[] = [
                 'path' => $path,
+                'mime_type' => $dimensions['mime'] ?? (string) $asset->mime_type,
                 'source_sequence' => (int) $asset->sequence,
                 'timestamp_seconds' => null,
                 'quality' => $asset->metadata_json['quality'] ?? $this->evaluateQuality($path, (int) $asset->sequence, $guided),
@@ -449,16 +539,4 @@ class ReceiptEvidencePipeline
         ];
     }
 
-    private function warning(string $code): array
-    {
-        return ['code' => $code, 'message' => match ($code) {
-            'OCR_INCOMPLETE' => 'One or more clear receipt sections could not be fully extracted by OCR.',
-            'INCOMPLETE_SCAN' => 'Adjacent receipt section continuity could not be verified automatically.',
-            'STORE_NOT_CONFIRMED' => 'The store name could not be confidently matched by OCR.',
-            'ITEMS_NOT_FOUND' => 'No complete receipt item lines were extracted.',
-            'TOTAL_NOT_FOUND' => 'The receipt total was not extracted.',
-            'TOTAL_MISMATCH' => 'The extracted item amounts do not match the extracted total.',
-            default => 'The system extraction requires DTI review.',
-        }];
-    }
 }

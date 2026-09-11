@@ -18,6 +18,8 @@ class ReceiptEvidenceBundle extends Model
         'attempt_number',
         'processing_status',
         'processing_attempts',
+        'extraction_calls',
+        'extraction_attempted_at',
         'processing_result_json',
         'processing_started_at',
         'processing_completed_at',
@@ -26,6 +28,7 @@ class ReceiptEvidenceBundle extends Model
 
     protected $casts = [
         'processing_result_json' => 'array',
+        'extraction_attempted_at' => 'datetime',
         'processing_started_at' => 'datetime',
         'processing_completed_at' => 'datetime',
     ];

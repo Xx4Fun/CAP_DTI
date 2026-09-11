@@ -16,6 +16,25 @@ class ReceiptItemExtractor
     /** Next-line text that can never be an item name for a POS row (receipt header, footer, and identifiers). */
     private const PAIRING_EXCLUSIONS = '/\b(?:TIN|MIN|SERIAL|DATE|OR\s*NO|SOLD\s*TO|ADDRESS|CASHIER|TERMINAL|THANK|WELCOME|VISIT|PROMO|POINTS|MEMBER|SAVE|CORP|INC|MGMT|MALL|BRANCH|SUPERMARKET)\b/i';
 
+    /**
+     * Whether a structured-extraction item description is really a receipt header, footer, payment, identifier,
+     * date, or address line. Unlike POS pairing, size and price tokens inside product names are allowed.
+     */
+    public static function isNonProductText(string $text): bool
+    {
+        $lower = strtolower(trim($text));
+        foreach ([...self::NON_ITEM_LABELS, ...self::POS_NON_ITEM_LABELS] as $label) {
+            if (preg_match('/\b'.preg_quote($label, '/').'\b/i', $lower) === 1) {
+                return true;
+            }
+        }
+
+        return preg_match('/\b(?:TIN|MIN|SERIAL|SOLD\s*TO|ADDRESS|THANK\s+YOU)\b/i', $text) === 1
+            || (new ReceiptDateExtractor)->containsDate($text)
+            || substr_count($text, ',') >= 2
+            || preg_match('/,.*\b\d{4}$/', $text) === 1;
+    }
+
     /** @param array<int, string> $lines */
     public function extract(array $lines): array
     {

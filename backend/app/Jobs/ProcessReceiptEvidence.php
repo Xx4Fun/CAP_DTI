@@ -4,12 +4,16 @@ namespace App\Jobs;
 
 use App\Models\ConsumerReport;
 use App\Models\ReportStatusHistory;
+use App\Services\Receipt\Extraction\ReceiptFailureCodes;
+use App\Services\Receipt\Extraction\RetryableExtractionException;
 use App\Services\Receipt\ReceiptEvidencePipeline;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -20,6 +24,9 @@ class ProcessReceiptEvidence implements ShouldQueue
     public int $tries = 3;
 
     public int $timeout = 360;
+
+    /** Seconds to wait before the second and third attempts. */
+    public array $backoff = [30, 120];
 
     public function __construct(public string $reportReference)
     {
@@ -43,12 +50,31 @@ class ProcessReceiptEvidence implements ShouldQueue
             'processing_attempts' => DB::raw('processing_attempts + 1'),
         ]);
 
-        $result = $pipeline->process($report);
+        try {
+            $result = $pipeline->process($report);
+        } catch (RetryableExtractionException $exception) {
+            // Transient provider failure: retry with backoff; on the last attempt record the specific code ourselves.
+            if ($this->attempts() < $this->tries) {
+                $this->release($this->backoff[$this->attempts() - 1] ?? end($this->backoff));
+
+                return;
+            }
+            $result = [
+                'status' => 'failed',
+                'reason_code' => $exception->failureCode,
+                'lines' => [],
+                'items' => [],
+                'transaction_date' => null,
+                'warnings' => [],
+                'manual_review_required' => false,
+                'engine' => ['provider' => 'gemini', ...$exception->engine, 'failure_code' => $exception->failureCode],
+            ];
+        }
         $internalStatus = $result['status'] ?? 'failed';
         $publicStatus = $internalStatus === 'ready'
             ? 'Ready for confirmation'
             : ($internalStatus === 'needs_recapture' ? 'Needs recapture' : 'Processing failed');
-        $reasonCode = (string) ($result['reason_code'] ?? ($internalStatus === 'failed' ? 'PROCESSING_FAILED' : ''));
+        $reasonCode = (string) ($result['reason_code'] ?? ($internalStatus === 'failed' ? ReceiptFailureCodes::PROCESSING_FAILED : ''));
 
         DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus, $reasonCode) {
             $report->items()->delete();
@@ -67,6 +93,15 @@ class ProcessReceiptEvidence implements ShouldQueue
                     'merchant' => $result['merchant'] ?? null,
                     'detected_total' => $result['detected_total'] ?? null,
                     'transaction_date' => $result['transaction_date'] ?? null,
+                    'receipt_number' => $result['receipt_number'] ?? null,
+                    'subtotal' => $result['subtotal'] ?? null,
+                    'discounts' => $result['discounts'] ?? [],
+                    'adjustments' => $result['adjustments'] ?? [],
+                    'reconciliation' => $result['reconciliation'] ?? null,
+                    'engine' => [
+                        'provider' => $result['engine']['provider'] ?? null,
+                        'model' => $result['engine']['model'] ?? null,
+                    ],
                     'reason_code' => $result['reason_code'] ?? null,
                     'warnings' => $result['warnings'] ?? [],
                     'manual_review_required' => (bool) ($result['manual_review_required'] ?? false),
@@ -76,7 +111,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'processing_status' => $internalStatus,
                 'processing_result_json' => $result,
                 'processing_completed_at' => now(),
-                'failure_code' => $internalStatus === 'ready' ? null : ($reasonCode ?: 'PROCESSING_FAILED'),
+                'failure_code' => $internalStatus === 'ready' ? null : ($reasonCode ?: ReceiptFailureCodes::PROCESSING_FAILED),
             ]);
 
             ReportStatusHistory::create([
@@ -86,9 +121,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'public_message' => match ($publicStatus) {
                     'Ready for confirmation' => 'Receipt processing is complete. Review the original evidence and read-only system extraction.',
                     'Needs recapture' => $this->safeReasonMessage($reasonCode),
-                    default => $reasonCode === 'EVIDENCE_INTEGRITY_FAILED'
-                        ? 'The stored receipt photos failed an integrity check and cannot be processed again. Capture the receipt again.'
-                        : 'Receipt processing could not be completed. Please try again.',
+                    default => ReceiptFailureCodes::historyMessage($reasonCode),
                 },
                 'actor_type' => 'system',
             ]);
@@ -102,6 +135,7 @@ class ProcessReceiptEvidence implements ShouldQueue
         return match ($reasonCode) {
             'INSUFFICIENT_FRAMES' => 'No usable receipt image was captured.',
             'TEXT_UNREADABLE' => 'The receipt text was not clear enough to read. Keep it flat, well lit, and in focus.',
+            'RECEIPT_INCOMPLETE' => 'The bottom of the receipt, including the total, is missing. Add a section that shows it.',
             'INCOMPLETE_SCAN' => 'Adjacent receipt sections do not overlap enough to verify that the receipt is complete.',
             'STORE_NOT_CONFIRMED' => 'The store name could not be matched to the selected establishment.',
             'ITEMS_NOT_FOUND' => 'No complete receipt item lines could be verified.',
@@ -118,18 +152,23 @@ class ProcessReceiptEvidence implements ShouldQueue
             return;
         }
 
+        // Keep a specific failure code if one was already recorded; otherwise classify the job-level failure.
+        $code = $report->evidenceBundle?->failure_code
+            ?: ($exception instanceof TimeoutExceededException || $exception instanceof MaxAttemptsExceededException
+                ? ReceiptFailureCodes::JOB_TIMEOUT
+                : ReceiptFailureCodes::PROCESSING_FAILED);
         $previousStatus = $report->status;
         $report->update(['status' => 'Processing failed', 'processing_status' => 'failed']);
         $report->evidenceBundle?->update([
             'processing_status' => 'failed',
             'processing_completed_at' => now(),
-            'failure_code' => 'PROCESSING_FAILED',
+            'failure_code' => $code,
         ]);
         ReportStatusHistory::create([
             'consumer_report_id' => $report->id,
             'previous_status' => $previousStatus,
             'new_status' => 'Processing failed',
-            'public_message' => 'Receipt processing could not be completed. Please try again.',
+            'public_message' => ReceiptFailureCodes::historyMessage($code),
             'actor_type' => 'system',
         ]);
         SendReceiptStatusNotification::dispatch($report->report_reference, 'Processing failed');
