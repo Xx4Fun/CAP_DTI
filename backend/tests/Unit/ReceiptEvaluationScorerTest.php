@@ -80,12 +80,46 @@ class ReceiptEvaluationScorerTest extends TestCase
     {
         $score = (new ReceiptEvaluationScorer)->score(
             $this->expected(['total' => null, 'transaction_date' => null, 'subtotal' => null]),
-            $this->extraction(['total' => '127.50', 'subtotal' => '72.50', 'transaction_date' => '2026-01-01']),
+            $this->extraction(['total' => '999.99', 'subtotal' => null, 'transaction_date' => '2026-01-01']),
         );
 
-        $this->assertSame(2, $score['numeric']['invented']);
+        $this->assertSame(1, $score['numeric']['invented']);
+        $this->assertSame(0, $score['numeric']['wrong']);
         $this->assertSame(['transaction_date'], $score['invented_fields']);
         $this->assertNull($score['total_correct']);
+    }
+
+    public function test_a_printed_amount_in_the_wrong_field_is_wrong_not_invented(): void
+    {
+        // 72.50 is printed on the receipt (other_amounts), just not as a subtotal.
+        $score = (new ReceiptEvaluationScorer)->score(
+            $this->expected(['subtotal' => null]),
+            $this->extraction(['subtotal' => '72.50']),
+        );
+
+        $this->assertSame(0, $score['numeric']['invented']);
+        $this->assertSame(1, $score['numeric']['wrong']);
+        $this->assertContains('subtotal wrong: 72.50 is printed on the receipt but not as this value', $score['details']);
+    }
+
+    public function test_an_unreadable_name_never_takes_the_row_that_matches_a_named_line(): void
+    {
+        $expected = $this->expected([
+            'items' => [
+                ['name' => null, 'quantity' => '1', 'unit_price' => '15.50', 'line_total' => '15.50'],
+                ['name' => 'SOAP', 'quantity' => '1', 'unit_price' => '15.50', 'line_total' => '15.50'],
+            ],
+            'total' => '31.00',
+        ]);
+
+        $score = (new ReceiptEvaluationScorer)->score($expected, $this->extraction(['total' => '31.00', 'items' => [
+            self::item('SOAP', 1, 15.5, 15.5),
+            self::item('RICE 1KG', 1, 15.5, 15.5),
+        ]]));
+
+        $this->assertSame(2, $score['items_paired']);
+        $this->assertSame(0, $score['false_items']);
+        $this->assertSame(0, $score['numeric']['missed']);
     }
 
     public function test_an_unreadable_name_must_stay_null(): void
@@ -166,6 +200,9 @@ class ReceiptEvaluationScorerTest extends TestCase
         $this->assertSame(9000, $metrics['single_section_p95_ms']);
         $this->assertSame(41000, $metrics['latency_p95_ms']);
         $this->assertSame(1.125, $metrics['estimated_cost_usd']);
+        // 13 correct + 1 wrong returned out of 20 printed values: a model that stays silent cannot pass.
+        $this->assertSame(0.7, $metrics['numeric_completeness']);
+        $this->assertFalse($metrics['targets']['numeric_completeness']['met']);
         $this->assertTrue($metrics['targets']['item_recall_clean']['met']);
         $this->assertFalse($metrics['targets']['total_accuracy']['met']);
         $this->assertTrue($metrics['targets']['invented_values']['met']);

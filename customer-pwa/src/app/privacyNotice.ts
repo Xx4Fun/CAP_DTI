@@ -15,11 +15,11 @@ export const PRIVACY_NOTICE_SECTIONS: ReadonlyArray<{ heading: string; body: str
   },
   {
     heading: 'Restricted access',
-    body: 'Only authorized DTI personnel can view the original photos during evaluation.',
+    body: 'Apart from the automated reading described below, only authorized DTI personnel can view the original photos during evaluation.',
   },
   {
     heading: 'Tamper-evident originals',
-    body: 'The server records a SHA-256 fingerprint of every original photo it receives, so any later change can be detected.',
+    body: 'The server records a SHA-256 fingerprint of every original photo it receives, so any later change can be detected. Each submission is also logged with the time, your IP address, and your browser details for audit purposes.',
   },
   {
     heading: 'Automated receipt reading',

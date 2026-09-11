@@ -107,6 +107,35 @@ class EvaluateReceiptExtractionCommandTest extends TestCase
         $this->assertSame(2, $summary['provider_calls']);
     }
 
+    public function test_the_call_cap_stops_a_run_before_the_next_provider_call(): void
+    {
+        Http::fake([self::ENDPOINT => Http::response($this->liveResponse())]);
+        $this->writeCase('probe-two-section');
+
+        $this->artisan('receipts:evaluate', ['--corpus' => "{$this->root}/corpus", '--out' => "{$this->root}/out", '--repeat' => 2, '--max-calls' => 1])
+            ->expectsOutputToContain('Stopped at the --max-calls limit (1)')
+            ->assertSuccessful();
+
+        Http::assertSentCount(1);
+        $summary = json_decode((string) file_get_contents("{$this->root}/out/summary.json"), true);
+        $this->assertSame(1, $summary['provider_calls']);
+        $this->assertSame(1, $summary['metrics']['runs']);
+    }
+
+    public function test_failed_and_retried_calls_still_count_towards_the_token_cost(): void
+    {
+        $spent = array_replace($this->liveResponse(), ['status' => 'failed']);
+        Http::fake([self::ENDPOINT => Http::sequence()->push($spent)->push($this->liveResponse())]);
+        $this->writeCase('probe-two-section');
+
+        $this->artisan('receipts:evaluate', ['--corpus' => "{$this->root}/corpus", '--out' => "{$this->root}/out"])->assertSuccessful();
+
+        $summary = json_decode((string) file_get_contents("{$this->root}/out/summary.json"), true);
+        // Both attempts were billed, so both appear in the totals.
+        $this->assertSame(['input' => 5200, 'output' => 1518, 'thought' => 0], $summary['metrics']['tokens']);
+        Http::assertSentCount(2);
+    }
+
     public function test_unmasked_cases_are_refused_unless_the_paid_project_is_attested(): void
     {
         $this->writeCase('unmasked', ['masked' => false]);

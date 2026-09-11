@@ -48,8 +48,12 @@ class ReceiptExtractionValidator
             $uncertain = array_values(array_intersect((array) $item['uncertain_fields'], ReceiptExtractionSchema::ITEM_FIELDS));
             $reasons = [];
 
-            $description = is_string($item['raw_description']) ? trim((string) preg_replace('/\s+/u', ' ', $item['raw_description'])) : null;
-            $description = $description === '' ? null : $description;
+            // Capped before any branch below, so even a discount line cannot carry unbounded model text to the customer.
+            $description = $this->displayText($item['raw_description']);
+            if ($description !== null && mb_strlen($description) >= self::MAX_NAME_LENGTH) {
+                $uncertain[] = 'raw_description';
+                $reasons['raw_description'] = 'truncated';
+            }
             $quantity = ReceiptAmount::quantity($item['quantity']);
             $unitPrice = ReceiptAmount::money($item['unit_price']);
             $lineTotal = ReceiptAmount::money($item['line_total']);
@@ -88,12 +92,6 @@ class ReceiptExtractionValidator
                 $uncertain[] = 'raw_description';
                 $reasons['raw_description'] ??= 'inconsistent_source';
             }
-            if ($description !== null && mb_strlen($description) > self::MAX_NAME_LENGTH) {
-                $description = mb_substr($description, 0, self::MAX_NAME_LENGTH);
-                $uncertain[] = 'raw_description';
-                $reasons['raw_description'] = 'truncated';
-            }
-
             $section = (int) $item['section'];
             $frameCount = max(1, (int) ($context['frame_count'] ?? 1));
             if ($section < 1 || $section > $frameCount) {
@@ -147,7 +145,7 @@ class ReceiptExtractionValidator
         $discounts = [];
         foreach ($payload['discounts'] as $discount) {
             $parsed = ReceiptAmount::money(is_string($discount['amount'] ?? null) ? $discount['amount'] : null);
-            $discounts[] = ['description' => $discount['description'] ?? null, 'cents' => $parsed['cents'] ?? null,
+            $discounts[] = ['description' => $this->displayText($discount['description'] ?? null), 'cents' => $parsed['cents'] ?? null,
                 'source_line' => $discount['source_line'] ?? null, 'uncertain' => (bool) $discount['uncertain'] || $parsed === null];
         }
         $discounts = [...$discounts, ...$extraDiscounts];
@@ -334,6 +332,17 @@ class ReceiptExtractionValidator
 
         return str_contains($normalizedSource, $plain) || str_contains($normalizedSource, $grouped)
             || str_contains($normalizedSource, str_replace('.', ',', $plain));
+    }
+
+    /** Model text that reaches a person: whitespace-normalized and length-capped, never otherwise altered. */
+    private function displayText(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+        $text = trim((string) preg_replace('/\s+/u', ' ', $value));
+
+        return $text === '' ? null : mb_substr($text, 0, self::MAX_NAME_LENGTH);
     }
 
     private function capped(string $text): string

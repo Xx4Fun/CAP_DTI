@@ -22,6 +22,8 @@ final class ReceiptEvaluationScorer
     public const TARGETS = [
         'invented_values' => 0,
         'exact_numeric_accuracy' => 0.98,
+        /** Share of printed numbers the extraction actually returned, so a silent model cannot pass on accuracy alone. */
+        'numeric_completeness' => 0.95,
         'item_recall_clean' => 0.95,
         'total_accuracy' => 0.98,
         'merchant_accuracy' => 0.95,
@@ -43,8 +45,13 @@ final class ReceiptEvaluationScorer
         // Pair ground-truth lines with extracted lines: name and line total first, then name alone.
         $pairs = [];
         $free = array_keys($extracted);
+        // Named lines are paired first: a ground-truth line whose name was unreadable matches any name, so it must not
+        // take a row that an named line matches exactly.
+        $order = array_keys($expectedItems);
+        usort($order, fn ($a, $b) => (($expectedItems[$a]['name'] ?? null) === null ? 1 : 0) <=> (($expectedItems[$b]['name'] ?? null) === null ? 1 : 0));
         foreach ([true, false] as $samePrice) {
-            foreach ($expectedItems as $e => $item) {
+            foreach ($order as $e) {
+                $item = $expectedItems[$e];
                 if (isset($pairs[$e]) || (! $samePrice && ($item['name'] ?? null) === null)) {
                     continue;
                 }
@@ -83,8 +90,8 @@ final class ReceiptEvaluationScorer
                 $details[] = "{$label} is a real purchase but was flagged as a possible overlap duplicate";
             }
             $this->compare($numbers, $details, "{$label} quantity", ReceiptAmount::quantity($item['quantity'] ?? null), $row['quantity'] ?? null, money: false);
-            $this->compare($numbers, $details, "{$label} unit_price", $this->textCents($item['unit_price'] ?? null), $this->floatCents($row['unit_price'] ?? null));
-            $this->compare($numbers, $details, "{$label} line_total", $this->textCents($item['line_total'] ?? null), $this->floatCents($row['line_total'] ?? null));
+            $this->compare($numbers, $details, "{$label} unit_price", $this->textCents($item['unit_price'] ?? null), $this->floatCents($row['unit_price'] ?? null), printed: $printed);
+            $this->compare($numbers, $details, "{$label} line_total", $this->textCents($item['line_total'] ?? null), $this->floatCents($row['line_total'] ?? null), printed: $printed);
         }
 
         $falseItems = 0;
@@ -110,10 +117,10 @@ final class ReceiptEvaluationScorer
         $truthTotal = $this->textCents($expected['total'] ?? null);
         $gotTotal = $this->textCents($result['total'] ?? null);
         if (array_key_exists('total', $expected)) {
-            $this->compare($numbers, $details, 'total', $truthTotal, $gotTotal);
+            $this->compare($numbers, $details, 'total', $truthTotal, $gotTotal, printed: $printed);
         }
         if (array_key_exists('subtotal', $expected)) {
-            $this->compare($numbers, $details, 'subtotal', $this->textCents($expected['subtotal']), $this->textCents($result['subtotal'] ?? null));
+            $this->compare($numbers, $details, 'subtotal', $this->textCents($expected['subtotal']), $this->textCents($result['subtotal'] ?? null), printed: $printed);
         }
         if (array_key_exists('discounts', $expected)) {
             $this->compareDiscounts($numbers, $details, (array) $expected['discounts'], (array) ($result['discounts'] ?? []), $printed);
@@ -197,6 +204,7 @@ final class ReceiptEvaluationScorer
             'invented_values' => $scored === [] ? null : $numeric('invented') + $sum(fn (array $run) => count($run['score']['invented_fields']), $scored),
             'invented_numeric' => $numeric('invented'),
             'exact_numeric_accuracy' => $rate($numeric('correct'), $numeric('correct') + $numeric('wrong')),
+            'numeric_completeness' => $rate($numeric('correct') + $numeric('wrong'), $numeric('correct') + $numeric('wrong') + $numeric('missed')),
             'wrong_values' => $numeric('wrong'),
             'missed_values' => $numeric('missed'),
             'item_recall' => $rate($paired($scored), $expected($scored)),
@@ -223,6 +231,7 @@ final class ReceiptEvaluationScorer
         $met = [
             'invented_values' => fn ($value) => $value <= self::TARGETS['invented_values'],
             'exact_numeric_accuracy' => fn ($value) => $value >= self::TARGETS['exact_numeric_accuracy'],
+            'numeric_completeness' => fn ($value) => $value >= self::TARGETS['numeric_completeness'],
             'item_recall_clean' => fn ($value) => $value >= self::TARGETS['item_recall_clean'],
             'total_accuracy' => fn ($value) => $value >= self::TARGETS['total_accuracy'],
             'merchant_accuracy' => fn ($value) => $value >= self::TARGETS['merchant_accuracy'],
@@ -236,7 +245,7 @@ final class ReceiptEvaluationScorer
         return $metrics;
     }
 
-    private function compare(array &$numbers, array &$details, string $label, int|float|null $truth, int|float|null $got, bool $money = true): void
+    private function compare(array &$numbers, array &$details, string $label, int|float|null $truth, int|float|null $got, bool $money = true, array $printed = []): void
     {
         $show = fn (int|float $value) => $money ? ReceiptAmount::format((int) $value) : (string) $value;
         if ($got === null) {
@@ -248,6 +257,13 @@ final class ReceiptEvaluationScorer
             return;
         }
         if ($truth === null) {
+            // A number printed elsewhere on the receipt was put in the wrong field: wrong, not invented.
+            if ($money && in_array((int) $got, $printed, true)) {
+                $numbers['wrong']++;
+                $details[] = "{$label} wrong: {$show($got)} is printed on the receipt but not as this value";
+
+                return;
+            }
             $numbers['invented']++;
             $details[] = "{$label} invented: {$show($got)} (not printed or not readable)";
 

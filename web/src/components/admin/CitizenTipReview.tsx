@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Download,
@@ -57,6 +57,8 @@ export const CitizenTipReview: React.FC = () => {
   const [evidenceManifest, setEvidenceManifest] = useState<ReceiptEvidenceManifest | null>(null)
   const [selectedAsset, setSelectedAsset] = useState<ReceiptEvidenceAssetRecord | null>(null)
   const [itemDecisions, setItemDecisions] = useState<Record<number, ItemDecision>>({})
+  /** Identifies the newest evidence fetch, so a slower earlier one cannot replace it. */
+  const evidenceRequestRef = useRef(0)
 
   useEffect(() => {
     setLoading(true)
@@ -335,17 +337,24 @@ export const CitizenTipReview: React.FC = () => {
 
   const showEvidenceAsset = async (asset: ReceiptEvidenceAssetRecord) => {
     if (!selected) return
+    const request = ++evidenceRequestRef.current
     setEvidenceLoading(true)
     if (evidenceUrl) URL.revokeObjectURL(evidenceUrl)
     setEvidenceUrl(null)
     setSelectedAsset(asset)
     try {
       const blob = await adminApi.getReportEvidenceAsset(selected.id, asset.id)
+      // An earlier, slower fetch must never display under the section label the evaluator is now reading.
+      if (request !== evidenceRequestRef.current) {
+        URL.revokeObjectURL(URL.createObjectURL(blob))
+
+        return
+      }
       setEvidenceUrl(URL.createObjectURL(blob))
     } catch {
-      setError('This evidence asset could not be opened.')
+      if (request === evidenceRequestRef.current) setError('This evidence asset could not be opened.')
     } finally {
-      setEvidenceLoading(false)
+      if (request === evidenceRequestRef.current) setEvidenceLoading(false)
     }
   }
 
@@ -679,7 +688,7 @@ export const CitizenTipReview: React.FC = () => {
                       </button>
                     ))}
                   </div>
-                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} onSelect={(asset) => void showEvidenceAsset(asset)} />
+                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
                   <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
                     Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
                   </span>

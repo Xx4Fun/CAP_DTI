@@ -43,13 +43,16 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   </div>
 )
 
-const AmountRow: React.FC<{ label: string; line: ReceiptExtractionAmountLine; sign: string }> = ({ label, line, sign }) => (
-  <Field label={label}>
-    {line.amount ? `${sign}${peso(line.amount)}` : 'Not available'}
-    {line.description ? ` (${line.description})` : ''}
-    {line.uncertain && <> <Badge>uncertain</Badge></>}
-  </Field>
-)
+const AmountRow: React.FC<{ label: string; line: ReceiptExtractionAmountLine; sign: string }> = ({ label, line, sign }) => {
+  const amount = peso(line.amount)
+  return (
+    <Field label={label}>
+      {amount ? `${sign}${amount}` : 'Not available'}
+      {line.description ? ` (${line.description})` : ''}
+      {line.uncertain && <> <Badge>uncertain</Badge></>}
+    </Field>
+  )
+}
 
 /**
  * The structured (Gemini) extraction as DTI sees it. Every value is shown exactly as validated; uncertain values,
@@ -174,8 +177,10 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
 export const EvidenceSectionNav: React.FC<{
   assets: ReceiptEvidenceAssetRecord[]
   selected: ReceiptEvidenceAssetRecord | null
+  /** Blocks navigation while a section is loading: each move is an audited evidence read. */
+  busy?: boolean
   onSelect: (asset: ReceiptEvidenceAssetRecord) => void
-}> = ({ assets, selected, onSelect }) => {
+}> = ({ assets, selected, busy = false, onSelect }) => {
   if (!selected || selected.kind !== 'source_frame') return null
   const sections = assets
     .filter((asset) => asset.kind === 'source_frame' && asset.attempt_number === selected.attempt_number)
@@ -186,10 +191,10 @@ export const EvidenceSectionNav: React.FC<{
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#334155' }}>
-      <button type="button" style={button} disabled={index === 0} onClick={() => onSelect(sections[index - 1])}>Previous section</button>
+      <button type="button" style={button} disabled={busy || index === 0} onClick={() => onSelect(sections[index - 1])}>Previous section</button>
       <strong>Section {index + 1} of {sections.length}</strong>
       {selected.attempt_number ? <span style={{ color: '#64748b' }}>attempt {selected.attempt_number}{selected.is_current ? ' (current)' : ''}</span> : null}
-      <button type="button" style={button} disabled={index === sections.length - 1} onClick={() => onSelect(sections[index + 1])}>Next section</button>
+      <button type="button" style={button} disabled={busy || index === sections.length - 1} onClick={() => onSelect(sections[index + 1])}>Next section</button>
     </div>
   )
 }

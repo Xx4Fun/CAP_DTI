@@ -76,6 +76,13 @@ describe('EvidenceSectionNav', () => {
     expect(onSelect.mock.calls.map(([selected]) => selected.id)).toEqual([2, 4])
   })
 
+  it('blocks navigation while a section is still loading', () => {
+    render(<EvidenceSectionNav assets={assets} selected={assets[2]} busy onSelect={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Previous section' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next section' })).toBeDisabled()
+  })
+
   it('disables movement past the first and last section', () => {
     render(<EvidenceSectionNav assets={assets} selected={assets[0]} onSelect={vi.fn()} />)
 

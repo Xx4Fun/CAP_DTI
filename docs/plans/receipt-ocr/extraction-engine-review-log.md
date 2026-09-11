@@ -226,3 +226,37 @@
     (`AdminSafeguards` SRP panel, session-toast test). It also failed with the new test file excluded, and the three admin files pass together,
     so this is lazy `Suspense` panels racing 5 s `findBy` timeouts under load, not a Phase 3 regression. Sequential runs are green.
 - **Unreviewed:** Phase 3 is host-authored and not yet inspected. The owed independent Codex inspection now covers `31e71e8..HEAD`.
+
+## Code inspection 3 — Phase 3 (`04662a7`) and the Phase 2 harness (`858cd85`) (Claude subagent, fresh, same-provider) — REVISE (2026-09-12)
+- User: "Can you do the same with phase 3 review with subagents?". Scope covered both commits; the Phase 2 harness had never been inspected.
+- **Notice accuracy audit** (the reason this round mattered): every v1.1 claim was checked against code. Supported: private storage, SHA-256
+  fingerprints, "only the photos are sent" (the request body is exactly model/store/system_instruction/generation_config/response_format/input),
+  `store:false`, read-only results. Unverifiable in code (contractual): processor status, cross-border processing, whether the provider honours
+  `store:false`. **Not supported: the old §2 "Only authorized DTI personnel can view the original photos"**, which contradicted §4.
+- 11 findings, all **ACCEPTED** and fixed:
+  - P3-001 (medium): notice contradicted itself about who can see the photos. §2 now reads "Apart from the automated reading described below…",
+    and the summary card states the automated reading first.
+  - P3-002 (medium): discount and adjustment descriptions were unbounded, source-unverified model text shown to customers, and a negative
+    (discount) line escaped the item name cap entirely. Descriptions now go through `displayText()` (whitespace-normalized, 255 cap) before any
+    branch. No XSS (React escapes; no `dangerouslySetInnerHTML` anywhere), but it is untrusted text presented as DTI output.
+  - P3-003 (medium): the scorer counted a printed amount placed in the wrong field as *invented*, breaking the zero-tolerance target, and its
+    test passed for the wrong reason. `compare()` now takes the printed-amount set; such values count as wrong.
+  - P3-004 (medium): every target could read "met" while the model omitted most numbers (`missed` was in no denominator and no target). Added the
+    `numeric_completeness` target (≥ 0.95).
+  - P3-005 (low-medium): corpus frames were created outside the cleanup block and GD decode failures were unchecked, so one bad image aborted a
+    paid run and left receipt imagery in the temp directory. Capture now runs inside the `try`, and an undecodable section fails just that case.
+  - P3-006 (low-medium): failed and retried provider calls were billed but missing from the token and cost totals. Usage now accumulates across
+    every attempt of a case.
+  - P3-007 (low): section navigation could label an exhibit with the wrong photo (racing fetches) and fired an audited read per click. Added a
+    request-generation guard and a `busy` lock.
+  - P3-008 (low): the amount sign branched on the raw value while the text came from `peso()`, which could print `−null`. Defensive only.
+  - P3-009 (low): the harness call cap — its only spend guard — had no test. Added.
+  - P3-010 (low): an unreadable-name ground-truth line could steal the row a named line matched exactly. Named lines now pair first.
+  - P3-011 (low): `/public/config.privacy_notice_version` is declared but never consumed by the PWA. Kept and documented as informational (consent
+    is gated on the version stored with each report), rather than adding an unused re-consent path.
+- Also hardened on the back of the notice audit: the request-contract test now pins the **entire** top-level key set, so a future addition cannot
+  silently start sending more than the photos.
+- **Correction to the Phase 3 proof note:** the inspector found the customer PWA suite has the same parallel-load flake as the web suite (5 timeout
+  failures in files this work never touched). Both suites are green only with `--no-file-parallelism`; a separate task is fixing the root cause.
+- Proof after fixes: PWA `tsc` clean + vitest 347/347 sequential; web `tsc` clean + vitest 118/118 sequential; backend suite below.
+- **Inspection budget for Phase 3: 1 of 2 used.** These fixes are host-authored and unreviewed. The independent Codex inspection is still owed.

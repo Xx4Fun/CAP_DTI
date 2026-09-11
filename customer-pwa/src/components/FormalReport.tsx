@@ -851,7 +851,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>Privacy protection</div>
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Only DTI staff see your photos. An automated service (Google Gemini) may read the printed items for DTI.
+                    An automated service (Google Gemini) may read the printed items for DTI. Otherwise only DTI staff see your photos.
                   </div>
                 </div>
               </div>

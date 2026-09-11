@@ -96,7 +96,8 @@ class GeminiReceiptExtractorTest extends TestCase
                 && $images[1]['data'] === base64_encode((string) file_get_contents($frames[1]['path']))
                 && $images[0]['resolution'] === 'high'
                 && ! str_contains(json_encode($body), 'REP-')
-                && ! array_key_exists('metadata', $body);
+                // The privacy notice promises only the photos are sent, so the whole key set is pinned, not just metadata.
+                && array_keys($body) === ['model', 'store', 'system_instruction', 'generation_config', 'response_format', 'input'];
         });
     }
 

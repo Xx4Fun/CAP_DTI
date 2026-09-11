@@ -490,9 +490,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       {structured && <dl className="receipt-summary receipt-amounts" aria-label="Receipt amounts">
         {(review.subtotal != null || review.subtotal_uncertain) && <div><dt>Subtotal</dt><dd>{peso(review.subtotal) ?? 'Not detected'}{review.subtotal_uncertain && <UncertainBadge />}</dd></div>}
         {(review.discounts ?? []).map((line, index) => <div key={`discount-${index}`}><dt>Discount</dt>
-          <dd>{line.amount ? `−${peso(line.amount)}` : 'Amount not detected'}{line.description ? ` (${line.description})` : ''}{line.uncertain && <UncertainBadge />}</dd></div>)}
+          <dd>{peso(line.amount) ? `−${peso(line.amount)}` : 'Amount not detected'}{line.description ? ` (${line.description})` : ''}{line.uncertain && <UncertainBadge />}</dd></div>)}
         {(review.adjustments ?? []).map((line, index) => <div key={`adjustment-${index}`}><dt>{ADJUSTMENT_LABELS[line.kind ?? ''] ?? 'Adjustment'}</dt>
-          <dd>{line.amount ? `${line.direction === 'subtract' ? '−' : '+'}${peso(line.amount)}` : 'Amount not detected'}{line.uncertain && <UncertainBadge />}</dd></div>)}
+          <dd>{peso(line.amount) ? `${line.direction === 'subtract' ? '−' : '+'}${peso(line.amount)}` : 'Amount not detected'}{line.uncertain && <UncertainBadge />}</dd></div>)}
         <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <UncertainBadge />}</dd></div>
       </dl>}
       {structured && review.reconciliation && <p className={`receipt-reconciliation receipt-reconciliation--${review.reconciliation.status}`}>

@@ -43,6 +43,9 @@ class EvaluateReceiptExtraction extends Command
 
     private int $calls = 0;
 
+    /** Token usage of every provider call made for the current case, including retried and failed attempts. */
+    private array $pendingUsage = [];
+
     public function handle(ReceiptEvaluationScorer $scorer, ReceiptExtractionValidator $validator): int
     {
         if (! app()->environment(['local', 'testing'])) {
@@ -132,11 +135,18 @@ class EvaluateReceiptExtraction extends Command
     {
         $record = ['case' => $case['id'], 'run' => $run, 'categories' => (array) ($case['categories'] ?? []), 'sections' => count($case['sections']),
             'failure' => null, 'duration_ms' => null, 'usage' => [], 'engine' => [], 'score' => null];
-        $frames = $this->captureFrames($case);
+        $frames = [];
         try {
+            $frames = $this->captureFrames($case);
             $extraction = $this->extractWithRetries($frames, $maxCalls);
         } catch (RetryableExtractionException|ExtractionFailedException $exception) {
-            return [...$record, 'failure' => $exception->failureCode, 'engine' => array_intersect_key($exception->engine, array_flip(self::ENGINE_FIELDS))];
+            return [...$record, 'failure' => $exception->failureCode, 'usage' => $this->takeUsage($exception->engine['usage'] ?? []),
+                'engine' => array_intersect_key($exception->engine, array_flip(self::ENGINE_FIELDS))];
+        } catch (\RuntimeException $exception) {
+            // A corpus image the provider never saw: report the case and keep the rest of the run going.
+            $this->warn("  {$case['id']}: {$exception->getMessage()}");
+
+            return [...$record, 'failure' => 'CORPUS_IMAGE_UNREADABLE', 'usage' => $this->takeUsage()];
         } finally {
             foreach ($frames as $frame) {
                 @unlink($frame['path']);
@@ -151,7 +161,7 @@ class EvaluateReceiptExtraction extends Command
 
         return [...$record,
             'duration_ms' => $extraction->engine['duration_ms'] ?? null,
-            'usage' => $extraction->engine['usage'] ?? [],
+            'usage' => $this->takeUsage($extraction->engine['usage'] ?? []),
             'engine' => array_intersect_key($extraction->engine, array_flip(self::ENGINE_FIELDS)),
             'score' => $scorer->score($case['expected'], $result),
             'result' => $result,
@@ -173,10 +183,31 @@ class EvaluateReceiptExtraction extends Command
                 if ($retries >= count(self::RETRY_WAITS) || $this->calls >= $maxCalls) {
                     throw $exception;
                 }
+                $this->recordUsage($exception->engine['usage'] ?? []);
                 $this->warn("  {$exception->failureCode}; retrying in ".self::RETRY_WAITS[$retries].' s');
                 Sleep::for(self::RETRY_WAITS[$retries++])->seconds();
             }
         }
+    }
+
+    /** Adds one call's token usage to the current case's running total (`addUsage` is taken by Symfony's Command). */
+    private function recordUsage(mixed $usage): void
+    {
+        foreach ((array) $usage as $key => $value) {
+            if (is_int($value) || is_float($value)) {
+                $this->pendingUsage[$key] = ($this->pendingUsage[$key] ?? 0) + (int) $value;
+            }
+        }
+    }
+
+    /** Returns the case's total usage (every attempt, billed or not) and resets it for the next case. */
+    private function takeUsage(mixed $final = []): array
+    {
+        $this->recordUsage($final);
+        $usage = $this->pendingUsage;
+        $this->pendingUsage = [];
+
+        return $usage;
     }
 
     /** @return array<int, array{path: string, mime_type: string, sequence: int}> Transient JPEG copies, deleted after the call. */
@@ -184,7 +215,10 @@ class EvaluateReceiptExtraction extends Command
     {
         $frames = [];
         foreach ($case['sections'] as $sequence => $file) {
-            $image = imagecreatefromstring((string) file_get_contents($case['dir'].DIRECTORY_SEPARATOR.$file));
+            $image = @imagecreatefromstring((string) @file_get_contents($case['dir'].DIRECTORY_SEPARATOR.$file));
+            if (! $image) {
+                throw new \RuntimeException("section image {$file} could not be decoded");
+            }
             $scale = min(1, self::CAPTURE_LONG_EDGE / max(imagesx($image), imagesy($image)));
             if ($scale < 1) {
                 $image = imagescale($image, max(1, (int) round(imagesx($image) * $scale)), max(1, (int) round(imagesy($image) * $scale)));

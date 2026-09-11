@@ -30,6 +30,7 @@ if (typeof window !== 'undefined' && window.location.protocol === 'https:' && AP
 export interface SystemConfig {
   app_name: string;
   state_of_calamity: boolean;
+  /** Informational: the notice version the server advertises. Consent is gated on the version stored with each report, not on this. */
   privacy_notice_version: string;
   max_upload_size_mb: number;
   allowed_mime_types: string[];
