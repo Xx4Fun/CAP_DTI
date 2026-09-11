@@ -9,8 +9,12 @@ vi.mock('../../services/adminApi', () => ({ adminApi: {
   getMonitoringRecords: vi.fn(), getMonitoringRecord: vi.fn(), getMonitoringSignature: vi.fn(),
   getFieldVerificationRequests: vi.fn(), cancelFieldVerification: vi.fn(), reopenFieldVerification: vi.fn(),
   getManagedUsers: vi.fn(), createAdditionalVisit: vi.fn(), assignFieldVerification: vi.fn(),
-  getMonitoringFindings: vi.fn(),
+  getMonitoringFindings: vi.fn(), getMonitoringExportMatrix: vi.fn(),
 } }))
+
+vi.mock('../../utils/monitoringExcelExport', () => ({
+  exportMonitoringMatrixExcel: vi.fn(),
+}))
 
 const record = {
   id: 14, client_uuid: 'visit-14', status: 'accepted', started_at: '2026-08-24T07:30:00Z', finalized_at: '2026-08-24T08:00:00Z',
@@ -54,7 +58,7 @@ describe('FieldMonitoringRecords', () => {
     expect(summary).toHaveTextContent('Total Establishments1')
     expect(summary).toHaveTextContent('Monitored This Week1')
     expect(summary).toHaveTextContent('Additional Visits1')
-    expect(screen.getAllByText('Monitored This Week').length).toBeGreaterThan(1)
+    expect(screen.getByText('Monitored This Week')).toBeInTheDocument()
     expect(screen.getAllByText('Verification Required').length).toBeGreaterThan(1)
     expect(screen.getByText('Ana Officer')).toBeInTheDocument()
     expect(document.querySelector('.establishment-row-img')).toHaveAttribute('src', '/stores/store.webp')
@@ -123,16 +127,14 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     await screen.findByRole('region', { name: 'Monitoring establishments' })
     await user.type(screen.getByRole('searchbox', { name: 'Search establishments' }), 'Central')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'completed')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Additional task' }), 'verification_required')
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Latest observation' }), 'with_observations')
+    await user.click(screen.getByRole('button', { name: 'With Observations' }))
+    await user.click(screen.getByRole('button', { name: 'Verification Required' }))
     await user.click(screen.getByRole('tab', { name: 'All Records' }))
     await waitFor(() => expect(window.location.search).toContain('establishment_search=Central'))
     expect(window.location.search).toContain('monitor_tab=records')
-    expect(window.location.search).toContain('routine_status=completed')
     expect(window.location.search).toContain('additional_task=verification_required')
     expect(window.location.search).toContain('observation=with_observations')
-    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ routine_status: 'completed', additional_task: 'verification_required', observation: 'with_observations' }))
+    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ additional_task: 'verification_required', observation: 'with_observations' }))
     expect(screen.getByRole('searchbox', { name: 'Search monitoring visits' })).toHaveValue('')
   })
 
@@ -226,5 +228,47 @@ describe('FieldMonitoringRecords', () => {
     expect(onNavigate).toHaveBeenCalledWith('legal_actions')
     expect(new URLSearchParams(window.location.search).get('source_record')).toBe('14')
     expect(new URLSearchParams(window.location.search).get('source_store')).toBe('2')
+  })
+
+  it('renders cleaned up establishment profile header and truthful regulatory status', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+
+    // Verify sleek back button is present
+    expect(screen.getByRole('button', { name: 'Back to establishments directory' })).toBeInTheDocument()
+
+    // Verify breadcrumb nav and badges are removed
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Operating')).not.toBeInTheDocument()
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument()
+
+    // Verify truthful regulatory status displays observations when present
+    expect(screen.getByText('Observations Noted')).toBeInTheDocument()
+  })
+
+  it('filters all records by period and exports regional matrix to excel', async () => {
+    const user = userEvent.setup()
+    vi.mocked(adminApi.getMonitoringExportMatrix).mockResolvedValue({
+      period: 'last_4_weeks',
+      date_range: { from: '2026-08-01', to: '2026-08-28' },
+      commodities: [{ id: 1, commodity_name: 'Toyo Bonus Green EOC (155g)', unit: '155g', category: 'Canned Sardines', regulatory_classification: 'Basic Necessities', srp: 20 }],
+      weeks: [{ week_number: 1, week_key: 'w1', week_label: 'Week 1', starts_at: '2026-08-01', ends_at: '2026-08-07', establishments: [{ store_id: 2, store_name: 'Gaisano Grand Mall', monitoring_date: '2026-08-03', monitoring_date_formatted: 'Aug 03, 2026', prices: { 1: { recorded_price: 20, is_anomaly: false } } }] }],
+      generated_at: '2026-08-24T00:00:00Z',
+    })
+
+    render(<FieldMonitoringRecords />)
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
+
+    const periodSelect = screen.getByRole('combobox', { name: 'Period' })
+    expect(periodSelect).toHaveValue('all_time')
+
+    await user.selectOptions(periodSelect, 'last_4_weeks')
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ period: 'last_4_weeks' }))
+
+    const exportBtn = screen.getByRole('button', { name: 'Export to Excel' })
+    expect(exportBtn).toBeInTheDocument()
+    await user.click(exportBtn)
+    await waitFor(() => expect(adminApi.getMonitoringExportMatrix).toHaveBeenCalledWith({ period: 'last_4_weeks' }))
   })
 })

@@ -1,15 +1,18 @@
 import { type KeyboardEvent, useCallback, useEffect, useState } from 'react'
 import {
-  Activity, AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, CheckCircle2, ChevronLeft, ChevronRight, Clock,
-  Eye, FileSignature, History, LayoutGrid, List, MapPin, RefreshCw, Search, ShieldAlert,
+  Activity, AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock,
+  Eye, FileSignature, FileSpreadsheet, History, LayoutGrid, List, MapPin, RefreshCw, Search, ShieldAlert,
   ShieldCheck, Store, TrendingUp, TriangleAlert, User, UserCheck, X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
+import { exportMonitoringMatrixExcel } from '../../utils/monitoringExcelExport'
 import type {
   FieldVerificationRequestPage, MonitoringEstablishmentProfile, MonitoringEstablishmentSummary,
-  ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringPeriodPreset,
+  ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringMatrixCommodity,
+  MonitoringMatrixData, MonitoringMatrixEstablishment, MonitoringMatrixWeek, MonitoringPeriodPreset,
   MonitoringPriceHistoryPage, MonitoringPriceHistoryRow, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace,
 } from '../../types/admin'
+import type { ManagedSrpRecord } from '../../types/adminSrp'
 
 type Tab = 'establishments' | 'records' | 'verification'
 type ProfileTab = 'overview' | 'findings' | 'history' | 'records'
@@ -63,7 +66,8 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   const [routineStatus, setRoutineStatus] = useState<RoutineStatus>((params.get('routine_status') as RoutineStatus) || 'all')
   const [additionalTask, setAdditionalTask] = useState<AdditionalTask>((params.get('additional_task') as AdditionalTask) || 'all')
   const [observation, setObservation] = useState<ObservationStatus>((params.get('observation') as ObservationStatus) || 'all')
-  const [recordAnomaly, setRecordAnomaly] = useState<'all' | 'yes' | 'no'>((params.get('anomaly') as 'all' | 'yes' | 'no') || 'all')
+  const [recordPeriod, setRecordPeriod] = useState<MonitoringPeriodPreset>((params.get('record_period') as MonitoringPeriodPreset) || 'all_time')
+  const [exportingMatrix, setExportingMatrix] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>((params.get('verification_status') as VerificationStatus) || 'all')
   const [profileTab, setProfileTab] = useState<ProfileTab>((params.get('profile_tab') as ProfileTab) || 'overview')
   const [period, setPeriod] = useState<MonitoringPeriodPreset>((params.get('period') as MonitoringPeriodPreset) || 'last_4_weeks')
@@ -132,10 +136,152 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
   const loadRecords = useCallback(async () => {
     setLoading(true); setError('')
-    try { setRecords(await adminApi.getMonitoringRecords({ search: queries.records || undefined, anomaly: recordAnomaly, page: recordPage, per_page: 10 })) }
+    try {
+      setRecords(await adminApi.getMonitoringRecords({
+        search: queries.records || undefined,
+        period: recordPeriod === 'all_time' ? undefined : recordPeriod,
+        page: recordPage,
+        per_page: 10,
+      }))
+    }
     catch (reason) { setError(message(reason)) }
     finally { setLoading(false) }
-  }, [queries.records, recordAnomaly, recordPage])
+  }, [queries.records, recordPeriod, recordPage])
+
+  const buildClientSideMatrixFallback = async (preset: MonitoringPeriodPreset): Promise<MonitoringMatrixData> => {
+    const [srpResult, recordsResult] = await Promise.all([
+      adminApi.getSrp({ per_page: 500 }),
+      adminApi.getMonitoringRecords({
+        period: preset === 'all_time' ? undefined : preset,
+        per_page: 50,
+      }),
+    ])
+
+    const srpList: ManagedSrpRecord[] = Array.isArray(srpResult) ? srpResult : (srpResult?.records ?? [])
+    const commodities: MonitoringMatrixCommodity[] = srpList
+      .filter((srp) => srp.is_active !== false)
+      .sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.commodity_name.localeCompare(b.commodity_name))
+      .map((srp) => {
+        const rawClassification = String(srp.regulatory_classification || '').toUpperCase()
+        const classification = rawClassification.includes('PRIME') ? 'Prime Commodities' : 'Basic Necessities'
+        return {
+          id: srp.id,
+          commodity_name: srp.commodity_name,
+          unit: srp.unit ?? null,
+          category: srp.category ?? 'General',
+          regulatory_classification: classification,
+          srp: Number(srp.baseline_price) || 0,
+        }
+      })
+
+    const recs = (recordsResult?.data ?? []).slice().reverse()
+    const weekMap = new Map<string, { starts_at: string; ends_at: string; records: MonitoringRecordRecord[] }>()
+
+    recs.forEach((record) => {
+      const d = new Date(record.finalized_at)
+      const day = d.getDay()
+      const diffToMon = (day === 0 ? -6 : 1) - day
+      const mon = new Date(d)
+      mon.setDate(d.getDate() + diffToMon)
+      mon.setHours(0, 0, 0, 0)
+      const sun = new Date(mon)
+      sun.setDate(mon.getDate() + 6)
+      sun.setHours(23, 59, 59, 999)
+
+      const startsAt = mon.toISOString().split('T')[0]
+      const endsAt = sun.toISOString().split('T')[0]
+      const key = `${startsAt}_${endsAt}`
+
+      if (!weekMap.has(key)) {
+        weekMap.set(key, { starts_at: startsAt, ends_at: endsAt, records: [] })
+      }
+      weekMap.get(key)!.records.push(record)
+    })
+
+    const weeks: MonitoringMatrixWeek[] = []
+    let weekNum = 1
+    for (const [key, { starts_at, ends_at, records: weekRecs }] of weekMap.entries()) {
+      const startFormatted = new Date(starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const endFormatted = new Date(ends_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+      const byStore = new Map<number, MonitoringRecordRecord[]>()
+      weekRecs.forEach((r) => {
+        if (!byStore.has(r.store.id)) byStore.set(r.store.id, [])
+        byStore.get(r.store.id)!.push(r)
+      })
+
+      const establishments: MonitoringMatrixEstablishment[] = []
+      for (const [, storeRecs] of byStore.entries()) {
+        const latest = storeRecs[storeRecs.length - 1]
+        const prices: Record<number, { recorded_price: number; is_anomaly: boolean }> = {}
+        ;(latest.items || []).forEach((item) => {
+          prices[item.srp_id] = {
+            recorded_price: Number(item.recorded_price) || 0,
+            is_anomaly: Boolean(item.is_anomaly),
+          }
+        })
+        establishments.push({
+          store_id: latest.store.id,
+          store_name: latest.store.store_name,
+          monitoring_date: latest.finalized_at.split('T')[0],
+          monitoring_date_formatted: new Date(latest.finalized_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          prices,
+        })
+      }
+
+      weeks.push({
+        week_number: weekNum,
+        week_key: key,
+        week_label: `WEEK ${weekNum} (${startFormatted} - ${endFormatted})`,
+        starts_at,
+        ends_at,
+        establishments,
+      })
+      weekNum++
+    }
+
+    return {
+      period: preset,
+      date_range: { from: null, to: null },
+      commodities,
+      weeks,
+      generated_at: new Date().toISOString(),
+    }
+  }
+
+  const handleExportExcel = async () => {
+    setExportingMatrix(true)
+    setError('')
+    try {
+      const periodLabelMap: Record<MonitoringPeriodPreset, string> = {
+        all_time: 'All Records',
+        this_week: 'This Week',
+        last_4_weeks: 'Last 4 Weeks',
+        this_month: 'This Month',
+        last_month: 'Last Month',
+        custom: 'Custom Period',
+      }
+      const label = periodLabelMap[recordPeriod] || 'Price Monitoring Matrix'
+      let matrixData: MonitoringMatrixData
+      try {
+        matrixData = await adminApi.getMonitoringExportMatrix({
+          period: recordPeriod === 'all_time' ? undefined : recordPeriod,
+        })
+      } catch (apiErr: unknown) {
+        const status = (apiErr as { response?: { status?: number } })?.response?.status
+        if (status === 404) {
+          matrixData = await buildClientSideMatrixFallback(recordPeriod)
+        } else {
+          throw apiErr
+        }
+      }
+      await exportMonitoringMatrixExcel(matrixData, label)
+    } catch (err: unknown) {
+      setError((err as Error).message || 'Failed to export Excel matrix.')
+    } finally {
+      setExportingMatrix(false)
+    }
+  }
 
   const loadVerification = useCallback(async () => {
     setLoading(true); setError('')
@@ -181,7 +327,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       setRoutineStatus((current.get('routine_status') as RoutineStatus) || 'all')
       setAdditionalTask((current.get('additional_task') as AdditionalTask) || 'all')
       setObservation((current.get('observation') as ObservationStatus) || 'all')
-      setRecordAnomaly((current.get('anomaly') as 'all' | 'yes' | 'no') || 'all')
+      setRecordPeriod((current.get('record_period') as MonitoringPeriodPreset) || 'all_time')
       setVerificationStatus((current.get('verification_status') as VerificationStatus) || 'all')
       setVerificationStore(Number(current.get('verification_store')) || null)
       setSearches({ establishments: current.get('establishment_search') || '', records: current.get('record_search') || '', verification: current.get('verification_search') || '' })
@@ -390,7 +536,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
   return (
     <div className="admin-page">
-      <div className="field-monitor-cards-nav" role="tablist" aria-label="Field monitoring navigation">
+      <div className="monitor-nav-cards field-monitor-cards-nav" role="tablist" aria-label="Field monitoring navigation" onKeyDown={moveTabFocus}>
         {/* Tab 1: Establishments */}
         <button
           id="monitor-tab-establishments"
@@ -461,8 +607,10 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       onAdditionalTask={(value) => { setAdditionalTask(value); setEstablishmentPage(1); updateUrl({ additional_task: value === 'all' ? null : value }) }}
       onObservation={(value) => { setObservation(value); setEstablishmentPage(1); updateUrl({ observation: value === 'all' ? null : value }) }}
       onRefresh={loadEstablishments} onOpen={openProfile} onPage={setEstablishmentPage} /></div>}
-    {tab === 'records' && <div role="tabpanel" id="monitor-panel-records" aria-labelledby="monitor-tab-records"><RecordsView page={records} loading={loading} search={searches.records} anomaly={recordAnomaly}
-      onSearch={(value) => { setSearches((current) => ({ ...current, records: value })); setRecordPage(1) }} onAnomaly={(value) => { setRecordAnomaly(value); setRecordPage(1); updateUrl({ anomaly: value === 'all' ? null : value }) }}
+    {tab === 'records' && <div role="tabpanel" id="monitor-panel-records" aria-labelledby="monitor-tab-records"><RecordsView page={records} loading={loading} search={searches.records} period={recordPeriod} exporting={exportingMatrix}
+      onSearch={(value) => { setSearches((current) => ({ ...current, records: value })); setRecordPage(1) }}
+      onPeriodChange={(value) => { setRecordPeriod(value); setRecordPage(1); updateUrl({ record_period: value === 'all_time' ? null : value }) }}
+      onExportExcel={handleExportExcel}
       onRefresh={loadRecords} onOpen={openRecord} onPage={setRecordPage} /></div>}
     {tab === 'verification' && <div role="tabpanel" id="monitor-panel-verification" aria-labelledby="monitor-tab-verification"><VerificationView page={verification} loading={loading} search={searches.verification} status={verificationStatus} scope={verificationStoreName} pending={pendingRequest}
       onClearScope={() => { setVerificationStore(null); setVerificationStoreName(''); updateUrl({ verification_store: null }) }} onSearch={(value) => { setSearches((current) => ({ ...current, verification: value })); setVerificationPage(1) }} onStatus={(value) => { setVerificationStatus(value); setVerificationPage(1); updateUrl({ verification_status: value === 'all' ? null : value }) }}
@@ -537,17 +685,11 @@ function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
   </div>
 }
 
-function RoutineBadge({ value, cadence }: { value: MonitoringEstablishmentSummary['routine_status']; cadence: 'weekly' | 'daily' }) {
-  return <span className={`reference-status-pill ${value === 'completed' ? 'compliant' : 'unmonitored'}`}>
-    {value === 'completed' ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}
-  </span>
-}
-
 function getStoreImageUrl(store: { image_path?: string | null }): string {
   return store.image_path || '/stores/store.webp'
 }
 
-function EstablishmentCard({ store, cadence, onOpen }: { store: MonitoringEstablishmentSummary; cadence: 'weekly' | 'daily'; onOpen: (id: number) => void }) {
+function EstablishmentCard({ store, cadence: _cadence, onOpen }: { store: MonitoringEstablishmentSummary; cadence: 'weekly' | 'daily'; onOpen: (id: number) => void }) {
   const isMarket = store.store_name.toLowerCase().includes('market')
   const initials = getStoreInitials(store.store_name)
   const imageUrl = getStoreImageUrl(store)
@@ -581,7 +723,7 @@ function EstablishmentCard({ store, cadence, onOpen }: { store: MonitoringEstabl
         <div className="establishment-card-shade-dark" />
 
         <div className="establishment-card-badge-top-right">
-          <RoutineBadge value={store.routine_status} cadence={cadence} />
+          <Observation value={store.latest_result} />
           {store.verification_task_status !== 'none' && <span className="reference-status-pill under-review">Verification Required</span>}
         </div>
       </div>
@@ -604,18 +746,18 @@ function EstablishmentCard({ store, cadence, onOpen }: { store: MonitoringEstabl
 
         <div className="establishment-card-footer-dark">
           <div className="card-footer-metric">
-            <Calendar size={15} className="metric-icon" aria-hidden="true" />
+            <History size={15} className="metric-icon" aria-hidden="true" />
             <div className="metric-copy">
-              <span className="metric-label">Latest routine:</span>
-              <strong className="metric-val">{formatShortDate(store.latest_routine_monitoring_at)}</strong>
+              <span className="metric-label">Total visits:</span>
+              <strong className="metric-val">{store.completed_records_count > 0 ? `${store.completed_records_count}` : '0'}</strong>
             </div>
           </div>
 
           <div className="card-footer-metric right">
-            <UserCheck size={15} className="metric-icon success" aria-hidden="true" />
+            <Calendar size={15} className="metric-icon" aria-hidden="true" />
             <div className="metric-copy">
-              <span className="metric-label">Latest officer:</span>
-              <strong className="metric-val">{store.latest_officer?.name || 'Not available'}</strong>
+              <span className="metric-label">Latest visit:</span>
+              <strong className="metric-val">{formatShortDate(store.latest_monitoring_at || store.latest_routine_monitoring_at)}</strong>
             </div>
           </div>
         </div>
@@ -624,12 +766,11 @@ function EstablishmentCard({ store, cadence, onOpen }: { store: MonitoringEstabl
   </article>
 }
 
-function EstablishmentRowCard({ store, cadence, onOpen }: { store: MonitoringEstablishmentSummary; cadence: 'weekly' | 'daily'; onOpen: (id: number) => void }) {
+function EstablishmentRowCard({ store, cadence: _cadence, onOpen }: { store: MonitoringEstablishmentSummary; cadence: 'weekly' | 'daily'; onOpen: (id: number) => void }) {
   const imageUrl = getStoreImageUrl(store)
   const isMarket = store.store_name.toLowerCase().includes('market')
   const initials = getStoreInitials(store.store_name)
   const isPlaceholder = !store.image_path || store.image_path === '/stores/store.webp'
-  const hasMatchingDates = !store.latest_routine_monitoring_at || !store.latest_monitoring_at || store.latest_routine_monitoring_at === store.latest_monitoring_at
 
   return (
     <article className="establishment-row-card">
@@ -686,43 +827,31 @@ function EstablishmentRowCard({ store, cadence, onOpen }: { store: MonitoringEst
           <span className="sec-reg-num">{store.dti_sec_number || 'Not provided'}</span>
         </div>
 
-        {/* Bottom Metrics: Consolidated Single Tile or Dual Tiles */}
+        {/* Bottom Metrics: Total Inspections & Latest Visit */}
         <div className="establishment-row-metrics">
-          {hasMatchingDates ? (
-            <div className="row-metric-box single-consolidated">
-              <div className="metric-box-icon">
-                <Calendar size={18} aria-hidden="true" />
-              </div>
-              <div className="metric-box-text">
-                <span className="metric-box-label">LATEST MONITORING VISIT</span>
-                <strong className="metric-box-val">
-                  {formatShortDate(store.latest_monitoring_at || store.latest_routine_monitoring_at)}
-                </strong>
-              </div>
+          <div className="row-metric-box">
+            <div className="metric-box-icon">
+              <History size={18} aria-hidden="true" />
             </div>
-          ) : (
-            <>
-              <div className="row-metric-box">
-                <div className="metric-box-icon">
-                  <Calendar size={18} aria-hidden="true" />
-                </div>
-                <div className="metric-box-text">
-                  <span className="metric-box-label">LATEST ROUTINE MONITORING</span>
-                  <strong className="metric-box-val">{formatShortDate(store.latest_routine_monitoring_at)}</strong>
-                </div>
-              </div>
+            <div className="metric-box-text">
+              <span className="metric-box-label">TOTAL INSPECTIONS</span>
+              <strong className="metric-box-val">
+                {store.completed_records_count > 0 ? `${store.completed_records_count} Recorded` : 'No visits'}
+              </strong>
+            </div>
+          </div>
 
-              <div className="row-metric-box">
-                <div className="metric-box-icon">
-                  <History size={18} aria-hidden="true" />
-                </div>
-                <div className="metric-box-text">
-                  <span className="metric-box-label">LATEST ACCEPTED VISIT</span>
-                  <strong className="metric-box-val">{formatShortDate(store.latest_monitoring_at)}</strong>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="row-metric-box">
+            <div className="metric-box-icon">
+              <Calendar size={18} aria-hidden="true" />
+            </div>
+            <div className="metric-box-text">
+              <span className="metric-box-label">LATEST MONITORING VISIT</span>
+              <strong className="metric-box-val">
+                {formatShortDate(store.latest_monitoring_at || store.latest_routine_monitoring_at)}
+              </strong>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -740,16 +869,15 @@ function EstablishmentRowCard({ store, cadence, onOpen }: { store: MonitoringEst
         </div>
 
         <div className="status-assignment-section">
-          <span className="status-label">STATUS</span>
+          <span className="status-label">REGULATORY STATUS</span>
           <div className="status-badges-stack">
-            <RoutineBadge value={store.routine_status} cadence={cadence} />
+            <Observation value={store.latest_result} />
             {store.verification_task_status !== 'none' && (
               <span className="status-pill-badge verification">
                 <ShieldAlert size={14} aria-hidden="true" />
                 <span>Verification Required</span>
               </span>
             )}
-            <Observation value={store.latest_result} />
           </div>
           {store.verification_task_status === 'claimed' && (
             <span className="status-context-note">Verification claimed by {store.verification_claimant?.name || 'an officer'}.</span>
@@ -770,7 +898,7 @@ function EstablishmentRowCard({ store, cadence, onOpen }: { store: MonitoringEst
   )
 }
 
-function EstablishmentsView({ workspace, loading, search, routineStatus, additionalTask, observation, onSearch, onRoutineStatus, onAdditionalTask, onObservation, onOpen, onPage }: {
+function EstablishmentsView({ workspace, loading, search, routineStatus: _routineStatus, additionalTask, observation, onSearch, onRoutineStatus, onAdditionalTask, onObservation, onOpen, onPage }: {
   workspace: MonitoringWorkspace | null; loading: boolean; search: string; routineStatus: RoutineStatus; additionalTask: AdditionalTask; observation: ObservationStatus
   onSearch: (value: string) => void; onRoutineStatus: (value: RoutineStatus) => void; onAdditionalTask: (value: AdditionalTask) => void; onObservation: (value: ObservationStatus) => void; onRefresh?: () => void; onOpen: (id: number) => void; onPage: (page: number) => void
 }) {
@@ -783,127 +911,110 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
       <BentoStats workspace={workspace} />
     </div>
 
+    <section className="field-monitor-controls-container field-monitor-controls-modern" aria-label="Establishment filters">
+      {/* Option 1: Single Clean Toolbar with Search, Quick Triage Chips & View Switcher */}
+      <div className="filter-tier-primary">
+        <div className="search-and-chips-group">
+          <div className="filter-group search-group">
+            <label htmlFor="establishment-search-input" className="sr-only">Search establishments</label>
+            <div className="admin-search-field-modern">
+              <Search size={17} aria-hidden="true" />
+              <input
+                id="establishment-search-input"
+                type="search"
+                aria-label="Search establishments"
+                placeholder="Search establishments..."
+                value={search}
+                onChange={(event) => onSearch(event.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => onSearch('')}
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+          </div>
 
-    <section className="field-monitor-controls-modern" aria-label="Establishment filters">
-      <div className="filter-group search-group">
-        <label htmlFor="establishment-search-input" className="sr-only">Search establishments</label>
-        <div className="admin-search-field-modern">
-          <Search size={17} />
-          <input
-            id="establishment-search-input"
-            type="search"
-            aria-label="Search establishments"
-            placeholder="Search establishment name or address..."
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-          />
+          <div className="filter-group chips-group">
+            <div className="establishment-quick-chips" role="group" aria-label="Quick filters">
+              <button
+                type="button"
+                className={`quick-chip ${observation === 'all' && additionalTask === 'all' ? 'active' : ''}`}
+                onClick={() => {
+                  onRoutineStatus('all')
+                  onObservation('all')
+                  onAdditionalTask('all')
+                }}
+              >
+                All Establishments
+              </button>
+              <button
+                type="button"
+                className={`quick-chip ${observation === 'with_observations' ? 'active' : ''}`}
+                onClick={() => {
+                  onObservation(observation === 'with_observations' ? 'all' : 'with_observations')
+                }}
+              >
+                With Observations
+              </button>
+              <button
+                type="button"
+                className={`quick-chip ${additionalTask === 'verification_required' ? 'active' : ''}`}
+                onClick={() => {
+                  onAdditionalTask(additionalTask === 'verification_required' ? 'all' : 'verification_required')
+                }}
+              >
+                Verification Required
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="filter-group chips-group">
-        <div className="establishment-quick-chips" role="group" aria-label="Quick filters">
-          <button
-            type="button"
-            className={`quick-chip ${routineStatus === 'all' && observation === 'all' ? 'active' : ''}`}
-            onClick={() => {
-              onRoutineStatus('all')
-              onObservation('all')
-            }}
-          >
-            All Establishments
-          </button>
-          <button
-            type="button"
-            className={`quick-chip ${observation === 'with_observations' ? 'active' : ''}`}
-            onClick={() => {
-              onObservation(observation === 'with_observations' ? 'all' : 'with_observations')
-            }}
-          >
-            With Observations
-          </button>
-          <button
-            type="button"
-            className={`quick-chip ${routineStatus === 'due' ? 'active' : ''}`}
-            onClick={() => {
-              onRoutineStatus(routineStatus === 'due' ? 'all' : 'due')
-            }}
-          >
-            {cadence === 'daily' ? 'Due Today' : 'Not Monitored'}
-          </button>
-        </div>
-      </div>
-
-      <div className="filter-group select-group">
-        <label htmlFor="establishment-routine-status-select" className="sr-only">Routine status</label>
-        <div className="field-monitor-select-wrapper-modern">
-          <select
-            id="establishment-routine-status-select"
-            aria-label="Routine status"
-            value={routineStatus}
-            onChange={(event) => onRoutineStatus(event.target.value as RoutineStatus)}
-          >
-            <option value="all">All routine statuses</option>
-            <option value="due">{cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored'}</option>
-            <option value="completed">{cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week'}</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="filter-group select-group"><div className="field-monitor-select-wrapper-modern">
-        <select aria-label="Additional task" value={additionalTask} onChange={(event) => onAdditionalTask(event.target.value as AdditionalTask)}>
-          <option value="all">All additional tasks</option>
-          <option value="verification_required">Verification Required</option>
-        </select>
-      </div></div>
-
-      <div className="filter-group select-group"><div className="field-monitor-select-wrapper-modern">
-        <select aria-label="Latest observation" value={observation} onChange={(event) => onObservation(event.target.value as ObservationStatus)}>
-          <option value="all">All observations</option>
-          <option value="no_observations">Within Reference</option>
-          <option value="with_observations">With Observations</option>
-          <option value="reference_unavailable">Reference Unavailable</option>
-        </select>
-      </div></div>
-
-      <div className="filter-group toggle-group">
-        <div className="view-mode-segmented-modern" role="group" aria-label="Establishment view layout">
-          <button
-            type="button"
-            className={`view-segment-btn-modern ${viewMode === 'list' ? 'active' : ''}`}
-            aria-label="List view"
-            aria-pressed={viewMode === 'list'}
-            onClick={() => setViewMode('list')}
-            title="List view"
-          >
-            <List size={17} />
-            <span>List</span>
-          </button>
-          <button
-            type="button"
-            className={`view-segment-btn-modern ${viewMode === 'grid' ? 'active' : ''}`}
-            aria-label="Grid view"
-            aria-pressed={viewMode === 'grid'}
-            onClick={() => setViewMode('grid')}
-            title="Grid view"
-          >
-            <LayoutGrid size={17} />
-            <span>Grid</span>
-          </button>
-          <button
-            type="button"
-            className={`view-segment-btn-modern ${viewMode === 'table' ? 'active' : ''}`}
-            aria-label="Table view"
-            aria-pressed={viewMode === 'table'}
-            onClick={() => setViewMode('table')}
-            title="Table view"
-          >
-            <Calendar size={17} />
-            <span>Table</span>
-          </button>
+        <div className="filter-group toggle-group">
+          <div className="view-mode-segmented-modern" role="group" aria-label="Establishment view layout">
+            <button
+              type="button"
+              className={`view-segment-btn-modern ${viewMode === 'list' ? 'active' : ''}`}
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
+              onClick={() => setViewMode('list')}
+              title="List view"
+            >
+              <List size={17} />
+              <span>List</span>
+            </button>
+            <button
+              type="button"
+              className={`view-segment-btn-modern ${viewMode === 'grid' ? 'active' : ''}`}
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => setViewMode('grid')}
+              title="Grid view"
+            >
+              <LayoutGrid size={17} />
+              <span>Grid</span>
+            </button>
+            <button
+              type="button"
+              className={`view-segment-btn-modern ${viewMode === 'table' ? 'active' : ''}`}
+              aria-label="Table view"
+              aria-pressed={viewMode === 'table'}
+              onClick={() => setViewMode('table')}
+              title="Table view"
+            >
+              <Calendar size={17} />
+              <span>Table</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>
-
     {viewMode === 'list' ? (
       <section className="establishment-cards-section list-layout" aria-label="Monitoring establishments">
         {loading && !workspace ? (
@@ -948,17 +1059,16 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
             <thead>
               <tr>
                 <th>Establishment</th>
-                <th>Routine status</th>
-                <th>Latest routine</th>
-                <th>Latest result</th>
-                <th>Records</th>
+                <th>Compliance status</th>
+                <th>Latest visit</th>
+                <th>Total visits</th>
                 <th>Verification</th>
                 <th><span className="sr-only">Action</span></th>
               </tr>
             </thead>
             <tbody>
               {loading && !workspace ? (
-                <Skeleton columns={7} />
+                <Skeleton columns={6} />
               ) : (
                 workspace?.establishments.data.map((store) => (
                   <tr
@@ -977,13 +1087,14 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
                     </td>
-                    <td data-label="Routine status"><RoutineBadge value={store.routine_status} cadence={cadence} /></td>
-                    <td data-label="Latest routine">
-                      <strong>{formatShortDate(store.latest_routine_monitoring_at)}</strong>
+                    <td data-label="Compliance status"><Observation value={store.latest_result} /></td>
+                    <td data-label="Latest visit">
+                      <strong>{formatShortDate(store.latest_monitoring_at || store.latest_routine_monitoring_at)}</strong>
                       <small>{store.latest_officer?.name || 'Officer unavailable'}</small>
                     </td>
-                    <td data-label="Latest result"><Observation value={store.latest_result} /></td>
-                    <td data-label="Records">{store.completed_records_count}</td>
+                    <td data-label="Total visits">
+                      <strong>{store.completed_records_count > 0 ? `${store.completed_records_count} Recorded` : 'No visits'}</strong>
+                    </td>
                     <td data-label="Additional visit">{store.verification_task_status === 'none' ? 'None' : <><strong>Additional Visit</strong><small>{store.verification_task_status === 'claimed' ? `Assigned to ${store.verification_claimant?.name || 'an officer'}` : 'Needs assignment'}</small></>}</td>
                     <td>
                       <button
@@ -1009,15 +1120,75 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
   </>
 }
 
-function RecordsView({ page, loading, search, anomaly, onSearch, onAnomaly, onRefresh, onOpen, onPage }: {
-  page: MonitoringRecordPage; loading: boolean; search: string; anomaly: 'all' | 'yes' | 'no'
-  onSearch: (value: string) => void; onAnomaly: (value: 'all' | 'yes' | 'no') => void; onRefresh: () => void; onOpen: (id: number) => void; onPage: (page: number) => void
+function RecordsView({ page, loading, search, period, exporting, onSearch, onPeriodChange, onExportExcel, onRefresh, onOpen, onPage }: {
+  page: MonitoringRecordPage; loading: boolean; search: string; period: MonitoringPeriodPreset; exporting: boolean
+  onSearch: (value: string) => void; onPeriodChange: (value: MonitoringPeriodPreset) => void; onExportExcel: () => void; onRefresh: () => void; onOpen: (id: number) => void; onPage: (page: number) => void
 }) {
   return <>
-    <section className="field-monitor-controls" aria-label="Monitoring record filters">
-      <label className="admin-search-field"><Search size={17} /><input type="search" aria-label="Search monitoring visits" placeholder="Search store or officer" value={search} onChange={(event) => onSearch(event.target.value)} /></label>
-      <label>Observation<select aria-label="Observation" value={anomaly} onChange={(event) => onAnomaly(event.target.value as 'all' | 'yes' | 'no')}><option value="all">All visits</option><option value="yes">With observations</option><option value="no">No observations</option></select></label>
-      <button type="button" className="admin-button secondary" onClick={onRefresh}><RefreshCw size={16} />Refresh</button>
+    <section className="field-monitor-controls-unified" aria-label="Monitoring record filters">
+      <div className="unified-search-wrap">
+        <label htmlFor="records-search-input" className="sr-only">Search monitoring visits</label>
+        <div className="admin-search-field-modern">
+          <Search size={17} aria-hidden="true" />
+          <input
+            id="records-search-input"
+            type="search"
+            aria-label="Search monitoring visits"
+            placeholder="Search store or officer..."
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+          {search && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => onSearch('')}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="unified-filter-group">
+        <label htmlFor="records-period-select" className="unified-filter-label">
+          Period:
+        </label>
+        <div className="unified-select-wrap">
+          <select
+            id="records-period-select"
+            aria-label="Period"
+            value={period}
+            onChange={(event) => onPeriodChange(event.target.value as MonitoringPeriodPreset)}
+          >
+            <option value="all_time">All records</option>
+            <option value="this_week">This week</option>
+            <option value="last_4_weeks">Last 4 weeks</option>
+            <option value="this_month">This month</option>
+            <option value="last_month">Last month</option>
+          </select>
+          <ChevronDown size={15} className="unified-select-chevron" aria-hidden="true" />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="unified-export-btn"
+        onClick={onExportExcel}
+        disabled={exporting}
+        aria-label="Export to Excel"
+        title="Export Regional Price Monitoring Matrix to Excel"
+      >
+        <FileSpreadsheet size={15} aria-hidden="true" />
+        <span>{exporting ? 'Exporting...' : 'Export to Excel'}</span>
+      </button>
+
+      <button type="button" className="unified-refresh-btn" onClick={onRefresh} aria-label="Refresh">
+        <RefreshCw size={15} aria-hidden="true" />
+        <span>Refresh</span>
+      </button>
     </section>
     <RecordTable page={page} loading={loading} onOpen={onOpen} />
     <Pagination page={page} onPage={onPage} />
@@ -1066,10 +1237,58 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
   const [assigning, setAssigning] = useState<number | null>(null)
   return <>
     {scope && <div className="field-monitor-scope"><span>Establishment</span><strong>{scope}</strong><button type="button" className="text-button" aria-label="Clear establishment filter" onClick={onClearScope}>Clear</button></div>}
-    <section className="field-monitor-controls" aria-label="Additional visit filters">
-      <label className="admin-search-field"><Search size={17} /><input type="search" aria-label="Search additional visits" placeholder="Search establishment or report" value={search} onChange={(event) => onSearch(event.target.value)} /></label>
-      <label>Status<select aria-label="Additional visit status" value={status} onChange={(event) => onStatus(event.target.value as VerificationStatus)}><option value="all">All visits</option><option value="open">Needs assignment</option><option value="claimed">Assigned</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
-      <button type="button" className="admin-button secondary" onClick={onRefresh}><RefreshCw size={16} />Refresh</button>
+    <section className="field-monitor-controls-unified" aria-label="Additional visit filters">
+      <div className="unified-search-wrap">
+        <label htmlFor="verification-search-input" className="sr-only">Search additional visits</label>
+        <div className="admin-search-field-modern">
+          <Search size={17} aria-hidden="true" />
+          <input
+            id="verification-search-input"
+            type="search"
+            aria-label="Search additional visits"
+            placeholder="Search establishment or report..."
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+          {search && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => onSearch('')}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="unified-filter-group">
+        <label htmlFor="verification-status-select" className="unified-filter-label">
+          Status:
+        </label>
+        <div className="unified-select-wrap">
+          <select
+            id="verification-status-select"
+            aria-label="Additional visit status"
+            value={status}
+            onChange={(event) => onStatus(event.target.value as VerificationStatus)}
+          >
+            <option value="all">All visits</option>
+            <option value="open">Needs assignment</option>
+            <option value="claimed">Assigned</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <ChevronDown size={15} className="unified-select-chevron" aria-hidden="true" />
+        </div>
+      </div>
+
+      <button type="button" className="unified-refresh-btn" onClick={onRefresh} aria-label="Refresh">
+        <RefreshCw size={15} aria-hidden="true" />
+        <span>Refresh</span>
+      </button>
     </section>
     <section className="admin-table-card"><div className="admin-table-wrap"><table className="admin-data-table"><caption className="sr-only">Additional field visits</caption>
       <thead><tr><th>Establishment</th><th>Source</th><th>Reason</th><th>Requested</th><th>Status</th><th>Assigned officer</th><th>Result</th></tr></thead>
@@ -1180,18 +1399,12 @@ function EstablishmentProfile({
 
   return (
     <article className="field-monitor-profile">
-      <nav className="field-profile-breadcrumbs" aria-label="Breadcrumbs">
-        <button type="button" className="breadcrumb-btn" onClick={onBack}>Field Monitoring</button>
-        <ChevronRight size={14} className="breadcrumb-chevron" aria-hidden="true" />
-        <button type="button" className="breadcrumb-btn" onClick={onBack}>Establishments</button>
-        <ChevronRight size={14} className="breadcrumb-chevron" aria-hidden="true" />
-        <span className="breadcrumb-current" aria-current="page">{profile.store.store_name}</span>
-      </nav>
-
-      <button type="button" className="admin-back-button" onClick={onBack}>
-        <ArrowLeft size={17} />
-        Back to establishments
-      </button>
+      <div className="field-profile-top-nav">
+        <button type="button" className="admin-back-button" onClick={onBack} aria-label="Back to establishments directory">
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Back to establishments</span>
+        </button>
+      </div>
 
       {error && <div className="admin-feedback error" role="alert">{error}</div>}
 
@@ -1203,20 +1416,10 @@ function EstablishmentProfile({
           <div className="profile-hero-info">
             <div className="profile-hero-title-row">
               <h2 tabIndex={-1}>{profile.store.store_name}</h2>
-              <span className={`admin-status-badge ${profile.store.is_active ? 'current' : 'history'}`}>
-                <span className={`status-indicator-dot ${profile.store.is_active ? 'green' : 'gray'}`} />
-                {profile.store.is_active ? 'Operating' : 'Inactive'}
-              </span>
-              {profile.store.is_verified && (
-                <span className="admin-status-badge verified">
-                  <CheckCircle2 size={12} />
-                  Verified
-                </span>
-              )}
               {(profile.store.recidivism_index ?? 0) > 0 && (
                 <span className="admin-status-badge danger">
-                  <AlertTriangle size={12} />
-                  Recidivism Index: {profile.store.recidivism_index}
+                  <AlertTriangle size={12} aria-hidden="true" />
+                  <span>Recidivism Index: {profile.store.recidivism_index}</span>
                 </span>
               )}
             </div>
@@ -1267,12 +1470,12 @@ function EstablishmentProfile({
         <div className="period-bar-pills" role="group" aria-label="Filter monitoring period">
           {(
             [
-              { id: 'last_4_weeks', label: 'Last 4 Weeks', isDefault: true },
-              { id: 'this_week', label: 'This Week', isDefault: false },
-              { id: 'this_month', label: 'This Month', isDefault: false },
-              { id: 'last_month', label: 'Last Month', isDefault: false },
-              { id: 'all_time', label: 'All Time', isDefault: false },
-              { id: 'custom', label: 'Custom', isDefault: false },
+              { id: 'last_4_weeks', label: 'Last 4 Weeks' },
+              { id: 'this_week', label: 'This Week' },
+              { id: 'this_month', label: 'This Month' },
+              { id: 'last_month', label: 'Last Month' },
+              { id: 'all_time', label: 'All Time' },
+              { id: 'custom', label: 'Custom' },
             ] as const
           ).map((item) => (
             <button
@@ -1282,7 +1485,6 @@ function EstablishmentProfile({
               onClick={() => onPeriodChange(item.id)}
             >
               <span>{item.label}</span>
-              {item.isDefault && <span className="period-pill-tag">RA 7581</span>}
             </button>
           ))}
         </div>
@@ -1388,10 +1590,32 @@ function EstablishmentProfile({
             </div>
             <div className="overview-kpi-card">
               <span className="kpi-label">Regulatory Status</span>
-              <strong className={`kpi-value ${(profile.store.recidivism_index ?? 0) > 0 ? 'text-danger' : 'text-emerald'}`}>
-                {(profile.store.recidivism_index ?? 0) > 0 ? `Repeat (${profile.store.recidivism_index})` : 'Compliant'}
-              </strong>
-              <small className="kpi-sub">{(profile.store.recidivism_index ?? 0) > 0 ? '0% tolerance on escalation' : 'Standard 10% tolerance'}</small>
+              {(() => {
+                const recidivism = profile.store.recidivism_index ?? 0
+                const observations = profile.period_records_with_observations_count ?? profile.records_with_observations_count
+                if (recidivism > 0) {
+                  return (
+                    <>
+                      <strong className="kpi-value text-danger">Repeat ({recidivism})</strong>
+                      <small className="kpi-sub">0% tolerance on escalation</small>
+                    </>
+                  )
+                }
+                if (observations > 0) {
+                  return (
+                    <>
+                      <strong className="kpi-value text-amber">Observations Noted</strong>
+                      <small className="kpi-sub">{observations} anomalous visit{observations > 1 ? 's' : ''} recorded</small>
+                    </>
+                  )
+                }
+                return (
+                  <>
+                    <strong className="kpi-value text-emerald">Within Reference</strong>
+                    <small className="kpi-sub">Standard 10% tolerance compliant</small>
+                  </>
+                )
+              })()}
             </div>
           </div>
 

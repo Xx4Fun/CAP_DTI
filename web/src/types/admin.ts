@@ -466,3 +466,38 @@ export interface LegalNoticePage {
   from: number | null
   to: number | null
 }
+
+export interface MonitoringMatrixCommodity {
+  id: number
+  commodity_name: string
+  unit: string | null
+  category: string
+  regulatory_classification: string
+  srp: number
+}
+
+export interface MonitoringMatrixEstablishment {
+  store_id: number
+  store_name: string
+  monitoring_date: string
+  monitoring_date_formatted: string
+  prices: Record<number, { recorded_price: number; is_anomaly: boolean }>
+}
+
+export interface MonitoringMatrixWeek {
+  week_number: number
+  week_key: string
+  week_label: string
+  starts_at: string
+  ends_at: string
+  establishments: MonitoringMatrixEstablishment[]
+}
+
+export interface MonitoringMatrixData {
+  period: string
+  date_range: { from: string | null; to: string | null }
+  commodities: MonitoringMatrixCommodity[]
+  weeks: MonitoringMatrixWeek[]
+  generated_at: string
+}
+

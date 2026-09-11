@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -7,6 +7,9 @@ const data = <T>(response: { data: { data: T } }): T => response.data.data
 export const adminApi = {
   async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
+  },
+  async getMonitoringExportMatrix(filters: { period?: MonitoringPeriodPreset; date_from?: string; date_to?: string } = {}): Promise<MonitoringMatrixData> {
+    return data(await api.get('/admin/monitoring-records-matrix', { params: filters }))
   },
   async getMonitoringRecord(id: number): Promise<MonitoringRecordRecord> {
     return data(await api.get(`/admin/monitoring-records/${id}`))

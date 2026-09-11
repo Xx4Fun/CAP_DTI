@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FieldVerificationRequest;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
+use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
 use App\Services\Admin\AdminAuthorizationService;
@@ -102,6 +103,112 @@ class MonitoringRecordController extends Controller
         $this->applyPeriodConstraint($query, $dates, 'finalized_at');
 
         return response()->json(['data' => $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
+    }
+
+    public function matrix(Request $request, AdminAuthorizationService $auth)
+    {
+        $auth->requireManager($request->user());
+        $filters = $request->validate([
+            'period' => ['nullable', Rule::in(['this_week', 'last_4_weeks', 'this_month', 'last_month', 'all_time', 'custom'])],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+        ]);
+
+        $commodities = SrpBulletin::query()
+            ->where('is_active', true)
+            ->orderBy('category')
+            ->orderBy('commodity_name')
+            ->get([
+                'id',
+                'commodity_name',
+                'unit',
+                'category',
+                'regulatory_classification',
+                'baseline_price',
+            ])
+            ->map(function ($srp) {
+                $rawClassification = strtoupper(trim((string) $srp->regulatory_classification));
+                $classificationLabel = str_contains($rawClassification, 'PRIME')
+                    ? 'Prime Commodities'
+                    : 'Basic Necessities';
+
+                return [
+                    'id' => $srp->id,
+                    'commodity_name' => $srp->commodity_name,
+                    'unit' => $srp->unit,
+                    'category' => $srp->category ?? 'General',
+                    'regulatory_classification' => $classificationLabel,
+                    'srp' => (float) $srp->baseline_price,
+                ];
+            });
+
+        $query = MonitoringRecord::query()
+            ->where('status', 'accepted')
+            ->with([
+                'store:id,store_name,address',
+                'items:id,monitoring_record_id,srp_id,recorded_price,baseline_price,is_anomaly',
+            ]);
+
+        $dates = $this->parsePeriodDates($request);
+        $this->applyPeriodConstraint($query, $dates, 'finalized_at');
+
+        $records = $query->orderBy('finalized_at')->get();
+
+        // Group records chronologically by calendar week (Monday to Sunday)
+        $groupedWeeks = $records->groupBy(function ($record) {
+            $date = Carbon::parse($record->finalized_at);
+
+            return $date->copy()->startOfWeek()->toDateString().'_'.$date->copy()->endOfWeek()->toDateString();
+        });
+
+        $weeksData = [];
+        $weekIndex = 1;
+        foreach ($groupedWeeks as $weekKey => $weekRecords) {
+            [$startsAt, $endsAt] = explode('_', $weekKey);
+            $startFormatted = Carbon::parse($startsAt)->format('M d');
+            $endFormatted = Carbon::parse($endsAt)->format('M d, Y');
+
+            $storesData = [];
+            $byStore = $weekRecords->groupBy('store_id');
+            foreach ($byStore as $storeId => $storeRecords) {
+                $latestRecord = $storeRecords->last();
+                $prices = [];
+                foreach ($latestRecord->items as $item) {
+                    $prices[$item->srp_id] = [
+                        'recorded_price' => (float) $item->recorded_price,
+                        'is_anomaly' => (bool) $item->is_anomaly,
+                    ];
+                }
+                $storesData[] = [
+                    'store_id' => $latestRecord->store->id,
+                    'store_name' => $latestRecord->store->store_name,
+                    'monitoring_date' => Carbon::parse($latestRecord->finalized_at)->toDateString(),
+                    'monitoring_date_formatted' => Carbon::parse($latestRecord->finalized_at)->format('M d, Y'),
+                    'prices' => $prices,
+                ];
+            }
+
+            $currentNum = $weekIndex++;
+            $weeksData[] = [
+                'week_number' => $currentNum,
+                'week_key' => $weekKey,
+                'week_label' => "WEEK {$currentNum} ({$startFormatted} - {$endFormatted})",
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'establishments' => $storesData,
+            ];
+        }
+
+        return response()->json(['data' => [
+            'period' => $filters['period'] ?? 'all_time',
+            'date_range' => [
+                'from' => $dates['from']?->toDateString(),
+                'to' => $dates['to']?->toDateString(),
+            ],
+            'commodities' => $commodities,
+            'weeks' => $weeksData,
+            'generated_at' => now()->toIso8601String(),
+        ]]);
     }
 
     public function establishments(Request $request, AdminAuthorizationService $auth)

@@ -88,6 +88,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/stores', [StoreAdminController::class, 'index']);
         Route::get('/users', [UserManagementController::class, 'index']);
         Route::get('/monitoring-records', [MonitoringRecordController::class, 'index']);
+        Route::get('/monitoring-records-matrix', [MonitoringRecordController::class, 'matrix']);
         Route::get('/monitoring-records/{monitoringRecord}', [MonitoringRecordController::class, 'show']);
         Route::get('/monitoring-records/{monitoringRecord}/signatures/{kind}', [MonitoringRecordController::class, 'signature']);
         Route::get('/monitoring-establishments', [MonitoringRecordController::class, 'establishments']);

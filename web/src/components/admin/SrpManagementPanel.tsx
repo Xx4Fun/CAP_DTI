@@ -13,6 +13,7 @@ import {
   Edit3,
   FileJson,
   LayoutGrid,
+  Package,
   Plus,
   RotateCcw,
   Search,
@@ -60,6 +61,61 @@ function normalizePage(value: SrpPage | SrpRecord[]): SrpPage {
     },
     capabilities: defaultCapabilities,
   }
+}
+
+function resolveCommodityImageUrl(imagePath?: string | null): string | null {
+  if (!imagePath || typeof imagePath !== 'string') return null
+
+  const commodityMatch = imagePath.match(/commodity_images\/([^/?#]+)/)
+  if (commodityMatch) {
+    return `/storage/commodity_images/${commodityMatch[1]}`
+  }
+
+  if (
+    imagePath.startsWith('/storage/') ||
+    imagePath.startsWith('/products/') ||
+    imagePath.startsWith('/stores/')
+  ) {
+    return imagePath
+  }
+
+  if (imagePath.startsWith('storage/')) {
+    return `/${imagePath}`
+  }
+
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    return imagePath
+  }
+
+  return null
+}
+
+function CommodityThumbnail({
+  imagePath,
+  altText,
+}: {
+  imagePath?: string | null
+  altText: string
+}) {
+  const [imgError, setImgError] = useState(false)
+  const resolvedUrl = useMemo(() => resolveCommodityImageUrl(imagePath), [imagePath])
+
+  return (
+    <div className="srp-commodity-thumb">
+      {resolvedUrl && !imgError ? (
+        <img
+          src={resolvedUrl}
+          alt={altText}
+          loading="lazy"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <div className="srp-commodity-thumb-fallback" aria-hidden="true">
+          <Package size={20} />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function requestMessage(error: unknown): string {
@@ -901,7 +957,7 @@ export function SrpManagementPanel() {
             <input
               type="search"
               aria-label="Search SRP bulletins"
-              placeholder="Search commodity name, category, or source..."
+              placeholder="Search commodity name or category..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               style={{
@@ -1111,19 +1167,6 @@ export function SrpManagementPanel() {
                 <th
                   style={{
                     padding: '0.85rem 1.1rem',
-                    textAlign: 'left',
-                    fontSize: '0.74rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    color: '#64748b',
-                    fontWeight: 700,
-                  }}
-                >
-                  Source Reference
-                </th>
-                <th
-                  style={{
-                    padding: '0.85rem 1.1rem',
                     textAlign: 'center',
                     fontSize: '0.74rem',
                     textTransform: 'uppercase',
@@ -1140,14 +1183,14 @@ export function SrpManagementPanel() {
               {loading &&
                 Array.from({ length: 4 }, (_, index) => (
                   <tr className="admin-skeleton-row" key={index}>
-                    <td colSpan={6} style={{ padding: '1rem' }}>
+                    <td colSpan={5} style={{ padding: '1rem' }}>
                       <span />
                     </td>
                   </tr>
                 ))}
               {!loading && records.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center' }}>
+                  <td colSpan={5} style={{ padding: '2.5rem', textAlign: 'center' }}>
                     <div
                       className="admin-empty-state"
                       style={{
@@ -1178,21 +1221,13 @@ export function SrpManagementPanel() {
                       {(() => {
                         const parsed = formatCommodityDisplay(record.commodity_name, record.category || '', record.unit || '')
                         return (
-                          <>
-                            <strong
-                              style={{
-                                display: 'block',
-                                fontSize: '0.9rem',
-                                color: '#0f172a',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {parsed.title}
-                            </strong>
-                            <small style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                              {parsed.unit || 'Unit not specified'}
-                            </small>
-                          </>
+                          <div className="srp-commodity-cell">
+                            <CommodityThumbnail imagePath={record.image_path} altText={parsed.title} />
+                            <div className="srp-commodity-details">
+                              <strong>{parsed.title}</strong>
+                              <small>{parsed.unit || 'Unit not specified'}</small>
+                            </div>
+                          </div>
                         )
                       })()}
                     </td>
@@ -1235,12 +1270,6 @@ export function SrpManagementPanel() {
                       }}
                     >
                       ₱{Number(record.baseline_price).toFixed(2)}
-                    </td>
-                    <td
-                      data-label="Source"
-                      style={{ padding: '0.85rem 1.1rem', fontSize: '0.85rem', color: '#64748b' }}
-                    >
-                      {record.source_reference || 'Official DTI Record'}
                     </td>
                     <td
                       data-label="Action"
