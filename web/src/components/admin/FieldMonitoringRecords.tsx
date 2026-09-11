@@ -174,7 +174,16 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         }
       })
 
-    const recs = (recordsResult?.data ?? []).slice().reverse()
+    const rawRecs = (recordsResult?.data ?? []).slice().reverse()
+    const recs = await Promise.all(
+      rawRecs.map(async (r) => {
+        try {
+          return await adminApi.getMonitoringRecord(r.id)
+        } catch {
+          return r
+        }
+      })
+    )
     const weekMap = new Map<string, { starts_at: string; ends_at: string; records: MonitoringRecordRecord[] }>()
 
     recs.forEach((record) => {
@@ -212,19 +221,21 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
       const establishments: MonitoringMatrixEstablishment[] = []
       for (const [, storeRecs] of byStore.entries()) {
-        const latest = storeRecs[storeRecs.length - 1]
+        const primary = storeRecs.slice().sort((a, b) => (b.items?.length || 0) - (a.items?.length || 0))[0] || storeRecs[storeRecs.length - 1]
         const prices: Record<number, { recorded_price: number; is_anomaly: boolean }> = {}
-        ;(latest.items || []).forEach((item) => {
-          prices[item.srp_id] = {
-            recorded_price: Number(item.recorded_price) || 0,
-            is_anomaly: Boolean(item.is_anomaly),
-          }
+        storeRecs.forEach((r) => {
+          ;(r.items || []).forEach((item) => {
+            prices[item.srp_id] = {
+              recorded_price: Number(item.recorded_price) || 0,
+              is_anomaly: Boolean(item.is_anomaly),
+            }
+          })
         })
         establishments.push({
-          store_id: latest.store.id,
-          store_name: latest.store.store_name,
-          monitoring_date: latest.finalized_at.split('T')[0],
-          monitoring_date_formatted: new Date(latest.finalized_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          store_id: primary.store.id,
+          store_name: primary.store.store_name,
+          monitoring_date: primary.finalized_at.split('T')[0],
+          monitoring_date_formatted: new Date(primary.finalized_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
           prices,
         })
       }

@@ -171,19 +171,21 @@ class MonitoringRecordController extends Controller
             $storesData = [];
             $byStore = $weekRecords->groupBy('store_id');
             foreach ($byStore as $storeId => $storeRecords) {
-                $latestRecord = $storeRecords->last();
+                $primaryRecord = $storeRecords->sortByDesc(fn ($r) => count($r->items))->first();
                 $prices = [];
-                foreach ($latestRecord->items as $item) {
-                    $prices[$item->srp_id] = [
-                        'recorded_price' => (float) $item->recorded_price,
-                        'is_anomaly' => (bool) $item->is_anomaly,
-                    ];
+                foreach ($storeRecords as $record) {
+                    foreach ($record->items as $item) {
+                        $prices[$item->srp_id] = [
+                            'recorded_price' => (float) $item->recorded_price,
+                            'is_anomaly' => (bool) $item->is_anomaly,
+                        ];
+                    }
                 }
                 $storesData[] = [
-                    'store_id' => $latestRecord->store->id,
-                    'store_name' => $latestRecord->store->store_name,
-                    'monitoring_date' => Carbon::parse($latestRecord->finalized_at)->toDateString(),
-                    'monitoring_date_formatted' => Carbon::parse($latestRecord->finalized_at)->format('M d, Y'),
+                    'store_id' => $primaryRecord->store->id,
+                    'store_name' => $primaryRecord->store->store_name,
+                    'monitoring_date' => Carbon::parse($primaryRecord->finalized_at)->toDateString(),
+                    'monitoring_date_formatted' => Carbon::parse($primaryRecord->finalized_at)->format('M d, Y'),
                     'prices' => $prices,
                 ];
             }
@@ -202,8 +204,8 @@ class MonitoringRecordController extends Controller
         return response()->json(['data' => [
             'period' => $filters['period'] ?? 'all_time',
             'date_range' => [
-                'from' => $dates['from']?->toDateString(),
-                'to' => $dates['to']?->toDateString(),
+                'from' => isset($dates['from']) && $dates['from'] ? $dates['from']->toDateString() : null,
+                'to' => isset($dates['to']) && $dates['to'] ? $dates['to']->toDateString() : null,
             ],
             'commodities' => $commodities,
             'weeks' => $weeksData,
