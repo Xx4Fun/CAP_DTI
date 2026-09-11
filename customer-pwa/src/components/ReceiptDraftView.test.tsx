@@ -52,6 +52,28 @@ describe('ReceiptDraftView', () => {
     });
   });
 
+  it('offers a fresh capture instead of a retry when stored photos failed their integrity check', async () => {
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
+      report_reference: 'REP-20260816-READY', status: 'Processing failed', processing_status: 'failed',
+      message: 'The stored receipt photos failed an integrity check and cannot be processed again. Capture the receipt again.',
+      ready_for_review: false, can_recapture: true, can_retry_processing: false,
+      failure_reason: { code: 'EVIDENCE_INTEGRITY_FAILED', message: 'The stored receipt photos failed an integrity check, so they cannot be processed again. Capture the receipt again from the start.' },
+      attempt_number: 1, store: null, recapture_reason: null, evidence: [{ id: 7, sequence: 0, mime_type: 'image/jpeg', size_bytes: 10 }],
+    } } });
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { success: true, data: {} } });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="processing" />);
+
+    expect(await screen.findByText(/failed an integrity check, so they cannot be processed again/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry processing' })).not.toBeInTheDocument();
+    expect(getSpy.mock.calls.some(([url]) => String(url).includes('/evidence-assets/'))).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Restart receipt' }));
+    expect(postSpy).toHaveBeenCalledWith('/public/reports/REP-20260816-READY/recapture-session', { restart: true }, {
+      headers: { 'X-Report-Resume-Token': 'rsm_device' },
+    });
+  });
+
   it('shows OCR items read-only and submits only customer confirmation', async () => {
     vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
       if (String(url).includes('/evidence-assets/')) return { data: new Blob(['receipt'], { type: 'image/jpeg' }) };

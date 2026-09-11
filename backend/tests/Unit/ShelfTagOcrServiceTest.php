@@ -200,4 +200,40 @@ class ShelfTagOcrServiceTest extends TestCase
         $this->assertSame(3, $service->capturedTimeout);
         $this->assertSame(['tesseract', 'tag.png', 'stdout', '--psm', '6', '-l', 'eng', 'tsv'], $service->capturedCommand);
     }
+
+    public function test_receipt_options_append_dpi_and_config_values_without_changing_the_default_command(): void
+    {
+        config(['services.tesseract.path' => 'tesseract']);
+        $service = new class extends ShelfTagOcrService {
+            public array $capturedCommand = [];
+
+            protected function runProcess(array $command, int $timeout): string
+            {
+                $this->capturedCommand = $command;
+
+                return '';
+            }
+        };
+
+        $service->scan('receipt.png', ['psm' => 4, 'dpi' => 300, 'config' => ['preserve_interword_spaces' => 1]]);
+
+        $this->assertSame(
+            ['tesseract', 'receipt.png', 'stdout', '--psm', '4', '--dpi', '300', '-l', 'eng', '-c', 'preserve_interword_spaces=1', 'tsv'],
+            $service->capturedCommand,
+        );
+    }
+
+    public function test_paragraph_lines_keeps_lines_of_different_paragraphs_apart(): void
+    {
+        // Tesseract restarts line_num in each paragraph of a block.
+        $tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+            ."5\t1\t1\t1\t1\t1\t10\t10\t80\t20\t90\t004793487\n"
+            ."5\t1\t1\t1\t1\t2\t100\t10\t80\t20\t90\t111.75T\n"
+            ."5\t1\t1\t2\t1\t1\t10\t40\t80\t20\t90\tCALLA\n"
+            ."5\t1\t1\t2\t1\t2\t100\t40\t80\t20\t90\tPWD\n";
+        $service = new ShelfTagOcrService;
+
+        $this->assertSame(['004793487 111.75T CALLA PWD'], $service->parseTsvOutput($tsv, 30)['lines']);
+        $this->assertSame(['004793487 111.75T', 'CALLA PWD'], $service->parseTsvOutput($tsv, 30, true)['lines']);
+    }
 }

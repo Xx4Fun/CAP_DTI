@@ -14,6 +14,17 @@ use RuntimeException;
 
 class ReceiptEvidencePipeline
 {
+    /** Tesseract restarts line numbers per paragraph, so receipt lines must be keyed by paragraph (see ShelfTagOcrService). */
+    private const GUIDED_PASS_OPTIONS = ['dpi' => 300, 'config' => ['preserve_interword_spaces' => 1], 'paragraph_lines' => true];
+
+    /** Pass table: [derivative key, psm, minimum confidence, extra options]. */
+    private const LEGACY_PASSES = ['primary' => ['full_path', 6, 45, []], 'fallback' => ['fallback_full_path', 11, 35, []]];
+
+    private const GUIDED_PASSES = [
+        'primary' => ['full_path', 6, 45, self::GUIDED_PASS_OPTIONS],
+        'fallback' => ['fallback_full_path', 11, 35, self::GUIDED_PASS_OPTIONS],
+    ];
+
     public function __construct(
         private readonly ReceiptVideoInspector $videoInspector,
         private readonly ShelfTagImagePreprocessor $preprocessor,
@@ -26,6 +37,8 @@ class ReceiptEvidencePipeline
         private readonly ReceiptOcrResultSelector $ocrResultSelector,
         private readonly ReceiptMerchantMatcher $merchantMatcher,
         private readonly ReceiptTotalExtractor $totalExtractor,
+        private readonly ReceiptDateExtractor $dateExtractor = new ReceiptDateExtractor,
+        private readonly ReceiptLineFilter $lineFilter = new ReceiptLineFilter,
     ) {}
 
     public function process(ConsumerReport $report): array
@@ -42,11 +55,15 @@ class ReceiptEvidencePipeline
 
         $temporaryDirectory = storage_path('app/tmp/receipt-processing/'.Str::uuid());
         File::ensureDirectoryExists($temporaryDirectory);
+        // Receipt-specific OCR tuning applies to guided photos only; historical modes keep their original path.
+        $guided = $report->capture_mode === 'guided_photos_v1';
+        // Fallback decisions, pass selection, and final extraction all use the same store context.
+        $merchantNames = array_values(array_filter([$report->store?->store_name, $report->store?->owner_name], 'is_string'));
 
         try {
             $frameCandidates = $report->capture_mode === 'continuous_video_v1'
                 ? $this->prepareVideoFrames($report, $temporaryDirectory)
-                : $this->prepareUploadedFrames($report, $temporaryDirectory);
+                : $this->prepareUploadedFrames($report, $temporaryDirectory, $guided);
 
             if (hrtime(true) / 1e9 >= $deadline) {
                 return $this->failureResult('OCR_TIMEOUT', [], true);
@@ -71,10 +88,24 @@ class ReceiptEvidencePipeline
                     'quality' => $frame['quality'] ?? null,
                     'passes' => [],
                 ];
-                $preprocessed = $this->preprocessor->preprocess($frame['path']);
+                try {
+                    $preprocessed = $this->preprocessor->preprocess($frame['path']);
+                } catch (InvalidArgumentException|RuntimeException $exception) {
+                    // Guided evidence that cannot be decoded is a bad capture, not a retryable processing failure.
+                    if ($guided) {
+                        throw new UnreadableReceiptImageException((int) $frame['source_sequence'], $exception);
+                    }
+                    throw $exception;
+                }
                 try {
                     $results = [];
-                    foreach (['primary' => ['full_path', 6, 45], 'fallback' => ['fallback_full_path', 11, 35]] as $pass => [$pathKey, $psm, $confidence]) {
+                    foreach ($guided ? self::GUIDED_PASSES : self::LEGACY_PASSES as $pass => [$pathKey, $psm, $confidence, $passOptions]) {
+                        if ($pass === 'fallback' && $guided && ! $this->primaryIsWeak($results['primary'], $merchantNames)) {
+                            $ocrDiagnostics[$index]['passes'][] = [
+                                'pass' => $pass, 'status' => 'skipped', 'duration_ms' => 0, 'timeout_seconds' => 0, 'result' => null,
+                            ];
+                            continue;
+                        }
                         $remaining = (int) floor($deadline - hrtime(true) / 1e9);
                         if ($remaining < 1) {
                             return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
@@ -85,7 +116,7 @@ class ReceiptEvidencePipeline
                             'psm' => $psm,
                             'minimum_confidence' => $confidence,
                             'timeout_seconds' => $timeout,
-                        ]);
+                        ] + $passOptions);
                         $ocrDiagnostics[$index]['passes'][] = [
                             'pass' => $pass,
                             'status' => $results[$pass]['status'] ?? 'OCR_FAILED',
@@ -97,7 +128,9 @@ class ReceiptEvidencePipeline
                             return $this->failureResult('OCR_TIMEOUT', $ocrDiagnostics, true);
                         }
                     }
-                    $selectedPass = $this->ocrResultSelector->selectedPass($results['primary'], $results['fallback']);
+                    $selectedPass = isset($results['fallback'])
+                        ? $this->ocrResultSelector->selectedPass($results['primary'], $results['fallback'], $guided, $merchantNames)
+                        : 'primary';
                     $ocr = $results[$selectedPass];
                     $ocrDiagnostics[$index]['selected_pass'] = $selectedPass;
                 } finally {
@@ -107,6 +140,19 @@ class ReceiptEvidencePipeline
 
                 $ocrDiagnostics[$index]['status'] = $ocr['status'] ?? 'OCR_FAILED';
                 $lines = array_values(array_filter($ocr['lines'] ?? [], 'is_string'));
+                if ($guided) {
+                    $otherPass = $results[$selectedPass === 'primary' ? 'fallback' : 'primary'] ?? null;
+                    $borrowedTotal = $otherPass === null || $this->totalExtractor->extract($lines) !== null
+                        ? null
+                        : $this->totalLine($otherPass);
+                    if ($borrowedTotal !== null) {
+                        $lines[] = $borrowedTotal;
+                        $ocrDiagnostics[$index]['total_from_other_pass'] = true;
+                    }
+                    $filtered = $this->lineFilter->filter($lines);
+                    $ocrDiagnostics[$index]['line_filter'] = ['kept' => count($filtered), 'dropped' => count($lines) - count($filtered)];
+                    $lines = $filtered;
+                }
                 if ($lines === []) {
                     continue;
                 }
@@ -163,9 +209,12 @@ class ReceiptEvidencePipeline
             if ($merchant['status'] !== 'matched') {
                 $warnings[] = $this->warning('STORE_NOT_CONFIRMED');
             }
+            if ($guided && is_string($merchant['display_name'] ?? null)) {
+                $merchant['display_name'] = $this->cleanDisplayName($merchant['display_name']);
+            }
 
             $lines = $this->textAggregator->merge(array_column($frames, 'lines'));
-            $itemAnalysis = $this->itemExtractor->analyze($lines);
+            $itemAnalysis = $this->itemExtractor->analyze($lines, $guided, $merchantNames);
             $items = $itemAnalysis['items'];
             $rejectedItemLines = $itemAnalysis['rejected_lines'];
             $total = $this->totalExtractor->extract($lines);
@@ -195,6 +244,7 @@ class ReceiptEvidencePipeline
                 'items' => $items,
                 'rejected_item_lines' => $rejectedItemLines,
                 'detected_total' => $total,
+                'transaction_date' => $this->dateExtractor->extract($lines),
                 'continuity' => $continuity,
                 'merchant' => $merchant,
                 'warnings' => $warnings,
@@ -203,9 +253,76 @@ class ReceiptEvidencePipeline
                 'frames_processed' => count($frames),
                 'ocr' => $ocrDiagnostics,
             ];
+        } catch (UnsafeReceiptImageException $exception) {
+            // Oversized guided frames are never decoded; they count as no usable receipt image.
+            return $this->recaptureResult('INSUFFICIENT_FRAMES', [
+                'unsafe_dimensions' => ['width' => $exception->width, 'height' => $exception->height],
+            ]);
+        } catch (UnreadableReceiptImageException $exception) {
+            return $this->recaptureResult('INSUFFICIENT_FRAMES', ['unreadable_frame' => $exception->sequence]);
+        } catch (ReceiptEvidenceIntegrityException $exception) {
+            // Evidence that no longer matches its recorded hash is never OCR'd; this is not the customer's bad capture.
+            $result = $this->failureResult('EVIDENCE_INTEGRITY_FAILED', []);
+            $result['diagnostics']['integrity_failure'] = ['kind' => $exception->kind, 'sequence' => $exception->sequence];
+
+            return $result;
         } finally {
             File::deleteDirectory($temporaryDirectory);
         }
+    }
+
+    /** The exact local copy that will be decoded must match the canonical evidence hash recorded at upload. */
+    private function assertOriginal(ReceiptEvidenceAsset $asset, string $localPath): void
+    {
+        if (! hash_equals((string) $asset->sha256, (string) hash_file('sha256', $localPath))) {
+            throw new ReceiptEvidenceIntegrityException((string) $asset->kind, (int) $asset->sequence);
+        }
+    }
+
+    private function evaluateQuality(string $path, int $sequence, bool $guided): array
+    {
+        try {
+            return $this->qualityEvaluator->evaluate($path);
+        } catch (RuntimeException $exception) {
+            if ($guided) {
+                throw new UnreadableReceiptImageException($sequence, $exception);
+            }
+            throw $exception;
+        }
+    }
+
+    /** @param array<int, string> $merchantNames */
+    private function primaryIsWeak(array $primary, array $merchantNames): bool
+    {
+        if (($primary['status'] ?? null) !== 'OCR_SUCCESS') {
+            return true;
+        }
+        $lines = array_values(array_filter($primary['lines'] ?? [], 'is_string'));
+
+        return $this->itemExtractor->analyze($lines, true, $merchantNames)['items'] === []
+            || $this->totalExtractor->extract($lines) === null
+            || $this->lineFilter->readableRatio($lines) < 0.5;
+    }
+
+    private function totalLine(array $result): ?string
+    {
+        if (($result['status'] ?? null) !== 'OCR_SUCCESS') {
+            return null;
+        }
+        foreach (array_reverse(array_filter($result['lines'] ?? [], 'is_string')) as $line) {
+            if ($this->totalExtractor->extract([$line]) !== null) {
+                return $line;
+            }
+        }
+
+        return null;
+    }
+
+    private function cleanDisplayName(string $name): ?string
+    {
+        $name = (string) preg_replace('/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/u', '', (string) preg_replace('/\s+/u', ' ', $name));
+
+        return preg_match_all('/\p{L}/u', $name) >= 3 ? $name : null;
     }
 
     private function prepareVideoFrames(ConsumerReport $report, string $temporaryDirectory): array
@@ -217,6 +334,7 @@ class ReceiptEvidencePipeline
 
         $videoPath = $temporaryDirectory.DIRECTORY_SEPARATOR.'receipt-video';
         File::put($videoPath, Storage::disk($video->disk)->get($video->path));
+        $this->assertOriginal($video, $videoPath);
         try {
             $probe = $this->videoInspector->inspect($videoPath);
         } catch (InvalidArgumentException $exception) {
@@ -235,18 +353,23 @@ class ReceiptEvidencePipeline
         return array_values($selected);
     }
 
-    private function prepareUploadedFrames(ConsumerReport $report, string $temporaryDirectory): array
+    private function prepareUploadedFrames(ConsumerReport $report, string $temporaryDirectory, bool $guided = false): array
     {
         $paths = [];
         $assets = $report->evidenceBundle->assets->where('kind', 'source_frame')->sortBy('sequence');
         foreach ($assets as $asset) {
             $path = $temporaryDirectory.DIRECTORY_SEPARATOR.sprintf('frame-%03d', $asset->sequence);
             File::put($path, Storage::disk($asset->disk)->get($asset->path));
+            $this->assertOriginal($asset, $path);
+            if ($guided && ReceiptImageLimits::safeDimensions($path) === null) {
+                // Size is checked from the header before the quality evaluator decodes pixels.
+                throw new UnreadableReceiptImageException((int) $asset->sequence);
+            }
             $paths[] = [
                 'path' => $path,
                 'source_sequence' => (int) $asset->sequence,
                 'timestamp_seconds' => null,
-                'quality' => $asset->metadata_json['quality'] ?? $this->qualityEvaluator->evaluate($path),
+                'quality' => $asset->metadata_json['quality'] ?? $this->evaluateQuality($path, (int) $asset->sequence, $guided),
             ];
         }
 
@@ -299,6 +422,7 @@ class ReceiptEvidencePipeline
             'reason_code' => $reasonCode,
             'lines' => [],
             'items' => [],
+            'transaction_date' => null,
             'continuity' => $diagnostics['continuity'] ?? [
                 'status' => 'needs_recapture', 'continuity_score' => 0.0, 'reasons' => [strtolower($reasonCode)],
             ],
@@ -316,6 +440,7 @@ class ReceiptEvidencePipeline
             'reason_code' => $failureCode,
             'lines' => [],
             'items' => [],
+            'transaction_date' => null,
             'continuity' => null,
             'merchant' => ['status' => 'unverified'],
             'warnings' => [],

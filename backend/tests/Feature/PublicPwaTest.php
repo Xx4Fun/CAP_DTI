@@ -132,7 +132,8 @@ class PublicPwaTest extends TestCase
         $sessionId = $sessionRes->json('data.capture_session_id');
 
         $submissionUuid = 'sub-uuid-123456';
-        $fakeFile = UploadedFile::fake()->create('receipt.jpg', 100, 'image/jpeg');
+        // Receipt frames must be decodable images.
+        $fakeFile = UploadedFile::fake()->image('receipt.jpg', 1080, 1920);
 
         $this->withHeader('X-Capture-Token', $token)
             ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [

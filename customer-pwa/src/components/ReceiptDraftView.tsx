@@ -40,6 +40,9 @@ interface ReceiptProcessingData {
   message: string | null;
   ready_for_review: boolean;
   can_recapture: boolean;
+  /** False when rerunning OCR cannot help (for example, stored photos failed their integrity check). */
+  can_retry_processing?: boolean;
+  failure_reason?: { code: string; message: string } | null;
   attempt_number: number;
   store: { id: number; store_name: string } | null;
   recapture_reason: { code: string; message: string } | null;
@@ -166,7 +169,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         const data = response.data.data as ReceiptProcessingData;
         if (controller.signal.aborted) return;
         setProcessing(data);
-        if (['Needs recapture', 'Processing failed'].includes(data.status)) {
+        if (data.status === 'Needs recapture' || (data.status === 'Processing failed' && data.can_retry_processing !== false)) {
           await loadEvidence(data.evidence ?? [], token, controller.signal);
         }
         if (!controller.signal.aborted) onStatusRef.current?.(data.status);
@@ -323,6 +326,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   if (mode === 'processing' && processing) {
     const needsRecapture = processing.status === 'Needs recapture';
     const failed = processing.status === 'Processing failed';
+    const retryable = failed && processing.can_retry_processing !== false;
     const needsAttention = needsRecapture || failed;
     return (
       <section className="receipt-draft-page">
@@ -353,10 +357,16 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
             {submitting ? 'Starting camera…' : 'Scan receipt again'}
           </button>
         )}
-        {failed && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture. Retry processing runs OCR again on the same receipt evidence. Refresh status only checks progress.</div>}
-        {failed && <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryProcessing()}>
+        {retryable && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture. Retry processing runs OCR again on the same receipt evidence. Refresh status only checks progress.</div>}
+        {retryable && <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryProcessing()}>
           {submitting ? 'Retrying processing…' : 'Retry processing'}
         </button>}
+        {failed && !retryable && <div className="banner-warning">{processing.failure_reason?.message || 'This receipt cannot be processed again. Capture the receipt again from the start.'}</div>}
+        {failed && !retryable && processing.can_recapture && (
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => void startRecapture({ restart: true })}>
+            {submitting ? 'Starting camera…' : 'Restart receipt'}
+          </button>
+        )}
         {!processing.ready_for_review && !needsAttention && <p className="receipt-draft-muted">You may leave this page. This status also appears under Recent Reports.</p>}
         {errorNotice}
         {resumeToken && <button type="button" className="btn-secondary" disabled={busy} onClick={() => void load(resumeToken)}><RefreshCw size={17} /> Refresh status</button>}

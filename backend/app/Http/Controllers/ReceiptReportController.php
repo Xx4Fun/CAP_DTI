@@ -17,10 +17,14 @@ use Illuminate\Support\Str;
 
 class ReceiptReportController extends Controller
 {
+    /** Stored evidence that failed its hash check cannot be reprocessed; only a fresh capture can recover the report. */
+    private const NON_RETRYABLE_FAILURE = 'EVIDENCE_INTEGRITY_FAILED';
+
     public function startRecapture(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        if (! in_array($report->status, ['Ready for confirmation', 'Needs recapture'], true)) {
+        $integrityFailed = $this->integrityFailed($report);
+        if (! $integrityFailed && ! in_array($report->status, ['Ready for confirmation', 'Needs recapture'], true)) {
             return response()->json(['success' => false, 'message' => 'This report is not eligible for receipt recapture.'], 409);
         }
         $validated = $request->validate([
@@ -32,6 +36,8 @@ class ReceiptReportController extends Controller
         $append = (bool) ($validated['append'] ?? false);
         $restart = (bool) ($validated['restart'] ?? false);
         abort_if((int) ($replaceSequence !== null) + (int) $append + (int) $restart > 1, 422, 'Choose one receipt recapture action.');
+        // Retaking or adding a section would carry the compromised originals forward.
+        abort_if($integrityFailed && ! $restart, 422, 'This receipt must be captured again from the start.');
 
         $report->load('evidenceBundle.assets');
         $sourceAssets = $report->evidenceBundle?->assets->where('kind', 'source_frame')->sortBy('sequence')->values() ?? collect();
@@ -150,7 +156,7 @@ class ReceiptReportController extends Controller
 
         DB::transaction(function () use ($report, $session, $bundle) {
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
-            if (! in_array($locked->status, ['Ready for confirmation', 'Needs recapture'], true)) {
+            if (! $this->integrityFailed($locked) && ! in_array($locked->status, ['Ready for confirmation', 'Needs recapture'], true)) {
                 abort(409, 'This report is no longer eligible for receipt recapture.');
             }
             $previousStatus = $locked->status;
@@ -204,6 +210,12 @@ class ReceiptReportController extends Controller
         $report = $this->authorizedReport($request, $reference);
         if ($report->status !== 'Processing failed' || ! $report->evidenceBundle) {
             return response()->json(['success' => false, 'message' => 'Only a failed receipt process can be retried.'], 409);
+        }
+        if ($this->integrityFailed($report)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This receipt cannot be processed again because its stored photos failed an integrity check. Capture the receipt again.',
+            ], 409);
         }
 
         DB::transaction(function () use ($report) {
@@ -287,6 +299,7 @@ class ReceiptReportController extends Controller
         $latestHistory = $report->statusHistories()->reorder()->latest('id')->first();
         $reasonCode = $report->evidenceBundle?->failure_code
             ?? data_get($report->evidenceBundle?->processing_result_json, 'reason_code');
+        $integrityFailed = $this->integrityFailed($report);
 
         return response()->json([
             'success' => true,
@@ -298,7 +311,12 @@ class ReceiptReportController extends Controller
                 'created_at' => $report->created_at->toIso8601String(),
                 'submitted_at' => $report->submitted_at?->toIso8601String(),
                 'ready_for_review' => $report->status === 'Ready for confirmation',
-                'can_recapture' => $report->status === 'Needs recapture',
+                'can_recapture' => $report->status === 'Needs recapture' || $integrityFailed,
+                'can_retry_processing' => $report->status === 'Processing failed' && ! $integrityFailed,
+                'failure_reason' => $integrityFailed ? [
+                    'code' => self::NON_RETRYABLE_FAILURE,
+                    'message' => 'The stored receipt photos failed an integrity check, so they cannot be processed again. Capture the receipt again from the start.',
+                ] : null,
                 'attempt_number' => (int) ($report->evidenceBundle?->attempt_number ?? 1),
                 'store' => $report->store ? [
                     'id' => $report->store->id,
@@ -349,6 +367,7 @@ class ReceiptReportController extends Controller
                 'continuity' => $processingResult['continuity'] ?? ($report->raw_ocr_json['continuity'] ?? null),
                 'merchant' => $processingResult['merchant'] ?? ($report->raw_ocr_json['merchant'] ?? null),
                 'transaction_date' => data_get($processingResult, 'transaction_date')
+                    ?? data_get($report->raw_ocr_json, 'transaction_date')
                     ?? data_get($report->raw_ocr_json, 'metadata.transactionDate'),
                 'detected_total' => $processingResult['detected_total'] ?? ($report->raw_ocr_json['detected_total'] ?? null),
                 'warnings' => $processingResult['warnings'] ?? ($report->raw_ocr_json['warnings'] ?? []),
@@ -487,6 +506,12 @@ class ReceiptReportController extends Controller
         abort_unless($resumeMatches || $trackingMatches, 403, 'Invalid report credential.');
 
         return $report;
+    }
+
+    private function integrityFailed(ConsumerReport $report): bool
+    {
+        return $report->status === 'Processing failed'
+            && $report->evidenceBundle?->failure_code === self::NON_RETRYABLE_FAILURE;
     }
 
     private function safeReasonMessage(string $reasonCode): string

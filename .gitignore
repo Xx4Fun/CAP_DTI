@@ -6,3 +6,6 @@
 trash/
 docs/.obsidian/
 add.png
+
+# Private real-receipt photos for local OCR tuning (never commit)
+receipt-samples/

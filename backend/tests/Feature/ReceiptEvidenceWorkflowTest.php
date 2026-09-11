@@ -484,7 +484,8 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             'words' => [['confidence' => 90]],
         ];
         $ocr = Mockery::mock(ShelfTagOcrService::class);
-        $ocr->shouldReceive('scan')->twice()->andReturn($ocrResult);
+        // The primary already yields an item and a total, so the guided fallback pass is skipped.
+        $ocr->shouldReceive('scan')->once()->andReturn($ocrResult);
         $pipeline = new ReceiptEvidencePipeline(
             app(ReceiptVideoInspector::class), app(ShelfTagImagePreprocessor::class), $ocr,
             app(ReceiptContinuityAnalyzer::class), app(ReceiptTextAggregator::class),
@@ -495,6 +496,7 @@ class ReceiptEvidenceWorkflowTest extends TestCase
 
         $result = $pipeline->process($report);
 
+        $this->assertSame('skipped', $result['ocr'][0]['passes'][1]['status']);
         $this->assertSame(['RICE'], array_column($result['items'], 'item_name'));
         $this->assertSame(['$ 8.50'], $result['rejected_item_lines']);
         $this->assertContains('OCR_INCOMPLETE', array_column($result['warnings'], 'code'));
@@ -522,6 +524,8 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertOk()
             ->assertJsonPath('data.can_recapture', false)
+            ->assertJsonPath('data.can_retry_processing', true)
+            ->assertJsonPath('data.failure_reason', null)
             ->assertJsonPath('data.recapture_reason', null);
     }
 
@@ -904,6 +908,200 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->handle(new ReceiptPushMessage, $sender);
 
         $this->assertNotNull(WebPushSubscription::first()->last_success_at);
+    }
+
+    public function test_guided_frame_upload_rejects_declared_dimensions_above_the_safe_decode_limit(): void
+    {
+        $session = $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id, 'capture_mode' => 'guided_photos_v1',
+        ])->assertCreated();
+        $upload = fn (int $width, int $height) => $this->withHeader('X-Capture-Token', $session->json('data.capture_token'))
+            ->postJson('/api/public/capture-sessions/'.$session->json('data.capture_session_id').'/assets', [
+                'kind' => 'source_frame', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->createWithContent('frame.png', $this->headerOnlyPng($width, $height)),
+            ]);
+
+        $upload(4001, 10)->assertStatus(422)->assertJsonPath('message', 'Receipt frames may not exceed 4 megapixels.');
+        $upload(2001, 2000)->assertStatus(422)->assertJsonPath('message', 'Receipt frames may not exceed 4 megapixels.');
+        // A declared-but-empty image passes the size check but cannot be decoded.
+        $upload(100, 100)->assertStatus(422)->assertJsonPath('message', 'Receipt frames must be readable JPEG, PNG, or WebP images.');
+        $this->assertDatabaseCount('receipt_evidence_assets', 0);
+
+        // The largest accepted frame is a real, fully decodable 2000×2000 image (the PWA's maximum).
+        $image = imagecreatetruecolor(2000, 2000);
+        imagefill($image, 0, 0, imagecolorallocate($image, 250, 250, 250));
+        ob_start();
+        imagepng($image, null, 9);
+        $bytes = (string) ob_get_clean();
+        imagedestroy($image);
+        $this->withHeader('X-Capture-Token', $session->json('data.capture_token'))
+            ->postJson('/api/public/capture-sessions/'.$session->json('data.capture_session_id').'/assets', [
+                'kind' => 'source_frame', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->createWithContent('frame.png', $bytes),
+            ])->assertCreated();
+    }
+
+    public function test_customer_review_reads_the_top_level_raw_ocr_transaction_date(): void
+    {
+        [$report, $resumeToken] = $this->createReadyReport('RAWDATE');
+        $report->forceFill(['raw_ocr_json' => ['lines' => ['RICE 45.00'], 'transaction_date' => '2026-09-06']])->save();
+
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk()->assertJsonPath('data.transaction_date', '2026-09-06');
+    }
+
+    public function test_processing_job_persists_transaction_date_for_customer_and_admin_readers(): void
+    {
+        Queue::fake();
+        [$report, $resumeToken] = $this->createReadyReport('TXNDATE');
+        $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+        $pipeline = Mockery::mock(ReceiptEvidencePipeline::class);
+        $pipeline->shouldReceive('process')->once()->andReturn([
+            'status' => 'ready', 'reason_code' => null, 'lines' => ['DATE 09/04/2026', 'RICE 45.00'], 'items' => [],
+            'transaction_date' => '2026-09-04', 'merchant' => ['status' => 'unverified'], 'warnings' => [],
+            'manual_review_required' => false,
+        ]);
+
+        (new ProcessReceiptEvidence($report->report_reference))->handle($pipeline);
+
+        $this->assertSame('2026-09-04', $report->refresh()->raw_ocr_json['transaction_date']);
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk()->assertJsonPath('data.transaction_date', '2026-09-04');
+    }
+
+    public function test_historical_video_keeps_the_legacy_ocr_path_and_extraction_rules(): void
+    {
+        [$report] = $this->createReadyReport('VIDEOLEGACY', false);
+        $report->update(['capture_mode' => 'continuous_video_v1']);
+        Storage::disk('receipt_evidence')->put('video.webm', 'video-bytes');
+        ReceiptEvidenceAsset::create([
+            'receipt_evidence_bundle_id' => $report->receipt_evidence_bundle_id,
+            'kind' => 'original_video', 'sequence' => 0, 'disk' => 'receipt_evidence', 'path' => 'video.webm',
+            'mime_type' => 'video/webm', 'size_bytes' => 11, 'sha256' => hash('sha256', 'video-bytes'),
+        ]);
+        $fixture = base_path('tests/Fixtures/shelf_tag_saba.png');
+        $inspector = Mockery::mock(ReceiptVideoInspector::class);
+        $inspector->shouldReceive('inspect')->once()->andReturn(['duration_seconds' => 1.0]);
+        $sampler = Mockery::mock(ReceiptFrameSampler::class);
+        $sampler->shouldReceive('extract')->once()->andReturnUsing(function ($video, string $pattern) use ($fixture) {
+            $paths = [];
+            foreach ([1, 2] as $number) {
+                copy($fixture, $paths[] = sprintf($pattern, $number));
+            }
+
+            return $paths;
+        });
+        $evaluator = Mockery::mock(ReceiptFrameQualityEvaluator::class);
+        $evaluator->shouldReceive('select')->once()->andReturnUsing(fn (array $paths) => array_map(
+            fn (string $path, int $sequence) => ['path' => $path, 'source_sequence' => $sequence, 'quality' => ['acceptable' => true, 'score' => 1]],
+            $paths, array_keys($paths),
+        ));
+        $frameLines = [
+            ['Wy', 'SHARED LINE', '004793487 1 111.75 111.75T', 'CALLA PWD F/C ROSE GARDEN'],
+            ['SHARED LINE', 'VATable Sales P543.30', '09/04/2026'],
+        ];
+        $calls = [];
+        $ocr = Mockery::mock(ShelfTagOcrService::class);
+        $ocr->shouldReceive('scan')->times(4)->andReturnUsing(function ($path, array $options) use (&$calls, $frameLines) {
+            $calls[] = $options;
+            $lines = $frameLines[intdiv(count($calls) - 1, 2)];
+
+            return ['status' => 'OCR_SUCCESS', 'raw_text' => implode("\n", $lines), 'lines' => $lines, 'words' => [['confidence' => 90]]];
+        });
+        $pipeline = new ReceiptEvidencePipeline(
+            $inspector, app(ShelfTagImagePreprocessor::class), $ocr,
+            app(ReceiptContinuityAnalyzer::class), app(ReceiptTextAggregator::class),
+            app(ReceiptItemExtractor::class), $evaluator, $sampler, app(ReceiptOcrResultSelector::class),
+            app(ReceiptMerchantMatcher::class), app(ReceiptTotalExtractor::class),
+        );
+
+        $result = $pipeline->process($report->fresh());
+
+        $this->assertSame([6, 11, 6, 11], array_column($calls, 'psm'));
+        foreach ($calls as $options) {
+            $this->assertSame(['psm', 'minimum_confidence', 'timeout_seconds'], array_keys($options));
+        }
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame('ready', $result['continuity']['status']);
+        $this->assertContains('Wy', $result['lines']);
+        $this->assertSame(['VATable Sales'], array_column($result['items'], 'item_name'));
+        $this->assertArrayNotHasKey('line_filter', $result['ocr'][0]);
+        // The one accepted historical change: a previously always-null field is now populated.
+        $this->assertSame('2026-09-04', $result['transaction_date']);
+    }
+
+    public function test_historical_video_replaced_after_submission_fails_integrity_before_inspection(): void
+    {
+        [$report] = $this->createReadyReport('VIDEOHASH', false);
+        $report->update(['capture_mode' => 'continuous_video_v1']);
+        Storage::disk('receipt_evidence')->put('video.webm', 'tampered-bytes');
+        ReceiptEvidenceAsset::create([
+            'receipt_evidence_bundle_id' => $report->receipt_evidence_bundle_id,
+            'kind' => 'original_video', 'sequence' => 0, 'disk' => 'receipt_evidence', 'path' => 'video.webm',
+            'mime_type' => 'video/webm', 'size_bytes' => 11, 'sha256' => hash('sha256', 'video-bytes'),
+        ]);
+        $inspector = Mockery::mock(ReceiptVideoInspector::class);
+        $inspector->shouldNotReceive('inspect');
+        $ocr = Mockery::mock(ShelfTagOcrService::class);
+        $ocr->shouldNotReceive('scan');
+        $pipeline = new ReceiptEvidencePipeline(
+            $inspector, app(ShelfTagImagePreprocessor::class), $ocr,
+            app(ReceiptContinuityAnalyzer::class), app(ReceiptTextAggregator::class),
+            app(ReceiptItemExtractor::class), app(ReceiptFrameQualityEvaluator::class),
+            app(ReceiptFrameSampler::class), app(ReceiptOcrResultSelector::class),
+            app(ReceiptMerchantMatcher::class), app(ReceiptTotalExtractor::class),
+        );
+
+        $result = $pipeline->process($report->fresh());
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('EVIDENCE_INTEGRITY_FAILED', $result['reason_code']);
+        $this->assertSame(['kind' => 'original_video', 'sequence' => 0], $result['diagnostics']['integrity_failure']);
+    }
+
+    public function test_integrity_failure_is_not_retryable_and_recovers_only_through_a_fresh_capture(): void
+    {
+        Queue::fake();
+        [$report, $resumeToken] = $this->createReadyReport('INTEGRITY');
+        $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+        $pipeline = Mockery::mock(ReceiptEvidencePipeline::class);
+        $pipeline->shouldReceive('process')->once()->andReturn([
+            'status' => 'failed', 'reason_code' => 'EVIDENCE_INTEGRITY_FAILED', 'lines' => [], 'items' => [],
+        ]);
+        (new ProcessReceiptEvidence($report->report_reference))->handle($pipeline);
+        $base = "/api/public/reports/{$report->report_reference}";
+        $headers = ['X-Report-Resume-Token' => $resumeToken];
+
+        $this->withHeaders($headers)->getJson("{$base}/processing")->assertOk()
+            ->assertJsonPath('data.status', 'Processing failed')
+            ->assertJsonPath('data.can_retry_processing', false)
+            ->assertJsonPath('data.can_recapture', true)
+            ->assertJsonPath('data.failure_reason.code', 'EVIDENCE_INTEGRITY_FAILED')
+            ->assertJsonPath('data.message', 'The stored receipt photos failed an integrity check and cannot be processed again. Capture the receipt again.');
+        $this->withHeaders($headers)->postJson("{$base}/retry-processing")->assertStatus(409);
+        $this->withHeaders($headers)->postJson("{$base}/recapture-session", ['replace_sequence' => 0])->assertStatus(422);
+        Queue::assertNotPushed(ProcessReceiptEvidence::class);
+
+        $session = $this->withHeaders($headers)->postJson("{$base}/recapture-session", ['restart' => true])
+            ->assertCreated()->assertJsonPath('data.capture_action', 'full');
+        $this->withHeader('X-Capture-Token', $session->json('data.capture_token'))
+            ->postJson('/api/public/capture-sessions/'.$session->json('data.capture_session_id').'/assets', [
+                'kind' => 'source_frame', 'sequence' => 0, 'asset' => UploadedFile::fake()->image('receipt.jpg', 1080, 1920),
+            ])->assertCreated();
+        $this->withHeaders($headers)->postJson("{$base}/recapture", ['capture_token' => $session->json('data.capture_token')])
+            ->assertOk()->assertJsonPath('data.status', 'Processing receipt');
+
+        Queue::assertPushed(ProcessReceiptEvidence::class);
+        $this->assertSame(2, $report->refresh()->evidenceBundle->attempt_number);
+    }
+
+    private function headerOnlyPng(int $width, int $height): string
+    {
+        $chunk = fn (string $type, string $data) => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+
+        return "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 2, 0, 0, 0)).$chunk('IEND', '');
     }
 
     private function createReadyReport(string $suffix, bool $withEvidence = true): array

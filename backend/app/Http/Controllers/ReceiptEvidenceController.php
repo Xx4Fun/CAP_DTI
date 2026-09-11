@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\CaptureSession;
 use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
+use App\Services\Receipt\ReceiptImageLimits;
+use App\Services\Receipt\UnsafeReceiptImageException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -58,6 +60,19 @@ class ReceiptEvidenceController extends Controller
         }
         if (! $isVideo && $file->getSize() > 2 * 1024 * 1024) {
             abort(422, 'Receipt frames may not exceed 2 MiB.');
+        }
+        if (! $isVideo) {
+            try {
+                $dimensions = ReceiptImageLimits::safeDimensions((string) $file->getRealPath());
+            } catch (UnsafeReceiptImageException) {
+                abort(422, 'Receipt frames may not exceed 4 megapixels.');
+            }
+            // Size is known safe here, so a full decode confirms the frame is a usable image.
+            $image = $dimensions === null ? false : @imagecreatefromstring($file->getContent());
+            if ($image === false) {
+                abort(422, 'Receipt frames must be readable JPEG, PNG, or WebP images.');
+            }
+            imagedestroy($image);
         }
 
         $bundle = ReceiptEvidenceBundle::firstOrCreate(

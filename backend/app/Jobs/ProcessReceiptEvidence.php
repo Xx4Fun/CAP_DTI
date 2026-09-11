@@ -66,6 +66,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                     'continuity' => $result['continuity'] ?? null,
                     'merchant' => $result['merchant'] ?? null,
                     'detected_total' => $result['detected_total'] ?? null,
+                    'transaction_date' => $result['transaction_date'] ?? null,
                     'reason_code' => $result['reason_code'] ?? null,
                     'warnings' => $result['warnings'] ?? [],
                     'manual_review_required' => (bool) ($result['manual_review_required'] ?? false),
@@ -85,7 +86,9 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'public_message' => match ($publicStatus) {
                     'Ready for confirmation' => 'Receipt processing is complete. Review the original evidence and read-only system extraction.',
                     'Needs recapture' => $this->safeReasonMessage($reasonCode),
-                    default => 'Receipt processing could not be completed. Please try again.',
+                    default => $reasonCode === 'EVIDENCE_INTEGRITY_FAILED'
+                        ? 'The stored receipt photos failed an integrity check and cannot be processed again. Capture the receipt again.'
+                        : 'Receipt processing could not be completed. Please try again.',
                 },
                 'actor_type' => 'system',
             ]);
