@@ -1,3 +1,5 @@
+import { PRIVACY_NOTICE_VERSION } from './privacyNotice';
+
 export interface FormalReportEvidence {
   submissionUuid: string;
   captureSessionId?: number;
@@ -25,7 +27,7 @@ export const createFormalReportPayload = (evidence: FormalReportEvidence): FormD
   payload.append('capture_session_id', String(evidence.captureSessionId));
   payload.append('capture_token', evidence.captureToken);
   payload.append('store_id', String(evidence.storeId));
-  payload.append('privacy_notice_version', '1.0');
+  payload.append('privacy_notice_version', PRIVACY_NOTICE_VERSION);
   payload.append('image_hash', evidence.imageHash);
   payload.append('image', evidence.image as Blob, 'receipt.jpg');
   payload.append('extracted_text_json', JSON.stringify(evidence.extractedText));

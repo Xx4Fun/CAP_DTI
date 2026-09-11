@@ -25,10 +25,14 @@ use App\Services\Ocr\ShelfTagTextNormalizer;
 
 class PublicPwaController extends Controller
 {
-    /** Privacy notice versions a customer can have accepted; a report may only claim one of these. */
-    public const PRIVACY_NOTICE_VERSIONS = ['1.0'];
+    /**
+     * Privacy notice versions a customer can have accepted; a report may only claim one of these. 1.1 names Google as
+     * the receipt-reading processor; 1.0 stays accepted for installed apps that still show it (those reports never
+     * reach the external service unless 1.0 is listed in RECEIPT_EXTRACTION_CONSENT_VERSIONS).
+     */
+    public const PRIVACY_NOTICE_VERSIONS = ['1.0', '1.1'];
 
-    public const CURRENT_PRIVACY_NOTICE_VERSION = '1.0';
+    public const CURRENT_PRIVACY_NOTICE_VERSION = '1.1';
 
     public function config()
     {

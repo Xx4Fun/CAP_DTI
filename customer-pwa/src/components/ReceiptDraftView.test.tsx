@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
@@ -266,6 +266,48 @@ describe('ReceiptDraftView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Too many requests/i);
     expect(screen.getByRole('button', { name: 'Refresh status' })).toBeDisabled();
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a structured extraction read-only with per-field uncertainty, overlap duplicates, and amounts', async () => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['photo']) }
+      : { data: { data: reviewData({
+        extraction_provider: 'gemini',
+        merchant: { status: 'matched', display_name: 'GAISANO GRAND MALL OF ANTIQUE' },
+        receipt_number: 'OR 000123',
+        transaction_date: '2026-09-10',
+        items: [
+          { sequence: 0, raw_text: 'RAW SOURCE LINE', item_name: 'SARDINES 155G', quantity: 2, unit: null, observed_price: 70, unit_price: 35, line_total: 70, uncertain_fields: [], section: 1, possible_duplicate_of: null, ocr_confidence: null },
+          { sequence: 1, raw_text: null, item_name: 'CANDY', quantity: 1, unit: null, observed_price: 12.5, unit_price: 12.5, line_total: 12.5, uncertain_fields: ['unit_price'], section: 2, possible_duplicate_of: 0, ocr_confidence: null },
+        ],
+        subtotal: '82.50', subtotal_uncertain: false,
+        discounts: [{ description: 'PROMO DISC', amount: '7.50', uncertain: false }],
+        adjustments: [{ kind: 'rounding', direction: 'subtract', amount: '0.25', uncertain: false }],
+        total: '74.75', total_uncertain: true,
+        reconciliation: { status: 'matched', checks: {} },
+        manual_review_required: true,
+        evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }],
+      }) } });
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
+
+    const first = await screen.findByLabelText('Item 1');
+    expect(within(first).getByText('₱35.00 each')).toBeInTheDocument();
+    expect(within(first).getByText('₱70.00')).toBeInTheDocument();
+    // Under structured extraction a missing OCR confidence is not uncertainty.
+    expect(within(first).queryByText(/unclear|Uncertain/)).not.toBeInTheDocument();
+    const second = screen.getByLabelText('Item 2');
+    expect(within(second).getByText('Unit price unclear — check the photo')).toBeInTheDocument();
+    expect(within(second).getByText(/May repeat item 1 where two photos overlap/)).toBeInTheDocument();
+    expect(screen.getByText('OR 000123')).toBeInTheDocument();
+    const amounts = screen.getByLabelText('Receipt amounts');
+    expect(within(amounts).getByText('₱82.50')).toBeInTheDocument();
+    expect(within(amounts).getByText(/−₱7\.50 \(PROMO DISC\)/)).toBeInTheDocument();
+    expect(within(amounts).getByText('Rounding')).toBeInTheDocument();
+    expect(within(amounts).getByText('₱74.75')).toBeInTheDocument();
+    expect(within(amounts).getAllByText('Uncertain')).toHaveLength(1);
+    expect(screen.getByText('The item amounts add up to the receipt total.')).toBeInTheDocument();
+    expect(screen.queryByText('RAW SOURCE LINE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('clears acknowledgement when refreshing a changed evidence attempt', async () => {

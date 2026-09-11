@@ -16,8 +16,9 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest } from '../../types/admin'
+import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
+import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
 
 type ItemDecision = {
   item_id: number
@@ -678,6 +679,7 @@ export const CitizenTipReview: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} onSelect={(asset) => void showEvidenceAsset(asset)} />
                   <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
                     Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
                   </span>
@@ -875,6 +877,8 @@ export const CitizenTipReview: React.FC = () => {
                     </strong>
                   </div>
                 </div>
+
+                <ReceiptExtractionPanel result={evidenceManifest?.processing_result as ReceiptExtractionResult | null | undefined} />
 
                 {selected.evidence_available && (
                   <button

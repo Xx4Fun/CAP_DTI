@@ -43,8 +43,9 @@
 Before requesting live camera permissions or submitting formal reports, the Consumer PWA renders an explicit, non-blocking modal requiring consent:
 1. **Camera Purpose:** Capturing product and shelf/receipt price text for regulatory evaluation.
 2. **Data Usage:** Unrelated receipt items (e.g. personal groceries) and cashier details are redacted during preliminary DTI review.
-3. **Audit Logged Acceptance:** Every report submission records `privacy_notice_version` (e.g. "1.0"), `user_ip`, `user_agent`, and acceptance timestamp.
-4. **No Unsanitised Public Exposure:** Consumer identity remains anonymous unless legally required during formal proceedings.
+3. **Audit Logged Acceptance:** Every report submission records `privacy_notice_version`, `user_ip`, `user_agent`, and acceptance timestamp. The backend accepts only notice versions the app has actually shown (`1.1` current, `1.0` for older installed apps).
+4. **Automated Receipt Reading (notice v1.1):** The notice names Google (Gemini) as the data processor that may read receipt photos for DTI, possibly outside the Philippines. Only the photos are sent, with request storage turned off. A report's photos reach Google only when its accepted version is listed in `RECEIPT_EXTRACTION_CONSENT_VERSIONS`, which stays empty until the DPO signs off on the v1.1 wording and the paid project is attested. The notice text and version live together in `customer-pwa/src/app/privacyNotice.ts` and must change together.
+5. **No Unsanitised Public Exposure:** Consumer identity remains anonymous unless legally required during formal proceedings.
 
 ---
 

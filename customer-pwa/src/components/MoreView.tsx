@@ -395,6 +395,15 @@ export const MoreView: React.FC<MoreViewProps> = ({
                       <strong>Cryptographic Sealing:</strong> Captured receipt scans are hashed with client-side SHA-256 checksums before transmission to ensure tamper-proof evidential validity in DTI regulatory proceedings.
                     </div>
                   </div>
+
+                  <div className="report-security-point">
+                    <div className="report-security-point-icon">
+                      <ShieldCheck size={18} />
+                    </div>
+                    <div>
+                      <strong>Automated Receipt Reading:</strong> Receipt photos may be read by Google’s Gemini service on DTI’s behalf to list the printed items and prices. The results are read-only and always checked by DTI staff.
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

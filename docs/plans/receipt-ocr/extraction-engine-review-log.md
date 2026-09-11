@@ -196,3 +196,33 @@
     - the Phase 5 monitoring window becomes the real accuracy check;
     - the harness can be rerun whenever more receipts are added.
   - The production gates are unchanged: paid project, DPO sign-off, and the Codex inspection before rollout.
+
+## Phase 3 — customer review UI, notice v1.1, Admin extraction panel (2026-09-12, host-built by Claude)
+- User: "start Phase 3".
+- **Customer review (`ReceiptDraftView.tsx`):** read-only receipt number, per-item unit price and line total, subtotal, discounts, adjustments,
+  total, and a plain-language reconciliation line. Uncertainty badges come from `uncertain_fields` when
+  `extraction_provider === 'gemini'`; `ocr_confidence` (always null under Gemini) drives badges only on the Tesseract path. Overlap
+  duplicates are shown as "May repeat item N". Raw source lines stay off the customer screen and every value stays read-only.
+- **Privacy notice v1.1** (`customer-pwa/src/app/privacyNotice.ts`): one shared constant and text used by the notice modal, the report
+  payloads, and the config default.
+  - New section names Google (Gemini) as DTI's processor, says processing may happen outside the Philippines, that only photos are sent,
+    and that request storage is off.
+  - The v1.0 text leaked the private server path `storage/app/private/receipt_vault` to customers; v1.1 drops it.
+  - **The wording is a draft pending DPO sign-off**, and the consent gate stays closed: `RECEIPT_EXTRACTION_CONSENT_VERSIONS` is still empty,
+    so shipping 1.1 sends nothing to Google by itself.
+  - Backend `PublicPwaController` accepts `1.0` and `1.1` and reports `1.1` as current; older installed apps keep working.
+- **Admin (`ReceiptExtractionPanel.tsx`):** provider and model, merchant/date/receipt number, photo-quality flags, an items table with
+  uncertainty badges (plus validator reasons), section, possible-duplicate markers and source lines, amounts, reconciliation badges, the
+  genuine-duplicate note, and warnings. Missing values read "Not available". `EvidenceSectionNav` adds "Section i of N" with previous/next
+  across the viewed attempt. The panel renders only for structured (Gemini) results; Tesseract reports are unchanged.
+  - Deviation from plan §7: no per-attempt thumbnail strip. Every asset view is an audited, integrity-checked fetch, so thumbnails would
+    multiply audited evidence reads. The existing per-attempt buttons plus the new counter cover navigation.
+- **Docs:** `customer-pwa-api.md` (accepted versions) and `customer-pwa-security-and-privacy.md` (automated reading, version acceptance).
+- **Tests:** PWA structured-review test (unit price, per-field badge, duplicate marker, amounts, reconciliation, no raw lines, no inputs);
+  `receiptCapture` payload pinned to 1.1; backend config/acceptance tests updated (1.1 accepted, 9.9 rejected); new web panel and section-nav tests.
+- **Proof:** PWA `tsc` clean + vitest 347/347; backend full suite 501/502 (only the pre-existing `EmergencyApcWorkflowTest`); web `tsc` clean +
+  vitest 117/117 **with `--no-file-parallelism`**.
+  - **Known pre-existing flake:** the web suite fails intermittently under its default parallel run, and the failing test moves between runs
+    (`AdminSafeguards` SRP panel, session-toast test). It also failed with the new test file excluded, and the three admin files pass together,
+    so this is lazy `Suspense` panels racing 5 s `findBy` timeouts under load, not a Phase 3 regression. Sequential runs are green.
+- **Unreviewed:** Phase 3 is host-authored and not yet inspected. The owed independent Codex inspection now covers `31e71e8..HEAD`.

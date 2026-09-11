@@ -16,6 +16,7 @@ import { StoreSelectionCard } from './StoreSelectionCard';
 import { StoreSelectionView, type StoreDirectoryFilter } from './StoreSelectionView';
 import { useBackLayer } from '../hooks/useBackLayer';
 import { receiptCaptureSupport } from '../app/receiptCapture';
+import { PRIVACY_NOTICE_SECTIONS, PRIVACY_NOTICE_TITLE } from '../app/privacyNotice';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 import { navigate } from '../app/routing';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
@@ -850,7 +851,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>Privacy protection</div>
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Sensitive receipt details are protected during review.
+                    Only DTI staff see your photos. An automated service (Google Gemini) may read the printed items for DTI.
                   </div>
                 </div>
               </div>
@@ -933,11 +934,11 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       {showFullNoticeModal && (
         <div className="modal-backdrop" style={{ zIndex: 300 }}>
           <div className="modal-content" role="dialog" aria-modal="true" aria-label="Full privacy notice" tabIndex={-1} style={{ maxHeight: '80vh' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px' }}>DTI Consumer Evidence Vault Privacy Policy (v1.0)</h3>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px' }}>{PRIVACY_NOTICE_TITLE}</h3>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '10px', lineHeight: 1.5 }}>
-              <p>1. <strong>Scope:</strong> Pursuant to R.A. 7581 (Price Act) and Data Privacy Act of 2012, all receipt evidence uploaded via PRICE-Watch is sealed in private DTI storage (<code>storage/app/private/receipt_vault</code>).</p>
-              <p>2. <strong>Restricted access:</strong> Authorized DTI personnel can inspect the submitted originals during evaluation.</p>
-              <p>3. <strong>Tamper-Evident Verification:</strong> The server records a SHA-256 fingerprint for every original image it receives so later changes can be detected.</p>
+              {PRIVACY_NOTICE_SECTIONS.map((section, index) => (
+                <p key={section.heading}>{index + 1}. <strong>{section.heading}:</strong> {section.body}</p>
+              ))}
             </div>
             <button className="btn-primary" style={{ marginTop: '16px' }} onClick={() => setShowFullNoticeModal(false)}>
               Close Notice
