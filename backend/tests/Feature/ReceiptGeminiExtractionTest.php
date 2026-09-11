@@ -48,28 +48,40 @@ class ReceiptGeminiExtractionTest extends TestCase
     }
 
     /** @return array{0: ConsumerReport, 1: string} */
-    private function report(string $suffix, string $consent = '1.1', int $frames = 1): array
+    private function report(string $suffix, string $consent = '1.1', int $frames = 1, string $captureMode = 'guided_photos_v1'): array
     {
         $resumeToken = 'rsm_'.Str::random(32);
         $session = CaptureSession::create([
-            'session_uuid' => 'cs_'.Str::uuid(), 'store_id' => $this->store->id, 'capture_mode' => 'guided_photos_v1',
+            'session_uuid' => 'cs_'.Str::uuid(), 'store_id' => $this->store->id, 'capture_mode' => $captureMode,
             'processing_status' => 'finalized', 'token_hash' => hash('sha256', 'cap-'.$suffix), 'expires_at' => now()->addMinutes(15), 'is_used' => true,
-        ]);
-        $bundle = ReceiptEvidenceBundle::create([
-            'evidence_uuid' => (string) Str::uuid(), 'capture_session_id' => $session->id, 'store_id' => $this->store->id,
-            'capture_mode' => 'guided_photos_v1', 'processing_status' => 'queued',
         ]);
         $report = ConsumerReport::create([
             'report_reference' => 'REP-20260912-'.$suffix, 'tracking_token_hash' => hash('sha256', 'trk-'.$suffix),
             'resume_token_hash' => hash('sha256', $resumeToken), 'store_id' => $this->store->id, 'submission_uuid' => 'sub-'.$suffix,
-            'capture_session_id' => $session->id, 'receipt_evidence_bundle_id' => $bundle->id, 'capture_mode' => 'guided_photos_v1',
+            'capture_session_id' => $session->id, 'capture_mode' => $captureMode,
             'processing_status' => 'queued', 'status' => 'Processing receipt', 'privacy_notice_version' => $consent,
         ]);
-        $bundle->update(['consumer_report_id' => $report->id, 'attempt_number' => 1]);
+        $this->attachBundle($report, $frames, 1, $captureMode);
+
+        return [$report->fresh(), $resumeToken];
+    }
+
+    /** Attaches a new queued evidence attempt (as a restart would) with real stored source frames. */
+    private function attachBundle(ConsumerReport $report, int $frames = 1, int $attempt = 2, string $captureMode = 'guided_photos_v1'): ReceiptEvidenceBundle
+    {
+        $session = $attempt === 1 ? $report->capture_session_id : CaptureSession::create([
+            'session_uuid' => 'cs_'.Str::uuid(), 'store_id' => $this->store->id, 'capture_mode' => $captureMode, 'processing_status' => 'finalized',
+            'token_hash' => hash('sha256', Str::random(40)), 'expires_at' => now()->addMinutes(15), 'is_used' => true,
+        ])->id;
+        $bundle = ReceiptEvidenceBundle::create([
+            'evidence_uuid' => (string) Str::uuid(), 'capture_session_id' => $session, 'store_id' => $this->store->id,
+            'capture_mode' => $captureMode, 'processing_status' => 'queued', 'consumer_report_id' => $report->id, 'attempt_number' => $attempt,
+        ]);
+        $report->update(['receipt_evidence_bundle_id' => $bundle->id, 'status' => 'Processing receipt', 'processing_status' => 'queued']);
         for ($sequence = 0; $sequence < $frames; $sequence++) {
             $image = imagecreatetruecolor(600, 900);
             imagefill($image, 0, 0, imagecolorallocate($image, 250, 250, 245));
-            imagestring($image, 5, 40, 40 + $sequence * 30, 'RECEIPT '.$suffix, imagecolorallocate($image, 0, 0, 0));
+            imagestring($image, 5, 40, 40 + $sequence * 30, 'RECEIPT '.$report->report_reference.' '.$attempt, imagecolorallocate($image, 0, 0, 0));
             ob_start();
             imagejpeg($image, null, 90);
             $bytes = (string) ob_get_clean();
@@ -82,7 +94,7 @@ class ReceiptGeminiExtractionTest extends TestCase
             ]);
         }
 
-        return [$report->fresh(), $resumeToken];
+        return $bundle;
     }
 
     private function runJob(ConsumerReport $report, int $attempt = 1): ProcessReceiptEvidence
@@ -245,24 +257,17 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->assertSame('Processing failed', $other->status);
     }
 
-    public function test_per_report_attempt_cap_spans_evidence_attempts_and_requires_a_restart(): void
+    public function test_attempt_cap_requires_a_restart_and_the_fresh_attempt_is_processed(): void
     {
         $this->fakeGemini(ReceiptExtractionValidatorTest::payload());
-        config(['services.receipt_extraction.max_calls_per_report' => 3]);
+        config(['services.receipt_extraction.max_calls_per_attempt' => 2, 'services.receipt_extraction.max_calls_per_report' => 5]);
         [$report, $token] = $this->report('CAP');
-        ReceiptEvidenceBundle::create([
-            'evidence_uuid' => (string) Str::uuid(), 'capture_session_id' => CaptureSession::create([
-                'session_uuid' => 'cs_'.Str::uuid(), 'store_id' => $this->store->id, 'capture_mode' => 'guided_photos_v1',
-                'processing_status' => 'finalized', 'token_hash' => hash('sha256', 'old'), 'expires_at' => now(), 'is_used' => true,
-            ])->id,
-            'store_id' => $this->store->id, 'capture_mode' => 'guided_photos_v1', 'processing_status' => 'failed',
-            'consumer_report_id' => $report->id, 'attempt_number' => 0, 'extraction_calls' => 3,
-        ]);
+        $report->evidenceBundle->update(['extraction_calls' => 2]);
 
         $this->runJob($report);
 
         $this->assertSame('EXTRACTION_ATTEMPT_CAP', $report->refresh()->evidenceBundle->failure_code);
-        $this->assertSame(0, $report->evidenceBundle->extraction_calls);
+        $this->assertSame(2, $report->evidenceBundle->extraction_calls);
         Http::assertNothingSent();
         $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertJsonPath('data.can_retry_processing', false)
@@ -272,6 +277,109 @@ class ReceiptGeminiExtractionTest extends TestCase
             ->assertStatus(422);
         $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/recapture-session", ['restart' => true])
             ->assertCreated();
+
+        // The restarted capture is a new attempt with its own allowance, still inside the per-report cap.
+        $this->attachBundle($report->refresh());
+        $this->runJob($report);
+
+        $this->assertSame('Ready for confirmation', $report->refresh()->status);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        Http::assertSentCount(1);
+    }
+
+    public function test_per_report_cap_is_terminal_and_offers_no_retry_or_restart(): void
+    {
+        config(['services.receipt_extraction.max_calls_per_report' => 3]);
+        [$report, $token] = $this->report('RCAP');
+        $report->evidenceBundle->update(['extraction_calls' => 1]);
+        $this->attachBundle($report->refresh())->update(['extraction_calls' => 2]);
+        $this->attachBundle($report->refresh(), 1, 3);
+
+        $this->runJob($report->refresh());
+
+        $this->assertSame('EXTRACTION_REPORT_CAP', $report->refresh()->evidenceBundle->failure_code);
+        Http::assertNothingSent();
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertJsonPath('data.can_retry_processing', false)
+            ->assertJsonPath('data.can_recapture', false)
+            ->assertJsonPath('data.failure_reason.code', 'EXTRACTION_REPORT_CAP');
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/recapture-session", ['restart' => true])
+            ->assertStatus(409);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")
+            ->assertStatus(409);
+    }
+
+    public function test_a_stored_extraction_is_reused_by_a_retry_and_never_bought_twice(): void
+    {
+        $this->fakeGemini(ReceiptExtractionValidatorTest::payload());
+        [$report, $token] = $this->report('REUSE');
+
+        // First run: the call succeeds and the extraction is stored before the job finishes.
+        $this->app->instance(\App\Services\Receipt\Extraction\ReceiptExtractionValidator::class, Mockery::mock(
+            \App\Services\Receipt\Extraction\ReceiptExtractionValidator::class, fn ($mock) => $mock->shouldReceive('validate')->andThrow(new \RuntimeException('worker lost'))));
+        try {
+            $this->runJob($report);
+        } catch (\RuntimeException) {
+        }
+        $this->app->forgetInstance(\App\Services\Receipt\Extraction\ReceiptExtractionValidator::class);
+        (new ProcessReceiptEvidence($report->report_reference))->failed(new MaxAttemptsExceededException('x'));
+        $this->assertSame('JOB_TIMEOUT', $report->refresh()->evidenceBundle->failure_code);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        $this->assertArrayHasKey('pending_extraction', $report->evidenceBundle->processing_result_json);
+
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")
+            ->assertOk();
+        $this->runJob($report->refresh());
+
+        $report->refresh();
+        $this->assertSame('Ready for confirmation', $report->status);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        $this->assertTrue($report->evidenceBundle->processing_result_json['engine']['reused']);
+        Http::assertSentCount(1);
+    }
+
+    public function test_rate_limited_calls_are_refunded_and_do_not_consume_the_allowance(): void
+    {
+        Http::fake([self::ENDPOINT => Http::response(['error' => ['message' => 'quota', 'code' => 'resource_exhausted']], 429)]);
+        [$report] = $this->report('RATE');
+
+        $this->runJob($report, 1)->assertReleased(30);
+
+        $this->assertSame(0, $report->refresh()->evidenceBundle->extraction_calls);
+        $this->assertSame(0, (int) \Illuminate\Support\Facades\Cache::get('receipt-extraction:calls:'.now('UTC')->format('Y-m-d')));
+        Http::assertSentCount(1);
+    }
+
+    public function test_capture_modes_other_than_guided_photos_take_the_legacy_route(): void
+    {
+        $route = app(\App\Services\Receipt\Extraction\ReceiptExtractionRouter::class)
+            ->route(new ConsumerReport(['capture_mode' => 'continuous_video_v1', 'privacy_notice_version' => '1.1']));
+
+        $this->assertSame(['provider' => 'tesseract', 'route' => 'legacy_mode'], $route);
+    }
+
+    public function test_a_key_with_surrounding_whitespace_is_trimmed_and_an_invalid_key_is_never_sent(): void
+    {
+        $this->fakeGemini(ReceiptExtractionValidatorTest::payload());
+        config(['services.gemini.key' => "feature-test-gemini-key\n"]);
+        [$trimmed] = $this->report('TRIM');
+        $this->runJob($trimmed);
+        $this->assertSame('Ready for confirmation', $trimmed->refresh()->status);
+        Http::assertSent(fn ($request) => $request->header('x-goog-api-key') === ['feature-test-gemini-key']);
+
+        $logged = [];
+        Log::listen(function ($event) use (&$logged) {
+            $logged[] = $event->message.' '.json_encode($event->context);
+        });
+        config(['services.gemini.key' => "feature-test\ngemini-key"]);
+        [$broken] = $this->report('BADKEY');
+        $this->runJob($broken);
+
+        $this->assertSame('GEMINI_NOT_CONFIGURED', $broken->refresh()->evidenceBundle->failure_code);
+        Http::assertSentCount(1);
+        foreach ([...$logged, json_encode($broken->evidenceBundle->processing_result_json)] as $line) {
+            $this->assertStringNotContainsString('feature-test', $line);
+        }
     }
 
     public function test_daily_cap_refusal_is_retryable_later_and_not_counted(): void
@@ -315,6 +423,8 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->runJob($report);
 
         $this->assertSame('Needs recapture', $report->refresh()->status);
+        $this->assertSame('The bottom of the receipt, including the total, is missing. Add a section that shows it.',
+            $report->statusHistories()->latest('id')->value('public_message'));
         $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertJsonPath('data.recapture_reason.code', 'RECEIPT_INCOMPLETE')
             ->assertJsonPath('data.recapture_reason.message', 'The bottom of the receipt, including the total, is missing. Add a section that shows it.');

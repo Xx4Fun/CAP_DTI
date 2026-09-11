@@ -21,7 +21,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Built only when a report is routed to the provider, so gate-off environments never need a key.
         $this->app->bind(ReceiptExtractor::class, fn () => new GeminiReceiptExtractor(
-            apiKey: (string) config('services.gemini.key'),
+            apiKey: trim((string) config('services.gemini.key')),
             model: (string) config('services.gemini.model'),
             endpoint: (string) config('services.gemini.endpoint'),
             thinkingLevel: (string) config('services.gemini.thinking_level'),
@@ -37,7 +37,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if (config('services.receipt_extraction.provider') === 'gemini' && trim((string) config('services.gemini.key')) === '') {
+        if (config('services.receipt_extraction.provider') === 'gemini'
+            && ! \App\Services\Receipt\Extraction\ReceiptExtractionRouter::isUsableKey((string) config('services.gemini.key'))) {
             \Illuminate\Support\Facades\Log::error('receipt_extraction.gemini_not_configured');
         }
 

@@ -34,13 +34,18 @@ Legacy `single_image_v1` session creation is rejected; new session requests defa
 | --- | --- | --- |
 | `INSUFFICIENT_FRAMES` | No usable receipt image exists | Capture at least one receipt image |
 | `TEXT_UNREADABLE` | An image is unreadable or too poor for OCR | Improve focus, lighting, and receipt flatness |
+| `RECEIPT_INCOMPLETE` | Structured extraction: the total region is not visible and no total could be read | Add a section that shows the bottom of the receipt |
 | `INCOMPLETE_SCAN` | Historical video continuity could not be verified | Recapture with guided still images |
 
-Clear evidence with uncertain OCR remains `Ready for confirmation` with `manual_review_required` and warnings such as `OCR_INCOMPLETE`, `STORE_NOT_CONFIRMED`, `ITEMS_NOT_FOUND`, `TOTAL_NOT_FOUND`, or `TOTAL_MISMATCH`. The raw OCR result is preserved for Admin review.
+With structured extraction, two consecutive recaptures for the same reason make the third result reviewable with that reason kept as a warning, so a customer is never looped indefinitely.
+
+Clear evidence with uncertain OCR remains `Ready for confirmation` with `manual_review_required` and warnings such as `OCR_INCOMPLETE`, `STORE_NOT_CONFIRMED`, `ITEMS_NOT_FOUND`, `TOTAL_NOT_FOUND`, or `TOTAL_MISMATCH`. Structured extraction adds `FIELDS_UNCERTAIN`, `EVIDENCE_QUALITY`, `POSSIBLE_DUPLICATE_LINES`, and `LINE_ARITHMETIC_MISMATCH`. The raw OCR result is preserved for Admin review.
 
 Guided stills can also carry `INCOMPLETE_SCAN` as an unverified-continuity warning, not a recapture decision. The Customer must inspect the actual photos for completeness; the interface does not claim readable photos merely because OCR returned text.
 
 `OCR_UNAVAILABLE`, `OCR_TIMEOUT`, `OCR_FAILED`, and unexpected processing errors become `Processing failed`. The Customer can retry processing against the same immutable evidence; technical failures are not described as bad captures.
+
+Structured-extraction failure codes follow `ReceiptFailureCodes`: every other code (e.g. `GEMINI_TIMEOUT`, `GEMINI_RATE_LIMITED`, `GEMINI_UNAVAILABLE`, `GEMINI_REJECTED`, `EXTRACTION_INVALID`, `EXTRACTION_BUDGET_EXHAUSTED`, `JOB_TIMEOUT`) allows a customer retry, bounded by the per-attempt call cap; `EXTRACTION_ATTEMPT_CAP`, `EXTRACTION_TOO_LARGE`, and `EVIDENCE_INTEGRITY_FAILED` allow only a full restart; `GEMINI_NOT_CONFIGURED`, `GEMINI_AUTH`, and `EXTRACTION_REPORT_CAP` need an operator. A paid extraction stored before a failure is reused by a retry rather than bought again.
 
 ## No Customer correction layer
 

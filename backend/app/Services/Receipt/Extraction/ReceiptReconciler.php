@@ -44,9 +44,12 @@ final class ReceiptReconciler
         $overall = $this->aggregate(array_values($checks));
 
         $duplicatesGenuine = false;
-        if (count($counted) !== count($items) && $subtotalCents === null && $checks['expected_vs_total'] === self::MISMATCH) {
+        if (count($counted) !== count($items) && $itemsSumWithDuplicates !== null) {
             // Repeated scans are real purchases on many POS receipts: report when counting them reconciles.
-            $duplicatesGenuine = $this->expectedVsTotal($itemsSumWithDuplicates, $discountCents, $adjustments, $totalCents) === self::MATCHED;
+            $duplicatesGenuine = $subtotalCents !== null
+                ? $checks['items_vs_subtotal'] === self::MISMATCH && $this->compare($itemsSumWithDuplicates, $subtotalCents) === self::MATCHED
+                : $checks['expected_vs_total'] === self::MISMATCH
+                    && $this->expectedVsTotal($itemsSumWithDuplicates, $discountCents, $adjustments, $totalCents) === self::MATCHED;
         }
 
         return [

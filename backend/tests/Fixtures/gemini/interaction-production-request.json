@@ -1,0 +1,67 @@
+{
+    "captured_at": "2026-09-11T17:27:21+00:00",
+    "note": "Live response to the production GeminiReceiptExtractor request for a synthetic two-section receipt (INS-010).",
+    "http_status": 200,
+    "response": {
+        "status": "completed",
+        "usage": {
+            "total_tokens": 3359,
+            "total_input_tokens": 2600,
+            "input_tokens_by_modality": [
+                {
+                    "modality": "text",
+                    "tokens": 428
+                },
+                {
+                    "modality": "image",
+                    "tokens": 2172
+                }
+            ],
+            "total_cached_tokens": 0,
+            "total_output_tokens": 759,
+            "total_tool_use_tokens": 0,
+            "total_thought_tokens": 0,
+            "raw_prompt_token": 4150,
+            "model_invocation_token_counts": [
+                {
+                    "prompt_tokens_details": [
+                        {
+                            "modality": "text",
+                            "tokens": 1978
+                        },
+                        {
+                            "modality": "image",
+                            "tokens": 2172
+                        }
+                    ],
+                    "candidates_tokens_details": [
+                        {
+                            "modality": "text",
+                            "tokens": 775
+                        }
+                    ]
+                }
+            ]
+        },
+        "created": "2026-09-11T17:27:21Z",
+        "updated": "2026-09-11T17:27:21Z",
+        "service_tier": "standard",
+        "steps": [
+            {
+                "signature": "EmcKZQERTTIPPa7iu9eKU4V49lNM+ErKIhEQVwvTQt45z1YnxUwmY/W9qU4pShWVEmPxyg4ddpuCGdk+3sXY2D/UzjqrYxXI36PVLvZzJiCPtYAZ2nLIfa/UxwEtNi/8TOiDAgshaBSK",
+                "type": "thought"
+            },
+            {
+                "content": [
+                    {
+                        "text": "{\n  \"evidence\": {\n    \"legibility\": \"clear\",\n    \"is_receipt\": true,\n    \"problems\": [],\n    \"total_region_visible\": true\n  },\n  \"merchant\": {\n    \"text\": \"PROBE TEST MART\",\n    \"uncertain\": false\n  },\n  \"transaction_date\": {\n    \"text\": \"09/10/2026 14:05\",\n    \"uncertain\": false\n  },\n  \"receipt_number\": {\n    \"text\": \"000123\",\n    \"uncertain\": false\n  },\n  \"items\": [\n    {\n      \"raw_description\": \"RICE 1KG\",\n      \"quantity\": \"1\",\n      \"unit_price\": \"45.00\",\n      \"line_total\": \"45.00\",\n      \"source_lines\": [\n        \"000111222 1 45.00 45.00T\",\n        \"RICE 1KG\"\n      ],\n      \"section\": 1,\n      \"uncertain_fields\": [],\n      \"possible_duplicate_of\": null\n    },\n    {\n      \"raw_description\": \"SARDINES 155G\",\n      \"quantity\": \"2\",\n      \"unit_price\": \"35.00\",\n      \"line_total\": \"70.00\",\n      \"source_lines\": [\n        \"000333444 2 35.00 70.00T\",\n        \"SARDINES 155G\"\n      ],\n      \"section\": 1,\n      \"uncertain_fields\": [],\n      \"possible_duplicate_of\": null\n    },\n    {\n      \"raw_description\": \"CANDY\",\n      \"quantity\": \"1\",\n      \"unit_price\": \"12.50\",\n      \"line_total\": \"12.50\",\n      \"source_lines\": [\n        \"000555666 1 12.50 12.50T\",\n        \"CANDY\"\n      ],\n      \"section\": 2,\n      \"uncertain_fields\": [],\n      \"possible_duplicate_of\": null\n    }\n  ],\n  \"subtotal\": {\n    \"amount\": \"127.50\",\n    \"source_line\": \"SUBTOTAL 127.50\",\n    \"uncertain\": false\n  },\n  \"discounts\": [\n    {\n      \"description\": \"PROMO DISC\",\n      \"amount\": \"7.50\",\n      \"source_line\": \"PROMO DISC -7.50\",\n      \"uncertain\": false\n    }\n  ],\n  \"adjustments\": [],\n  \"total\": {\n    \"amount\": \"120.00\",\n    \"source_line\": \"TOTAL P120.00\",\n    \"uncertain\": false\n  },\n  \"sections\": [\n    {\n      \"index\": 1,\n      \"overlaps_previous\": \"unknown\"\n    },\n    {\n      \"index\": 2,\n      \"overlaps_previous\": \"yes\"\n    }\n  ]\n}",
+                        "type": "text"
+                    }
+                ],
+                "type": "model_output"
+            }
+        ],
+        "object": "interaction",
+        "model": "gemini-3.8-flash"
+    }
+}

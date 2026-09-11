@@ -55,7 +55,7 @@ final class ReceiptExtractionSchema
                         'source_lines' => ['type' => 'array', 'items' => ['type' => 'string']],
                         'section' => ['type' => 'integer'],
                         'uncertain_fields' => ['type' => 'array', 'items' => ['type' => 'string', 'enum' => self::ITEM_FIELDS]],
-                        'possible_duplicate_of' => ['type' => ['integer', 'null']],
+                        'possible_duplicate_of' => ['type' => ['integer', 'null'], 'description' => '0-based position of the earlier item in this items array'],
                     ],
                     'required' => ['raw_description', 'quantity', 'unit_price', 'line_total', 'source_lines', 'section', 'uncertain_fields', 'possible_duplicate_of'],
                 ]],
@@ -105,7 +105,7 @@ final class ReceiptExtractionSchema
         if (! is_array($evidence)
             || ! in_array($evidence['legibility'] ?? null, ['clear', 'partially_readable', 'unreadable'], true)
             || ! is_bool($evidence['is_receipt'] ?? null)
-            || ! is_array($evidence['problems'] ?? null)
+            || ! self::isListOfStrings($evidence['problems'] ?? null)
             || ! self::isNullableOf($evidence, 'total_region_visible', 'is_bool')) {
             return false;
         }
@@ -125,8 +125,8 @@ final class ReceiptExtractionSchema
             }
         }
         foreach ($payload['items'] as $item) {
-            if (! is_array($item) || ! is_array($item['source_lines'] ?? null) || ! is_int($item['section'] ?? null)
-                || ! is_array($item['uncertain_fields'] ?? null)
+            if (! is_array($item) || ! self::isListOfStrings($item['source_lines'] ?? null) || ! is_int($item['section'] ?? null)
+                || ! self::isListOfStrings($item['uncertain_fields'] ?? null)
                 || ! self::isNullableOf($item, 'possible_duplicate_of', 'is_int')) {
                 return false;
             }
@@ -137,13 +137,19 @@ final class ReceiptExtractionSchema
             }
         }
         foreach ($payload['discounts'] as $discount) {
-            if (! is_array($discount) || ! array_key_exists('amount', $discount) || ! is_bool($discount['uncertain'] ?? null)) {
+            if (! is_array($discount) || ! is_bool($discount['uncertain'] ?? null)
+                || ! self::isNullableOf($discount, 'amount', 'is_string')
+                || ! self::isNullableOf($discount, 'description', 'is_string')
+                || ! self::isNullableOf($discount, 'source_line', 'is_string')) {
                 return false;
             }
         }
         foreach ($payload['adjustments'] as $adjustment) {
             if (! is_array($adjustment) || ! in_array($adjustment['direction'] ?? null, ['add', 'subtract'], true)
-                || ! array_key_exists('amount', $adjustment)) {
+                || ! in_array($adjustment['kind'] ?? null, ['vat_exemption', 'rounding', 'service_charge', 'other'], true)
+                || ! is_bool($adjustment['uncertain'] ?? null)
+                || ! self::isNullableOf($adjustment, 'amount', 'is_string')
+                || ! self::isNullableOf($adjustment, 'source_line', 'is_string')) {
                 return false;
             }
         }
@@ -155,6 +161,11 @@ final class ReceiptExtractionSchema
         }
 
         return true;
+    }
+
+    private static function isListOfStrings(mixed $value): bool
+    {
+        return is_array($value) && array_is_list($value) && array_filter($value, fn ($entry) => ! is_string($entry)) === [];
     }
 
     /** The key must be present, holding either null or a value accepted by $check. */
@@ -171,7 +182,7 @@ final class ReceiptExtractionSchema
 
     private static function isAmountLine(mixed $value): bool
     {
-        return is_array($value) && array_key_exists('amount', $value)
-            && (is_string($value['amount']) || $value['amount'] === null) && is_bool($value['uncertain'] ?? null);
+        return is_array($value) && self::isNullableOf($value, 'amount', 'is_string')
+            && self::isNullableOf($value, 'source_line', 'is_string') && is_bool($value['uncertain'] ?? null);
     }
 }

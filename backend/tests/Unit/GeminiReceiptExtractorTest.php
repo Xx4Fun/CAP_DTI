@@ -140,10 +140,47 @@ class GeminiReceiptExtractorTest extends TestCase
         }
     }
 
+    public function test_live_response_to_the_production_request_parses_and_reconciles(): void
+    {
+        $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/gemini/interaction-production-request.json')), true);
+        Http::fake([self::ENDPOINT => Http::response($fixture['response'], $fixture['http_status'])]);
+
+        $extraction = $this->extractor()->extract([$this->frame(0), $this->frame(1)]);
+        $result = (new \App\Services\Receipt\Extraction\ReceiptExtractionValidator)
+            ->validate($extraction->payload, ['store_name' => 'Probe Test Mart', 'frame_count' => 2]);
+
+        $this->assertSame('completed', $extraction->engine['provider_status']);
+        $this->assertSame(3359, $extraction->engine['usage']['total_tokens']);
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame(['RICE 1KG', 'SARDINES 155G', 'CANDY'], array_column($result['items'], 'item_name'));
+        $this->assertSame([1, 1, 2], array_column($result['items'], 'section'));
+        $this->assertSame(['line_arithmetic' => 'matched', 'items_vs_subtotal' => 'matched', 'expected_vs_total' => 'matched'],
+            $result['reconciliation']['checks']);
+        $this->assertSame([], $result['warnings']);
+    }
+
+    public function test_unexpected_client_errors_keep_only_a_code_and_never_the_cause(): void
+    {
+        // Client errors about the request (e.g. an invalid header) can echo header values into their message.
+        Http::fake(fn () => throw new \InvalidArgumentException('Header value "'.self::KEY.'" is invalid'));
+
+        try {
+            $this->extractor()->extract([$this->frame(0)]);
+            $this->fail('Expected a retryable failure.');
+        } catch (RetryableExtractionException $exception) {
+            $this->assertSame('GEMINI_UNAVAILABLE', $exception->failureCode);
+            $this->assertNull($exception->getPrevious());
+            $this->assertStringNotContainsString(self::KEY, $exception->getMessage().json_encode($exception->engine));
+        }
+    }
+
     public static function nonTransientResponses(): array
     {
         return [
             'auth' => [fn () => Http::response(['error' => ['message' => 'bad key', 'code' => 'unauthenticated']], 401), 'GEMINI_AUTH'],
+            'forbidden' => [fn () => Http::response(['error' => ['message' => 'denied', 'code' => 'permission_denied']], 403), 'GEMINI_AUTH'],
+            'cancelled interaction' => [fn () => Http::response(self::completed(ReceiptExtractionValidatorTest::payload(), 'cancelled')), 'GEMINI_REJECTED'],
+            'unknown interaction status' => [fn () => Http::response(self::completed(ReceiptExtractionValidatorTest::payload(), 'requires_action')), 'GEMINI_REJECTED'],
             'model not found (live fixture)' => [fn () => Http::response(
                 json_decode((string) file_get_contents(base_path('tests/Fixtures/gemini/error-not-found.json')), true)['response'], 404), 'GEMINI_REJECTED'],
             'invalid request (live fixture)' => [fn () => Http::response(

@@ -8,8 +8,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Bounds paid extraction calls: a per-report cap summed across every evidence attempt, plus service-wide daily
- * call and token caps. Capacity is reserved before a call; refused calls are not counted.
+ * Bounds paid extraction calls: per evidence attempt (a fresh capture starts a new attempt), per report across every
+ * attempt (terminal once reached), and service-wide daily call and token caps. Capacity is reserved before a call and
+ * refunded when the call was never sent or never billed.
  */
 class ReceiptExtractionBudget
 {
@@ -26,14 +27,22 @@ class ReceiptExtractionBudget
             ->sum('extraction_calls');
     }
 
-    /** Reserves one call and an estimated token amount; returns the token reservation to reconcile afterwards. */
-    public function reserve(ConsumerReport $report, ReceiptEvidenceBundle $bundle, int $frameCount): int
+    /**
+     * Reserves one call and an estimated token amount.
+     *
+     * @return array{day: string, tokens: int, bundle_id: int}
+     */
+    public function reserve(ConsumerReport $report, ReceiptEvidenceBundle $bundle, int $frameCount): array
     {
-        if ($this->callsForReport($report) >= (int) config('services.receipt_extraction.max_calls_per_report', 9)) {
+        if ($this->callsForReport($report) >= (int) config('services.receipt_extraction.max_calls_per_report', 18)) {
+            throw new ExtractionFailedException(ReceiptFailureCodes::EXTRACTION_REPORT_CAP);
+        }
+        if ((int) $bundle->extraction_calls >= (int) config('services.receipt_extraction.max_calls_per_attempt', 6)) {
             throw new ExtractionFailedException(ReceiptFailureCodes::EXTRACTION_ATTEMPT_CAP);
         }
 
-        $callKey = $this->dailyKey('calls');
+        $day = now('UTC')->format('Y-m-d');
+        $callKey = $this->key('calls', $day);
         $this->ensureCounter($callKey);
         if (Cache::increment($callKey) > (int) config('services.receipt_extraction.daily_call_limit', 200)) {
             Cache::decrement($callKey);
@@ -42,7 +51,7 @@ class ReceiptExtractionBudget
         }
 
         $estimate = $frameCount * self::ESTIMATED_TOKENS_PER_FRAME + self::ESTIMATED_OUTPUT_TOKENS;
-        $tokenKey = $this->dailyKey('tokens');
+        $tokenKey = $this->key('tokens', $day);
         $this->ensureCounter($tokenKey);
         if (Cache::increment($tokenKey, $estimate) > (int) config('services.receipt_extraction.daily_token_limit', 3000000)) {
             Cache::decrement($tokenKey, $estimate);
@@ -56,24 +65,32 @@ class ReceiptExtractionBudget
             'extraction_attempted_at' => now(),
         ])->save();
 
-        return $estimate;
+        return ['day' => $day, 'tokens' => $estimate, 'bundle_id' => (int) $bundle->id];
     }
 
-    /** Replaces the token estimate with the provider-reported usage once it is known. */
-    public function reconcile(int $estimate, ?int $actualTokens): void
+    /** Replaces the token estimate with the provider-reported usage, on the day the reservation was made. */
+    public function reconcile(array $reservation, ?int $actualTokens): void
     {
-        if ($actualTokens === null || $actualTokens === $estimate) {
+        if ($actualTokens === null || $actualTokens === $reservation['tokens']) {
             return;
         }
-        $tokenKey = $this->dailyKey('tokens');
-        $actualTokens > $estimate
-            ? Cache::increment($tokenKey, $actualTokens - $estimate)
-            : Cache::decrement($tokenKey, $estimate - $actualTokens);
+        $tokenKey = $this->key('tokens', $reservation['day']);
+        $actualTokens > $reservation['tokens']
+            ? Cache::increment($tokenKey, $actualTokens - $reservation['tokens'])
+            : Cache::decrement($tokenKey, $reservation['tokens'] - $actualTokens);
     }
 
-    private function dailyKey(string $kind): string
+    /** Returns a reservation whose call was never sent (e.g. too large) or never billed (rate limited). */
+    public function refund(array $reservation): void
     {
-        return 'receipt-extraction:'.$kind.':'.now('UTC')->format('Y-m-d');
+        Cache::decrement($this->key('calls', $reservation['day']));
+        Cache::decrement($this->key('tokens', $reservation['day']), $reservation['tokens']);
+        ReceiptEvidenceBundle::whereKey($reservation['bundle_id'])->where('extraction_calls', '>', 0)->decrement('extraction_calls');
+    }
+
+    private function key(string $kind, string $day): string
+    {
+        return 'receipt-extraction:'.$kind.':'.$day;
     }
 
     private function ensureCounter(string $key): void

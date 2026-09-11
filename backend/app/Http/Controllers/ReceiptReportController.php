@@ -221,9 +221,11 @@ class ReceiptReportController extends Controller
 
         DB::transaction(function () use ($report) {
             $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+            // A paid extraction stored before the failure is kept so the retry reuses it instead of buying another.
+            $pendingExtraction = data_get($report->evidenceBundle->processing_result_json, 'pending_extraction');
             $report->evidenceBundle->update([
                 'processing_status' => 'queued',
-                'processing_result_json' => null,
+                'processing_result_json' => $pendingExtraction ? ['pending_extraction' => $pendingExtraction] : null,
                 'processing_started_at' => null,
                 'processing_completed_at' => null,
                 'failure_code' => null,
@@ -371,6 +373,9 @@ class ReceiptReportController extends Controller
                 ])->values(),
                 'receipt_number' => $processingResult['receipt_number'] ?? ($report->raw_ocr_json['receipt_number'] ?? null),
                 'subtotal' => $processingResult['subtotal'] ?? ($report->raw_ocr_json['subtotal'] ?? null),
+                'subtotal_uncertain' => (bool) ($processingResult['subtotal_uncertain'] ?? ($report->raw_ocr_json['subtotal_uncertain'] ?? false)),
+                'total' => $processingResult['total'] ?? ($report->raw_ocr_json['total'] ?? null),
+                'total_uncertain' => (bool) ($processingResult['total_uncertain'] ?? ($report->raw_ocr_json['total_uncertain'] ?? false)),
                 'discounts' => $this->publicAmountLines($processingResult['discounts'] ?? ($report->raw_ocr_json['discounts'] ?? [])),
                 'adjustments' => $this->publicAmountLines($processingResult['adjustments'] ?? ($report->raw_ocr_json['adjustments'] ?? [])),
                 'reconciliation' => $this->publicReconciliation($processingResult['reconciliation'] ?? ($report->raw_ocr_json['reconciliation'] ?? null)),

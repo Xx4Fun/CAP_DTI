@@ -78,7 +78,8 @@ Submission is unchanged, and `confirm()` rejects any field other than `consumer_
 | 4 | env ∉ {local, testing} and not (`RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true` **and** `GEMINI_BILLING_ATTESTED=paid`) | Tesseract path, `route=approval_gate` |
 | 5 | provider = `gemini` and `GEMINI_API_KEY` empty | **Config error**: boot-time log error + `Processing failed` `GEMINI_NOT_CONFIGURED` (non-retryable). Never a silent fallback |
 | 6 | daily cap reached | `Processing failed` `EXTRACTION_BUDGET_EXHAUSTED` (retryable later; not counted as an attempt; service-wide alert) |
-| 7 | report attempt cap reached | `Processing failed` `EXTRACTION_ATTEMPT_CAP` (non-retryable → Restart allowed) |
+| 7 | per-report call cap reached (all attempts) | `Processing failed` `EXTRACTION_REPORT_CAP` (terminal; DTI follows up) |
+| 7b | per-attempt call cap reached (this evidence bundle) | `Processing failed` `EXTRACTION_ATTEMPT_CAP` (non-retryable → Restart allowed; the fresh capture gets its own allowance) |
 | 8 | encoded request > 18 MB | build transient re-encoded JPEG derivatives (long side 1600, q 0.8); if still too large → `Processing failed` `EXTRACTION_TOO_LARGE` (non-retryable → Restart with fewer, tighter sections) |
 | 9 | otherwise | Gemini call |
 
@@ -87,7 +88,8 @@ Submission is unchanged, and `confirm()` rejects any field other than `consumer_
   `response_format` schema, `thinking_level` (config, provisional `low`), media resolution (config, provisional value from the Phase 1a probe), and `store:false`.
 - No report reference, IP/UA, tokens, or store record data is included.
 - Transport: the Laravel `Http` client with one total timeout (config, default 90 s) and no transport-level retries (retries are handled by the queue, §8). The key is sent only in the header.
-- Before the call, set the attempt marker and increment the per-report paid-call count.
+- Before the call, set the attempt marker and increment the bundle's paid-call count. Calls never sent (too large) or never billed (HTTP 429) are refunded.
+- After a successful call, the raw extraction is stored on the bundle (`pending_extraction`) before validation, so a crash or retry reuses it instead of paying again.
 - On the response: `status` must be `completed`. Take the `model_output` text, JSON-decode it, and PHP-validate it against the schema. The raw model JSON is kept for Admin.
 
 **Extraction instructions.**
@@ -216,8 +218,9 @@ remediation outcome table.
   - `failed()` (timeout or MaxAttempts) **no longer overwrites** an already-set specific `failure_code`. It records `JOB_TIMEOUT` or `PROCESSING_FAILED` only when none is set.
 - **Budgets:**
   - Queue: `tries=3` per dispatch.
-  - Paid calls per report: `RECEIPT_EXTRACTION_MAX_CALLS_PER_REPORT` (default 9), counted across **all bundles of the report** (stored per bundle, summed per report).
-  - Calls refused by a cap are not counted.
+  - Paid calls per evidence attempt: `RECEIPT_EXTRACTION_MAX_CALLS_PER_ATTEMPT` (default 6). Restart creates a new attempt.
+  - Paid calls per report: `RECEIPT_EXTRACTION_MAX_CALLS_PER_REPORT` (default 18), counted across **all bundles of the report** (stored per bundle, summed per report). Terminal once reached.
+  - Calls refused by a cap are not counted. (As built after code inspection INS-001: a single per-report cap made Restart a dead end.)
 - **Retryability** (`processing()` → `can_retry_processing`, `failure_reason`):
 
 | Failure code | Retry offered | Customer path |
@@ -226,7 +229,7 @@ remediation outcome table.
 | `EXTRACTION_BUDGET_EXHAUSTED` | yes, with "service busy, try again later" | Retry later |
 | `EXTRACTION_INVALID`, `GEMINI_REJECTED` | yes (once more), then counts toward the cap | Retry |
 | `EXTRACTION_ATTEMPT_CAP`, `EXTRACTION_TOO_LARGE` | no | **Restart receipt** (allowed from these codes, like integrity) |
-| `GEMINI_NOT_CONFIGURED`, `GEMINI_AUTH` | no | "DTI will follow up" (the operator fixes the config; the report stays in Processing failed and Admin can see it) |
+| `GEMINI_NOT_CONFIGURED`, `GEMINI_AUTH`, `EXTRACTION_REPORT_CAP` | no | "DTI will follow up" (the operator fixes the config; the report stays in Processing failed and Admin can see it) |
 | `EVIDENCE_INTEGRITY_FAILED` | no | Restart (existing) |
 
 A technical failure is never Needs recapture, and no fallback values are produced.

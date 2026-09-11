@@ -99,3 +99,39 @@
   - PWA `tsc` OK + vitest 346/346.
   - New tests: amount (13), reconciler (8), validator (24), Gemini extractor with fixtures (13), feature integration (11), web `receiptPrice` (3) + Admin unit-price/"Not available" (1).
 - **Inspection: NOT yet performed.** Codex is unavailable until 2026-09-15 12:10 PM. These edits are host-authored and unreviewed by an independent provider.
+
+## Code inspection 1 — Phases 0–1 (Claude subagent, fresh, same-provider) — REVISE (2026-09-12)
+- User: "do the Claude reviewer now". Scope: `31e71e8..cbb5ee9`. Same provider as the builder, so this is **not** an independent
+  cross-provider inspection; it is labelled accordingly.
+- 13 findings, all **ACCEPTED** and fixed by the host:
+  - INS-001 (high): one per-report cap made Restart after `EXTRACTION_ATTEMPT_CAP` a dead end, and 429/too-large calls consumed it. Fix: per-attempt cap
+    (6) + per-report cap (18, new terminal `EXTRACTION_REPORT_CAP`, operator-only); 429 and too-large reservations are refunded.
+  - INS-002 (high): a key with an embedded newline could surface in a Guzzle header exception. Fix: `isUsableKey` (printable ASCII after trim) gates
+    routing and the boot log; the binding trims; the extractor wraps any other `Throwable` as `GEMINI_UNAVAILABLE` without keeping the cause.
+  - INS-003 (medium): values from images the model flagged (problems, not clear, total region invisible) could be Ready without review. Fix: `EVIDENCE_QUALITY` warning.
+  - INS-004 (medium): section 1 "no overlap" produced `INCOMPLETE_SCAN`. Fix: the prompt says section 1 is always `unknown`; the validator ignores
+    section 1 and single-photo receipts.
+  - INS-005 (high): a job re-run after a successful paid call bought the extraction again. Fix: the raw extraction is stored as `pending_extraction`
+    immediately after the call and reused by re-runs; `retry-processing` keeps it.
+  - INS-006 (medium): the schema check accepted malformed elements. Fix: strict per-element checks (source lines, uncertain fields, amounts, discounts, adjustments).
+  - INS-007 (low): `duplicates_are_likely_genuine` ignored receipts with a subtotal. Fix: computed against the subtotal when present.
+  - INS-008 (medium): every non-completed interaction status was retryable. Fix: `failed`/`incomplete` retry; other states are `GEMINI_REJECTED`.
+  - INS-009 (low): `possible_duplicate_of` indexing was ambiguous. Fix: schema description + prompt say 0-based; the validator also requires the same
+    line total or name, adjacent sections, and clamps out-of-range sections (`invalid_section`).
+  - INS-010 (medium): the live probe used a reduced schema, not the production request. Fix: re-probed the exact `GeminiReceiptExtractor` request
+    (free tier, synthetic two-section receipt): HTTP 200 in 14.4 s, 2,600 input / 759 output tokens, 3 items, all reconciliation checks matched,
+    no warnings; model merged the overlapping line itself. Saved as `tests/Fixtures/gemini/interaction-production-request.json` (key-free check
+    before save) with a replay test. The first probe attempt ended as `GEMINI_TIMEOUT` (classified retryable, as designed); the rerun succeeded.
+  - INS-011 (medium): missing tests. Added: reuse after crash + retry, attempt cap → restart → fresh attempt processed, report cap terminal, 429
+    refund, legacy route, trimmed/invalid key (no leak), `RECEIPT_INCOMPLETE` history message, unexpected client error, blocked statuses, schema
+    rejections, evidence-quality, section/duplicate validation, subtotal duplicates, privacy notice validation. Outcome table in
+    `backend/docs/receipt-ocr-remediation.md` updated.
+  - INS-012 (low): review lacked `total` and subtotal/total uncertainty; warning messages missing for recapture codes. Fix: `total`,
+    `subtotal_uncertain`, `total_uncertain` added (job snapshot + review); messages for `EVIDENCE_QUALITY`, `INSUFFICIENT_FRAMES`, `TEXT_UNREADABLE`, `RECEIPT_INCOMPLETE`.
+  - INS-013 (low): any `privacy_notice_version` string was accepted, so a client could claim the future consent version. Fix: validated against
+    `PublicPwaController::PRIVACY_NOTICE_VERSIONS` (`1.0` only until Phase 3 ships the 1.1 notice).
+- Proof after fixes (host-run): backend full suite 487/488 (only the pre-existing `EmergencyApcWorkflowTest` date failure); integration 3/3;
+  web `tsc` OK + vitest 113/113; PWA `tsc` OK + vitest 346/346.
+- Plan text updated to the as-built caps (§ gate table, budgets, retryability).
+- Next: fresh same-provider re-inspection of the fix commit (the inspection budget allows one more). An independent Codex inspection is still owed
+  when Codex is available (after 2026-09-15 12:10 PM).

@@ -150,6 +150,14 @@ class PublicPwaTest extends TestCase
             'extracted_text_json' => json_encode(['lines' => ['Rice 45.00']]),
         ])->assertUnprocessable();
 
+        // A report may only claim a privacy notice version the app has actually shown.
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => $submissionUuid,
+            'capture_token' => $token,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '1.1',
+        ])->assertUnprocessable()->assertJsonValidationErrors('privacy_notice_version');
+
         // 2. Submit Report
         $response = $this->postJson('/api/public/reports', [
             'submission_uuid' => $submissionUuid,

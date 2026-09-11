@@ -8,7 +8,9 @@ use App\Models\ReceiptEvidenceBundle;
 use App\Services\Ocr\ShelfTagImagePreprocessor;
 use App\Services\Ocr\ShelfTagOcrService;
 use App\Services\Receipt\Extraction\ExtractionFailedException;
+use App\Services\Receipt\Extraction\ReceiptExtraction;
 use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
+use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
 use App\Services\Receipt\Extraction\ReceiptExtractionValidator;
 use App\Services\Receipt\Extraction\ReceiptExtractor;
@@ -323,18 +325,13 @@ class ReceiptEvidencePipeline
             'mime_type' => $frame['mime_type'],
             'sequence' => $frame['source_sequence'],
         ], $frameCandidates);
-        $reservation = $this->extractionBudget->reserve($report, $bundle, count($frames));
-        try {
-            $extraction = app(ReceiptExtractor::class)->extract($frames);
-        } catch (RetryableExtractionException|ExtractionFailedException $exception) {
-            $this->extractionBudget->reconcile($reservation, $exception->engine['usage']['total_tokens'] ?? null);
-            if ($exception instanceof RetryableExtractionException) {
-                Log::warning('receipt_extraction.transient_failure', ['report_id' => $report->id, 'code' => $exception->failureCode,
-                    'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
-            }
-            throw $exception;
+        // A paid extraction already stored for this attempt (e.g. the job was re-run after a crash) is reused, never re-bought.
+        $stored = $bundle->processing_result_json['pending_extraction'] ?? null;
+        if (is_array($stored) && is_array($stored['payload'] ?? null) && $bundle->extraction_attempted_at !== null) {
+            $extraction = new ReceiptExtraction($stored['payload'], [...(array) ($stored['engine'] ?? []), 'reused' => true]);
+        } else {
+            $extraction = $this->buyExtraction($report, $bundle, $frames);
         }
-        $this->extractionBudget->reconcile($reservation, $extraction->engine['usage']['total_tokens'] ?? null);
 
         $result = $this->extractionValidator->validate($extraction->payload, [
             'store_name' => $report->store?->store_name,
@@ -364,6 +361,35 @@ class ReceiptEvidencePipeline
         ]);
 
         return $result;
+    }
+
+    /**
+     * Makes one paid provider call within budget and stores the raw extraction on the bundle straight away, so a job
+     * re-run cannot pay for the same attempt twice. Calls never sent or never billed are refunded.
+     */
+    private function buyExtraction(ConsumerReport $report, ReceiptEvidenceBundle $bundle, array $frames): ReceiptExtraction
+    {
+        $reservation = $this->extractionBudget->reserve($report, $bundle, count($frames));
+        try {
+            $extraction = app(ReceiptExtractor::class)->extract($frames);
+        } catch (RetryableExtractionException|ExtractionFailedException $exception) {
+            $notBilled = in_array($exception->failureCode, [ReceiptFailureCodes::EXTRACTION_TOO_LARGE, ReceiptFailureCodes::GEMINI_RATE_LIMITED], true);
+            $notBilled
+                ? $this->extractionBudget->refund($reservation)
+                : $this->extractionBudget->reconcile($reservation, $exception->engine['usage']['total_tokens'] ?? null);
+            if ($exception instanceof RetryableExtractionException) {
+                Log::warning('receipt_extraction.transient_failure', ['report_id' => $report->id, 'code' => $exception->failureCode,
+                    'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
+            }
+            throw $exception;
+        }
+        $this->extractionBudget->reconcile($reservation, $extraction->engine['usage']['total_tokens'] ?? null);
+        $bundle->forceFill(['processing_result_json' => [
+            ...(array) $bundle->processing_result_json,
+            'pending_extraction' => ['payload' => $extraction->payload, 'engine' => $extraction->engine],
+        ]])->save();
+
+        return $extraction;
     }
 
     /** The exact local copy that will be decoded must match the canonical evidence hash recorded at upload. */

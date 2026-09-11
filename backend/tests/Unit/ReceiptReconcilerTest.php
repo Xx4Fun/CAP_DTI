@@ -87,6 +87,19 @@ class ReceiptReconcilerTest extends TestCase
         $this->assertSame('45.50', $result['items_sum']);
     }
 
+    public function test_possible_duplicates_are_reported_when_they_explain_a_printed_subtotal(): void
+    {
+        $items = [$this->item(1.0, 1550, 1550), $this->item(1.0, 1550, 1550, true), $this->item(1.0, 3000, 3000)];
+
+        $result = (new ReceiptReconciler)->reconcile($items, 6100, [], [], 6100);
+
+        $this->assertSame('mismatch', $result['checks']['items_vs_subtotal']);
+        $this->assertTrue($result['duplicates_are_likely_genuine']);
+
+        $unexplained = (new ReceiptReconciler)->reconcile($items, 5000, [], [], 5000);
+        $this->assertFalse($unexplained['duplicates_are_likely_genuine']);
+    }
+
     public function test_one_centavo_tolerance(): void
     {
         $this->assertSame('matched', (new ReceiptReconciler)->reconcile([$this->item(1.0, 1000, 1000)], null, [], [], 1001)['status']);

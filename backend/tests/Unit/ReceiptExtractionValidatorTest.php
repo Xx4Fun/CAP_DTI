@@ -257,4 +257,100 @@ class ReceiptExtractionValidatorTest extends TestCase
         $this->assertSame('ready', $result['status']);
         $this->assertContains('INCOMPLETE_SCAN', $this->codes($result));
     }
+
+    public function test_first_section_and_single_photo_overlap_answers_never_warn_incomplete_scan(): void
+    {
+        $firstSection = $this->validate(self::payload(['sections' => [['index' => 1, 'overlaps_previous' => 'no'], ['index' => 2, 'overlaps_previous' => 'yes']]]), ['frame_count' => 2]);
+        $singlePhoto = $this->validate(self::payload(['sections' => [['index' => 1, 'overlaps_previous' => 'no']]]));
+
+        $this->assertNotContains('INCOMPLETE_SCAN', $this->codes($firstSection));
+        $this->assertNotContains('INCOMPLETE_SCAN', $this->codes($singlePhoto));
+        $this->assertSame([], $this->codes($singlePhoto));
+    }
+
+    public static function flaggedEvidence(): array
+    {
+        return [
+            'problem listed' => [['legibility' => 'clear', 'is_receipt' => true, 'problems' => ['glare'], 'total_region_visible' => true]],
+            'partially readable' => [['legibility' => 'partially_readable', 'is_receipt' => true, 'problems' => [], 'total_region_visible' => true]],
+            'total read from an invisible region' => [['legibility' => 'clear', 'is_receipt' => true, 'problems' => [], 'total_region_visible' => false]],
+        ];
+    }
+
+    #[DataProvider('flaggedEvidence')]
+    public function test_values_from_flagged_evidence_always_require_manual_review(array $evidence): void
+    {
+        $result = $this->validate(self::payload(['evidence' => $evidence]));
+
+        $this->assertSame('ready', $result['status']);
+        $this->assertContains('EVIDENCE_QUALITY', $this->codes($result));
+        $this->assertTrue($result['manual_review_required']);
+    }
+
+    public function test_out_of_range_sections_are_clamped_and_flagged(): void
+    {
+        $payload = self::payload(['items' => [self::item('RICE 1KG', '1', '45.00', '45.00', ['RICE 1KG 45.00'], 7)],
+            'total' => ['amount' => '45.00', 'source_line' => 'TOTAL 45.00', 'uncertain' => false]]);
+
+        $result = $this->validate($payload, ['frame_count' => 2]);
+
+        $this->assertSame(2, $result['items'][0]['section']);
+        $this->assertSame('invalid_section', $result['item_flags'][0]['raw_description']);
+    }
+
+    public function test_duplicate_reference_to_an_unrelated_line_is_rejected(): void
+    {
+        $payload = self::payload([
+            'items' => [
+                self::item('SARDINES 155G', '1', '30.00', '30.00', ['SARDINES 155G 30.00'], 1),
+                self::item('RICE 1KG', '1', '45.00', '45.00', ['RICE 1KG 45.00'], 2, [], 0),
+            ],
+            'sections' => [['index' => 1, 'overlaps_previous' => 'unknown'], ['index' => 2, 'overlaps_previous' => 'yes']],
+            'total' => ['amount' => '75.00', 'source_line' => 'TOTAL 75.00', 'uncertain' => false],
+        ]);
+
+        $result = $this->validate($payload, ['frame_count' => 2]);
+
+        $this->assertNull($result['items'][1]['possible_duplicate_of']);
+        $this->assertSame('invalid_duplicate_reference', $result['item_flags'][1]['raw_description']);
+        $this->assertSame('matched', $result['reconciliation']['status']);
+    }
+
+    public static function malformedPayloads(): array
+    {
+        $item = self::item('RICE 1KG', '1', '45.00', '45.00', ['RICE 1KG 45.00']);
+
+        return [
+            'non-string source line' => [['items' => [[...$item, 'source_lines' => [['nested']]]]]],
+            'non-string uncertain field' => [['items' => [[...$item, 'uncertain_fields' => [1]]]]],
+            'numeric item amount' => [['items' => [[...$item, 'line_total' => 45.0]]]],
+            'string duplicate reference' => [['items' => [[...$item, 'possible_duplicate_of' => '0']]]],
+            'missing duplicate reference' => [['items' => [array_diff_key($item, ['possible_duplicate_of' => true])]]],
+            'numeric discount amount' => [['discounts' => [['description' => 'PROMO', 'amount' => 10, 'source_line' => null, 'uncertain' => false]]]],
+            'unknown adjustment kind' => [['adjustments' => [['kind' => 'tip', 'direction' => 'add', 'amount' => '1.00', 'source_line' => null, 'uncertain' => false]]]],
+            'numeric total' => [['total' => ['amount' => 165.75, 'source_line' => null, 'uncertain' => false]]],
+            'non-string evidence problem' => [['evidence' => ['legibility' => 'clear', 'is_receipt' => true, 'problems' => [true], 'total_region_visible' => true]]],
+            'object items' => [['items' => ['first' => $item]]],
+        ];
+    }
+
+    #[DataProvider('malformedPayloads')]
+    public function test_schema_check_rejects_malformed_elements(array $overrides): void
+    {
+        $this->assertFalse(ReceiptExtractionSchema::isValid(self::payload($overrides)));
+    }
+
+    public function test_subtotal_and_total_uncertainty_is_exposed(): void
+    {
+        $result = $this->validate(self::payload([
+            'subtotal' => ['amount' => '16S.75', 'source_line' => 'SUBTOTAL 16S.75', 'uncertain' => false],
+            'total' => ['amount' => '165.75', 'source_line' => 'Total P165.75', 'uncertain' => true],
+        ]));
+
+        $this->assertNull($result['subtotal']);
+        $this->assertTrue($result['subtotal_uncertain']);
+        $this->assertSame('165.75', $result['total']);
+        $this->assertTrue($result['total_uncertain']);
+        $this->assertContains('FIELDS_UNCERTAIN', $this->codes($result));
+    }
 }

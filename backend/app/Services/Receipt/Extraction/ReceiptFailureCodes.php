@@ -26,7 +26,11 @@ final class ReceiptFailureCodes
 
     public const EXTRACTION_BUDGET_EXHAUSTED = 'EXTRACTION_BUDGET_EXHAUSTED';
 
+    /** Paid-call cap reached for this evidence attempt; a fresh capture starts a new attempt. */
     public const EXTRACTION_ATTEMPT_CAP = 'EXTRACTION_ATTEMPT_CAP';
+
+    /** Paid-call cap reached for the whole report across every attempt; DTI follows up manually. */
+    public const EXTRACTION_REPORT_CAP = 'EXTRACTION_REPORT_CAP';
 
     public const EXTRACTION_TOO_LARGE = 'EXTRACTION_TOO_LARGE';
 
@@ -38,7 +42,7 @@ final class ReceiptFailureCodes
     private const RESTART_ONLY = [self::EVIDENCE_INTEGRITY_FAILED, self::EXTRACTION_ATTEMPT_CAP, self::EXTRACTION_TOO_LARGE];
 
     /** Failures that need an operator fix; the customer cannot resolve them. */
-    private const OPERATOR_ONLY = [self::GEMINI_NOT_CONFIGURED, self::GEMINI_AUTH];
+    private const OPERATOR_ONLY = [self::GEMINI_NOT_CONFIGURED, self::GEMINI_AUTH, self::EXTRACTION_REPORT_CAP];
 
     public static function isRestartOnly(?string $code): bool
     {
@@ -59,6 +63,7 @@ final class ReceiptFailureCodes
             self::EXTRACTION_TOO_LARGE => 'The receipt photos are too large to process together. Capture the receipt again with fewer, closer sections.',
             self::EXTRACTION_BUDGET_EXHAUSTED => 'Receipt processing is busy right now. Your receipt is saved; try again later.',
             self::GEMINI_NOT_CONFIGURED, self::GEMINI_AUTH => 'Receipt processing is temporarily unavailable. Your receipt is saved and DTI will follow up.',
+            self::EXTRACTION_REPORT_CAP => 'This receipt could not be processed automatically. Your receipt is saved and DTI will review it.',
             default => null,
         };
     }

@@ -13,7 +13,9 @@ return [
         'provider' => env('RECEIPT_EXTRACTION_PROVIDER', 'tesseract'),
         'consent_versions' => array_values(array_filter(array_map('trim', explode(',', (string) env('RECEIPT_EXTRACTION_CONSENT_VERSIONS', ''))))),
         'production_approved' => (bool) env('RECEIPT_EXTRACTION_PRODUCTION_APPROVED', false),
-        'max_calls_per_report' => (int) env('RECEIPT_EXTRACTION_MAX_CALLS_PER_REPORT', 9),
+        // Paid calls per evidence attempt (a fresh capture starts a new attempt) and per report across attempts.
+        'max_calls_per_attempt' => (int) env('RECEIPT_EXTRACTION_MAX_CALLS_PER_ATTEMPT', 6),
+        'max_calls_per_report' => (int) env('RECEIPT_EXTRACTION_MAX_CALLS_PER_REPORT', 18),
         'daily_call_limit' => (int) env('RECEIPT_EXTRACTION_DAILY_CALL_LIMIT', 200),
         'daily_token_limit' => (int) env('RECEIPT_EXTRACTION_DAILY_TOKEN_LIMIT', 3000000),
         'max_request_bytes' => (int) env('RECEIPT_EXTRACTION_MAX_REQUEST_BYTES', 18 * 1024 * 1024),

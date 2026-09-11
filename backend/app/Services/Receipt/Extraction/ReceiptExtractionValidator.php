@@ -94,9 +94,17 @@ class ReceiptExtractionValidator
                 $reasons['raw_description'] = 'truncated';
             }
 
+            $section = (int) $item['section'];
+            $frameCount = max(1, (int) ($context['frame_count'] ?? 1));
+            if ($section < 1 || $section > $frameCount) {
+                $section = min(max(1, $section), $frameCount);
+                $uncertain[] = 'raw_description';
+                $reasons['raw_description'] ??= 'invalid_section';
+            }
+
             $kept[$modelIndex] = [
                 'model_index' => $modelIndex,
-                'section' => max(1, (int) $item['section']),
+                'section' => $section,
                 'possible_duplicate_of' => $item['possible_duplicate_of'],
                 'item_name' => $description,
                 'raw_text' => $this->capped($sourceText),
@@ -120,9 +128,13 @@ class ReceiptExtractionValidator
                 continue;
             }
             $target = $kept[$reference] ?? null;
+            // The referenced line must be an earlier item in the adjacent earlier section and must look like the same line.
             $valid = is_int($reference) && $reference < $modelIndex && $target !== null
                 && $item['section'] - $target['section'] === 1
-                && ($sectionOverlap[$item['section']] ?? 'unknown') !== 'no';
+                && ($sectionOverlap[$item['section']] ?? 'unknown') !== 'no'
+                && (($item['line_total_cents'] !== null && $item['line_total_cents'] === $target['line_total_cents'])
+                    || ($item['item_name'] !== null && $target['item_name'] !== null
+                        && $this->normalize($item['item_name']) === $this->normalize($target['item_name'])));
             $kept[$modelIndex]['possible_duplicate_of'] = $valid ? $sequenceOf[$reference] : null;
             if (! $valid) {
                 $kept[$modelIndex]['uncertain_fields'] = array_values(array_unique([...$item['uncertain_fields'], 'raw_description']));
@@ -193,13 +205,21 @@ class ReceiptExtractionValidator
         if ($rejected !== [] || $payload['evidence']['legibility'] === 'partially_readable') {
             $warnings[] = 'OCR_INCOMPLETE';
         }
+        // Values read from an image the provider itself flagged as poor must always get DTI review.
+        $evidence = $payload['evidence'];
+        if ($evidence['legibility'] !== 'clear' || $evidence['problems'] !== []
+            || ($evidence['total_region_visible'] === false && $total !== null)) {
+            $warnings[] = 'EVIDENCE_QUALITY';
+        }
         if ($anyUncertain) {
             $warnings[] = 'FIELDS_UNCERTAIN';
         }
         if (in_array(true, array_map(fn (array $item) => $item['possible_duplicate_of'] !== null, $items), true)) {
             $warnings[] = 'POSSIBLE_DUPLICATE_LINES';
         }
-        if (in_array('no', $sectionOverlap, true)) {
+        // Section 1 has no previous section, and a single-photo receipt has no overlap to verify.
+        $laterSections = array_filter($sectionOverlap, fn ($overlap, $index) => $index > 1, ARRAY_FILTER_USE_BOTH);
+        if ((int) ($context['frame_count'] ?? 1) > 1 && in_array('no', $laterSections, true)) {
             $warnings[] = 'INCOMPLETE_SCAN';
         }
 
@@ -242,6 +262,8 @@ class ReceiptExtractionValidator
             'discounts' => array_map(fn (array $discount) => [...$discount, 'amount' => $discount['cents'] === null ? null : ReceiptAmount::format($discount['cents'])], $discounts),
             'adjustments' => array_map(fn (array $adjustment) => [...$adjustment, 'amount' => $adjustment['cents'] === null ? null : ReceiptAmount::format($adjustment['cents'])], $adjustments),
             'total' => $total === null ? null : ReceiptAmount::format($total['cents']),
+            'subtotal_uncertain' => (bool) $payload['subtotal']['uncertain'] || ($payload['subtotal']['amount'] !== null && $subtotal === null),
+            'total_uncertain' => (bool) $payload['total']['uncertain'] || ($payload['total']['amount'] !== null && $total === null),
             'reconciliation' => $reconciliation,
             'evidence_assessment' => $payload['evidence'],
             'merchant' => $merchant,

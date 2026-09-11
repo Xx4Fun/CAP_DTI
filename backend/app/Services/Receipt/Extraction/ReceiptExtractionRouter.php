@@ -29,11 +29,20 @@ class ReceiptExtractionRouter
         if (! $this->approvedForEnvironment()) {
             return ['provider' => self::TESSERACT, 'route' => 'approval_gate'];
         }
-        if (trim((string) config('services.gemini.key')) === '') {
+        if (! self::isUsableKey((string) config('services.gemini.key'))) {
             throw new ExtractionFailedException(ReceiptFailureCodes::GEMINI_NOT_CONFIGURED, ['provider' => self::GEMINI]);
         }
 
         return ['provider' => self::GEMINI, 'route' => 'primary'];
+    }
+
+    /**
+     * A key must be printable ASCII without whitespace once trimmed; anything else (e.g. a pasted trailing newline) is
+     * a configuration error, never sent as a header, because HTTP client errors can echo header values.
+     */
+    public static function isUsableKey(string $key): bool
+    {
+        return preg_match('/^[\x21-\x7E]+$/', trim($key)) === 1;
     }
 
     /**

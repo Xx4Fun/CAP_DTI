@@ -25,6 +25,11 @@ use App\Services\Ocr\ShelfTagTextNormalizer;
 
 class PublicPwaController extends Controller
 {
+    /** Privacy notice versions a customer can have accepted; a report may only claim one of these. */
+    public const PRIVACY_NOTICE_VERSIONS = ['1.0'];
+
+    public const CURRENT_PRIVACY_NOTICE_VERSION = '1.0';
+
     public function config()
     {
         $stateOfCalamity = Cache::get('state_of_calamity', false);
@@ -34,7 +39,7 @@ class PublicPwaController extends Controller
             'data' => [
                 'app_name' => 'PRICE-Watch',
                 'state_of_calamity' => (bool) $stateOfCalamity,
-                'privacy_notice_version' => '1.0',
+                'privacy_notice_version' => self::CURRENT_PRIVACY_NOTICE_VERSION,
                 'max_upload_size_mb' => 10,
                 'allowed_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
                 'receipt_continuous_capture_enabled' => (bool) config('services.receipt_capture.enabled'),
@@ -817,7 +822,7 @@ class PublicPwaController extends Controller
         $request->validate([
             'submission_uuid' => 'required|string',
             'capture_token' => 'required|string',
-            'privacy_notice_version' => 'required|string',
+            'privacy_notice_version' => ['required', 'string', \Illuminate\Validation\Rule::in(self::PRIVACY_NOTICE_VERSIONS)],
             'store_id' => 'nullable|exists:stores,id',
             'tracking_token' => 'nullable|string|min:32|max:128',
             'resume_token' => 'nullable|string|min:32|max:128',
