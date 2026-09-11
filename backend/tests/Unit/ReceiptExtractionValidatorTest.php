@@ -342,15 +342,20 @@ class ReceiptExtractionValidatorTest extends TestCase
 
     public function test_subtotal_and_total_uncertainty_is_exposed(): void
     {
-        $result = $this->validate(self::payload([
+        // An unparseable subtotal the model did not flag must still require review.
+        $misread = $this->validate(self::payload([
             'subtotal' => ['amount' => '16S.75', 'source_line' => 'SUBTOTAL 16S.75', 'uncertain' => false],
-            'total' => ['amount' => '165.75', 'source_line' => 'Total P165.75', 'uncertain' => true],
         ]));
 
-        $this->assertNull($result['subtotal']);
-        $this->assertTrue($result['subtotal_uncertain']);
-        $this->assertSame('165.75', $result['total']);
-        $this->assertTrue($result['total_uncertain']);
-        $this->assertContains('FIELDS_UNCERTAIN', $this->codes($result));
+        $this->assertNull($misread['subtotal']);
+        $this->assertTrue($misread['subtotal_uncertain']);
+        $this->assertFalse($misread['total_uncertain']);
+        $this->assertContains('FIELDS_UNCERTAIN', $this->codes($misread));
+        $this->assertTrue($misread['manual_review_required']);
+
+        $flagged = $this->validate(self::payload(['total' => ['amount' => '165.75', 'source_line' => 'Total P165.75', 'uncertain' => true]]));
+        $this->assertSame('165.75', $flagged['total']);
+        $this->assertTrue($flagged['total_uncertain']);
+        $this->assertContains('FIELDS_UNCERTAIN', $this->codes($flagged));
     }
 }

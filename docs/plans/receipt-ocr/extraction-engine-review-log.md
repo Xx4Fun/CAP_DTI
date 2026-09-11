@@ -135,3 +135,21 @@
 - Plan text updated to the as-built caps (§ gate table, budgets, retryability).
 - Next: fresh same-provider re-inspection of the fix commit (the inspection budget allows one more). An independent Codex inspection is still owed
   when Codex is available (after 2026-09-15 12:10 PM).
+
+## Code inspection 2 — fix commit `64cae82` (Claude subagent, fresh, same-provider) — APPROVED (2026-09-12)
+- The first launch ended with a session-limit API error (no result; not counted). The relaunch completed.
+- Verdict **APPROVED**: all 13 INS fixes were verified as correct (INS-011 had small test gaps). Focused suite ran 244/244.
+- Two low findings, both **ACCEPTED** and fixed by the host after the approval:
+  - RI-001: an unparseable subtotal/total the model did not flag set `*_uncertain` but produced no warning. The fix adds parse failures to the
+    `FIELDS_UNCERTAIN` check; the test now isolates the subtotal case.
+  - RI-002: the extractor catch-all turned Laravel's `StrayRequestException` into `GEMINI_UNAVAILABLE`, so a wrong-URL bug could pass the retry
+    test. The fix rethrows it; the retry test asserts 3 sends to the endpoint. The 429 test also asserts the token refund.
+- Inspector limitations (accepted risks, recorded):
+  1. If processing after a stored `pending_extraction` failed deterministically, retries would reuse the same payload and never reach the attempt cap.
+     No concrete trigger was found.
+  2. A worker killed between the response and the pending save still pays twice.
+  3. Redis/Beanstalkd `retry_after` defaults (90 s) are shorter than the 360 s job timeout. The configured database queue (480 s) is safe. Do not
+     switch drivers without raising `retry_after`.
+- Proof after RI fixes: backend full suite 487/488 (only the pre-existing `EmergencyApcWorkflowTest`).
+- **Inspection budget exhausted** (2 of 2). The RI-001/RI-002 edits were made after the approval and are unreviewed. Both inspections were
+  same-provider, so an independent Codex inspection of `31e71e8..HEAD` is still owed before rollout.

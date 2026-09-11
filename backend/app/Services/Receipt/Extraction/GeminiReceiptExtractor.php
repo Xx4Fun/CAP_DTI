@@ -80,7 +80,8 @@ TEXT;
             $engine['http_status'] = $response->status();
 
             return $this->parse($response, $engine);
-        } catch (RetryableExtractionException|ExtractionFailedException $exception) {
+        } catch (RetryableExtractionException|ExtractionFailedException|\Illuminate\Http\Client\StrayRequestException $exception) {
+            // Stray-request guards (tests) must fail loudly, never look like a provider outage.
             throw $exception;
         } catch (\Throwable) {
             // Any other client error may echo request details (including header values); keep only a code, never the cause.

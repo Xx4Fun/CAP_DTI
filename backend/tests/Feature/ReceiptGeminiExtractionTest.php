@@ -239,6 +239,8 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->assertSame('Processing failed', $report->status);
         $this->assertSame('GEMINI_UNAVAILABLE', $report->evidenceBundle->failure_code);
         $this->assertSame(3, $report->evidenceBundle->extraction_calls);
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => $request->url() === self::ENDPOINT);
         $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertJsonPath('data.can_retry_processing', true)
             ->assertJsonPath('data.failure_reason', null);
@@ -347,6 +349,7 @@ class ReceiptGeminiExtractionTest extends TestCase
 
         $this->assertSame(0, $report->refresh()->evidenceBundle->extraction_calls);
         $this->assertSame(0, (int) \Illuminate\Support\Facades\Cache::get('receipt-extraction:calls:'.now('UTC')->format('Y-m-d')));
+        $this->assertSame(0, (int) \Illuminate\Support\Facades\Cache::get('receipt-extraction:tokens:'.now('UTC')->format('Y-m-d')));
         Http::assertSentCount(1);
     }
 

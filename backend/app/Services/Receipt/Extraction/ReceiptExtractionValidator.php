@@ -184,6 +184,7 @@ class ReceiptExtractionValidator
         $items = array_values($kept);
         $anyUncertain = $merchant['uncertain'] || (bool) $payload['transaction_date']['uncertain'] || (bool) $payload['total']['uncertain']
             || (bool) $payload['subtotal']['uncertain'] || (is_string($dateText) && $transactionDate === null)
+            || ($payload['subtotal']['amount'] !== null && $subtotal === null) || ($payload['total']['amount'] !== null && $total === null)
             || in_array(true, array_map(fn (array $item) => $item['uncertain_fields'] !== [], $items), true)
             || in_array(true, array_column($discounts, 'uncertain'), true) || in_array(true, array_column($adjustments, 'uncertain'), true);
 
