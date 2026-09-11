@@ -335,6 +335,11 @@ export interface ConsumerReportItemRecord {
   quantity?: string | null
   unit?: string | null
   observed_price?: string | number | null
+  unit_price?: string | number | null
+  line_total?: string | number | null
+  uncertain_fields?: string[] | null
+  section?: number | null
+  possible_duplicate_of?: number | null
   ocr_confidence?: number | null
   srp_id?: number | null
   commodity_key?: string | null
