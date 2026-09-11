@@ -69,3 +69,33 @@
 - Dispositions: **all 20 ACCEPTED**; the plan was rewritten (gate table, retry/backoff mechanics, retryability table, decision table, sign conventions + adjustments,
   duplicate validation, persistence table, Admin fixes moved to Phase 1, 1a contract probe, test isolation in Phase 0, security details).
 - Status: revised plan **not re-reviewed** (same-provider budget; user asked to proceed to Phases 0–1). Never labelled claudex-approved.
+
+## Build — Phases 0–1 (host-built by Claude; branch `feat/receipt-extraction-gemini`)
+- Commits:
+  - `847d0f7`: salvage/retry work
+  - `2810b0e`: plans
+  - `95528ae`: Phase 0 config and test isolation
+  - `227d9e6`: Phase 1 backend
+  - `edd196f`: Admin fixes
+- Phase 0: no Gemini key is ever used by tests (`phpunit.xml` pins + `Http::preventStrayRequests()`); the provider defaults to `tesseract` everywhere;
+  `GEMINI_API_KEY` is declared as a Render secret (`sync: false`). The WebP task (`task_3d7746bd`) was still unfinished (no commits) and was **not merged**.
+- Phase 1a live contract probe (free tier, synthetic receipt, no personal data):
+  - HTTP 200 in 6.7 s; the Interactions API request shape was confirmed;
+  - output is at `steps[type=model_output].content[].text`; usage fields `total_input_tokens` / `total_output_tokens` / `total_thought_tokens` (0 at `low`);
+  - errors are `{error:{message,code}}` (404 `not_found`, 400 `invalid_request`);
+  - `media_resolution` is **not** a `generation_config` field; the per-image `resolution` field takes `low|medium|high|ultra_high` (low = 272 vs high = 1088 tokens).
+  - Sanitized fixtures are in `backend/tests/Fixtures/gemini/`; a string check confirmed no key is present.
+- Deviations from the plan text:
+  1. `GEMINI_MEDIA_RESOLUTION` → `GEMINI_IMAGE_RESOLUTION` (per-image `resolution`, default `high`), per the probe.
+  2. An optional `GEMINI_CA_BUNDLE` was added because local PHP has no CA bundle (TLS stays verified; production uses system CAs).
+  3. The Admin issue was worse than GEM-008: the item form had **no visible price input** and submitted the line total silently. A required
+     unit-price input was added.
+  4. The overall reconciliation status includes the line-arithmetic check (the user spec lists qty × unit price as a check).
+  5. Warning messages were moved to a shared `ReceiptWarning` class (Tesseract behaviour unchanged).
+- Proof (host-run):
+  - backend `php artisan test` → 459/460 (the only failure is the pre-existing date-based `EmergencyApcWorkflowTest`);
+  - `tests/Integration/ReceiptOcrIntegrationTest.php` → 3/3 with real Tesseract;
+  - web `tsc` OK + vitest 113/113;
+  - PWA `tsc` OK + vitest 346/346.
+  - New tests: amount (13), reconciler (8), validator (24), Gemini extractor with fixtures (13), feature integration (11), web `receiptPrice` (3) + Admin unit-price/"Not available" (1).
+- **Inspection: NOT yet performed.** Codex is unavailable until 2026-09-15 12:10 PM. These edits are host-authored and unreviewed by an independent provider.
