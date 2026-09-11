@@ -33,5 +33,11 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Never let tests reach Google or use a real key from backend/.env. -->
+        <env name="RECEIPT_EXTRACTION_PROVIDER" value="tesseract" force="true"/>
+        <env name="RECEIPT_EXTRACTION_CONSENT_VERSIONS" value="" force="true"/>
+        <env name="RECEIPT_EXTRACTION_PRODUCTION_APPROVED" value="false" force="true"/>
+        <env name="GEMINI_API_KEY" value="test-key" force="true"/>
+        <env name="GEMINI_BILLING_ATTESTED" value="" force="true"/>
     </php>
 </phpunit>
