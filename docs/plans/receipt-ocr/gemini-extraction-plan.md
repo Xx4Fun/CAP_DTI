@@ -282,6 +282,7 @@ A technical failure is never Needs recapture, and no fallback values are produce
 **Phase 2 — evaluation corpus** (≥ 30 of the user's receipts from ≥ 5 stores).
 - Free tier is allowed only after **cashier, customer-name, TIN/ID, and card regions are masked or cropped** from each image, or once the paid project exists.
 - The harness calls `GeminiReceiptExtractor` + validator **directly**, with no report or consent path, so the v1.0 consent version is never listed.
+  As built: `php artisan receipts:evaluate`; the collection, masking, and ground-truth guide is `phase2-evaluation-corpus.md`.
 - **Categories:** clean, faded thermal, long, multi-section, angled, crumpled, low-light, duplicate-looking lines, multiple quantities, discounts, SC/PWD, weighted products, different stores, unreadable fields, non-receipt, and injection text.
 - **Metrics:** merchant accuracy, item recall, exact quantity/unit price/line total/total accuracy, missed values, **invented values**, reconciliation success, recapture classification, duplicate handling, latency p50/p95, and tokens/cost.
 - **Targets:** invented numeric = 0, exact numeric ≥ 98%, item recall ≥ 95% (clear), total ≥ 98%, merchant ≥ 95%, the unreadable set never fabricated, and p95 ≤ 30 s for a single section.

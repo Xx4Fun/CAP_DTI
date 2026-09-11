@@ -153,3 +153,35 @@
 - Proof after RI fixes: backend full suite 487/488 (only the pre-existing `EmergencyApcWorkflowTest`).
 - **Inspection budget exhausted** (2 of 2). The RI-001/RI-002 edits were made after the approval and are unreviewed. Both inspections were
   same-provider, so an independent Codex inspection of `31e71e8..HEAD` is still owed before rollout.
+
+## Phase 2 — evaluation corpus (started 2026-09-12, host-built by Claude)
+- User: "start Phase 2".
+- **Harness:** `php artisan receipts:evaluate` (`app/Console/Commands/EvaluateReceiptExtraction.php`) and `ReceiptEvaluationScorer`.
+  - Calls the production `GeminiReceiptExtractor` and validator directly: no reports, consent path, queue, or DB.
+  - Local and testing environments only.
+  - Refuses cases not marked `masked` unless `GEMINI_BILLING_ATTESTED=paid`.
+  - Re-encodes sections as the PWA does (long side ≤ 2000 px, JPEG 86).
+  - Paces calls (`--delay`), retries transient failures (30 s, 60 s), and caps calls (`--max-calls`).
+  - Writes private results to the gitignored `receipt-samples/eval-results/`.
+- **Collection guide:** `docs/plans/receipt-ocr/phase2-evaluation-corpus.md`.
+- **Tests:** 9 scorer unit tests, 5 command feature tests (replaying the live fixture; unmasked refusal; invalid ground truth; env
+  refusal; 429 retry).
+- **Corpus status:** only one real receipt exists (`receipt-samples/2.png` full and `1.png` top section; `3.png` is a duplicate).
+  - Two pilot cases were built from it: `gaisano-full-single` (1 photo) and `gaisano-two-section` (2 overlapping photos).
+  - Ground truth was drafted by Claude from the photos (13 lines summing to the printed 608.50) and is marked **unverified** until the
+    user checks it against the paper receipt.
+- **Masking:** SOLD TO / ADDRESS / TIN are blank on this receipt, so the cashier ID is the only personal field.
+  - The **first mask attempt was misplaced**: it covered the POSH H&S price and left the cashier ID visible. The visual check caught it
+    **before any call**.
+  - The mask was regenerated and re-checked visually: the cashier ID is hidden and all item values are intact.
+- **Pilot run** (free tier, `gemini-3.8-flash`, thinking `low`, image resolution `high`; 2 cases × 2 runs = 4 runs):
+  - All 4 runs: 13/13 items, 0 wrong, 0 missed, 0 invented, total correct, status ready, reconciliation matched.
+  - Item precision 1.0. Exact names 90% (the rest paired by similarity).
+  - Overlap: the model merged the three overlapping lines itself (0 flagged lines, 0 genuine lines flagged).
+  - Latency: p50 11.9 s, p95 18.6 s; single-section p95 14.3 s.
+  - Cost: 8,154 input / 8,408 output tokens, about $0.009 per receipt.
+  - 5 provider calls: one transient `GEMINI_UNAVAILABLE` was retried and succeeded.
+- **Phase 2 exit is NOT met.** The pilot is one receipt (one store, one printer) with unverified ground truth and no `clean`-category data.
+  The plan needs ≥ 30 receipts from ≥ 5 stores across the guide's categories. No config tuning is warranted yet.
+- **Proof:** backend full suite 501/502 (only the pre-existing `EmergencyApcWorkflowTest`).
+- **Unreviewed:** the harness and scorer are host-authored and have not been inspected.
