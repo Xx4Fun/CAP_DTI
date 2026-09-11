@@ -185,3 +185,14 @@
   The plan needs ≥ 30 receipts from ≥ 5 stores across the guide's categories. No config tuning is warranted yet.
 - **Proof:** backend full suite 501/502 (only the pre-existing `EmergencyApcWorkflowTest`).
 - **Unreviewed:** the harness and scorer are host-authored and have not been inspected.
+- **User decision (2026-09-12):** "Im fine with that just 1 for now and since its accurate enough".
+  - Phase 2 is **closed on the one-receipt pilot**. The user **overrides** the plan exit (≥ 30 receipts from ≥ 5 stores) and accepts
+    the provisional config (thinking `low`, image resolution `high`).
+  - The ground truth stays marked unverified: no paper check was done.
+  - Residual risk: accuracy is proven for one store and one dot-matrix printer only. Faded thermal, crumpled, low-light, discount,
+    SC/PWD, weighed, and unreadable-field receipts are untested.
+  - Mitigations:
+    - every extraction stays read-only and DTI-reviewed, with uncertainty and evidence-quality warnings;
+    - the Phase 5 monitoring window becomes the real accuracy check;
+    - the harness can be rerun whenever more receipts are added.
+  - The production gates are unchanged: paid project, DPO sign-off, and the Codex inspection before rollout.

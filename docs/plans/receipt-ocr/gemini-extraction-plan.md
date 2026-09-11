@@ -315,7 +315,7 @@ A technical failure is never Needs recapture, and no fallback values are produce
 | **0** | Branch and commit the current salvage/retry/plan work; merge the WebP task if finished; `.env.example` names; `config/services.php` blocks (`gemini`, `receipt_extraction`) with provider default `tesseract`; `phpunit.xml` pins + `Http::preventStrayRequests()` | Branch clean; existing suites green |
 | **1a** | Live contract probe with a synthetic image → sanitized fixtures | Fixtures committed; no personal data |
 | **1** | Extraction interface + `GeminiReceiptExtractor` + validator + reconciliation + classification; migration + model casts; job retry/backoff/`failed()` changes; gates/caps/attempt counting; `processing()`/`review()`/`confirm()` field changes; message maps; both Admin fixes (web); Docker `zend.exception_ignore_args` | All Phase 1 exit tests pass; `php artisan test` green except the known APC test; the integration test runs; web tests green |
-| 2 | Evaluation corpus + tuning (config only) | Targets met, or stop |
+| 2 | Evaluation corpus + tuning (config only) | Targets met, or stop. **Closed 2026-09-12 by user override on a one-receipt pilot (all measurable targets met); see the review log** |
 | 3 | PWA review UI (uncertain_fields badges, new fields), v1.1 notice (shared constant, `/config`, backend `in:` validation), Admin extraction panel, docs | PWA `tsc` + `vitest`, web tests |
 | 4 | Harden/remove the video flag path | Tests |
 | 5 | Controlled rollout | Monitoring targets |
