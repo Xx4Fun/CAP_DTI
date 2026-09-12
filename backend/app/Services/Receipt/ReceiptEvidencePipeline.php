@@ -103,6 +103,8 @@ class ReceiptEvidencePipeline
 
             $route = $this->extractionRouter->route($report);
             $engine['route'] = $route['route'];
+            // Recorded with the result so an audit can tell which claim allowed this receipt to be sent.
+            $engine['billing_attestation'] = ReceiptExtractionRouter::billingAttestation();
             if ($route['provider'] === ReceiptExtractionRouter::GEMINI) {
                 return $this->extractWithProvider($report, $bundle, $frameCandidates, $route['route']);
             }
@@ -345,7 +347,8 @@ class ReceiptEvidencePipeline
                 ->pluck('failure_code')
                 ->all(),
         ]);
-        $result['engine'] = [...$extraction->engine, 'route' => $route, 'status' => $result['status']];
+        $result['engine'] = [...$extraction->engine, 'route' => $route, 'status' => $result['status'],
+            'billing_attestation' => ReceiptExtractionRouter::billingAttestation()];
         $result['extraction_raw'] = $extraction->payload;
         Log::info('receipt_extraction.completed', [
             'report_id' => $report->id,

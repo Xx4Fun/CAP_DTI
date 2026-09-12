@@ -28,7 +28,8 @@ class ReceiptExtractionPreflight extends Command
         $consentVersions = (array) config('services.receipt_extraction.consent_versions', []);
         $keyUsable = ReceiptExtractionRouter::isUsableKey((string) config('services.gemini.key'));
         $approved = (bool) config('services.receipt_extraction.production_approved');
-        $attested = config('services.gemini.billing_attested') === 'paid';
+        $attested = ReceiptExtractionRouter::billingAttestation() !== null;
+        $demo = ReceiptExtractionRouter::isFreeTierDemo();
         $connection = (string) config('queue.default');
         $retryAfter = config("queue.connections.{$connection}.retry_after");
 
@@ -42,7 +43,8 @@ class ReceiptExtractionPreflight extends Command
             ['endpoint host', 'OK', (string) parse_url((string) config('services.gemini.endpoint'), PHP_URL_HOST)],
             ['thinking level / image resolution', 'OK', config('services.gemini.thinking_level').' / '.config('services.gemini.image_resolution')],
             ['production approved', $localOrTesting ? 'OK' : $blocking($approved), $approved ? 'true' : 'false'],
-            ['billing attested paid', $localOrTesting ? 'OK' : $blocking($attested), $attested ? 'paid' : 'not attested'],
+            ['billing attestation', $attested ? ($demo ? 'WARN' : 'OK') : ($localOrTesting ? 'OK' : $blocking(false)),
+                $demo ? 'free_tier_demo - project team receipts only, never a real customer receipt' : ($attested ? 'paid' : 'not attested')],
             ['approved consent versions', $blocking($consentVersions !== []), $consentVersions === [] ? 'none' : implode(', ', $consentVersions)],
             ['current notice version', $blocking(in_array(PublicPwaController::CURRENT_PRIVACY_NOTICE_VERSION, $consentVersions, true)),
                 PublicPwaController::CURRENT_PRIVACY_NOTICE_VERSION.(in_array(PublicPwaController::CURRENT_PRIVACY_NOTICE_VERSION, $consentVersions, true) ? ' (approved)' : ' (not approved: no report can reach the provider)')],
@@ -63,6 +65,8 @@ class ReceiptExtractionPreflight extends Command
                 'ready' => $blocked === [],
                 'provider' => config('services.receipt_extraction.provider'),
                 'environment' => $environment,
+                'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
+                'free_tier_demo' => $demo,
                 'checks' => array_map(fn (array $check) => ['check' => $check[0], 'status' => $check[1], 'value' => $check[2]], $checks),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {
@@ -70,6 +74,9 @@ class ReceiptExtractionPreflight extends Command
             $blocked === []
                 ? $this->info($gemini ? 'Gemini extraction is configured for this environment.' : 'Running on Tesseract; Gemini checks are advisory.')
                 : $this->error(count($blocked).' blocking issue(s): '.implode(', ', array_column($blocked, 0)));
+            if ($gemini && $demo) {
+                $this->warn('FREE-TIER DEMO: Google may use submitted receipts for product improvement and humans may review them. Capture only the project team\'s own receipts.');
+            }
         }
 
         return $blocked === [] ? self::SUCCESS : self::FAILURE;

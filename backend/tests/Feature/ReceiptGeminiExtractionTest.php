@@ -207,6 +207,34 @@ class ReceiptGeminiExtractionTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_a_free_tier_demo_attestation_is_accepted_and_recorded_with_the_result(): void
+    {
+        // A demonstration must not have to claim a paid plan it does not have; the claim is stored with the extraction.
+        $this->fakeGemini(ReceiptExtractionValidatorTest::payload());
+        $this->app['env'] = 'production';
+        config(['services.receipt_extraction.production_approved' => true, 'services.gemini.billing_attested' => 'free_tier_demo']);
+        [$report] = $this->report('DEMO');
+
+        $this->runJob($report);
+
+        $report->refresh();
+        $this->assertSame('gemini', $report->raw_ocr_json['engine']['provider']);
+        $this->assertSame('free_tier_demo', $report->evidenceBundle->processing_result_json['engine']['billing_attestation']);
+    }
+
+    public function test_an_unrecognised_attestation_keeps_production_on_tesseract(): void
+    {
+        $this->tesseractReturns(['RICE 45.00']);
+        $this->app['env'] = 'production';
+        config(['services.receipt_extraction.production_approved' => true, 'services.gemini.billing_attested' => 'trust me']);
+        [$report] = $this->report('BADATTEST');
+
+        $this->runJob($report);
+
+        $this->assertSame('approval_gate', $report->refresh()->evidenceBundle->processing_result_json['engine']['route']);
+        Http::assertNothingSent();
+    }
+
     public function test_missing_key_with_gemini_provider_is_a_non_retryable_configuration_failure(): void
     {
         config(['services.gemini.key' => '']);

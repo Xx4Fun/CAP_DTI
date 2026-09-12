@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ReceiptEvidenceBundle;
 use App\Services\Receipt\Evaluation\ReceiptEvaluationScorer;
+use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 
@@ -98,6 +99,7 @@ class ReceiptExtractionStatus extends Command
                 'token_limit' => (int) config('services.receipt_extraction.daily_token_limit'),
             ],
             'consent_gate_leaks' => $consentLeaks,
+            'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
         ];
 
         if ($this->option('json')) {
@@ -127,7 +129,11 @@ class ReceiptExtractionStatus extends Command
             ['today calls / limit', $summary['today']['calls'].' / '.$summary['today']['call_limit']],
             ['today tokens / limit', $summary['today']['tokens'].' / '.$summary['today']['token_limit']],
             ['consent gate leaks', $summary['consent_gate_leaks']],
+            ['billing attestation', $summary['billing_attestation'] ?? 'none'],
         ]);
+        if (ReceiptExtractionRouter::isFreeTierDemo()) {
+            $this->warn('FREE-TIER DEMO attestation is in force: only the project team\'s own receipts may be captured.');
+        }
         if ($consentLeaks > 0) {
             $this->error("{$consentLeaks} report(s) reached the provider on an unapproved notice version. Disable the provider and investigate.");
         }

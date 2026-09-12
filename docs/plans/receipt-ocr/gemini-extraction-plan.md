@@ -7,7 +7,7 @@ This plan supersedes the Claude-vision draft (archived in the scratchpad) and re
 | Topic | Decision |
 |---|---|
 | Primary engine | **Gemini 3.8 Flash** (`gemini-3.8-flash`; `GEMINI_MODEL` in `backend/.env`) |
-| Gemini tier | **Free tier for now** → used for development and evaluation only. Real customer receipts need a **paid project**. The code cannot tell free from paid, so this gate is *procedural*: a required `GEMINI_BILLING_ATTESTED=paid` flag plus the DPO sign-off record |
+| Gemini tier | **Free tier for now** → development, evaluation, and the capstone demonstration only. Real customer receipts need a **paid project**. The code cannot tell free from paid, so this gate is *procedural*: `GEMINI_BILLING_ATTESTED` must state what the key actually is — `paid` (real receipts) or `free_tier_demo` (team receipts only, recorded with every extraction) — plus the sign-off record in `DECISIONS.md` |
 | Technical failure | **Processing failed + retry.** No automatic Tesseract fallback. Tesseract remains as a whole-system rollback (`RECEIPT_EXTRACTION_PROVIDER=tesseract`) and serves reports outside the consent gate (§5 gate table) |
 | Privacy | **DTI/DPO gate**: a v1.1 notice names Google as processor; only approved consent versions go to Gemini; production stays off until sign-off |
 | Capture | Guided still sections (≤ 12, ordered, overlapping). New video sessions are **already blocked** unless `RECEIPT_CONTINUOUS_CAPTURE_ENABLED=true` (default false; `PublicPwaController.php:720`) |
@@ -75,7 +75,7 @@ Submission is unchanged, and `confirm()` rejects any field other than `consumer_
 | 1 | `capture_mode ≠ guided_photos_v1` | Tesseract/legacy path, `engine.provider=tesseract`, `engine.route=legacy_mode` |
 | 2 | provider = `tesseract` | Tesseract path, `route=provider_flag` |
 | 3 | report `privacy_notice_version` ∉ `RECEIPT_EXTRACTION_CONSENT_VERSIONS` | Tesseract path, `route=consent_gate` (counted in monitoring) |
-| 4 | env ∉ {local, testing} and not (`RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true` **and** `GEMINI_BILLING_ATTESTED=paid`) | Tesseract path, `route=approval_gate` |
+| 4 | env ∉ {local, testing} and not (`RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true` **and** `GEMINI_BILLING_ATTESTED` ∈ {`paid`, `free_tier_demo`}) | Tesseract path, `route=approval_gate`. An unrecognised attestation value is treated as no attestation |
 | 5 | provider = `gemini` and `GEMINI_API_KEY` empty | **Config error**: boot-time log error + `Processing failed` `GEMINI_NOT_CONFIGURED` (non-retryable). Never a silent fallback |
 | 6 | daily cap reached | `Processing failed` `EXTRACTION_BUDGET_EXHAUSTED` (retryable later; not counted as an attempt; service-wide alert) |
 | 7 | per-report call cap reached (all attempts) | `Processing failed` `EXTRACTION_REPORT_CAP` (terminal; DTI follows up) |

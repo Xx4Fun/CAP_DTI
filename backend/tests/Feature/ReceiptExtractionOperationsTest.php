@@ -145,6 +145,27 @@ class ReceiptExtractionOperationsTest extends TestCase
         $this->assertTrue(json_decode($output, true)['ready']);
     }
 
+    public function test_preflight_accepts_a_free_tier_demo_attestation_but_says_so_loudly(): void
+    {
+        config([
+            'services.receipt_extraction.provider' => 'gemini',
+            'services.receipt_extraction.consent_versions' => ['1.1'],
+            'services.gemini.key' => 'demo-key',
+            'services.receipt_extraction.production_approved' => true,
+            'services.gemini.billing_attested' => 'free_tier_demo',
+        ]);
+
+        $this->artisan('receipts:extraction-preflight')
+            ->expectsOutputToContain('free_tier_demo')
+            ->expectsOutputToContain('project team')
+            ->assertSuccessful();
+
+        $this->assertSame(0, Artisan::call('receipts:extraction-preflight', ['--json' => true]));
+        $json = json_decode(Artisan::output(), true);
+        $this->assertTrue($json['ready']);
+        $this->assertTrue($json['free_tier_demo']);
+    }
+
     public function test_preflight_is_advisory_while_the_provider_is_tesseract(): void
     {
         config(['services.receipt_extraction.provider' => 'tesseract', 'services.gemini.key' => '']);

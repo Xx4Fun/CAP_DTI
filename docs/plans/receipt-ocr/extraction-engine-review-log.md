@@ -358,3 +358,19 @@
 - Two test-authoring mistakes worth recording: a helper named `status()` collided with PHPUnit's final method (the same collision as
   `result()` in Phase 2), and `$this->artisan()` does not populate `Artisan::output()` — both caught by the suite, not by review.
 - **Unreviewed:** host-authored; no inspection round has been run for Phase 4 or Phase 5.
+
+### Free-tier demonstration attestation (user decision, 2026-09-12)
+- User: the paid project is out of scope for a capstone, the project team will be the approver in place of a DTI DPO, and the demo runs
+  **on the deployed Render service**, not locally.
+- Problem that created: outside local/testing the gate required `GEMINI_BILLING_ATTESTED=paid`. Demonstrating from Render would have meant
+  writing `paid` into the project's own safeguard and audit trail while running on the free tier — a false record, presented to a panel.
+- As built: `GEMINI_BILLING_ATTESTED` now accepts `paid` **or** `free_tier_demo`, and any other value counts as no attestation at all
+  (tested). The demo value is not silent: the preflight marks it `WARN` with "project team receipts only", the monitoring command prints it
+  and repeats the warning, `AppServiceProvider` logs `receipt_extraction.free_tier_demo_attestation` at boot outside local, and the value is
+  stored on every extraction at `processing_result_json.engine.billing_attestation` so an audit can tell which claim allowed each send.
+- The decision itself is recorded in `docs/DECISIONS.md` (2026-09-12), including its scope limit: **team receipts only while the free-tier
+  attestation is in force**, because Google may use free-tier content for product improvement and humans may review it. Real customer
+  receipts still require a paid project and a fresh approval.
+- Tests: demo attestation accepted in a production environment and recorded with the result; an unrecognised attestation keeps production on
+  Tesseract with nothing sent; preflight passes on the demo attestation while printing the warning.
+- Proof: backend 522/523 (only the pre-existing `EmergencyApcWorkflowTest`).

@@ -42,6 +42,13 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Support\Facades\Log::error('receipt_extraction.gemini_not_configured');
         }
 
+        // A demonstration attestation outside local development is a deliberate, restricted state worth recording.
+        if (config('services.receipt_extraction.provider') === 'gemini'
+            && \App\Services\Receipt\Extraction\ReceiptExtractionRouter::isFreeTierDemo()
+            && ! app()->environment(['local', 'testing'])) {
+            \Illuminate\Support\Facades\Log::warning('receipt_extraction.free_tier_demo_attestation', ['environment' => app()->environment()]);
+        }
+
         if (request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production')) {
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }

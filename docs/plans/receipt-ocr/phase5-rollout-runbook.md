@@ -16,6 +16,27 @@ environment variable until real receipts have been sent.
 The free tier is for development only. Until prerequisite 1 exists, `GEMINI_BILLING_ATTESTED` must stay unset, which keeps the
 approval gate closed outside local and testing.
 
+## Capstone demonstration on Render (free tier)
+
+The team decided (see `docs/DECISIONS.md`, 2026-09-12) to demonstrate on the deployed service without a paid project. Prerequisites
+1 and 2 above are replaced by the team's own recorded sign-off; 3 and 5 still apply.
+
+Set in Render:
+
+- `RECEIPT_EXTRACTION_PROVIDER=gemini`
+- `RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.1`
+- `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true`
+- `GEMINI_BILLING_ATTESTED=free_tier_demo` ← **not `paid`**. The gate accepts it, the preflight and monitoring commands say so loudly,
+  a warning is logged at boot, and the value is stored with every extraction.
+- `GEMINI_API_KEY` = the free-tier key (still a secret; never in the repo)
+
+**The rule that comes with it:** while `free_tier_demo` is in force, capture only receipts belonging to the project team. Google may use
+free-tier content for product improvement and humans may review it, so a panelist's or stranger's receipt must not be submitted. Keep
+the daily caps low (`RECEIPT_EXTRACTION_DAILY_CALL_LIMIT`) so a demo cannot run away.
+
+To move to real DTI use later: obtain a paid project, switch the attestation to `paid`, and record a fresh approval — the DPO decision,
+not the team's.
+
 ## Order of operations
 
 1. **Staging first.** Deploy the branch to a staging service. Staging sends real receipts only if it also has
