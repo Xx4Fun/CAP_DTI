@@ -332,3 +332,29 @@
 - Accepted, not changed: a customer whose video session is killed mid-flow by the flag gets a bare 404 and loses that capture. Video is off by
   default and the PWA never offers it, so no real customer can hit this; a friendlier 422 would advertise a retired path.
 - Proof after the fixes: backend 513/514 (only the pre-existing `EmergencyApcWorkflowTest`).
+
+## Phase 5 — rollout tooling (2026-09-12, host-built by Claude)
+- User: "Okay next phase now phase 5 i think?".
+- **The rollout itself was not performed and cannot be from here.** It is blocked on four things outside the code — a paid Google
+  project key, the DPO sign-off recorded in `DECISIONS.md`, the owed independent Codex inspection, and deploy authorization — so this
+  phase delivered only what makes the rollout safe and checkable. Nothing was deployed and no environment variable was changed.
+- **`receipts:extraction-preflight`**: rollout gate. Reports environment, provider, key usability, model, approval and billing
+  attestation, approved consent versions, whether the *current* notice version is among them, queue `retry_after` versus the 360 s job
+  timeout (the duplicate-paid-call risk raised as R2's limitation), caps, and whether retired video capture is still on. Rows block only
+  when the provider is actually `gemini`, so the Tesseract default stays advisory and exits 0. It prints configuration shape, never a
+  secret; a test asserts the key never appears in its output.
+- **`receipts:extraction-status --days=N`**: the two-week watch. Aggregates stored results only — provider and route mix, outcomes,
+  failure codes, recapture reasons, reconciliation mix, top warnings, manual-review rate, paid calls, latency p50/p95, tokens and
+  estimated cost, today's budget counters — and **exits non-zero on `consent_gate_leaks`**, i.e. any report that reached the provider on
+  a notice version the DPO never approved. No receipt contents or credentials are printed.
+- **`phase5-rollout-runbook.md`**: prerequisites with owners, the staging-then-production order, the exact variables that enable the
+  engine, the monitoring thresholds and what to do when each is breached, and the rollback (one variable, plus the honest note that
+  rollback cannot unsend what was already sent to Google).
+- Ran against the real local database as a smoke test: the status command summarised 30 days of existing Tesseract-era attempts
+  (0 paid calls, 0 leaks), which is the expected picture before any rollout.
+- **Tests:** 6 new — route/outcome/reconciliation/latency/spend aggregation, the leak check failing the command, the window boundary,
+  preflight blocking on missing prerequisites, preflight passing once configured without printing the key, and preflight staying
+  advisory on Tesseract.
+- Two test-authoring mistakes worth recording: a helper named `status()` collided with PHPUnit's final method (the same collision as
+  `result()` in Phase 2), and `$this->artisan()` does not populate `Artisan::output()` — both caught by the suite, not by review.
+- **Unreviewed:** host-authored; no inspection round has been run for Phase 4 or Phase 5.
