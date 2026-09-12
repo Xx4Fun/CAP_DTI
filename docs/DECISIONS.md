@@ -16,8 +16,12 @@ Only record choices that should constrain future work. Newest entries go first a
   arrangement (processor status, storage off) that this project does not have.
 - The project has **no paid Google project**. The demonstration runs on the free tier, where Google may use submitted content for
   product improvement and humans may review it. That is recorded as `GEMINI_BILLING_ATTESTED=free_tier_demo` and never as `paid`.
-- **Scope: receipts belonging to the project team only.** No member of the public may have their receipt captured while the free-tier
-  attestation is in force. Real customer receipts require a paid project and a fresh approval.
+- **Scope: no restriction on whose receipts are captured during the demonstration.** An earlier version of this entry limited capture to the
+  project team's own receipts; the team **deliberately removed that limit** (2026-09-12) once notice v1.2 shipped, on the basis that the
+  notice itself discloses the free-plan terms to whoever accepts it. The control is therefore the disclosure, not a scope rule.
+- **Residual risk accepted with that decision:** on the free plan Google may use submitted photos to improve its services and its staff may
+  review them, and nothing can retract a photo once sent. Anyone submitting relies on having read the notice. Moving to real, ongoing DTI
+  operations still requires a paid project and a fresh approval.
 - The attestation is stored with every extraction (`processing_result_json.engine.billing_attestation`), so an audit can tell which
   claim allowed a given receipt to be sent.
 - Approved by: the PRICE-Watch capstone project team (add member names when signing). This stands in for a DTI DPO sign-off **for

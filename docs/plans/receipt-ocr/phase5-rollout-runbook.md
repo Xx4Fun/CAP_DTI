@@ -32,9 +32,11 @@ Set in Render:
   a warning is logged at boot, and the value is stored with every extraction.
 - `GEMINI_API_KEY` = the free-tier key (still a secret; never in the repo)
 
-**The rule that comes with it:** while `free_tier_demo` is in force, capture only receipts belonging to the project team. Google may use
-free-tier content for product improvement and humans may review it, so a panelist's or stranger's receipt must not be submitted. Keep
-the daily caps low (`RECEIPT_EXTRACTION_DAILY_CALL_LIMIT`) so a demo cannot run away.
+**What this means in practice:** on the free plan Google may use submitted photos to improve its services and its staff may review them.
+The team decided (`docs/DECISIONS.md`, 2026-09-12) not to restrict whose receipts may be captured, because notice v1.2 discloses those
+terms to whoever accepts it — so the disclosure is the control. Two things follow: the notice text must never be weakened while the
+free-tier attestation is in force, and anyone submitting should be given the chance to actually read it. Keep the daily caps low
+(`RECEIPT_EXTRACTION_DAILY_CALL_LIMIT`) so a demonstration cannot run away.
 
 To move to real DTI use later: obtain a paid project, switch the attestation to `paid`, and record a fresh approval — the DPO decision,
 not the team's.

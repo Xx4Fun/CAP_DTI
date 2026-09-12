@@ -368,9 +368,10 @@
   (tested). The demo value is not silent: the preflight marks it `WARN` with "project team receipts only", the monitoring command prints it
   and repeats the warning, `AppServiceProvider` logs `receipt_extraction.free_tier_demo_attestation` at boot outside local, and the value is
   stored on every extraction at `processing_result_json.engine.billing_attestation` so an audit can tell which claim allowed each send.
-- The decision itself is recorded in `docs/DECISIONS.md` (2026-09-12), including its scope limit: **team receipts only while the free-tier
-  attestation is in force**, because Google may use free-tier content for product improvement and humans may review it. Real customer
-  receipts still require a paid project and a fresh approval.
+- The decision itself is recorded in `docs/DECISIONS.md` (2026-09-12). It originally limited capture to the project team's own receipts.
+  **The user later removed that limit deliberately**, once notice v1.2 shipped, on the basis that the notice discloses the free-plan terms
+  to whoever accepts it; the disclosure is now the only control, and that trade-off is recorded with the decision. Real, ongoing DTI
+  operation still requires a paid project and a fresh approval.
 - Tests: demo attestation accepted in a production environment and recorded with the result; an unrecognised attestation keeps production on
   Tesseract with nothing sent; preflight passes on the demo attestation while printing the warning.
 - Proof: backend 522/523 (only the pre-existing `EmergencyApcWorkflowTest`).
