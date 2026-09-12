@@ -971,6 +971,84 @@ class ReceiptEvidenceWorkflowTest extends TestCase
             ->assertOk()->assertJsonPath('data.transaction_date', '2026-09-04');
     }
 
+    public function test_video_evidence_and_reports_are_refused_once_the_capture_flag_is_off(): void
+    {
+        $session = $this->postJson('/api/public/capture-session', [
+            'store_id' => $this->store->id,
+            'capture_mode' => 'continuous_video_v1',
+        ])->assertCreated();
+        $sessionId = $session->json('data.capture_session_id');
+        $captureToken = $session->json('data.capture_token');
+        $this->withHeader('X-Capture-Token', $captureToken)
+            ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
+                'kind' => 'original_video', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->create('receipt.webm', 1, 'video/webm'),
+            ])->assertCreated();
+
+        // The retired path is switched off while a video session is still open.
+        config()->set('services.receipt_capture.enabled', false);
+
+        $this->withHeader('X-Capture-Token', $captureToken)
+            ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
+                'kind' => 'original_video', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->create('receipt.webm', 1, 'video/webm'),
+            ])->assertNotFound();
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => (string) Str::uuid(),
+            'capture_token' => $captureToken,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '1.1',
+        ])->assertNotFound();
+
+        $this->assertSame(0, ConsumerReport::count());
+        $this->assertSame(1, ReceiptEvidenceAsset::where('kind', 'original_video')->count());
+    }
+
+    public function test_guided_capture_still_works_while_video_capture_is_disabled(): void
+    {
+        config()->set('services.receipt_capture.enabled', false);
+
+        $session = $this->postJson('/api/public/capture-session', ['store_id' => $this->store->id])->assertCreated();
+        $sessionId = $session->json('data.capture_session_id');
+        $captureToken = $session->json('data.capture_token');
+        $this->assertSame('guided_photos_v1', $session->json('data.capture_mode'));
+
+        $this->withHeader('X-Capture-Token', $captureToken)
+            ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
+                'kind' => 'source_frame', 'sequence' => 0,
+                'asset' => UploadedFile::fake()->image('receipt.jpg', 1080, 1920),
+            ])->assertCreated();
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => (string) Str::uuid(),
+            'capture_token' => $captureToken,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '1.1',
+        ])->assertCreated();
+
+        $this->assertSame(1, ConsumerReport::count());
+    }
+
+    public function test_a_historical_video_report_still_processes_and_is_reviewable_with_the_flag_off(): void
+    {
+        // Retiring new video capture must never strand reports captured while it was allowed.
+        config()->set('services.receipt_capture.enabled', false);
+        [$report, $resumeToken] = $this->createReadyReport('VIDEOFLAGOFF', false);
+        $report->update(['capture_mode' => 'continuous_video_v1', 'status' => 'Processing receipt', 'processing_status' => 'queued']);
+
+        $pipeline = Mockery::mock(ReceiptEvidencePipeline::class);
+        $pipeline->shouldReceive('process')->once()->andReturn([
+            'status' => 'ready', 'reason_code' => null, 'lines' => ['RICE 45.00'], 'items' => [],
+            'transaction_date' => null, 'merchant' => ['status' => 'unverified'], 'warnings' => [],
+            'manual_review_required' => false,
+        ]);
+        (new ProcessReceiptEvidence($report->report_reference))->handle($pipeline);
+
+        $this->assertSame('Ready for confirmation', $report->refresh()->status);
+        $this->withHeader('X-Report-Resume-Token', $resumeToken)
+            ->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk();
+    }
+
     public function test_historical_video_keeps_the_legacy_ocr_path_and_extraction_rules(): void
     {
         [$report] = $this->createReadyReport('VIDEOLEGACY', false);

@@ -14,6 +14,8 @@ New Customer receipt reports use `guided_photos_v1`:
 8. submit the unchanged evidence and extraction for DTI evaluation.
 
 Continuous WebM capture is no longer selected for new Customer reports. The video pipeline and existing video, extracted-frame, and stitched-preview assets remain available for historical reports.
+
+`RECEIPT_CONTINUOUS_CAPTURE_ENABLED` (default false) is the kill switch, enforced at every point that could create new video evidence: opening a video capture session, uploading a video asset, and turning a video session into a report. Turning it off mid-session stops that session at the next step; a session opened while it was on cannot finish afterwards. Processing, retry, Customer review, and Admin evidence access never consult the flag, so historical video reports still drain. `ReceiptCaptureModes` holds the mode constants and this check.
 Legacy `single_image_v1` session creation is rejected; new session requests default to guided stills, and Customer-supplied OCR JSON is prohibited at the report boundary.
 
 ## Evidence and recapture

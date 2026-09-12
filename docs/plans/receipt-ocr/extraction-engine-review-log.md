@@ -296,3 +296,21 @@
 - Proof: backend 510/511 (only the pre-existing `EmergencyApcWorkflowTest`); web `tsc` clean + 118/118; PWA `tsc` clean + 351/351 (all sequential).
 - **Inspection budget for Phase 3: 2 of 2 used.** The R2 fixes above are host-authored and unreviewed by any inspector. The independent Codex
   inspection of `31e71e8..HEAD` remains owed, and is now the only outstanding review for this feature.
+
+## Phase 4 — video capture path (2026-09-12, host-built by Claude)
+- User: "Start Phase 4".
+- **Decision: harden, do not remove.** Plan §3 keeps `ReceiptVideoInspector`, `ReceiptFrameSampler`, and FFmpeg until the drain query is empty, so
+  deleting the path now would strand historical video reports. Phase 4 therefore closes the entry points and leaves the exits open.
+- **Gap found:** `RECEIPT_CONTINUOUS_CAPTURE_ENABLED` was checked only when *opening* a capture session (`PublicPwaController::createCaptureSession`).
+  A video session opened while the flag was on could still upload video and become a report after the flag was turned off, so the kill switch did not
+  actually stop new video reports.
+- **As built:** new `App\Services\Receipt\ReceiptCaptureModes` holds the mode constants and the switch, and the check now also runs in
+  `ReceiptEvidenceController::storeAsset` (video upload → 404 when off) and `PublicPwaController::submitAsyncReceiptDraft` (video session → 404 when
+  off). `/public/config` reports the flag through the same helper.
+- **Deliberately untouched:** `ReceiptEvidencePipeline`, retry, Customer review, and the Admin manifest/asset endpoints never consult the flag, so
+  historical video reports keep processing and stay downloadable. Guided capture is unaffected.
+- **Tests (Phase 4 exit):** video upload and report creation refused after the flag flips mid-session (with the earlier asset still stored and no
+  report created); guided capture unaffected while video is off; a historical video report still processes and is reviewable with the flag off.
+- **Proof:** backend 513/514 (only the pre-existing `EmergencyApcWorkflowTest`). No frontend source changed, so the PWA and web suites were not rerun.
+- **Note:** the PWA never offers video capture (`receiptCaptureSupport` returns guided or unsupported), so this phase is backend-only.
+- **Unreviewed:** host-authored; no inspection round has been run for Phase 4. The owed independent Codex inspection now covers `31e71e8..HEAD`.

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Services\Ocr\ScanSessionRepository;
+use App\Services\Receipt\ReceiptCaptureModes;
 use App\Services\Ocr\ShelfTagFieldParser;
 use App\Services\Ocr\ShelfTagAutoResolver;
 use App\Services\Ocr\ShelfTagComparisonService;
@@ -46,7 +47,7 @@ class PublicPwaController extends Controller
                 'privacy_notice_version' => self::CURRENT_PRIVACY_NOTICE_VERSION,
                 'max_upload_size_mb' => 10,
                 'allowed_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
-                'receipt_continuous_capture_enabled' => (bool) config('services.receipt_capture.enabled'),
+                'receipt_continuous_capture_enabled' => ReceiptCaptureModes::videoEnabled(),
                 'receipt_guided_capture_enabled' => true,
                 'receipt_web_push_enabled' => (bool) config('services.receipt_push.enabled'),
                 'vapid_public_key' => config('services.receipt_push.enabled')
@@ -726,7 +727,7 @@ class PublicPwaController extends Controller
         ]);
 
         $captureMode = $request->input('capture_mode', 'guided_photos_v1');
-        if ($captureMode === 'continuous_video_v1' && !config('services.receipt_capture.enabled')) {
+        if (ReceiptCaptureModes::isVideo($captureMode) && ! ReceiptCaptureModes::videoEnabled()) {
             abort(404);
         }
         $store = $this->getVerifiedStore($request->input('store_id'));
@@ -856,6 +857,11 @@ class PublicPwaController extends Controller
 
     private function submitAsyncReceiptDraft(Request $request, CaptureSession $session)
     {
+        // A video session opened before the flag went off may not become a report either.
+        if (ReceiptCaptureModes::isVideo($session->capture_mode) && ! ReceiptCaptureModes::videoEnabled()) {
+            abort(404);
+        }
+
         $bundle = $session->evidenceBundle()->with('assets')->first();
         if (!$bundle) {
             return response()->json([
