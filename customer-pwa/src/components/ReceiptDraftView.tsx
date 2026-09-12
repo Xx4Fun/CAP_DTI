@@ -8,14 +8,23 @@ import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 interface ReceiptReviewItem {
   sequence: number;
   raw_text: string | null;
-  item_name: string;
+  item_name: string | null;
   quantity: number | null;
   unit: string | null;
   observed_price: number | null;
+  unit_price?: number | null;
+  line_total?: number | null;
+  /** Structured extraction only: fields that could not be read with confidence. */
+  uncertain_fields?: string[] | null;
+  section?: number | null;
+  /** Sequence of an earlier item this line may repeat where two photos overlap. */
+  possible_duplicate_of?: number | null;
   ocr_confidence: number | null;
 }
 
 type ReceiptEvidence = { id: number; sequence: number; mime_type: string; size_bytes: number };
+
+type ReceiptAmountLine = { description?: string | null; kind?: string; direction?: 'add' | 'subtract'; amount: string | null; uncertain: boolean };
 
 interface ReceiptReviewData {
   attempt_number?: number;
@@ -27,11 +36,36 @@ interface ReceiptReviewData {
   continuity: { status: string; continuity_score?: number; reasons?: string[] } | null;
   merchant: { status: string; observed?: string[]; display_name?: string | null } | null;
   detected_total: number | null;
+  receipt_number?: string | null;
+  subtotal?: string | null;
+  subtotal_uncertain?: boolean;
+  total?: string | null;
+  total_uncertain?: boolean;
+  discounts?: ReceiptAmountLine[];
+  adjustments?: ReceiptAmountLine[];
+  reconciliation?: { status: string; checks?: Record<string, string> } | null;
+  /** `gemini` for structured extraction; uncertainty then comes from `uncertain_fields`, never from `ocr_confidence`. */
+  extraction_provider?: string | null;
   warnings: Array<{ code: string; message: string }>;
   manual_review_required: boolean;
   lines: string[];
   evidence: ReceiptEvidence[];
 }
+
+const peso = (value: number | string | null | undefined): string | null =>
+  value == null || value === '' || !Number.isFinite(Number(value)) ? null : `₱${Number(value).toFixed(2)}`;
+
+const FIELD_LABELS: Record<string, string> = { raw_description: 'Name', quantity: 'Quantity', unit_price: 'Unit price', line_total: 'Line total' };
+
+const ADJUSTMENT_LABELS: Record<string, string> = { vat_exemption: 'VAT exemption', rounding: 'Rounding', service_charge: 'Service charge' };
+
+const RECONCILIATION_MESSAGES: Record<string, string> = {
+  matched: 'The item amounts add up to the receipt total.',
+  mismatch: 'The item amounts do not add up to the receipt total. DTI will check the photos.',
+  unavailable: 'The amounts could not be checked automatically. DTI will check the photos.',
+};
+
+const UncertainBadge: React.FC<{ label?: string }> = ({ label = 'Uncertain' }) => <span className="receipt-uncertain-badge">{label}</span>;
 
 interface ReceiptProcessingData {
   report_reference: string;
@@ -40,6 +74,9 @@ interface ReceiptProcessingData {
   message: string | null;
   ready_for_review: boolean;
   can_recapture: boolean;
+  /** False when rerunning OCR cannot help (for example, stored photos failed their integrity check). */
+  can_retry_processing?: boolean;
+  failure_reason?: { code: string; message: string } | null;
   attempt_number: number;
   store: { id: number; store_name: string } | null;
   recapture_reason: { code: string; message: string } | null;
@@ -166,7 +203,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         const data = response.data.data as ReceiptProcessingData;
         if (controller.signal.aborted) return;
         setProcessing(data);
-        if (['Needs recapture', 'Processing failed'].includes(data.status)) {
+        if (data.status === 'Needs recapture' || (data.status === 'Processing failed' && data.can_retry_processing !== false)) {
           await loadEvidence(data.evidence ?? [], token, controller.signal);
         }
         if (!controller.signal.aborted) onStatusRef.current?.(data.status);
@@ -323,6 +360,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   if (mode === 'processing' && processing) {
     const needsRecapture = processing.status === 'Needs recapture';
     const failed = processing.status === 'Processing failed';
+    const retryable = failed && processing.can_retry_processing !== false;
     const needsAttention = needsRecapture || failed;
     return (
       <section className="receipt-draft-page">
@@ -353,10 +391,16 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
             {submitting ? 'Starting camera…' : 'Scan receipt again'}
           </button>
         )}
-        {failed && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture. Retry processing runs OCR again on the same receipt evidence. Refresh status only checks progress.</div>}
-        {failed && <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryProcessing()}>
+        {retryable && <div className="banner-warning">Processing failed on the server. Your receipt is not marked as a bad capture. Retry processing runs OCR again on the same receipt evidence. Refresh status only checks progress.</div>}
+        {retryable && <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryProcessing()}>
           {submitting ? 'Retrying processing…' : 'Retry processing'}
         </button>}
+        {failed && !retryable && <div className="banner-warning">{processing.failure_reason?.message || 'This receipt cannot be processed again. Capture the receipt again from the start.'}</div>}
+        {failed && !retryable && processing.can_recapture && (
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => void startRecapture({ restart: true })}>
+            {submitting ? 'Starting camera…' : 'Restart receipt'}
+          </button>
+        )}
         {!processing.ready_for_review && !needsAttention && <p className="receipt-draft-muted">You may leave this page. This status also appears under Recent Reports.</p>}
         {errorNotice}
         {resumeToken && <button type="button" className="btn-secondary" disabled={busy} onClick={() => void load(resumeToken)}><RefreshCw size={17} /> Refresh status</button>}
@@ -365,6 +409,14 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (!review) return null;
+
+  const structured = review.extraction_provider === 'gemini';
+  const totalAmount = peso(review.total ?? review.detected_total);
+  const totalUncertain = Boolean(review.total_uncertain) || review.warnings?.some(warning => warning.code === 'TOTAL_MISMATCH');
+  const itemPosition = (sequence: number) => items.findIndex(item => item.sequence === sequence) + 1;
+  const showUncertaintyNotice = structured
+    ? review.manual_review_required || items.some(item => (item.uncertain_fields?.length ?? 0) > 0)
+    : review.manual_review_required || review.merchant?.status !== 'matched' || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8);
 
   return (
     <section className="receipt-draft-page receipt-review-page">
@@ -407,22 +459,46 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         <dl className="receipt-summary">
           <div><dt>Merchant</dt><dd>{review.merchant?.display_name || 'Not detected'}{review.merchant?.display_name && review.merchant.status !== 'matched' && <span> — Uncertain</span>}</dd></div>
           <div><dt>Date</dt><dd>{review.transaction_date || 'Not detected'}</dd></div>
-          <div><dt>Total</dt><dd>{review.detected_total != null ? `₱${Number(review.detected_total).toFixed(2)}` : 'Not detected'}{review.warnings?.some(warning => warning.code === 'TOTAL_MISMATCH') && <span> — Uncertain</span>}</dd></div>
+          {structured && <div><dt>Receipt no.</dt><dd>{review.receipt_number || 'Not detected'}</dd></div>}
+          {!structured && <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <span> — Uncertain</span>}</dd></div>}
         </dl>
       <div className="receipt-review-items">
-        {items.map((item, index) => (
-          <div key={item.sequence} className="receipt-review-item" aria-label={`Item ${index + 1}`}>
-            <strong>{item.item_name}</strong>
-            <div className="receipt-review-row">
-              <span>Qty: {item.quantity ?? 'Not detected'} {item.unit ?? ''}</span>
-              <span>{item.observed_price != null ? `₱${Number(item.observed_price).toFixed(2)}` : 'Price not detected'}</span>
+        {items.map((item, index) => {
+          const lineTotal = peso(item.line_total ?? item.observed_price);
+          const unitPrice = peso(item.unit_price);
+          const uncertainFields = structured ? item.uncertain_fields ?? [] : [];
+          return (
+            <div key={item.sequence} className="receipt-review-item" aria-label={`Item ${index + 1}`}>
+              <strong>{item.item_name || 'Name not detected'}</strong>
+              <div className="receipt-review-row">
+                <span>Qty: {item.quantity ?? 'Not detected'} {item.unit ?? ''}</span>
+                {structured && <span>{unitPrice ? `${unitPrice} each` : 'Unit price not detected'}</span>}
+                <span>{lineTotal ?? 'Price not detected'}</span>
+              </div>
+              {uncertainFields.length > 0 && <div className="receipt-uncertain-list">
+                {uncertainFields.map(field => <UncertainBadge key={field} label={`${FIELD_LABELS[field] ?? field} unclear — check the photo`} />)}
+              </div>}
+              {structured && item.possible_duplicate_of != null && <span className="receipt-field-warning">
+                May repeat item {itemPosition(item.possible_duplicate_of) || item.possible_duplicate_of + 1} where two photos overlap. DTI will check.
+              </span>}
+              {!structured && (item.ocr_confidence == null || item.ocr_confidence <= 0.8 || !/[\p{L}]/u.test(item.item_name ?? '')) && <span className="receipt-field-warning">Uncertain — check the photo</span>}
             </div>
-            {(item.ocr_confidence == null || item.ocr_confidence <= 0.8 || !/[\p{L}]/u.test(item.item_name)) && <span className="receipt-field-warning">Uncertain — check the photo</span>}
-          </div>
-        ))}
+          );
+        })}
       </div>
       {items.length === 0 && <p>No items detected.</p>}
-      {(review.manual_review_required || review.merchant?.status !== 'matched' || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8)) && <div className="banner-warning"><AlertTriangle size={20} /><span>Some details couldn’t be read reliably. If your photos are clear and complete, you can submit them for DTI review.</span></div>}
+      {structured && <dl className="receipt-summary receipt-amounts" aria-label="Receipt amounts">
+        {(review.subtotal != null || review.subtotal_uncertain) && <div><dt>Subtotal</dt><dd>{peso(review.subtotal) ?? 'Not detected'}{review.subtotal_uncertain && <UncertainBadge />}</dd></div>}
+        {(review.discounts ?? []).map((line, index) => <div key={`discount-${index}`}><dt>Discount</dt>
+          <dd>{peso(line.amount) ? `−${peso(line.amount)}` : 'Amount not detected'}{line.description ? ` (${line.description})` : ''}{line.uncertain && <UncertainBadge />}</dd></div>)}
+        {(review.adjustments ?? []).map((line, index) => <div key={`adjustment-${index}`}><dt>{ADJUSTMENT_LABELS[line.kind ?? ''] ?? 'Adjustment'}</dt>
+          <dd>{peso(line.amount) ? `${line.direction === 'subtract' ? '−' : '+'}${peso(line.amount)}` : 'Amount not detected'}{line.uncertain && <UncertainBadge />}</dd></div>)}
+        <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <UncertainBadge />}</dd></div>
+      </dl>}
+      {structured && review.reconciliation && <p className={`receipt-reconciliation receipt-reconciliation--${review.reconciliation.status}`}>
+        {RECONCILIATION_MESSAGES[review.reconciliation.status] ?? RECONCILIATION_MESSAGES.unavailable}
+      </p>}
+      {showUncertaintyNotice && <div className="banner-warning"><AlertTriangle size={20} /><span>Some details couldn’t be read reliably. If your photos are clear and complete, you can submit them for DTI review.</span></div>}
       </section>
       <label className="receipt-confirmation-check">
         <input type="checkbox" checked={confirmed} disabled={!evidenceComplete || busy} onChange={(event) => setConfirmed(event.target.checked)} />

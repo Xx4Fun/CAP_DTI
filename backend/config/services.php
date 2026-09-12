@@ -7,6 +7,34 @@ return [
         'abandoned_retention_hours' => (int) env('RECEIPT_ABANDONED_CAPTURE_HOURS', 24),
     ],
 
+    // Receipt extraction provider. 'tesseract' is the safe default in every environment;
+    // Gemini is only used for reports that also pass the consent and approval gates.
+    'receipt_extraction' => [
+        'provider' => env('RECEIPT_EXTRACTION_PROVIDER', 'tesseract'),
+        'consent_versions' => array_values(array_filter(array_map('trim', explode(',', (string) env('RECEIPT_EXTRACTION_CONSENT_VERSIONS', ''))))),
+        'production_approved' => (bool) env('RECEIPT_EXTRACTION_PRODUCTION_APPROVED', false),
+        // Paid calls per evidence attempt (a fresh capture starts a new attempt) and per report across attempts.
+        'max_calls_per_attempt' => (int) env('RECEIPT_EXTRACTION_MAX_CALLS_PER_ATTEMPT', 6),
+        'max_calls_per_report' => (int) env('RECEIPT_EXTRACTION_MAX_CALLS_PER_REPORT', 18),
+        'daily_call_limit' => (int) env('RECEIPT_EXTRACTION_DAILY_CALL_LIMIT', 200),
+        'daily_token_limit' => (int) env('RECEIPT_EXTRACTION_DAILY_TOKEN_LIMIT', 3000000),
+        'max_request_bytes' => (int) env('RECEIPT_EXTRACTION_MAX_REQUEST_BYTES', 18 * 1024 * 1024),
+    ],
+
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL', 'gemini-3.8-flash'),
+        'endpoint' => env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/interactions'),
+        'thinking_level' => env('GEMINI_THINKING_LEVEL', 'low'),
+        // Per-image resolution sent with each receipt section: low, medium, high, or ultra_high (Phase 1a probe).
+        'image_resolution' => env('GEMINI_IMAGE_RESOLUTION', 'high'),
+        'timeout_seconds' => (int) env('GEMINI_TIMEOUT_SECONDS', 90),
+        // Optional CA bundle for local development machines without system CA configuration; TLS is always verified.
+        'ca_bundle' => env('GEMINI_CA_BUNDLE'),
+        // Procedural gate: set to 'paid' only once the key belongs to a billing-enabled project.
+        'billing_attested' => env('GEMINI_BILLING_ATTESTED'),
+    ],
+
     'ffmpeg' => [
         'path' => env('FFMPEG_PATH', 'ffmpeg'),
     ],

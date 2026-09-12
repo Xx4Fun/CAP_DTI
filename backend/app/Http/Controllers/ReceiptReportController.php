@@ -10,6 +10,7 @@ use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
 use App\Models\ReportStatusHistory;
 use App\Models\WebPushSubscription;
+use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -20,7 +21,8 @@ class ReceiptReportController extends Controller
     public function startRecapture(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        if (! in_array($report->status, ['Ready for confirmation', 'Needs recapture'], true)) {
+        $restartOnly = $this->restartOnlyFailure($report);
+        if (! $restartOnly && ! in_array($report->status, ['Ready for confirmation', 'Needs recapture'], true)) {
             return response()->json(['success' => false, 'message' => 'This report is not eligible for receipt recapture.'], 409);
         }
         $validated = $request->validate([
@@ -32,6 +34,8 @@ class ReceiptReportController extends Controller
         $append = (bool) ($validated['append'] ?? false);
         $restart = (bool) ($validated['restart'] ?? false);
         abort_if((int) ($replaceSequence !== null) + (int) $append + (int) $restart > 1, 422, 'Choose one receipt recapture action.');
+        // Retaking or adding a section would carry the compromised originals forward.
+        abort_if($restartOnly && ! $restart, 422, 'This receipt must be captured again from the start.');
 
         $report->load('evidenceBundle.assets');
         $sourceAssets = $report->evidenceBundle?->assets->where('kind', 'source_frame')->sortBy('sequence')->values() ?? collect();
@@ -150,7 +154,7 @@ class ReceiptReportController extends Controller
 
         DB::transaction(function () use ($report, $session, $bundle) {
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
-            if (! in_array($locked->status, ['Ready for confirmation', 'Needs recapture'], true)) {
+            if (! $this->restartOnlyFailure($locked) && ! in_array($locked->status, ['Ready for confirmation', 'Needs recapture'], true)) {
                 abort(409, 'This report is no longer eligible for receipt recapture.');
             }
             $previousStatus = $locked->status;
@@ -205,12 +209,23 @@ class ReceiptReportController extends Controller
         if ($report->status !== 'Processing failed' || ! $report->evidenceBundle) {
             return response()->json(['success' => false, 'message' => 'Only a failed receipt process can be retried.'], 409);
         }
+        $failureCode = $report->evidenceBundle->failure_code;
+        if (! ReceiptFailureCodes::isRetryable($failureCode)) {
+            return response()->json([
+                'success' => false,
+                'message' => $failureCode === ReceiptFailureCodes::EVIDENCE_INTEGRITY_FAILED
+                    ? 'This receipt cannot be processed again because its stored photos failed an integrity check. Capture the receipt again.'
+                    : (ReceiptFailureCodes::publicReason($failureCode) ?? 'This receipt cannot be processed again.'),
+            ], 409);
+        }
 
         DB::transaction(function () use ($report) {
             $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+            // A paid extraction stored before the failure is kept so the retry reuses it instead of buying another.
+            $pendingExtraction = data_get($report->evidenceBundle->processing_result_json, 'pending_extraction');
             $report->evidenceBundle->update([
                 'processing_status' => 'queued',
-                'processing_result_json' => null,
+                'processing_result_json' => $pendingExtraction ? ['pending_extraction' => $pendingExtraction] : null,
                 'processing_started_at' => null,
                 'processing_completed_at' => null,
                 'failure_code' => null,
@@ -287,6 +302,9 @@ class ReceiptReportController extends Controller
         $latestHistory = $report->statusHistories()->reorder()->latest('id')->first();
         $reasonCode = $report->evidenceBundle?->failure_code
             ?? data_get($report->evidenceBundle?->processing_result_json, 'reason_code');
+        $failed = $report->status === 'Processing failed';
+        $failureCode = $failed ? $report->evidenceBundle?->failure_code : null;
+        $failureMessage = $failed ? ReceiptFailureCodes::publicReason($failureCode) : null;
 
         return response()->json([
             'success' => true,
@@ -298,7 +316,9 @@ class ReceiptReportController extends Controller
                 'created_at' => $report->created_at->toIso8601String(),
                 'submitted_at' => $report->submitted_at?->toIso8601String(),
                 'ready_for_review' => $report->status === 'Ready for confirmation',
-                'can_recapture' => $report->status === 'Needs recapture',
+                'can_recapture' => $report->status === 'Needs recapture' || $this->restartOnlyFailure($report),
+                'can_retry_processing' => $failed && ReceiptFailureCodes::isRetryable($failureCode),
+                'failure_reason' => $failureMessage !== null ? ['code' => $failureCode, 'message' => $failureMessage] : null,
                 'attempt_number' => (int) ($report->evidenceBundle?->attempt_number ?? 1),
                 'store' => $report->store ? [
                     'id' => $report->store->id,
@@ -344,11 +364,26 @@ class ReceiptReportController extends Controller
                     'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
                     'unit' => $item->unit,
                     'observed_price' => $item->observed_price !== null ? (float) $item->observed_price : null,
+                    'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : null,
+                    'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
+                    'uncertain_fields' => $item->uncertain_fields ?? [],
+                    'section' => $item->section,
+                    'possible_duplicate_of' => $item->possible_duplicate_of,
                     'ocr_confidence' => $item->ocr_confidence,
                 ])->values(),
+                'receipt_number' => $processingResult['receipt_number'] ?? ($report->raw_ocr_json['receipt_number'] ?? null),
+                'subtotal' => $processingResult['subtotal'] ?? ($report->raw_ocr_json['subtotal'] ?? null),
+                'subtotal_uncertain' => (bool) ($processingResult['subtotal_uncertain'] ?? ($report->raw_ocr_json['subtotal_uncertain'] ?? false)),
+                'total' => $processingResult['total'] ?? ($report->raw_ocr_json['total'] ?? null),
+                'total_uncertain' => (bool) ($processingResult['total_uncertain'] ?? ($report->raw_ocr_json['total_uncertain'] ?? false)),
+                'discounts' => $this->publicAmountLines($processingResult['discounts'] ?? ($report->raw_ocr_json['discounts'] ?? [])),
+                'adjustments' => $this->publicAmountLines($processingResult['adjustments'] ?? ($report->raw_ocr_json['adjustments'] ?? [])),
+                'reconciliation' => $this->publicReconciliation($processingResult['reconciliation'] ?? ($report->raw_ocr_json['reconciliation'] ?? null)),
+                'extraction_provider' => data_get($report->raw_ocr_json, 'engine.provider'),
                 'continuity' => $processingResult['continuity'] ?? ($report->raw_ocr_json['continuity'] ?? null),
                 'merchant' => $processingResult['merchant'] ?? ($report->raw_ocr_json['merchant'] ?? null),
                 'transaction_date' => data_get($processingResult, 'transaction_date')
+                    ?? data_get($report->raw_ocr_json, 'transaction_date')
                     ?? data_get($report->raw_ocr_json, 'metadata.transactionDate'),
                 'detected_total' => $processingResult['detected_total'] ?? ($report->raw_ocr_json['detected_total'] ?? null),
                 'warnings' => $processingResult['warnings'] ?? ($report->raw_ocr_json['warnings'] ?? []),
@@ -424,6 +459,9 @@ class ReceiptReportController extends Controller
                 'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
                 'unit' => $item->unit,
                 'observed_price' => $item->observed_price !== null ? (float) $item->observed_price : null,
+                'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : null,
+                'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
+                'uncertain_fields' => $item->uncertain_fields ?? [],
             ])->values()->all();
             $locked->update([
                 'consumer_confirmed_json' => null,
@@ -489,11 +527,33 @@ class ReceiptReportController extends Controller
         return $report;
     }
 
+    /** Failures that only a fresh capture can recover (integrity, attempt cap, oversized request). */
+    private function restartOnlyFailure(ConsumerReport $report): bool
+    {
+        return $report->status === 'Processing failed'
+            && ReceiptFailureCodes::isRestartOnly($report->evidenceBundle?->failure_code);
+    }
+
+    /** Customer-facing amount lines: description, amount, and uncertainty only. */
+    private function publicAmountLines(mixed $lines): array
+    {
+        return array_values(array_map(fn (array $line) => array_intersect_key($line, array_flip(['description', 'kind', 'direction', 'amount', 'uncertain'])),
+            array_filter((array) $lines, 'is_array')));
+    }
+
+    private function publicReconciliation(mixed $reconciliation): ?array
+    {
+        return is_array($reconciliation)
+            ? ['status' => $reconciliation['status'] ?? null, 'checks' => $reconciliation['checks'] ?? []]
+            : null;
+    }
+
     private function safeReasonMessage(string $reasonCode): string
     {
         return match ($reasonCode) {
             'INSUFFICIENT_FRAMES' => 'No usable receipt image was captured.',
             'TEXT_UNREADABLE' => 'The receipt text was not clear enough to read. Keep it flat, well lit, and in focus.',
+            'RECEIPT_INCOMPLETE' => 'The bottom of the receipt, including the total, is missing. Add a section that shows it.',
             'INCOMPLETE_SCAN' => 'Adjacent receipt sections do not overlap enough to verify that the receipt is complete.',
             'STORE_NOT_CONFIRMED' => 'The store name on the receipt could not be matched to the selected establishment.',
             'ITEMS_NOT_FOUND' => 'No complete receipt item lines could be verified.',

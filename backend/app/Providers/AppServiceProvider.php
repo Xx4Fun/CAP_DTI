@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Services\Admin\AuditTrailService;
+use App\Services\Receipt\Extraction\GeminiReceiptExtractor;
+use App\Services\Receipt\Extraction\ReceiptExtractor;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -17,7 +19,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Built only when a report is routed to the provider, so gate-off environments never need a key.
+        $this->app->bind(ReceiptExtractor::class, fn () => new GeminiReceiptExtractor(
+            apiKey: trim((string) config('services.gemini.key')),
+            model: (string) config('services.gemini.model'),
+            endpoint: (string) config('services.gemini.endpoint'),
+            thinkingLevel: (string) config('services.gemini.thinking_level'),
+            imageResolution: config('services.gemini.image_resolution') ?: null,
+            timeoutSeconds: (int) config('services.gemini.timeout_seconds'),
+            maxRequestBytes: (int) config('services.receipt_extraction.max_request_bytes'),
+            caBundle: config('services.gemini.ca_bundle') ?: null,
+        ));
     }
 
     /**
@@ -25,6 +37,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('services.receipt_extraction.provider') === 'gemini'
+            && ! \App\Services\Receipt\Extraction\ReceiptExtractionRouter::isUsableKey((string) config('services.gemini.key'))) {
+            \Illuminate\Support\Facades\Log::error('receipt_extraction.gemini_not_configured');
+        }
+
+        // A demonstration attestation outside local development is a deliberate, restricted state worth recording.
+        if (config('services.receipt_extraction.provider') === 'gemini'
+            && \App\Services\Receipt\Extraction\ReceiptExtractionRouter::isFreeTierDemo()
+            && ! app()->environment(['local', 'testing'])) {
+            \Illuminate\Support\Facades\Log::warning('receipt_extraction.free_tier_demo_attestation', ['environment' => app()->environment()]);
+        }
+
         if (request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production')) {
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }

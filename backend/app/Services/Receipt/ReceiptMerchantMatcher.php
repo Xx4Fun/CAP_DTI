@@ -41,6 +41,15 @@ class ReceiptMerchantMatcher
         ];
     }
 
+    /** Whether a line names the expected merchant, using the same token threshold as match(). */
+    public function mentions(?string $expected, string $line): bool
+    {
+        $expectedTokens = $this->tokens((string) $expected);
+
+        return $expectedTokens !== []
+            && count(array_intersect($expectedTokens, $this->tokens($line))) / count($expectedTokens) >= 0.5;
+    }
+
     private function tokens(string $value): array
     {
         $tokens = preg_split('/[^a-z0-9]+/i', strtolower($value), -1, PREG_SPLIT_NO_EMPTY) ?: [];

@@ -6,3 +6,9 @@
 trash/
 docs/.obsidian/
 add.png
+
+# Private real-receipt photos for local OCR tuning (never commit)
+receipt-samples/
+
+# Separate vendor PWA workspace kept outside version control for now
+vendor-pwa/

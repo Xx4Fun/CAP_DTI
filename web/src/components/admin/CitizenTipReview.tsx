@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Download,
@@ -16,16 +16,20 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest } from '../../types/admin'
+import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
+import { suggestedUnitPrice, toPrice } from './receiptPrice'
+import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
 
 type ItemDecision = {
   item_id: number
   commodity_key: string
   commodity_name: string
-  receipt_price: number
+  /** Per-unit receipt price the evaluator records; blank until known, never defaulted to 0. */
+  receipt_price: number | ''
   observed_at: string
   regulatory_finding: string
 }
+
 
 export const CitizenTipReview: React.FC = () => {
   const [reports, setReports] = useState<ConsumerReportRecord[]>([])
@@ -53,6 +57,8 @@ export const CitizenTipReview: React.FC = () => {
   const [evidenceManifest, setEvidenceManifest] = useState<ReceiptEvidenceManifest | null>(null)
   const [selectedAsset, setSelectedAsset] = useState<ReceiptEvidenceAssetRecord | null>(null)
   const [itemDecisions, setItemDecisions] = useState<Record<number, ItemDecision>>({})
+  /** Identifies the newest evidence fetch, so a slower earlier one cannot replace it. */
+  const evidenceRequestRef = useRef(0)
 
   useEffect(() => {
     setLoading(true)
@@ -93,6 +99,8 @@ export const CitizenTipReview: React.FC = () => {
   }, [evidenceUrl])
 
   const selectReport = (report: ConsumerReportRecord) => {
+    // Any evidence fetch still in flight belongs to the previous report and must never paint into this one.
+    const request = ++evidenceRequestRef.current
     setSelected(report)
     setCorrectedText(JSON.stringify(report.evaluator_confirmed_json || report.raw_ocr_json || {}, null, 2))
     setFinding(String(report.evaluator_confirmed_json?.regulatory_finding || ''))
@@ -109,7 +117,7 @@ export const CitizenTipReview: React.FC = () => {
       item_id: item.id,
       commodity_key: item.commodity_key || '',
       commodity_name: item.commodity_name || item.item_name || '',
-      receipt_price: Number(item.observed_price || 0),
+      receipt_price: suggestedUnitPrice(item) ?? '',
       observed_at: report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       regulatory_finding: String(item.evaluator_decision_json?.regulatory_finding || ''),
     }])))
@@ -123,6 +131,7 @@ export const CitizenTipReview: React.FC = () => {
       setEvidenceLoading(true)
       void adminApi.getReportEvidenceManifest(report.id)
         .then((manifest) => {
+          if (request !== evidenceRequestRef.current) return
           setEvidenceManifest(manifest)
           const preferred = manifest.assets.find((asset) => asset.kind === 'source_frame' && asset.is_current !== false)
             || manifest.assets.find((asset) => asset.kind === 'original_video' && asset.is_current !== false)
@@ -133,11 +142,12 @@ export const CitizenTipReview: React.FC = () => {
           if (!preferred) return
           setSelectedAsset(preferred)
           return adminApi.getReportEvidenceAsset(report.id, preferred.id).then((blob) => {
+            if (request !== evidenceRequestRef.current) return
             setEvidenceUrl(URL.createObjectURL(blob))
           })
         })
-        .catch(() => setEvidenceUrl(null))
-        .finally(() => setEvidenceLoading(false))
+        .catch(() => { if (request === evidenceRequestRef.current) setEvidenceUrl(null) })
+        .finally(() => { if (request === evidenceRequestRef.current) setEvidenceLoading(false) })
     } else if (report.evidence_available) {
       setEvidenceLoading(true)
       try {
@@ -145,9 +155,8 @@ export const CitizenTipReview: React.FC = () => {
         if (res && typeof res.then === 'function') {
           res
             .then((blob) => {
-              if (blob) {
-                const url = URL.createObjectURL(blob)
-                setEvidenceUrl(url)
+              if (blob && request === evidenceRequestRef.current) {
+                setEvidenceUrl(URL.createObjectURL(blob))
               }
             })
             .catch(() => {
@@ -326,28 +335,33 @@ export const CitizenTipReview: React.FC = () => {
   const itemReviewComplete = hasItemReview && selected!.items!.every((item) => {
     const decision = itemDecisions[item.id]
     return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
+      && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
   })
 
   const showEvidenceAsset = async (asset: ReceiptEvidenceAssetRecord) => {
     if (!selected) return
+    const request = ++evidenceRequestRef.current
     setEvidenceLoading(true)
     if (evidenceUrl) URL.revokeObjectURL(evidenceUrl)
     setEvidenceUrl(null)
     setSelectedAsset(asset)
     try {
       const blob = await adminApi.getReportEvidenceAsset(selected.id, asset.id)
+      // An earlier, slower fetch must never display under the section label the evaluator is now reading.
+      if (request !== evidenceRequestRef.current) return
       setEvidenceUrl(URL.createObjectURL(blob))
     } catch {
-      setError('This evidence asset could not be opened.')
+      if (request === evidenceRequestRef.current) setError('This evidence asset could not be opened.')
     } finally {
-      setEvidenceLoading(false)
+      if (request === evidenceRequestRef.current) setEvidenceLoading(false)
     }
   }
 
   const persistedOcrItems: Array<Record<string, unknown>> = (selected?.items ?? []).map((item) => ({
     name: item.item_name,
     quantity: item.quantity,
-    price: item.observed_price,
+    // Compare per-unit prices with the SRP; a multi-unit line total is not a unit price.
+    price: suggestedUnitPrice(item),
     ocr_confidence: item.ocr_confidence,
   }))
   const rawOcr = selected?.raw_ocr_json
@@ -673,8 +687,9 @@ export const CitizenTipReview: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
                   <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    Continuity: {String(evidenceManifest.continuity?.status || 'ready')} · Merchant: {String(evidenceManifest.merchant?.status || 'matched')}
+                    Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
                   </span>
                 </div>
               )}
@@ -871,6 +886,8 @@ export const CitizenTipReview: React.FC = () => {
                   </div>
                 </div>
 
+                <ReceiptExtractionPanel result={evidenceManifest?.processing_result as ReceiptExtractionResult | null | undefined} />
+
                 {selected.evidence_available && (
                   <button
                     type="button"
@@ -1019,8 +1036,32 @@ export const CitizenTipReview: React.FC = () => {
                       return (
                         <fieldset key={item.id} style={{ display: 'grid', gap: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.65rem', background: '#f8fafc' }}>
                           <legend style={{ padding: '0 0.35rem', fontWeight: 800, fontSize: '0.8rem', color: '#0f172a' }}>
-                            {item.item_name || `Item ${item.sequence + 1}`} · ₱{Number(item.observed_price || 0).toFixed(2)}
+                            {item.item_name || `Item ${item.sequence + 1}`}
+                            {' · '}
+                            {toPrice(item.line_total ?? item.observed_price) !== null
+                              ? `line total ₱${toPrice(item.line_total ?? item.observed_price)!.toFixed(2)}`
+                              : 'line total not available'}
+                            {toPrice(item.quantity) !== null ? ` · qty ${toPrice(item.quantity)}` : ''}
                           </legend>
+                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
+                            Receipt unit price (₱)
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              required
+                              aria-label={`Receipt unit price for ${item.item_name || item.id}`}
+                              value={decision?.receipt_price ?? ''}
+                              onChange={(event) => setItemDecisions((current) => ({
+                                ...current,
+                                [item.id]: { ...current[item.id], receipt_price: event.target.value === '' ? '' : Number(event.target.value) },
+                              }))}
+                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
+                            />
+                            {suggestedUnitPrice(item) === null && (
+                              <small style={{ color: '#b45309', fontWeight: 600 }}>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
+                            )}
+                          </label>
                           <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
                             Commodity key
                             <input

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Services\Ocr\ScanSessionRepository;
+use App\Services\Receipt\ReceiptCaptureModes;
 use App\Services\Ocr\ShelfTagFieldParser;
 use App\Services\Ocr\ShelfTagAutoResolver;
 use App\Services\Ocr\ShelfTagComparisonService;
@@ -25,6 +26,15 @@ use App\Services\Ocr\ShelfTagTextNormalizer;
 
 class PublicPwaController extends Controller
 {
+    /**
+     * Privacy notice versions a customer can have accepted; a report may only claim one of these. 1.1 names Google as
+     * the receipt-reading processor; 1.0 stays accepted for installed apps that still show it (those reports never
+     * reach the external service unless 1.0 is listed in RECEIPT_EXTRACTION_CONSENT_VERSIONS).
+     */
+    public const PRIVACY_NOTICE_VERSIONS = ['1.0', '1.1', '1.2'];
+
+    public const CURRENT_PRIVACY_NOTICE_VERSION = '1.2';
+
     public function config()
     {
         $stateOfCalamity = Cache::get('state_of_calamity', false);
@@ -34,10 +44,10 @@ class PublicPwaController extends Controller
             'data' => [
                 'app_name' => 'PRICE-Watch',
                 'state_of_calamity' => (bool) $stateOfCalamity,
-                'privacy_notice_version' => '1.0',
+                'privacy_notice_version' => self::CURRENT_PRIVACY_NOTICE_VERSION,
                 'max_upload_size_mb' => 10,
                 'allowed_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
-                'receipt_continuous_capture_enabled' => (bool) config('services.receipt_capture.enabled'),
+                'receipt_continuous_capture_enabled' => ReceiptCaptureModes::videoEnabled(),
                 'receipt_guided_capture_enabled' => true,
                 'receipt_web_push_enabled' => (bool) config('services.receipt_push.enabled'),
                 'vapid_public_key' => config('services.receipt_push.enabled')
@@ -713,11 +723,11 @@ class PublicPwaController extends Controller
     {
         $request->validate([
             'store_id' => 'required|exists:stores,id',
-            'capture_mode' => 'nullable|in:continuous_video_v1,guided_photos_v1',
+            'capture_mode' => 'nullable|in:'.ReceiptCaptureModes::VIDEO.','.ReceiptCaptureModes::GUIDED,
         ]);
 
-        $captureMode = $request->input('capture_mode', 'guided_photos_v1');
-        if ($captureMode === 'continuous_video_v1' && !config('services.receipt_capture.enabled')) {
+        $captureMode = $request->input('capture_mode', ReceiptCaptureModes::GUIDED);
+        if (ReceiptCaptureModes::isVideo($captureMode) && ! ReceiptCaptureModes::videoEnabled()) {
             abort(404);
         }
         $store = $this->getVerifiedStore($request->input('store_id'));
@@ -817,7 +827,7 @@ class PublicPwaController extends Controller
         $request->validate([
             'submission_uuid' => 'required|string',
             'capture_token' => 'required|string',
-            'privacy_notice_version' => 'required|string',
+            'privacy_notice_version' => ['required', 'string', \Illuminate\Validation\Rule::in(self::PRIVACY_NOTICE_VERSIONS)],
             'store_id' => 'nullable|exists:stores,id',
             'tracking_token' => 'nullable|string|min:32|max:128',
             'resume_token' => 'nullable|string|min:32|max:128',
@@ -847,6 +857,11 @@ class PublicPwaController extends Controller
 
     private function submitAsyncReceiptDraft(Request $request, CaptureSession $session)
     {
+        // A video session opened before the flag went off may not become a report either.
+        if (ReceiptCaptureModes::isVideo($session->capture_mode) && ! ReceiptCaptureModes::videoEnabled()) {
+            abort(404);
+        }
+
         $bundle = $session->evidenceBundle()->with('assets')->first();
         if (!$bundle) {
             return response()->json([

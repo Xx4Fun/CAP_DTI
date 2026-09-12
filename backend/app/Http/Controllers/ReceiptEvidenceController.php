@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\CaptureSession;
 use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
+use App\Services\Receipt\ReceiptCaptureModes;
+use App\Services\Receipt\ReceiptImageLimits;
+use App\Services\Receipt\UnsafeReceiptImageException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -53,11 +56,25 @@ class ReceiptEvidenceController extends Controller
         if (! $isVideo && ! in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
             abort(422, 'Receipt frames must be JPEG, PNG, or WebP.');
         }
-        if ($isVideo && $session->capture_mode !== 'continuous_video_v1') {
-            abort(422, 'This capture session does not accept video evidence.');
+        // Video capture is retired: a session opened before the flag went off cannot still add video evidence.
+        if ($isVideo && ! ReceiptCaptureModes::acceptsNewVideo($session->capture_mode)) {
+            abort(ReceiptCaptureModes::isVideo($session->capture_mode) ? 404 : 422, 'This capture session does not accept video evidence.');
         }
         if (! $isVideo && $file->getSize() > 2 * 1024 * 1024) {
             abort(422, 'Receipt frames may not exceed 2 MiB.');
+        }
+        if (! $isVideo) {
+            try {
+                $dimensions = ReceiptImageLimits::safeDimensions((string) $file->getRealPath());
+            } catch (UnsafeReceiptImageException) {
+                abort(422, 'Receipt frames may not exceed 4 megapixels.');
+            }
+            // Size is known safe here, so a full decode confirms the frame is a usable image.
+            $image = $dimensions === null ? false : @imagecreatefromstring($file->getContent());
+            if ($image === false) {
+                abort(422, 'Receipt frames must be readable JPEG, PNG, or WebP images.');
+            }
+            imagedestroy($image);
         }
 
         $bundle = ReceiptEvidenceBundle::firstOrCreate(

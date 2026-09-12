@@ -14,7 +14,7 @@ describe('receipt capture contracts', () => {
     })).toEqual({
       submission_uuid: 'sub-guided-1',
       capture_token: 'ct_sec_capture',
-      privacy_notice_version: '1.0',
+      privacy_notice_version: '1.2',
       tracking_token: 'trk_client_generated_12345678901234567890',
       resume_token: 'rsm_client_generated_12345678901234567890',
     });
