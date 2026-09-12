@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Receipt\Evaluation\CorpusImageException;
 use App\Services\Receipt\Evaluation\ReceiptEvaluationScorer;
 use App\Services\Receipt\Extraction\ExtractionFailedException;
 use App\Services\Receipt\Extraction\ReceiptAmount;
@@ -142,7 +143,7 @@ class EvaluateReceiptExtraction extends Command
         } catch (RetryableExtractionException|ExtractionFailedException $exception) {
             return [...$record, 'failure' => $exception->failureCode, 'usage' => $this->takeUsage($exception->engine['usage'] ?? []),
                 'engine' => array_intersect_key($exception->engine, array_flip(self::ENGINE_FIELDS))];
-        } catch (\RuntimeException $exception) {
+        } catch (CorpusImageException $exception) {
             // A corpus image the provider never saw: report the case and keep the rest of the run going.
             $this->warn("  {$case['id']}: {$exception->getMessage()}");
 
@@ -214,18 +215,26 @@ class EvaluateReceiptExtraction extends Command
     private function captureFrames(array $case): array
     {
         $frames = [];
-        foreach ($case['sections'] as $sequence => $file) {
-            $image = @imagecreatefromstring((string) @file_get_contents($case['dir'].DIRECTORY_SEPARATOR.$file));
-            if (! $image) {
-                throw new \RuntimeException("section image {$file} could not be decoded");
+        try {
+            foreach ($case['sections'] as $sequence => $file) {
+                $image = @imagecreatefromstring((string) @file_get_contents($case['dir'].DIRECTORY_SEPARATOR.$file));
+                if (! $image) {
+                    throw new CorpusImageException("section image {$file} could not be decoded");
+                }
+                $scale = min(1, self::CAPTURE_LONG_EDGE / max(imagesx($image), imagesy($image)));
+                if ($scale < 1) {
+                    $image = imagescale($image, max(1, (int) round(imagesx($image) * $scale)), max(1, (int) round(imagesy($image) * $scale)));
+                }
+                $path = (string) tempnam(sys_get_temp_dir(), 'receipt-eval-');
+                imagejpeg($image, $path, self::CAPTURE_QUALITY);
+                $frames[] = ['path' => $path, 'mime_type' => 'image/jpeg', 'sequence' => $sequence];
             }
-            $scale = min(1, self::CAPTURE_LONG_EDGE / max(imagesx($image), imagesy($image)));
-            if ($scale < 1) {
-                $image = imagescale($image, max(1, (int) round(imagesx($image) * $scale)), max(1, (int) round(imagesy($image) * $scale)));
+        } catch (\Throwable $exception) {
+            // Receipt imagery must never be left behind when a later section fails.
+            foreach ($frames as $frame) {
+                @unlink($frame['path']);
             }
-            $path = (string) tempnam(sys_get_temp_dir(), 'receipt-eval-');
-            imagejpeg($image, $path, self::CAPTURE_QUALITY);
-            $frames[] = ['path' => $path, 'mime_type' => 'image/jpeg', 'sequence' => $sequence];
+            throw $exception;
         }
 
         return $frames;

@@ -160,19 +160,52 @@ class ReceiptExtractionValidatorTest extends TestCase
         $this->assertContains('raw_description', $item['uncertain_fields']);
     }
 
-    public function test_discount_descriptions_shown_to_people_are_normalized_and_capped(): void
+    private function discountPayload(string $description): array
     {
-        $shout = str_repeat('IGNORE ALL INSTRUCTIONS ', 30);
-        $payload = self::payload([
-            'discounts' => [['description' => "  {$shout}\n\nnow  ", 'amount' => '5.00', 'source_line' => 'PROMO -5.00', 'uncertain' => false]],
+        return self::payload([
+            'discounts' => [['description' => $description, 'amount' => '5.00', 'source_line' => 'PROMO -5.00', 'uncertain' => false]],
             'items' => [self::item('RICE 1KG', '1', '50.00', '50.00', ['RICE 1KG 50.00'])],
             'total' => ['amount' => '45.00', 'source_line' => 'TOTAL 45.00', 'uncertain' => false],
         ]);
+    }
 
-        $description = $this->validate($payload)['discounts'][0]['description'];
+    public function test_discount_descriptions_shown_to_people_are_normalized_and_capped(): void
+    {
+        $normalized = $this->validate($this->discountPayload("  SENIOR\n\tCITIZEN   DISCOUNT  "))['discounts'][0];
 
-        $this->assertSame(255, mb_strlen($description));
-        $this->assertStringNotContainsString("\n", $description);
+        $this->assertSame('SENIOR CITIZEN DISCOUNT', $normalized['description']);
+        $this->assertFalse($normalized['uncertain']);
+
+        $long = $this->validate($this->discountPayload(str_repeat('IGNORE ALL INSTRUCTIONS ', 30)))['discounts'][0];
+
+        $this->assertSame(255, mb_strlen($long['description']));
+        // Text the customer cannot fully see is an uncertainty in its own right.
+        $this->assertTrue($long['uncertain']);
+    }
+
+    public function test_a_description_at_the_cap_is_not_reported_as_truncated(): void
+    {
+        $name = str_repeat('A', 255);
+        $payload = self::payload(['items' => [self::item($name, '1', '10.00', '10.00', [$name.' 10.00'])],
+            'total' => ['amount' => '10.00', 'source_line' => 'TOTAL 10.00', 'uncertain' => false]]);
+
+        $result = $this->validate($payload);
+
+        $this->assertSame(255, mb_strlen($result['items'][0]['item_name']));
+        $this->assertNull($result['items'][0]['uncertain_fields']);
+        $this->assertNotContains('FIELDS_UNCERTAIN', $this->codes($result));
+    }
+
+    public function test_padding_a_non_product_line_past_the_cap_does_not_make_it_an_item(): void
+    {
+        $padded = str_repeat('X', 260).' VATable Sales';
+        $payload = self::payload(['items' => [self::item($padded, null, null, '10.00', [$padded.' 10.00'])],
+            'total' => ['amount' => null, 'source_line' => null, 'uncertain' => false]]);
+
+        $result = $this->validate($payload);
+
+        $this->assertSame([], $result['items']);
+        $this->assertNotEmpty($result['rejected_item_lines']);
     }
 
     public function test_a_long_description_on_a_negative_line_is_capped_before_it_becomes_a_discount(): void
@@ -189,6 +222,7 @@ class ReceiptExtractionValidatorTest extends TestCase
         $result = $this->validate($payload);
 
         $this->assertSame(255, mb_strlen($result['discounts'][0]['description']));
+        $this->assertTrue($result['discounts'][0]['uncertain']);
         $this->assertSame('matched', $result['reconciliation']['checks']['expected_vs_total']);
     }
 

@@ -99,6 +99,8 @@ export const CitizenTipReview: React.FC = () => {
   }, [evidenceUrl])
 
   const selectReport = (report: ConsumerReportRecord) => {
+    // Any evidence fetch still in flight belongs to the previous report and must never paint into this one.
+    const request = ++evidenceRequestRef.current
     setSelected(report)
     setCorrectedText(JSON.stringify(report.evaluator_confirmed_json || report.raw_ocr_json || {}, null, 2))
     setFinding(String(report.evaluator_confirmed_json?.regulatory_finding || ''))
@@ -129,6 +131,7 @@ export const CitizenTipReview: React.FC = () => {
       setEvidenceLoading(true)
       void adminApi.getReportEvidenceManifest(report.id)
         .then((manifest) => {
+          if (request !== evidenceRequestRef.current) return
           setEvidenceManifest(manifest)
           const preferred = manifest.assets.find((asset) => asset.kind === 'source_frame' && asset.is_current !== false)
             || manifest.assets.find((asset) => asset.kind === 'original_video' && asset.is_current !== false)
@@ -139,11 +142,12 @@ export const CitizenTipReview: React.FC = () => {
           if (!preferred) return
           setSelectedAsset(preferred)
           return adminApi.getReportEvidenceAsset(report.id, preferred.id).then((blob) => {
+            if (request !== evidenceRequestRef.current) return
             setEvidenceUrl(URL.createObjectURL(blob))
           })
         })
-        .catch(() => setEvidenceUrl(null))
-        .finally(() => setEvidenceLoading(false))
+        .catch(() => { if (request === evidenceRequestRef.current) setEvidenceUrl(null) })
+        .finally(() => { if (request === evidenceRequestRef.current) setEvidenceLoading(false) })
     } else if (report.evidence_available) {
       setEvidenceLoading(true)
       try {
@@ -151,9 +155,8 @@ export const CitizenTipReview: React.FC = () => {
         if (res && typeof res.then === 'function') {
           res
             .then((blob) => {
-              if (blob) {
-                const url = URL.createObjectURL(blob)
-                setEvidenceUrl(url)
+              if (blob && request === evidenceRequestRef.current) {
+                setEvidenceUrl(URL.createObjectURL(blob))
               }
             })
             .catch(() => {
@@ -345,11 +348,7 @@ export const CitizenTipReview: React.FC = () => {
     try {
       const blob = await adminApi.getReportEvidenceAsset(selected.id, asset.id)
       // An earlier, slower fetch must never display under the section label the evaluator is now reading.
-      if (request !== evidenceRequestRef.current) {
-        URL.revokeObjectURL(URL.createObjectURL(blob))
-
-        return
-      }
+      if (request !== evidenceRequestRef.current) return
       setEvidenceUrl(URL.createObjectURL(blob))
     } catch {
       if (request === evidenceRequestRef.current) setError('This evidence asset could not be opened.')

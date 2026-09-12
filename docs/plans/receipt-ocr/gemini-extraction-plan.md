@@ -285,7 +285,8 @@ A technical failure is never Needs recapture, and no fallback values are produce
   As built: `php artisan receipts:evaluate`; the collection, masking, and ground-truth guide is `phase2-evaluation-corpus.md`.
 - **Categories:** clean, faded thermal, long, multi-section, angled, crumpled, low-light, duplicate-looking lines, multiple quantities, discounts, SC/PWD, weighted products, different stores, unreadable fields, non-receipt, and injection text.
 - **Metrics:** merchant accuracy, item recall, exact quantity/unit price/line total/total accuracy, missed values, **invented values**, reconciliation success, recapture classification, duplicate handling, latency p50/p95, and tokens/cost.
-- **Targets:** invented numeric = 0, exact numeric ≥ 98%, item recall ≥ 95% (clear), total ≥ 98%, merchant ≥ 95%, the unreadable set never fabricated, and p95 ≤ 30 s for a single section.
+- **Targets:** invented numeric = 0, exact numeric ≥ 98%, **numeric completeness ≥ 95%** (share of printed numbers the extraction returned, so a silent
+  model cannot pass on accuracy alone), item recall ≥ 95% (clear), total ≥ 98%, merchant ≥ 95%, the unreadable set never fabricated, and p95 ≤ 30 s for a single section.
 
 **Rollout.**
 1. Develop in local dev.

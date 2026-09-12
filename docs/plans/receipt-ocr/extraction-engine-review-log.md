@@ -236,9 +236,10 @@
 - 11 findings, all **ACCEPTED** and fixed:
   - P3-001 (medium): notice contradicted itself about who can see the photos. §2 now reads "Apart from the automated reading described below…",
     and the summary card states the automated reading first.
-  - P3-002 (medium): discount and adjustment descriptions were unbounded, source-unverified model text shown to customers, and a negative
-    (discount) line escaped the item name cap entirely. Descriptions now go through `displayText()` (whitespace-normalized, 255 cap) before any
-    branch. No XSS (React escapes; no `dangerouslySetInnerHTML` anywhere), but it is untrusted text presented as DTI output.
+  - P3-002 (medium): discount descriptions and negative (discount) item lines were unbounded, source-unverified model text shown to customers; a
+    negative line escaped the item name cap entirely. Text shown to people is now normalized and capped at 255. (Adjustments have no description
+    field in the schema, so none ever reached a person — corrected here after round 2's R2-012.) No XSS (React escapes; no
+    `dangerouslySetInnerHTML` anywhere), but it is untrusted text presented as DTI output.
   - P3-003 (medium): the scorer counted a printed amount placed in the wrong field as *invented*, breaking the zero-tolerance target, and its
     test passed for the wrong reason. `compare()` now takes the printed-amount set; such values count as wrong.
   - P3-004 (medium): every target could read "met" while the model omitted most numbers (`missed` was in no denominator and no target). Added the
@@ -260,3 +261,38 @@
   failures in files this work never touched). Both suites are green only with `--no-file-parallelism`; a separate task is fixing the root cause.
 - Proof after fixes: PWA `tsc` clean + vitest 347/347 sequential; web `tsc` clean + vitest 118/118 sequential; backend suite below.
 - **Inspection budget for Phase 3: 1 of 2 used.** These fixes are host-authored and unreviewed. The independent Codex inspection is still owed.
+
+## Code inspection 4 — Phase 3 fix commit `091c219` (Claude subagent, fresh, same-provider) — REVISE (2026-09-12)
+- The first launch died on a session-limit API error before reading any code; it produced no verdict and was **not** counted as a round. The
+  relaunch completed.
+- Fix verification: P3-001, P3-003, P3-004, P3-006, P3-008, P3-009, P3-010, P3-011 confirmed fixed; P3-002 fixed for the paths that exist;
+  **P3-005 and P3-007 only partially fixed**. 13 new findings, all **ACCEPTED** and fixed:
+  - R2-001 (medium): the new `catch (\RuntimeException)` also swallowed Laravel's `StrayRequestException`, so a harness test that forgot an HTTP
+    fake would have reported "unreadable corpus image" and passed — defeating the guard added in round 2 of Phase 0–1. Now a dedicated
+    `CorpusImageException`.
+  - R2-002 (medium): the P3-003 fix overshot. Because the printed-amount set contained the row's own line total, a model copying a line total into
+    an unprinted unit price scored "wrong" instead of "invented" — and the per-unit price is exactly what DTI compares to the SRP. The row's
+    counterpart amount is now excluded everywhere it appears. **My first attempt removed only one occurrence and still failed when the fabricated
+    value also equalled the receipt total; my own new test caught it.**
+  - R2-003 (medium): `selectReport` never invalidated in-flight fetches, so switching reports mid-load could paint report A's receipt into report
+    B's exhibit panel, with B's loading state cleared by A's promise. The request generation is now bumped on selection and honoured by the manifest
+    fetch, the initial asset fetch, and the legacy branch.
+  - R2-004 (low-medium): an undecodable later section left the earlier sections' temp JPEGs on disk — the exact leak P3-005 claimed to fix. Capture
+    now cleans up its own partial work before rethrowing.
+  - R2-005 (low): the truncation flag fired at `>=` the cap, so an accurate 255-character name was reported as truncated and forced manual review.
+  - R2-006 (low): capping before the checks meant the non-product and merchant-mention checks saw only the first 255 characters, so a padded footer
+    line could survive as a purchased item. Checks now run on the full normalized text; only stored/displayed values are capped.
+  - R2-007 (low): a cut discount description reached the customer with `uncertain: false` and no warning at all. Truncation is now an uncertainty.
+  - R2-008 (low): plan §10 did not list the new `numeric_completeness` target. Added.
+  - R2-009 (low): `URL.revokeObjectURL(URL.createObjectURL(blob))` was a no-op that read like cleanup. Removed.
+  - R2-010 (low): the token-cost test asserted exactly 2× the single-call fixture, so it could not tell "failed + success" from "success counted
+    twice". The two faked responses now carry different usage.
+  - R2-011 (low): the key-set assertion pinned key *order* (brittle) and only the top level; the normalization half of the discount test passed
+    regardless. Now an order-insensitive set comparison plus per-input-part shapes, and a short description that actually exercises normalization.
+  - R2-012 (low): the round-3 log claimed adjustment descriptions were exposed; the schema has no such field. Log corrected.
+  - R2-013 (low): two notice section bodies changed while `PRIVACY_NOTICE_VERSION` stayed `1.1`, against the file's own rule. Disposition: v1.1 is
+    **explicitly mutable until DPO sign-off** (no production report can have consented to it — the consent list is empty), and the text is now
+    pinned by `privacyNotice.test.ts`. Once the DPO signs off, any further change bumps the version.
+- Proof: backend 510/511 (only the pre-existing `EmergencyApcWorkflowTest`); web `tsc` clean + 118/118; PWA `tsc` clean + 351/351 (all sequential).
+- **Inspection budget for Phase 3: 2 of 2 used.** The R2 fixes above are host-authored and unreviewed by any inspector. The independent Codex
+  inspection of `31e71e8..HEAD` remains owed, and is now the only outstanding review for this feature.

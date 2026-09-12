@@ -89,9 +89,15 @@ final class ReceiptEvaluationScorer
                 $genuineFlagged++;
                 $details[] = "{$label} is a real purchase but was flagged as a possible overlap duplicate";
             }
+            // A row cannot excuse a fabricated amount with its own counterpart: copying a line total into a unit price
+            // that is not printed is an invented per-unit price, which is exactly the value DTI compares to the SRP.
+            // The counterpart is removed wherever it appears, so a coincidence elsewhere (e.g. the receipt total) cannot
+            // downgrade it either.
             $this->compare($numbers, $details, "{$label} quantity", ReceiptAmount::quantity($item['quantity'] ?? null), $row['quantity'] ?? null, money: false);
-            $this->compare($numbers, $details, "{$label} unit_price", $this->textCents($item['unit_price'] ?? null), $this->floatCents($row['unit_price'] ?? null), printed: $printed);
-            $this->compare($numbers, $details, "{$label} line_total", $this->textCents($item['line_total'] ?? null), $this->floatCents($row['line_total'] ?? null), printed: $printed);
+            $this->compare($numbers, $details, "{$label} unit_price", $this->textCents($item['unit_price'] ?? null), $this->floatCents($row['unit_price'] ?? null),
+                printed: $this->without($printed, $this->textCents($item['line_total'] ?? null)));
+            $this->compare($numbers, $details, "{$label} line_total", $this->textCents($item['line_total'] ?? null), $this->floatCents($row['line_total'] ?? null),
+                printed: $this->without($printed, $this->textCents($item['unit_price'] ?? null)));
         }
 
         $falseItems = 0;
@@ -302,6 +308,17 @@ final class ReceiptEvaluationScorer
         if ($remaining !== []) {
             $details[] = count($remaining).' discount(s) missed';
         }
+    }
+
+    /**
+     * The printed amounts with every occurrence of one value removed.
+     *
+     * @param  array<int, int>  $printed
+     * @return array<int, int>
+     */
+    private function without(array $printed, ?int $cents): array
+    {
+        return $cents === null ? $printed : array_values(array_filter($printed, fn (int $amount) => $amount !== $cents));
     }
 
     /** @return array<int, int> Every amount printed on the receipt, in centavos. */

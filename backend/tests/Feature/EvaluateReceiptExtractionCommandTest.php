@@ -124,15 +124,18 @@ class EvaluateReceiptExtractionCommandTest extends TestCase
 
     public function test_failed_and_retried_calls_still_count_towards_the_token_cost(): void
     {
-        $spent = array_replace($this->liveResponse(), ['status' => 'failed']);
-        Http::fake([self::ENDPOINT => Http::sequence()->push($spent)->push($this->liveResponse())]);
+        $response = $this->liveResponse();
+        // Distinct usage on each attempt, so the assertion cannot pass by counting the successful call twice.
+        $spent = array_replace($response, ['status' => 'failed',
+            'usage' => array_replace($response['usage'], ['total_input_tokens' => 1000, 'total_output_tokens' => 100])]);
+        Http::fake([self::ENDPOINT => Http::sequence()->push($spent)->push($response)]);
         $this->writeCase('probe-two-section');
 
         $this->artisan('receipts:evaluate', ['--corpus' => "{$this->root}/corpus", '--out' => "{$this->root}/out"])->assertSuccessful();
 
         $summary = json_decode((string) file_get_contents("{$this->root}/out/summary.json"), true);
         // Both attempts were billed, so both appear in the totals.
-        $this->assertSame(['input' => 5200, 'output' => 1518, 'thought' => 0], $summary['metrics']['tokens']);
+        $this->assertSame(['input' => 3600, 'output' => 859, 'thought' => 0], $summary['metrics']['tokens']);
         Http::assertSentCount(2);
     }
 

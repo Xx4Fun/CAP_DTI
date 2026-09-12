@@ -96,9 +96,23 @@ class GeminiReceiptExtractorTest extends TestCase
                 && $images[1]['data'] === base64_encode((string) file_get_contents($frames[1]['path']))
                 && $images[0]['resolution'] === 'high'
                 && ! str_contains(json_encode($body), 'REP-')
-                // The privacy notice promises only the photos are sent, so the whole key set is pinned, not just metadata.
-                && array_keys($body) === ['model', 'store', 'system_instruction', 'generation_config', 'response_format', 'input'];
+                // The privacy notice promises only the photos are sent, so the key set and every input part are pinned.
+                && $this->sameSet(array_keys($body), ['model', 'store', 'system_instruction', 'generation_config', 'response_format', 'input'])
+                && $this->sameSet(array_keys($body['generation_config']), ['thinking_level'])
+                && array_filter($body['input'], fn (array $part) => ! $this->sameSet(
+                    array_keys($part),
+                    ($part['type'] ?? null) === 'text' ? ['type', 'text'] : ['type', 'data', 'mime_type', 'resolution'],
+                )) === [];
         });
+    }
+
+    /** Key sets are compared without order, so rearranging the request literal is not a test failure. */
+    private function sameSet(array $actual, array $expected): bool
+    {
+        sort($actual);
+        sort($expected);
+
+        return $actual === $expected;
     }
 
     public static function retryableResponses(): array

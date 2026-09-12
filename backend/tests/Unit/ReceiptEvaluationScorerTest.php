@@ -102,6 +102,22 @@ class ReceiptEvaluationScorerTest extends TestCase
         $this->assertContains('subtotal wrong: 72.50 is printed on the receipt but not as this value', $score['details']);
     }
 
+    public function test_a_line_total_copied_into_an_unprinted_unit_price_is_invented(): void
+    {
+        // The per-unit price is what DTI compares to the SRP, so a fabricated one must not be excused as "wrong".
+        $expected = $this->expected(['items' => [
+            ['name' => 'SARDINES 155G', 'quantity' => '2', 'unit_price' => null, 'line_total' => '70.00'],
+        ], 'total' => '70.00']);
+
+        $score = (new ReceiptEvaluationScorer)->score($expected, $this->extraction([
+            'items' => [self::item('SARDINES 155G', 2, 70.0, 70.0)],
+            'total' => '70.00',
+        ]));
+
+        $this->assertSame(1, $score['numeric']['invented']);
+        $this->assertSame(0, $score['numeric']['wrong']);
+    }
+
     public function test_an_unreadable_name_never_takes_the_row_that_matches_a_named_line(): void
     {
         $expected = $this->expected([
