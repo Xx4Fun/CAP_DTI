@@ -67,7 +67,12 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'transaction_date' => null,
                 'warnings' => [],
                 'manual_review_required' => false,
-                'engine' => ['provider' => 'gemini', ...$exception->engine, 'failure_code' => $exception->failureCode],
+                // Only the primary route reaches the provider, so a transient failure here was a real send: record the
+                // claim and the approved consent list that allowed it, or the audit trail loses exactly those cases.
+                'engine' => ['provider' => 'gemini', 'route' => 'primary', ...$exception->engine,
+                    'failure_code' => $exception->failureCode,
+                    'billing_attestation' => \App\Services\Receipt\Extraction\ReceiptExtractionRouter::billingAttestation(),
+                    'consent_versions' => array_values((array) config('services.receipt_extraction.consent_versions', []))],
             ];
         }
         $internalStatus = $result['status'] ?? 'failed';

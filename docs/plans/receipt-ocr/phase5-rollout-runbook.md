@@ -13,8 +13,10 @@ environment variable until real receipts have been sent.
 | 4 | Budget alerts on the Google project (daily spend and quota) | Project owner | **Outstanding** |
 | 5 | Deploy authorization for this branch | Repository owner | **Outstanding** |
 
-The free tier is for development only. Until prerequisite 1 exists, `GEMINI_BILLING_ATTESTED` must stay unset, which keeps the
-approval gate closed outside local and testing.
+Notice **v1.2** is the version the team approved (`docs/DECISIONS.md`, 2026-09-12); it states the free-plan terms plainly. Until a paid
+project exists, `GEMINI_BILLING_ATTESTED` must be `free_tier_demo` and **never `paid`** — the value is a claim about what the key really
+is, it is recorded with every extraction, and it limits capture to the project team's own receipts. Leaving it unset keeps the approval
+gate closed outside local and testing.
 
 ## Capstone demonstration on Render (free tier)
 
@@ -24,7 +26,7 @@ The team decided (see `docs/DECISIONS.md`, 2026-09-12) to demonstrate on the dep
 Set in Render:
 
 - `RECEIPT_EXTRACTION_PROVIDER=gemini`
-- `RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.1`
+- `RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.2`
 - `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true`
 - `GEMINI_BILLING_ATTESTED=free_tier_demo` ← **not `paid`**. The gate accepts it, the preflight and monitoring commands say so loudly,
   a warning is logged at boot, and the value is stored with every extraction.
@@ -39,18 +41,20 @@ not the team's.
 
 ## Order of operations
 
-1. **Staging first.** Deploy the branch to a staging service. Staging sends real receipts only if it also has
-   `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true` and `GEMINI_BILLING_ATTESTED=paid`; treat staging keys and spend as production.
-2. **Deploy production with the engine off.** `RECEIPT_EXTRACTION_PROVIDER=tesseract` (the default in `render.yaml`) and the v1.1
+1. **Staging first.** Deploy the branch to a staging service. Staging sends receipts only if it also has
+   `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true` and an attestation (`free_tier_demo` for the capstone, `paid` only once a paid project
+   exists); treat staging keys and spend as production.
+2. **Deploy production with the engine off.** `RECEIPT_EXTRACTION_PROVIDER=tesseract` (the default in `render.yaml`) and the v1.2
    notice shipped in the PWA. Customers see the new notice; nothing is sent to Google.
 3. **Verify the deployment.** `php artisan receipts:extraction-preflight` — on Tesseract every Gemini row is advisory and the
    command exits 0. Confirm `video capture (retired)` reads `disabled`.
-4. **Enable the engine** by setting, in Render:
-   - `RECEIPT_EXTRACTION_PROVIDER=gemini`
-   - `RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.1` (exactly the versions the DPO approved)
+4. **Enable the engine** by setting, in Render (for the capstone demonstration use the values in the section above):
+   - `RECEIPT_EXTRACTION_PROVIDER=gemini` — note this key has a literal value in `render.yaml`, so a later Blueprint sync will revert a
+     dashboard-only edit (it falls back to Tesseract, which is safe but confusing). Change it in `render.yaml` for a lasting switch.
+   - `RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.2` (exactly the versions actually approved)
    - `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=true`
-   - `GEMINI_BILLING_ATTESTED=paid`
-   - `GEMINI_API_KEY` = the paid project key (secret)
+   - `GEMINI_BILLING_ATTESTED=free_tier_demo` for the capstone; `paid` **only** once a paid project exists
+   - `GEMINI_API_KEY` = the key for the attested project (secret)
 5. **Preflight must now exit 0** with no `BLOCK` rows. If it blocks, the engine is misconfigured: fix it before any traffic.
 6. **One controlled receipt.** Submit a fresh receipt from a real device, confirm it reaches `Ready for confirmation`, and check
    the Admin extraction panel shows the items, reconciliation, and warnings.
@@ -63,7 +67,8 @@ counts, timings, and token spend, never receipt contents or credentials.
 
 | Watch | Expected | If breached |
 |---|---|---|
-| `consent_gate_leaks` | **0** | Set `RECEIPT_EXTRACTION_PROVIDER=tesseract` immediately and investigate: a report reached the provider on a notice version the DPO never approved |
+| `consent_gate_leaks` | **0** | Set `RECEIPT_EXTRACTION_PROVIDER=tesseract` immediately and investigate: a report reached the provider on a notice version that was not approved **at the time it was sent** (judged against the list recorded with that extraction, so narrowing the list later does not invent leaks). Failed sends count too |
+| `consent_snapshot_missing` | 0 for anything sent after this release | A send whose result carries no recorded consent list; it cannot be judged automatically, so check those reports by hand |
 | `failure_codes` totals | < 5% of reports | Check codes: `GEMINI_AUTH` / `GEMINI_NOT_CONFIGURED` mean a broken key (operator fix); `GEMINI_UNAVAILABLE` / `GEMINI_RATE_LIMITED` are provider-side |
 | `EXTRACTION_BUDGET_EXHAUSTED`, log `receipt_extraction.daily_cap_reached` | absent | Raise the daily caps deliberately, or accept the pause |
 | `outcomes` → `Needs recapture` | < 20% of reports | Capture guidance or model quality problem; compare with the Phase 2 corpus |
@@ -82,7 +87,8 @@ Set `RECEIPT_EXTRACTION_PROVIDER=tesseract`. That is the whole rollback:
 - new jobs route to Tesseract from the next dispatch; no migration, no data change;
 - reports already extracted keep their stored results and stay reviewable;
 - an in-flight job finishes on the engine it started with;
-- **it does not undo anything already sent to Google.** That is why prerequisites 1 and 2 gate the first real receipt.
+- **it does not undo anything already sent to Google.** That is why the prerequisites gate the first receipt, and why the free-tier
+  demonstration is limited to the project team's own receipts.
 
 Narrower levers, in order of preference: remove a version from `RECEIPT_EXTRACTION_CONSENT_VERSIONS` (stops new consented traffic
 while leaving the engine on), lower `RECEIPT_EXTRACTION_DAILY_CALL_LIMIT`, or set `RECEIPT_EXTRACTION_PRODUCTION_APPROVED=false`.

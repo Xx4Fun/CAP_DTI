@@ -58,6 +58,7 @@ class ReceiptExtractionOperationsTest extends TestCase
             'warnings' => [['code' => 'FIELDS_UNCERTAIN', 'message' => 'Some values are uncertain.']],
             'reconciliation' => ['status' => 'matched'],
             'engine' => ['provider' => 'gemini', 'route' => 'primary', 'model' => 'gemini-3.8-flash', 'duration_ms' => 12000,
+                'consent_versions' => ['1.1'],
                 'usage' => ['input_tokens' => 2000, 'output_tokens' => 500, 'thought_tokens' => 0]],
         ], $overrides);
     }
@@ -76,7 +77,7 @@ class ReceiptExtractionOperationsTest extends TestCase
         $this->attempt('GEM2', $this->geminiResult([
             'status' => 'needs_recapture', 'reason_code' => 'RECEIPT_INCOMPLETE',
             'reconciliation' => ['status' => 'mismatch'], 'manual_review_required' => false,
-            'engine' => ['provider' => 'gemini', 'route' => 'primary', 'duration_ms' => 26000,
+            'engine' => ['provider' => 'gemini', 'route' => 'primary', 'duration_ms' => 26000, 'consent_versions' => ['1.1'],
                 'usage' => ['input_tokens' => 1000, 'output_tokens' => 200, 'thought_tokens' => 0]],
         ]), ['status' => 'Needs recapture']);
         $this->attempt('LEGACY', ['status' => 'ready', 'engine' => ['provider' => 'tesseract', 'route' => 'consent_gate']],
@@ -108,6 +109,42 @@ class ReceiptExtractionOperationsTest extends TestCase
             ->assertFailed();
     }
 
+    public function test_a_send_that_failed_is_still_checked_for_a_consent_leak(): void
+    {
+        // A send that came back GEMINI_REJECTED still transferred the photos: it has no route, but it must be counted.
+        config(['services.receipt_extraction.consent_versions' => ['1.1']]);
+        $this->attempt('FAILEDSEND', [
+            'status' => 'failed', 'reason_code' => 'GEMINI_REJECTED',
+            'engine' => ['provider' => 'gemini', 'failure_code' => 'GEMINI_REJECTED', 'consent_versions' => ['1.1']],
+        ], ['failure_code' => 'GEMINI_REJECTED'], '1.0');
+
+        $this->artisan('receipts:extraction-status', ['--days' => 7])->assertFailed();
+    }
+
+    public function test_narrowing_the_approved_list_later_does_not_invent_leaks(): void
+    {
+        // The rollback lever in the runbook removes a version; already-sent reports were approved at the time.
+        $this->attempt('APPROVEDTHEN', $this->geminiResult(), [], '1.1');
+        config(['services.receipt_extraction.consent_versions' => []]);
+
+        $summary = $this->summary(['--days' => 7]);
+
+        $this->assertSame(0, $summary['consent_gate_leaks']);
+        $this->assertSame(0, $summary['consent_snapshot_missing']);
+    }
+
+    public function test_a_send_without_a_consent_snapshot_is_reported_separately(): void
+    {
+        $this->attempt('NOSNAPSHOT', $this->geminiResult([
+            'engine' => ['provider' => 'gemini', 'route' => 'primary', 'duration_ms' => 100],
+        ]));
+
+        $summary = $this->summary(['--days' => 7]);
+
+        $this->assertSame(0, $summary['consent_gate_leaks']);
+        $this->assertSame(1, $summary['consent_snapshot_missing']);
+    }
+
     public function test_attempts_outside_the_window_are_not_counted(): void
     {
         $this->attempt('OLD', $this->geminiResult(), ['processing_completed_at' => now()->subDays(30)]);
@@ -132,7 +169,7 @@ class ReceiptExtractionOperationsTest extends TestCase
     {
         config([
             'services.receipt_extraction.provider' => 'gemini',
-            'services.receipt_extraction.consent_versions' => ['1.1'],
+            'services.receipt_extraction.consent_versions' => ['1.2'],
             'services.gemini.key' => 'preflight-secret-key',
             'services.receipt_extraction.production_approved' => true,
             'services.gemini.billing_attested' => 'paid',
@@ -149,7 +186,7 @@ class ReceiptExtractionOperationsTest extends TestCase
     {
         config([
             'services.receipt_extraction.provider' => 'gemini',
-            'services.receipt_extraction.consent_versions' => ['1.1'],
+            'services.receipt_extraction.consent_versions' => ['1.2'],
             'services.gemini.key' => 'demo-key',
             'services.receipt_extraction.production_approved' => true,
             'services.gemini.billing_attested' => 'free_tier_demo',

@@ -374,3 +374,43 @@
 - Tests: demo attestation accepted in a production environment and recorded with the result; an unrecognised attestation keeps production on
   Tesseract with nothing sent; preflight passes on the demo attestation while printing the warning.
 - Proof: backend 522/523 (only the pre-existing `EmergencyApcWorkflowTest`).
+
+## Final pre-push review — whole branch `31e71e8..HEAD` (Claude subagent, fresh, same-provider) — PUSH WITH FIXES (2026-09-12)
+- User asked for a final full review and a fresh accuracy check before pushing.
+- **Secret scan (clean):** the reviewer scanned the entire branch patch, additions and deletions, for key/token/credential patterns and
+  found none; `receipt-samples/` has zero tracked files; the Gemini fixtures are synthetic; `render.yaml` keeps `GEMINI_API_KEY` as
+  `sync: false`; no binary was added anywhere in the branch.
+- **Deploy impact (verified):** with production settings unchanged, the engine stays off and no photo reaches Google. What does change on
+  deploy is the customer-visible privacy notice, the stricter video kill switch, better failure messaging, and new read-only fields that
+  are null on the Tesseract path. The migration adds nullable columns only and is reversible.
+- 12 findings, 2 of them blockers. **All accepted and fixed:**
+  - F-001 (high, blocker): the v1.1 notice told customers Google acts "as a data processor" and that "DTI turns off Google's request
+    storage" — a **paid-tier description of a free-tier arrangement**, and the exact record a privacy audit would read. Fixed by issuing
+    **notice v1.2**, which states the free-plan terms plainly (Google may use the photos to improve its services; staff may review them;
+    only team receipts are captured during the demonstration). v1.1 was superseded before any report consented to it. `DECISIONS.md`,
+    the runbook, the security doc, and the tests now all say 1.2.
+  - F-005 (medium, blocker): the runbook's numbered procedure still told the operator to write `GEMINI_BILLING_ATTESTED=paid` — the false
+    record the demo attestation exists to prevent — and contradicted its own "must stay unset" line. Rewritten.
+  - F-002 (medium): `consent_gate_leaks` keyed on `engine.route === 'primary'`, but a **failed** send never carries a route, so a real
+    leak that came back rejected would not have been counted. The check now keys on the provider and covers failed sends, and both
+    failure paths carry the routing context.
+  - F-003 (medium): the check compared historical reports against **today's** approved list, so the runbook's own narrow rollback
+    (removing a version) would have reported every legitimate past send as a breach. The approved list is now snapshotted with each
+    extraction and judged against that; sends without a snapshot are reported separately rather than silently passing.
+  - F-004 (medium): `billing_attestation` was dropped on both failure paths, exactly where the audit trail matters most. Now preserved.
+  - F-006, F-007, F-009, F-012 (low): statements that had become false — the security-and-privacy reference, the extractor docblock's
+    "never stored by the provider", the corpus doc's privacy claim versus the real receipt values quoted in the plans, and the notice
+    file's "pending DPO sign-off" comment.
+  - F-008 (low): recorded as an accepted risk in the plan — the consent gate trusts the client-supplied notice version; validation proves
+    the value is published, not that this client displayed it.
+  - F-010 (low): `render.yaml` pins the provider literally, so a dashboard-only switch is reverted by the next Blueprint sync. Noted in
+    the runbook step.
+  - F-011 (low): the untracked `vendor-pwa/` workspace was not ignored and would have been swept into the next broad `git add`. Added to
+    `.gitignore`.
+- **Correction to earlier proof claims:** the reviewer flagged that `web` 118/118 no longer reproduces. Checked against a clean worktree of
+  `main` (31e71e8): `web/src/components/admin/AdminSafeguards.test.tsx` fails the same two tests there, **before any of this work**. It is
+  pre-existing and outside this branch's diff; the earlier "118/118" entries were lucky runs. Web is therefore 116/118 with two known
+  pre-existing failures, and the separate flaky-suite task still covers the parallelism issue.
+- Proof after fixes: backend 525/526 (only the pre-existing `EmergencyApcWorkflowTest`); PWA `tsc` clean + 352/352; web `tsc` clean +
+  116/118 (the two pre-existing failures above).
+- **Still not discharged:** this was another same-provider review. The independent Codex inspection of `31e71e8..HEAD` remains outstanding.

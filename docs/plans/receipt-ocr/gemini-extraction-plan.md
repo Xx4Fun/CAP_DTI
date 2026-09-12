@@ -299,6 +299,9 @@ A technical failure is never Needs recapture, and no fallback values are produce
 
 ## 11. Risks, limitations, alternatives
 - The free-tier gate is procedural. It relies on the attestation flag and sign-off.
+- **Accepted risk:** the consent gate reads `privacy_notice_version` as the client sent it. Validation proves the value is one the app
+  publishes, not that this client displayed it, so a non-PWA client posting an approved version would have its photos sent. The real PWA
+  cannot do this; a stricter binding (server-issued consent receipt) was not built for the capstone scope.
 - The price doubles on 2027-01-01.
 - The Admin fabricated statuses and the unit-price pre-fill are fixed in Phase 1.
 - The Tesseract binary stays for the shelf scanner.

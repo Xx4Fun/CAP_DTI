@@ -51,7 +51,7 @@ class PublicPwaTest extends TestCase
         $response = $this->getJson('/api/public/config');
         $response->assertStatus(200)
                  ->assertJsonPath('data.app_name', 'PRICE-Watch')
-                 ->assertJsonPath('data.privacy_notice_version', '1.1');
+                 ->assertJsonPath('data.privacy_notice_version', '1.2');
     }
 
     public function test_can_search_public_commodities()
@@ -163,7 +163,7 @@ class PublicPwaTest extends TestCase
             'submission_uuid' => $submissionUuid,
             'capture_token' => $token,
             'store_id' => $this->store->id,
-            'privacy_notice_version' => '1.1',
+            'privacy_notice_version' => '1.2',
         ]);
 
         $response->assertStatus(201)

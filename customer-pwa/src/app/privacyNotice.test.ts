@@ -3,15 +3,27 @@ import { PRIVACY_NOTICE_SECTIONS, PRIVACY_NOTICE_TITLE, PRIVACY_NOTICE_VERSION }
 
 describe('privacy notice', () => {
   it('pins the version to the text the app actually shows', () => {
-    expect(PRIVACY_NOTICE_VERSION).toBe('1.1');
-    expect(PRIVACY_NOTICE_TITLE).toContain('v1.1');
+    expect(PRIVACY_NOTICE_VERSION).toBe('1.2');
+    expect(PRIVACY_NOTICE_TITLE).toContain('v1.2');
     expect(PRIVACY_NOTICE_SECTIONS.map((section) => section.heading)).toEqual([
       'Scope',
       'Restricted access',
       'Tamper-evident originals',
       'Automated receipt reading',
+      'Free service plan during this demonstration',
       'Your photos',
     ]);
+  });
+
+  it('states the free-plan terms it actually runs under, and claims no paid-plan protection', () => {
+    const text = PRIVACY_NOTICE_SECTIONS.map((section) => section.body).join(' ');
+
+    expect(text).toMatch(/free service plan/i);
+    expect(text).toMatch(/improve its own services/i);
+    expect(text).toMatch(/staff may review them/i);
+    // v1.1 claimed processor status and that storage was turned off; neither holds on the free plan.
+    expect(text).not.toMatch(/as a data processor/i);
+    expect(text).not.toMatch(/turns off Google’s request storage/i);
   });
 
   it('never claims DTI-only access without naming the automated reading', () => {

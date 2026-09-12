@@ -10,8 +10,10 @@ Only record choices that should constrain future work. Newest entries go first a
 
 ## 2026-09-12 — Receipt extraction consent and free-tier demonstration
 
-- The PRICE-Watch capstone project team approves **privacy notice v1.1** — which names Google Gemini as the service that may read
-  receipt photos for DTI — as the notice whose reports may be sent to the extraction engine (`RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.1`).
+- The PRICE-Watch capstone project team approves **privacy notice v1.2** — which names Google Gemini as the service that may read receipt
+  photos for DTI **and states the free-plan terms** — as the notice whose reports may be sent to the extraction engine
+  (`RECEIPT_EXTRACTION_CONSENT_VERSIONS=1.2`). v1.1 was superseded before any report consented to it: it described the paid-tier
+  arrangement (processor status, storage off) that this project does not have.
 - The project has **no paid Google project**. The demonstration runs on the free tier, where Google may use submitted content for
   product improvement and humans may review it. That is recorded as `GEMINI_BILLING_ATTESTED=free_tier_demo` and never as `paid`.
 - **Scope: receipts belonging to the project team only.** No member of the public may have their receipt captured while the free-tier

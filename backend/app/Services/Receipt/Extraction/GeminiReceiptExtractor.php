@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * Receipt extraction through the Gemini Interactions API. Only integrity-verified receipt images and fixed
- * instructions are sent; no report, customer, or store metadata. Interactions are never stored by the provider.
+ * instructions are sent; no report, customer, or store metadata. `store: false` is always sent, so the provider does
+ * not retain the interaction for retrieval — on a free-tier key the content may still be used to improve the
+ * provider's services and be reviewed by its staff, which is what the billing attestation records.
  */
 class GeminiReceiptExtractor implements ReceiptExtractor
 {

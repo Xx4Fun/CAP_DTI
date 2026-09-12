@@ -103,8 +103,10 @@ class ReceiptEvidencePipeline
 
             $route = $this->extractionRouter->route($report);
             $engine['route'] = $route['route'];
-            // Recorded with the result so an audit can tell which claim allowed this receipt to be sent.
+            // Recorded with the result so an audit can tell which claim, and which approved consent list, allowed this
+            // receipt to be sent. Both are snapshots: later config changes must not rewrite history.
             $engine['billing_attestation'] = ReceiptExtractionRouter::billingAttestation();
+            $engine['consent_versions'] = array_values((array) config('services.receipt_extraction.consent_versions', []));
             if ($route['provider'] === ReceiptExtractionRouter::GEMINI) {
                 return $this->extractWithProvider($report, $bundle, $frameCandidates, $route['route']);
             }
@@ -304,7 +306,9 @@ class ReceiptEvidencePipeline
         } catch (ExtractionFailedException $exception) {
             // A technical or configuration failure of the extraction service: never a bad capture, never fallback values.
             $result = $this->failureResult($exception->failureCode, []);
-            $result['engine'] = ['provider' => ReceiptExtractionRouter::GEMINI, ...$exception->engine, 'failure_code' => $exception->failureCode];
+            // The routing context comes first so a failed send keeps its route, attestation, and consent snapshot.
+            $result['engine'] = [...$engine, ...$exception->engine, 'provider' => ReceiptExtractionRouter::GEMINI,
+                'failure_code' => $exception->failureCode];
             Log::warning('receipt_extraction.failed', ['report_id' => $report->id, 'code' => $exception->failureCode,
                 'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
 
@@ -348,7 +352,8 @@ class ReceiptEvidencePipeline
                 ->all(),
         ]);
         $result['engine'] = [...$extraction->engine, 'route' => $route, 'status' => $result['status'],
-            'billing_attestation' => ReceiptExtractionRouter::billingAttestation()];
+            'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
+            'consent_versions' => array_values((array) config('services.receipt_extraction.consent_versions', []))];
         $result['extraction_raw'] = $extraction->payload;
         Log::info('receipt_extraction.completed', [
             'report_id' => $report->id,

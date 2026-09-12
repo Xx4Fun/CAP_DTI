@@ -22,10 +22,10 @@ class ReceiptExtractionStatus extends Command
     {
         $days = max(1, (int) $this->option('days'));
         $since = now()->subDays($days);
-        $consentVersions = (array) config('services.receipt_extraction.consent_versions', []);
 
         $counts = ['reports' => 0, 'providers' => [], 'routes' => [], 'outcomes' => [], 'failure_codes' => [],
-            'recapture_reasons' => [], 'reconciliation' => [], 'warnings' => [], 'manual_review' => 0, 'extraction_calls' => 0];
+            'recapture_reasons' => [], 'reconciliation' => [], 'warnings' => [], 'manual_review' => 0, 'extraction_calls' => 0,
+            'consent_snapshot_missing' => 0];
         $durations = [];
         $tokens = ['input' => 0, 'output' => 0, 'thought' => 0];
         $consentLeaks = 0;
@@ -35,7 +35,7 @@ class ReceiptExtractionStatus extends Command
             ->where(fn ($query) => $query->where('processing_completed_at', '>=', $since)
                 ->orWhere(fn ($inner) => $inner->whereNull('processing_completed_at')->where('created_at', '>=', $since)))
             ->orderBy('id')
-            ->chunkById(200, function ($bundles) use (&$counts, &$durations, &$tokens, &$consentLeaks, $consentVersions) {
+            ->chunkById(200, function ($bundles) use (&$counts, &$durations, &$tokens, &$consentLeaks) {
                 foreach ($bundles as $bundle) {
                     $result = (array) $bundle->processing_result_json;
                     $engine = (array) ($result['engine'] ?? []);
@@ -65,10 +65,15 @@ class ReceiptExtractionStatus extends Command
                     foreach (['input' => 'input_tokens', 'output' => 'output_tokens', 'thought' => 'thought_tokens'] as $key => $field) {
                         $tokens[$key] += (int) ($engine['usage'][$field] ?? 0);
                     }
-                    // No report may reach the provider on a notice version that was never approved.
-                    if (($engine['route'] ?? null) === 'primary' && $bundle->report
-                        && ! in_array((string) $bundle->report->privacy_notice_version, $consentVersions, true)) {
-                        $consentLeaks++;
+                    // No report may reach the provider on a notice version that was never approved. Judged on what was
+                    // approved when the photos were sent, not on today's config, and counted for failed sends too.
+                    if (($engine['provider'] ?? null) === 'gemini') {
+                        $approvedAtSend = $engine['consent_versions'] ?? null;
+                        if (! is_array($approvedAtSend)) {
+                            $counts['consent_snapshot_missing']++;
+                        } elseif (! in_array((string) ($bundle->report?->privacy_notice_version ?? ''), $approvedAtSend, true)) {
+                            $consentLeaks++;
+                        }
                     }
                 }
             });
@@ -99,6 +104,7 @@ class ReceiptExtractionStatus extends Command
                 'token_limit' => (int) config('services.receipt_extraction.daily_token_limit'),
             ],
             'consent_gate_leaks' => $consentLeaks,
+            'consent_snapshot_missing' => $counts['consent_snapshot_missing'],
             'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
         ];
 
@@ -129,6 +135,7 @@ class ReceiptExtractionStatus extends Command
             ['today calls / limit', $summary['today']['calls'].' / '.$summary['today']['call_limit']],
             ['today tokens / limit', $summary['today']['tokens'].' / '.$summary['today']['token_limit']],
             ['consent gate leaks', $summary['consent_gate_leaks']],
+            ['sends without a consent snapshot', $summary['consent_snapshot_missing']],
             ['billing attestation', $summary['billing_attestation'] ?? 'none'],
         ]);
         if (ReceiptExtractionRouter::isFreeTierDemo()) {

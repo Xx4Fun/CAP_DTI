@@ -29,6 +29,9 @@ Before any image goes into the corpus:
 - No people, faces, IDs, or other documents in the frame.
 - Only then set `"masked": true` in `case.json`. The harness refuses unmasked cases unless `GEMINI_BILLING_ATTESTED=paid`.
 
+Worked examples in these plans quote item names and amounts from a team member's own receipt (no personal identifier); prefer synthetic
+values, like the committed Gemini fixtures, when adding new ones.
+
 Everything under `receipt-samples/` is gitignored and private: images, ground truth, and results. Only aggregate metrics
 are copied into the review log.
 
