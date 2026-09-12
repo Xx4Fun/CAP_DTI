@@ -993,8 +993,9 @@ class ReceiptEvidenceWorkflowTest extends TestCase
                 'kind' => 'original_video', 'sequence' => 0,
                 'asset' => UploadedFile::fake()->create('receipt.webm', 1, 'video/webm'),
             ])->assertNotFound();
+        $submissionUuid = (string) Str::uuid();
         $this->postJson('/api/public/reports', [
-            'submission_uuid' => (string) Str::uuid(),
+            'submission_uuid' => $submissionUuid,
             'capture_token' => $captureToken,
             'store_id' => $this->store->id,
             'privacy_notice_version' => '1.1',
@@ -1002,6 +1003,18 @@ class ReceiptEvidenceWorkflowTest extends TestCase
 
         $this->assertSame(0, ConsumerReport::count());
         $this->assertSame(1, ReceiptEvidenceAsset::where('kind', 'original_video')->count());
+
+        // Proves both refusals above came from the flag and not from some other 404: the same call succeeds with it on.
+        // The queue is faked because processing a real video needs FFmpeg, which this assertion is not about.
+        Queue::fake();
+        config()->set('services.receipt_capture.enabled', true);
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => $submissionUuid,
+            'capture_token' => $captureToken,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '1.1',
+        ])->assertCreated();
+        $this->assertSame(1, ConsumerReport::count());
     }
 
     public function test_guided_capture_still_works_while_video_capture_is_disabled(): void

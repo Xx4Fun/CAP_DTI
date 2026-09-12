@@ -314,3 +314,21 @@
 - **Proof:** backend 513/514 (only the pre-existing `EmergencyApcWorkflowTest`). No frontend source changed, so the PWA and web suites were not rerun.
 - **Note:** the PWA never offers video capture (`receiptCaptureSupport` returns guided or unsupported), so this phase is backend-only.
 - **Unreviewed:** host-authored; no inspection round has been run for Phase 4. The owed independent Codex inspection now covers `31e71e8..HEAD`.
+
+### Phase 4 — author self-review (2026-09-12, NOT an independent inspection)
+- User asked for a review while Codex is unavailable, so the author reviewed their own commit. **This is the weakest form of review**: the same
+  blind spots that produced the code produce the review. It does not consume an inspection round and does not substitute for the Codex pass.
+- Verified correct: the flag is checked at exactly the three entry points that can create video evidence and nowhere else (`grep` over `app/`
+  confirms processing, retry, review, and Admin never consult it); the idempotent replay branch in `submitReport` runs **before** the new guard, so
+  an existing video report can still be replayed while the flag is off; a guided session uploading video still gets 422, while a video session with
+  the flag off gets 404; recapture sessions are guided-only, so they cannot reintroduce video.
+- Findings, both fixed in the follow-up commit:
+  - P4-001 (medium, test quality): the two `assertNotFound()` assertions could not distinguish the new guard from any other 404 — they would have
+    passed even if the guard did nothing and the 404 came from elsewhere. The test now flips the flag back on and asserts the same submission
+    returns 201. **Writing that assertion immediately exposed a second problem**: with the flag on, the submission runs the video job synchronously
+    in tests and fails on missing FFmpeg, so the assertion fakes the queue. The original test never reached that code at all.
+  - P4-002 (low): `ReceiptCaptureModes::VIDEO`/`GUIDED` were unused outside the class while the controller kept literal mode strings — the drift the
+    class exists to prevent. `createCaptureSession` now uses the constants.
+- Accepted, not changed: a customer whose video session is killed mid-flow by the flag gets a bare 404 and loses that capture. Video is off by
+  default and the PWA never offers it, so no real customer can hit this; a friendlier 422 would advertise a retired path.
+- Proof after the fixes: backend 513/514 (only the pre-existing `EmergencyApcWorkflowTest`).

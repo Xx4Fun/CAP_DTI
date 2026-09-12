@@ -723,10 +723,10 @@ class PublicPwaController extends Controller
     {
         $request->validate([
             'store_id' => 'required|exists:stores,id',
-            'capture_mode' => 'nullable|in:continuous_video_v1,guided_photos_v1',
+            'capture_mode' => 'nullable|in:'.ReceiptCaptureModes::VIDEO.','.ReceiptCaptureModes::GUIDED,
         ]);
 
-        $captureMode = $request->input('capture_mode', 'guided_photos_v1');
+        $captureMode = $request->input('capture_mode', ReceiptCaptureModes::GUIDED);
         if (ReceiptCaptureModes::isVideo($captureMode) && ! ReceiptCaptureModes::videoEnabled()) {
             abort(404);
         }
