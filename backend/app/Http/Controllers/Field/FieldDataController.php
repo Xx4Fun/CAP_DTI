@@ -34,6 +34,7 @@ class FieldDataController extends Controller
             RegulatoryPriceRecord::max('updated_at') ?? 'none',
         ]));
         $version = hash('sha256', implode('|', [
+            'bootstrap-schema-2', // bump when the response shape changes so old caches download a full payload
             Store::max('updated_at') ?? 'none',
             $referenceVersion,
             TemporalInspection::where('validation_status', 'verified')->max('updated_at') ?? 'none',

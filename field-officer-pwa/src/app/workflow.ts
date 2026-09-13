@@ -81,6 +81,8 @@ export function canFinalizeVisit(draft: VisitDraft): string[] {
   const issues: string[] = []
   if (!draft.store_id) issues.push('Choose a registered store.')
   if (!draft.items.length) issues.push('Add at least one commodity price.')
+  // Drafts saved before references were captured can't sync; re-entering a price attaches the current issued reference.
+  else if (draft.items.some((item) => !item.reference_snapshot)) issues.push('Re-enter each recorded price so it carries the current monitoring reference.')
   if (!draft.representative.name.trim()) issues.push('Enter the store representative name.')
   if (!draft.signatures.officer_png_base64) issues.push('Capture the DTI officer signature.')
   if (!draft.signatures.representative_png_base64) issues.push('Capture the store representative signature.')

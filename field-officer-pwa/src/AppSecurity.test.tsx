@@ -43,10 +43,15 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+const riceSnapshot = {
+  status: 'available' as const, type: 'standard_srp' as const, source_id: 3, value: 50, label: 'SRP baseline (provisional)',
+  source_reference: 'SRP-2026', effective_date: '2026-09-01', reference_version: 'ref-v-rice',
+}
+
 const completeDraft = () => ({
   ...fixtures.draft,
   store_id: 7,
-  items: [{ srp_id: 3, recorded_price: 52 }],
+  items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: riceSnapshot }],
   representative: { name: 'Ben Santos', title: 'Manager' },
   signatures: { officer_png_base64: 'officer', representative_png_base64: 'representative' },
   location: { latitude: 10.74, longitude: 121.98, accuracy_meters: 12, captured_at: '2026-08-30T00:00:00Z' },
@@ -545,7 +550,7 @@ describe('field workspace security flow', () => {
     const completeDraft = {
       ...fixtures.draft,
       store_id: 7,
-      items: [{ srp_id: 3, recorded_price: 52 }],
+      items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: riceSnapshot }],
       representative: { name: 'Ben Santos', title: 'Manager' },
       signatures: { officer_png_base64: 'officer', representative_png_base64: 'representative' },
       location: { latitude: 10.74, longitude: 121.98, accuracy_meters: 12, captured_at: '2026-08-30T00:00:00Z' },
@@ -613,7 +618,7 @@ describe('field workspace security flow', () => {
       'active-draft': {
         ...fixtures.draft,
         store_id: 7,
-        items: [{ srp_id: 3, recorded_price: 52 }],
+        items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: riceSnapshot }],
         representative: { name: 'Ben Santos', title: 'Manager' },
         signatures: { officer_png_base64: 'officer', representative_png_base64: 'representative' },
       },
@@ -1426,5 +1431,76 @@ describe('field workspace security flow', () => {
         items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: expect.objectContaining({ reference_version: 'ref-v-rice', value: 50, source_reference: 'SRP-2026' }) }],
       })]), { timeout: 3000 })
     }, 15_000)
+
+    const marketBootstrap = {
+      version: 'cached', is_delta: false, recent_prices: [], monitoring_references: [],
+      stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }],
+      srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }],
+    }
+
+    it('blocks finalizing a pre-update draft whose prices lack an issued reference and sends the officer back to prices', async () => {
+      fixtures.api.bootstrap.mockResolvedValue(marketBootstrap)
+      await unlockOnlineWith({ bootstrap: marketBootstrap, drafts: [{ ...completeDraft(), items: [{ srp_id: 3, recorded_price: 52 }] }] })
+      resumeOnlyDraft()
+      fixtures.vault.writeSecret.mockClear()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
+
+      expect(await screen.findByText(/Re-enter each recorded price so it carries the current monitoring reference/)).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Finalize this visit?' })).not.toBeInTheDocument()
+      expect(await screen.findByLabelText('Observed shelf price for Rice')).toBeInTheDocument()
+      expect(fixtures.api.sync).not.toHaveBeenCalled()
+      expect(fixtures.vault.writeSecret).not.toHaveBeenCalledWith('queue', expect.anything())
+    })
+
+    it('uploads an online-finalized visit once even while the queue update triggers automatic sync', async () => {
+      const upload = deferred<unknown[]>()
+      fixtures.api.sync.mockReturnValue(upload.promise)
+      fixtures.api.bootstrap.mockResolvedValue(marketBootstrap)
+      await unlockOnlineWith({ bootstrap: marketBootstrap, drafts: [completeDraft()] })
+      resumeOnlyDraft()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
+
+      await waitFor(() => expect(fixtures.api.sync).toHaveBeenCalledTimes(1))
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 100)) })
+      expect(fixtures.api.sync).toHaveBeenCalledTimes(1)
+      await act(async () => { upload.resolve([]); await new Promise((resolve) => window.setTimeout(resolve, 100)) })
+      expect(fixtures.api.sync).toHaveBeenCalledTimes(1)
+      expect(await screen.findByRole('heading', { name: 'Visit accepted' })).toBeInTheDocument()
+    })
+
+    it('shows the recoverable gate when the tab lock request fails instead of hanging at startup', async () => {
+      const request = vi.fn()
+        .mockRejectedValueOnce(new Error('LockManager unavailable'))
+        .mockImplementation(async (name: string, _options: unknown, callback: (lock: { name: string } | null) => unknown) => callback({ name }))
+      Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request } })
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      render(<App />)
+
+      expect(await screen.findByRole('heading', { name: 'Workspace already open' })).toBeInTheDocument()
+      expect(fixtures.vault.hasVault).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+      expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
+    })
+
+    it('asks for a full bootstrap when the cached copy has no monitoring references, and a delta otherwise', async () => {
+      await unlockOnlineWith({})
+      await waitFor(() => expect(fixtures.api.bootstrap).toHaveBeenCalledWith('token', undefined))
+      cleanup()
+      vi.clearAllMocks()
+      fixtures.api.bootstrap.mockResolvedValue({ ...marketBootstrap, is_delta: true })
+      fixtures.api.renewLease.mockResolvedValue({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
+      fixtures.api.verificationRequests.mockResolvedValue([])
+      fixtures.vault.getBiometricUnlockAvailability.mockResolvedValue('prf-unsupported')
+      fixtures.vault.hasBiometricUnlock.mockResolvedValue(false)
+      fixtures.vault.unlockVault.mockResolvedValue({ requiresPinMigration: false })
+      fixtures.vault.getVaultPinLength.mockResolvedValue(null)
+      fixtures.vault.restoreVaultSession.mockResolvedValue(false)
+      fixtures.vault.writeSecret.mockResolvedValue(undefined)
+      await unlockOnlineWith({ bootstrap: marketBootstrap })
+      await waitFor(() => expect(fixtures.api.bootstrap).toHaveBeenCalledWith('token', 'cached'))
+    })
   })
 })

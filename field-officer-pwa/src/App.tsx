@@ -137,7 +137,8 @@ export default function App() {
       setTabLock('owned')
       return new Promise<void>((resolve) => { release = resolve })
     }))
-    previousLockRequest.current = request
+    // A failed lock request must not leave startup pending forever: show the recoverable gate with "Check again".
+    previousLockRequest.current = request.catch(() => { if (!cancelled) setTabLock('blocked') })
     return () => { cancelled = true; release?.() }
   }, [tabLockAttempt])
 
@@ -251,7 +252,7 @@ export default function App() {
       }
       if (lockingRef.current) return
       try {
-        const downloaded = mergeBootstrapDelta(cached.value, await fieldApi.bootstrap(effectiveSession.token, cached.value?.version || undefined))
+        const downloaded = mergeBootstrapDelta(cached.value, await fieldApi.bootstrap(effectiveSession.token, cached.value?.monitoring_references ? cached.value.version : undefined))
         if (lockingRef.current) return
         setBootstrap(downloaded)
         await writeSecret('bootstrap', downloaded)
@@ -699,11 +700,15 @@ export default function App() {
             await pendingDraftFlush.current?.()
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
             const queuedVisit = { ...finished, sync_source: navigator.onLine ? finished.sync_source : 'offline_queue' as const }
+            let completionStatus: Completion['status'] = 'queued'
+            // Claim the sync guard before the visit enters the queue, so automatic sync can't upload the same visit concurrently.
+            const uploadNow = navigator.onLine && !syncingRef.current
+            if (uploadNow) syncingRef.current = true
+            try {
             await saveQueue((current) => current.some((item) => item.client_uuid === finished.client_uuid) ? current : [...current, queuedVisit])
             setCompletedToday((prev) => prev + 1)
             setDrafts((current) => current.filter((item) => item.client_uuid !== finished.client_uuid))
-            let completionStatus: Completion['status'] = 'queued'
-            if (navigator.onLine) {
+            if (uploadNow) {
               try { await fieldApi.sync(session.token, [queuedVisit]); await saveQueue((current) => current.filter((item) => item.client_uuid !== finished.client_uuid)); completionStatus = 'accepted'; setNotice({ kind: 'success', title: 'Visit accepted', message: 'The completed visit was added to monitoring history.' }) }
               catch (error) {
                 const status = (error as { response?: { status?: number } }).response?.status
@@ -715,7 +720,11 @@ export default function App() {
                   setNotice({ kind: 'error', title: 'Device storage unavailable', message: 'The accepted visit remains in the encrypted sync queue, but its latest status could not be saved. Keep this screen open and free device storage before retrying.' })
                 }
               }
-            } else setNotice({ kind: 'success', title: 'Visit saved offline', message: 'The completed visit is encrypted and queued for synchronization.' })
+            } else if (navigator.onLine) setNotice({ kind: 'info', title: 'Visit queued securely', message: 'Another upload is in progress. This visit will synchronize automatically shortly.' })
+            else setNotice({ kind: 'success', title: 'Visit saved offline', message: 'The completed visit is encrypted and queued for synchronization.' })
+            } finally {
+              if (uploadNow) syncingRef.current = false
+            }
             setActiveDraftId(null); setCompletion({ status: completionStatus, storeName }); setView('home')
           }} />}
           {view === 'history' && <HistoryPage session={session} online={online} />}
@@ -1226,7 +1235,7 @@ function VisitWizard({
     if (missing.length) {
       setError(missing.join(' '))
       if (!draft.store_id) onStep(0)
-      else if (!draft.items.length) onStep(1)
+      else if (!draft.items.length || draft.items.some((item) => !item.reference_snapshot)) onStep(1)
       return
     }
 
