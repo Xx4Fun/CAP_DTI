@@ -212,7 +212,7 @@ class FieldMonitoringRecordTest extends TestCase
         $this->assertSame(['emergency', 'standard'], MonitoringRecord::orderBy('id')->pluck('protocol_mode')->all());
     }
 
-    public function test_bootstrap_downloads_active_field_data_and_returns_an_empty_delta_when_current(): void
+    public function test_bootstrap_downloads_active_field_data_and_returns_the_full_payload_even_when_the_version_matches(): void
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
@@ -236,10 +236,14 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.monitoring_references.0.value', 100)
             ->assertJsonPath('data.recent_prices.0.recorded_price', 108);
 
+        // Versions come from second-precision timestamps and can collide across writes in the same second, so never answer with a delta.
         $version = rawurlencode($full->json('data.version'));
         $this->withToken($token)->getJson("/api/field/bootstrap?since={$version}")
-            ->assertOk()->assertJsonPath('data.is_delta', true)
-            ->assertJsonCount(0, 'data.stores')->assertJsonCount(0, 'data.srp_bulletins');
+            ->assertOk()->assertJsonPath('data.is_delta', false)
+            ->assertJsonPath('data.stores.0.id', $store->id)
+            ->assertJsonPath('data.srp_bulletins.0.id', $bulletin->id)
+            ->assertJsonPath('data.monitoring_references.0.srp_id', $bulletin->id)
+            ->assertJsonPath('data.recent_prices.0.recorded_price', 108);
     }
 
     public function test_sync_preserves_a_validated_reference_snapshot_and_rejects_a_mismatch_before_creating_evidence(): void
@@ -553,6 +557,30 @@ class FieldMonitoringRecordTest extends TestCase
         $changedPrice = $payload;
         $changedPrice['records'][0]['items'][0]['recorded_price'] = 115.01;
         $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $changedPrice)->assertConflict();
+    }
+
+    public function test_sync_rejects_a_resend_whose_reference_evidence_differs_from_the_accepted_visit(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $payload = $this->payload($this->store(), [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)]);
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)->assertCreated();
+
+        $forgedValue = $payload;
+        $forgedValue['records'][0]['items'][0]['reference_snapshot']['value'] = 90;
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $forgedValue)->assertConflict();
+
+        $forgedVersion = $payload;
+        $forgedVersion['records'][0]['items'][0]['reference_snapshot']['reference_version'] = str_repeat('f', 64);
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $forgedVersion)->assertConflict();
+
+        $droppedSnapshot = $payload;
+        unset($droppedSnapshot['records'][0]['items'][0]['reference_snapshot']);
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $droppedSnapshot)->assertConflict();
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertOk()->assertJsonPath('data.results.0.status', 'duplicate');
+        $this->assertDatabaseCount('monitoring_records', 1);
     }
 
     public function test_bootstrap_recent_prices_keep_only_the_latest_verified_row_per_store_and_commodity(): void

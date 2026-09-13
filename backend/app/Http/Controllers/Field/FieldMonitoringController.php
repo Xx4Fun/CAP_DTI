@@ -351,6 +351,7 @@ class FieldMonitoringController extends Controller
             'items' => collect($payload['items'])->map(fn ($item) => [
                 'commodity_key' => $bulletins->get($item['srp_id'])?->commodity_key ?? 'id:'.$item['srp_id'],
                 'recorded_price' => round((float) $item['recorded_price'], 2),
+                'reference' => $this->submittedReferenceEvidence($item['reference_snapshot'] ?? null),
             ])->sortBy('commodity_key')->values()->all(),
             'officer_signature' => $this->signature($payload['signatures']['officer_png_base64'], 'signatures.officer_png_base64'),
             'representative_signature' => $this->signature($payload['signatures']['representative_png_base64'], 'signatures.representative_png_base64'),
@@ -363,6 +364,7 @@ class FieldMonitoringController extends Controller
         $items = $record->items->map(fn ($item) => [
             'commodity_key' => $item->bulletin?->commodity_key ?? 'id:'.$item->srp_id,
             'recorded_price' => round((float) $item->recorded_price, 2),
+            'reference' => $this->storedReferenceEvidence($item),
         ])->sortBy('commodity_key')->values()->all();
         // A resend after a lost response must match what the columns kept: whole seconds, decimal(10,7) coordinates, decimal(8,2) accuracy.
         $sameSecond = fn ($stored, $submitted) => $stored->copy()->startOfSecond()->equalTo(Carbon::parse($submitted)->startOfSecond());
@@ -381,6 +383,40 @@ class FieldMonitoringController extends Controller
             && $record->representative_signature_sha256 === $duplicate['representative_signature'][1]
             && $record->field_verification_request_id === ($payload['verification_request_id'] ?? null)
             && $items === $duplicate['items'];
+    }
+
+    // A resend is only "the same visit" if its pinned regulatory evidence matches what was accepted, compared at column precision.
+    private function submittedReferenceEvidence(?array $snapshot): ?array
+    {
+        if (! $snapshot) {
+            return null;
+        }
+
+        return [
+            'status' => $snapshot['status'] ?? null, 'type' => $snapshot['type'] ?? null,
+            'source_id' => isset($snapshot['source_id']) ? (int) $snapshot['source_id'] : null,
+            'value' => isset($snapshot['value']) ? round((float) $snapshot['value'], 2) : null,
+            'label' => $snapshot['label'] ?? null, 'source' => $snapshot['source_reference'] ?? null,
+            'effective_date' => isset($snapshot['effective_date']) ? Carbon::parse($snapshot['effective_date'])->toDateString() : null,
+            'version' => $snapshot['reference_version'] ?? null,
+        ];
+    }
+
+    private function storedReferenceEvidence(MonitoringRecordItem $item): ?array
+    {
+        // Items accepted without a snapshot store a null version; they only match a resend that also has no snapshot.
+        if ($item->reference_version === null) {
+            return null;
+        }
+
+        return [
+            'status' => $item->reference_status, 'type' => $item->reference_type,
+            'source_id' => $item->reference_source_id !== null ? (int) $item->reference_source_id : null,
+            'value' => $item->reference_value !== null ? round((float) $item->reference_value, 2) : null,
+            'label' => $item->reference_label, 'source' => $item->reference_source,
+            'effective_date' => $item->reference_effective_date?->toDateString(),
+            'version' => $item->reference_version,
+        ];
     }
 
     private function signature(string $encoded, string $field): array

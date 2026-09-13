@@ -40,7 +40,9 @@ class FieldDataController extends Controller
             TemporalInspection::where('validation_status', 'verified')->max('updated_at') ?? 'none',
             MonitoringRecord::where('status', 'accepted')->max('updated_at') ?? 'none',
         ]));
-        $isCurrent = isset($filters['since']) && hash_equals($version, $filters['since']);
+        // ponytail: always full payload; the version comes from second-precision max(updated_at) and can collide across
+        // writes in the same second, so a delta could hide changes. Re-enable deltas with a monotonic revision bumped by every writer.
+        $isCurrent = false;
 
         $bulletins = $isCurrent ? collect() : SrpBulletin::query()->where('is_active', true)
             ->whereDate('effective_date', '<=', $today)

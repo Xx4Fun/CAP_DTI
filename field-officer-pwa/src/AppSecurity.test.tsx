@@ -1502,5 +1502,21 @@ describe('field workspace security flow', () => {
       await unlockOnlineWith({ bootstrap: marketBootstrap })
       await waitFor(() => expect(fixtures.api.bootstrap).toHaveBeenCalledWith('token', 'cached'))
     })
+
+    it('locks the workspace and keeps the visit queued when the online finalize upload is unauthorized', async () => {
+      fixtures.api.sync.mockRejectedValue({ response: { status: 403 } })
+      fixtures.api.bootstrap.mockResolvedValue(marketBootstrap)
+      await unlockOnlineWith({ bootstrap: marketBootstrap, drafts: [completeDraft()] })
+      resumeOnlyDraft()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
+
+      expect(await screen.findByRole('heading', { name: 'Workspace needs attention' })).toBeInTheDocument()
+      expect(fixtures.vault.lockVault).toHaveBeenCalled()
+      expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('queue', [expect.objectContaining({ client_uuid: fixtures.draft.client_uuid, finalized_at: expect.any(String) })])
+      expect(fixtures.api.sync).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('heading', { name: 'Visit safely saved' })).not.toBeInTheDocument()
+    })
   })
 })

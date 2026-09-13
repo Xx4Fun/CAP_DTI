@@ -712,6 +712,12 @@ export default function App() {
               try { await fieldApi.sync(session.token, [queuedVisit]); await saveQueue((current) => current.filter((item) => item.client_uuid !== finished.client_uuid)); completionStatus = 'accepted'; setNotice({ kind: 'success', title: 'Visit accepted', message: 'The completed visit was added to monitoring history.' }) }
               catch (error) {
                 const status = (error as { response?: { status?: number } }).response?.status
+                // Same as queued sync: an unauthorized account keeps its evidence encrypted and loses the open workspace immediately.
+                if (status === 401 || status === 403) {
+                  await writeSecret('session', session); await writeSecret('queue', queueRef.current); await persistDrafts(drafts.filter((item) => item.client_uuid !== finished.client_uuid))
+                  lockVault(); queueRef.current = []; setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDrafts([]); setActiveDraftId(null); setGate('attention')
+                  return
+                }
                 const message = apiError(error, 'The server did not accept this visit. Review the error in Sync Queue and retry it.')
                 try {
                   await saveQueue((current) => current.map((item) => item.client_uuid === finished.client_uuid ? { ...item, sync_source: 'offline_queue', sync_error: message, sync_attempted_at: new Date().toISOString(), sync_error_kind: syncErrorKind(status), sync_attempts: (item.sync_attempts ?? 0) + 1 } : item))
