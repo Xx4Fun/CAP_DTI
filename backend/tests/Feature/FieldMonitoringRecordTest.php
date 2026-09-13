@@ -23,6 +23,12 @@ class FieldMonitoringRecordTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     private function fieldSession(): array
     {
         $officer = User::create([
@@ -51,9 +57,9 @@ class FieldMonitoringRecordTest extends TestCase
         ]);
     }
 
-    private function payload(Store $store, array $bulletins, string $uuid = '4cb0a181-a590-4f95-b96e-aadab8e09a67'): array
+    private function payload(Store $store, array $bulletins, string $uuid = '4cb0a181-a590-4f95-b96e-aadab8e09a67', ?Carbon $finalizedAt = null): array
     {
-        $finalizedAt = now()->subMinute();
+        $finalizedAt ??= now()->subMinute();
         $resolver = app(FieldReferenceResolver::class);
 
         return [
@@ -476,13 +482,17 @@ class FieldMonitoringRecordTest extends TestCase
 
     public function test_bootstrap_version_changes_when_the_manila_effective_date_rolls_over(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-08-31 15:59:00', 'UTC'));
-        [, $token, $this->leaseId] = $this->fieldSession();
-        $version = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.version');
-        Carbon::setTestNow(Carbon::parse('2026-08-31 16:01:00', 'UTC'));
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-08-31 15:59:00', 'UTC'));
+            [, $token, $this->leaseId] = $this->fieldSession();
+            $version = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.version');
+            Carbon::setTestNow(Carbon::parse('2026-08-31 16:01:00', 'UTC'));
 
-        $this->withToken($token)->getJson('/api/field/bootstrap?since='.rawurlencode($version))
-            ->assertOk()->assertJsonPath('data.is_delta', false);
+            $this->withToken($token)->getJson('/api/field/bootstrap?since='.rawurlencode($version))
+                ->assertOk()->assertJsonPath('data.is_delta', false);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     public function test_sync_rejects_same_client_uuid_when_any_canonical_visit_value_changes(): void
@@ -519,6 +529,78 @@ class FieldMonitoringRecordTest extends TestCase
 
         $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
             ->assertUnprocessable()->assertJsonValidationErrors('records.1.client_uuid');
+    }
+
+    public function test_sync_treats_a_resend_at_stored_column_precision_as_the_same_visit(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $payload = $this->payload($this->store(), [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)]);
+        $withMilliseconds = fn (string $value) => Carbon::parse($value)->addMilliseconds(723)->format('Y-m-d\TH:i:s.vP');
+        $payload['records'][0]['started_at'] = $withMilliseconds($payload['records'][0]['started_at']);
+        $payload['records'][0]['finalized_at'] = $withMilliseconds($payload['records'][0]['finalized_at']);
+        $payload['records'][0]['location'] = [
+            'latitude' => 10.742512345678, 'longitude' => 121.940712345678, 'accuracy_meters' => 12.345,
+            'captured_at' => $withMilliseconds($payload['records'][0]['location']['captured_at']),
+        ];
+        $payload['records'][0]['items'][0]['recorded_price'] = 115.004;
+
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)->assertCreated();
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertOk()->assertJsonPath('data.results.0.status', 'duplicate');
+        $this->assertDatabaseCount('monitoring_records', 1);
+
+        $changedPrice = $payload;
+        $changedPrice['records'][0]['items'][0]['recorded_price'] = 115.01;
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $changedPrice)->assertConflict();
+    }
+
+    public function test_bootstrap_recent_prices_keep_only_the_latest_verified_row_per_store_and_commodity(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $milk = $this->bulletin('Milk', 50);
+        $inspect = fn (SrpBulletin $bulletin, float $price, $at, string $status = 'verified') => TemporalInspection::create([
+            'store_id' => $store->id, 'srp_id' => $bulletin->id, 'recorded_price' => $price, 'is_flagged' => false,
+            'inspection_timestamp' => $at, 'officer_signature' => 'signed', 'validation_status' => $status,
+        ]);
+        $shared = now()->subDays(3)->startOfSecond();
+        $inspect($rice, 101, $shared); // stale rice row sharing milk's latest timestamp
+        $inspect($rice, 108, now()->subDay()->startOfSecond());
+        $inspect($rice, 200, now()->subHour()->startOfSecond(), 'pending');
+        $inspect($milk, 55, now()->subWeeks(4)); // outside the three-week window
+        $inspect($milk, 52, $shared);
+
+        $prices = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'))
+            ->mapWithKeys(fn (array $row) => [$row['srp_id'] => (float) $row['recorded_price']])->all();
+
+        $this->assertSame([$rice->id => 108.0, $milk->id => 52.0], $prices);
+    }
+
+    public function test_a_visit_finalized_before_manila_midnight_and_synced_after_it_keeps_its_week_and_srp(): void
+    {
+        Storage::fake('receipt_evidence');
+        Carbon::setTestNow(Carbon::parse('2026-09-06 15:40:00', 'UTC')); // Sunday 23:40 Manila, last day of the week
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $milk = $this->bulletin('Milk', 50);
+        $payload = $this->payload($store, [$rice, $milk], '7cb0a181-a590-4f95-b96e-aadab8e09a67', Carbon::parse('2026-09-06 15:59:59', 'UTC'));
+
+        Carbon::setTestNow(Carbon::parse('2026-09-06 16:05:00', 'UTC')); // Monday 00:05 Manila
+        SrpBulletin::create([
+            'commodity_name' => 'Rice Monday', 'commodity_key' => 'rice', 'baseline_price' => 120,
+            'effective_date' => '2026-09-07', 'source_reference' => 'SRP-RICE-MONDAY', 'is_active' => true,
+        ]);
+
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+        $this->assertDatabaseHas('monitoring_record_items', ['monitoring_record_id' => $recordId, 'srp_id' => $rice->id, 'baseline_price' => 100]);
+
+        $sameWeek = $this->payload($store, [$rice, $milk], '8cb0a181-a590-4f95-b96e-aadab8e09a67', Carbon::parse('2026-09-06 15:30:00', 'UTC'));
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $sameWeek)
+            ->assertUnprocessable()->assertJsonValidationErrors('records.0.store_id');
     }
 
     public function test_sync_uses_the_effective_bulletin_for_future_or_stale_submissions_and_rejects_when_none_exists(): void

@@ -8,7 +8,7 @@ import { canFinalizeWithLease } from '../app/sessionPolicy'
 import { readSecret, writeSecret, type BiometricAvailability } from '../app/vault'
 import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
 import { apiError, fieldApi } from '../services/fieldApi'
-import type { BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
+import type { ArchivedVisit, BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
 
 interface HomePageProps {
   name: string
@@ -274,6 +274,8 @@ interface MonitoringPageProps {
   onDiscard: (draftId: string) => void
   onSync: () => void
   onRetry: (clientUuid: string) => void
+  archived?: ArchivedVisit[]
+  onArchive?: (clientUuid: string) => void
   onStartAssigned: (request: FieldVerificationRequest) => void
   onRelease: (request: FieldVerificationRequest) => void
 }
@@ -293,6 +295,8 @@ export function MonitoringPage({
   onDiscard,
   onSync,
   onRetry,
+  archived = [],
+  onArchive,
   onStartAssigned,
   onRelease,
 }: MonitoringPageProps) {
@@ -566,6 +570,7 @@ export function MonitoringPage({
                     </div>
                   )}
                   {item.sync_error && <button type="button" className="secondary-button field-retry-sync" disabled={!online || syncing} onClick={() => onRetry(item.client_uuid)}>Retry this visit</button>}
+                  {item.sync_error_kind === 'rejected' && onArchive && <button type="button" className="secondary-button field-retry-sync" disabled={syncing} onClick={() => onArchive(item.client_uuid)}>Archive this visit</button>}
                 </article>
               )
             })}
@@ -575,6 +580,32 @@ export function MonitoringPage({
             <ShieldCheck size={32} />
             <strong>All visits synchronized</strong>
             <span>Completed visits are encrypted locally and automatically dispatched once online.</span>
+          </div>
+        )}
+
+        {archived.length > 0 && (
+          <div className="field-queue-accordion-list" aria-label="Archived visits">
+            <h3>Archived on this device ({archived.length})</h3>
+            <p className="field-inline-note">
+              <TriangleAlert size={16} />
+              The server refused these visits. They stay encrypted only on this device and are deleted if you sign out. Report them to your supervisor.
+            </p>
+            {archived.map((item) => (
+              <article key={item.client_uuid} className="field-queue-card">
+                <div className="field-queue-card-summary">
+                  <div className="field-queue-summary-left">
+                    <div className="field-queue-store-name-row">
+                      <strong>{bootstrap.stores.find((s) => s.id === item.store_id)?.store_name || 'Store not selected'}</strong>
+                      <span className="field-sync-pill pending">Archived</span>
+                    </div>
+                    <small className="field-queue-meta-text">
+                      {item.items.length} item{item.items.length === 1 ? '' : 's'} recorded · Archived {formatDate(item.archived_at)}
+                    </small>
+                    {item.sync_error && <p className="form-error">{item.sync_error}</p>}
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
         )}
 

@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, resolveClientReference } from './workflow'
+import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, resolveClientReference } from './workflow'
 
 describe('field visit workflow', () => {
+  it('keeps cached reference lists when bootstrap returns an unchanged delta', () => {
+    const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }
+    const cached = { version: 'v1', is_delta: false, stores: [store], srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }], recent_prices: [], accepted_today: 1 }
+    const delta = { version: 'v1', is_delta: true, stores: [], srp_bulletins: [], recent_prices: [], accepted_today: 4 }
+    expect(mergeBootstrapDelta(cached, delta)).toMatchObject({ is_delta: true, stores: [store], srp_bulletins: cached.srp_bulletins, accepted_today: 4 })
+    const full = { ...delta, is_delta: false, version: 'v2' }
+    expect(mergeBootstrapDelta(cached, full)).toBe(full)
+  })
+
+  it('stamps new drafts with the built app version', () => {
+    expect(createDraft('lease-1').client_version).toBe(__APP_VERSION__)
+    expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
   it('marks prices above ten percent of SRP as an observation requiring attention', () => {
     expect(analyzeLine({ srp_id: 1, recorded_price: 111 }, 100)).toMatchObject({ is_anomaly: true, variance_percent: 11 })
     expect(analyzeLine({ srp_id: 1, recorded_price: 110 }, 100).is_anomaly).toBe(false)

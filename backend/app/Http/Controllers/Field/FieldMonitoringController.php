@@ -350,7 +350,7 @@ class FieldMonitoringController extends Controller
         return [
             'items' => collect($payload['items'])->map(fn ($item) => [
                 'commodity_key' => $bulletins->get($item['srp_id'])?->commodity_key ?? 'id:'.$item['srp_id'],
-                'recorded_price' => (float) $item['recorded_price'],
+                'recorded_price' => round((float) $item['recorded_price'], 2),
             ])->sortBy('commodity_key')->values()->all(),
             'officer_signature' => $this->signature($payload['signatures']['officer_png_base64'], 'signatures.officer_png_base64'),
             'representative_signature' => $this->signature($payload['signatures']['representative_png_base64'], 'signatures.representative_png_base64'),
@@ -362,17 +362,19 @@ class FieldMonitoringController extends Controller
         $record->loadMissing('items.bulletin');
         $items = $record->items->map(fn ($item) => [
             'commodity_key' => $item->bulletin?->commodity_key ?? 'id:'.$item->srp_id,
-            'recorded_price' => (float) $item->recorded_price,
+            'recorded_price' => round((float) $item->recorded_price, 2),
         ])->sortBy('commodity_key')->values()->all();
+        // A resend after a lost response must match what the columns kept: whole seconds, decimal(10,7) coordinates, decimal(8,2) accuracy.
+        $sameSecond = fn ($stored, $submitted) => $stored->copy()->startOfSecond()->equalTo(Carbon::parse($submitted)->startOfSecond());
 
         return $record->store_id === (int) $payload['store_id']
             && $record->offline_lease_id === $payload['offline_lease_id']
-            && $record->started_at->equalTo(Carbon::parse($payload['started_at']))
-            && $record->finalized_at->equalTo(Carbon::parse($payload['finalized_at']))
-            && (float) $record->latitude === (float) $payload['location']['latitude']
-            && (float) $record->longitude === (float) $payload['location']['longitude']
-            && (float) $record->location_accuracy_meters === (float) $payload['location']['accuracy_meters']
-            && $record->location_captured_at->equalTo(Carbon::parse($payload['location']['captured_at']))
+            && $sameSecond($record->started_at, $payload['started_at'])
+            && $sameSecond($record->finalized_at, $payload['finalized_at'])
+            && round((float) $record->latitude, 7) === round((float) $payload['location']['latitude'], 7)
+            && round((float) $record->longitude, 7) === round((float) $payload['location']['longitude'], 7)
+            && round((float) $record->location_accuracy_meters, 2) === round((float) $payload['location']['accuracy_meters'], 2)
+            && $sameSecond($record->location_captured_at, $payload['location']['captured_at'])
             && $record->representative_name === $payload['representative']['name']
             && ($record->representative_title ?? '') === ($payload['representative']['title'] ?? '')
             && $record->officer_signature_sha256 === $duplicate['officer_signature'][1]

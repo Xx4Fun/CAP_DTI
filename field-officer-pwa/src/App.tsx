@@ -16,15 +16,17 @@ import { NotificationDrawer } from './components/NotificationDrawer'
 import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft } from './app/workflow'
+import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
 import {
   archiveUnreadableDrafts, archiveUnreadableQueue, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
   requestPersistentStorage, restoreVaultSession, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './app/vault'
 import type { BiometricAvailability, VaultUnlockResult } from './app/vault'
-import { applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldLockAfterBackground } from './app/sessionPolicy'
-import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, StoreRecord, VisitDraft } from './types'
+import {
+  applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldAutoRetry, shouldLockAfterBackground, shouldRetryOnReconnect, syncErrorKind,
+} from './app/sessionPolicy'
+import type { ArchivedVisit, BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, ReferenceSnapshot, StoreRecord, VisitDraft } from './types'
 
 type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'repair-login' | 'repair-unlock' | 'migration' | 'attention' | 'recovery' | 'ready'
 type View = TopLevelView | 'visit'
@@ -51,6 +53,10 @@ const readCachedSecret = async <T,>(key: string) => {
 export const fieldNoticeDuration = (kind: FieldNotice['kind']) => kind === 'success' ? 4_000 : kind === 'info' ? 6_000 : 0
 const GUIDE_VERSION = 'v1'
 const guideKey = (userId: number) => `field-guide:${userId}:${GUIDE_VERSION}`
+const TAB_LOCK_NAME = 'price-watch-field-app'
+const DRAFT_SAVE_DEBOUNCE_MS = 750
+const SYNC_RETRY_CHECK_MS = 30_000
+const GPS_REBIND_IMPROVEMENT_METRES = 5
 const EMPTY_BOOTSTRAP: BootstrapData = {
   version: '',
   is_delta: false,
@@ -61,6 +67,10 @@ const EMPTY_BOOTSTRAP: BootstrapData = {
 
 export default function App() {
   const [gate, setGate] = useState<Gate>('checking')
+  const [tabLock, setTabLock] = useState<'pending' | 'owned' | 'blocked'>(() => typeof navigator !== 'undefined' && navigator.locks ? 'pending' : 'owned')
+  const [tabLockAttempt, setTabLockAttempt] = useState(0)
+  const [archivedVisits, setArchivedVisits] = useState<ArchivedVisit[]>([])
+  const [storagePersisted, setStoragePersisted] = useState<boolean | null>(null)
   const [session, setSession] = useState<FieldSession | null>(null)
   const [repairingSession, setRepairingSession] = useState(false)
   const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue | null>(null)
@@ -97,6 +107,10 @@ export default function App() {
   const draftWrite = useRef<Promise<void>>(Promise.resolve())
   const syncingRef = useRef(false)
   const lockingRef = useRef(false)
+  const archivedRef = useRef<ArchivedVisit[]>([])
+  const pendingDraftFlush = useRef<(() => Promise<unknown>) | null>(null)
+  const previousLockRequest = useRef<Promise<unknown>>(Promise.resolve())
+  const syncQueueRef = useRef<(clientUuids?: string[]) => Promise<void>>(async () => undefined)
   const draft = drafts.find((item) => item.client_uuid === activeDraftId) || null
   const dismissNotice = useCallback(() => setNotice(null), [])
   const persistDrafts = useCallback(async (next: VisitDraft[]) => {
@@ -110,6 +124,22 @@ export default function App() {
     setRepairingSession(true)
     setGate('repair-login')
   }, [])
+
+  // One tab owns the workspace: two tabs would overwrite each other's encrypted queue and drafts.
+  // StrictMode-safe: cleanup releases and cancels, and a remount requests only after the previous request settles.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.locks) return
+    let cancelled = false
+    let release: (() => void) | undefined
+    const request = previousLockRequest.current.catch(() => undefined).then(() => cancelled ? undefined : navigator.locks.request(TAB_LOCK_NAME, { ifAvailable: true }, (lock) => {
+      if (cancelled) return undefined
+      if (!lock) { setTabLock('blocked'); return undefined }
+      setTabLock('owned')
+      return new Promise<void>((resolve) => { release = resolve })
+    }))
+    previousLockRequest.current = request
+    return () => { cancelled = true; release?.() }
+  }, [tabLockAttempt])
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine)
@@ -146,12 +176,14 @@ export default function App() {
 
   const hydrate = useCallback(async (next: FieldSession, renewOnline = true) => {
     lockingRef.current = false
-    const [cached, cachedQueue, cachedDrafts, cachedRequests, cachedNotifications] = await Promise.all([
+    const [cached, cachedQueue, cachedDrafts, cachedRequests, cachedNotifications, cachedArchived] = await Promise.all([
       readCachedSecret<BootstrapData>('bootstrap'),
       readRequiredSecret<QueuedVisit[]>('queue', { code: 'PW-WORK-QUEUE', detail: 'The encrypted upload queue could not be opened.' }),
       readRequiredSecret<VisitDraft[]>('drafts', { code: 'PW-WORK-DRAFTS', detail: 'Encrypted unfinished visits could not be opened.' }),
       readCachedSecret<FieldVerificationRequest[]>('verification-requests'),
       readCachedSecret<FieldNotification[]>('notifications'),
+      // Archived visits are the only copy of refused evidence: unreadable must stop the workspace, not look empty.
+      readRequiredSecret<ArchivedVisit[]>('archived-visits', { code: 'PW-WORK-ARCHIVED', detail: 'Archived visits that could not be uploaded could not be opened.' }),
     ])
     const legacyDraft = cachedDrafts === undefined
       ? await readRequiredSecret<VisitDraft>('active-draft', { code: 'PW-WORK-LEGACY', detail: 'An encrypted unfinished visit from an earlier version could not be opened.' })
@@ -174,6 +206,7 @@ export default function App() {
       setSession(effectiveSession)
       if (cached.value) setBootstrap(cached.value)
       if (cachedQueue) { queueRef.current = cachedQueue; setQueue(cachedQueue) }
+      archivedRef.current = cachedArchived ?? []; setArchivedVisits(archivedRef.current)
       if (cachedRequests.value) { setVerificationRequests(cachedRequests.value); setRequestState('ready') }
       else if (cachedRequests.failed) setRequestState('unavailable')
       if (cachedNotifications.value) { setNotifications(cachedNotifications.value); setNotificationState('ready') }
@@ -187,7 +220,7 @@ export default function App() {
       setGate('ready')
     }
     openWorkspace()
-    void requestPersistentStorage()
+    void Promise.resolve(requestPersistentStorage()).then((persisted) => { if (!lockingRef.current) setStoragePersisted(persisted) })
     void Promise.all([getBiometricUnlockAvailability(), hasBiometricUnlock()]).then(([availability, enabled]) => {
       if (lockingRef.current) return
       setBiometricAvailability(availability)
@@ -218,7 +251,7 @@ export default function App() {
       }
       if (lockingRef.current) return
       try {
-        const downloaded = await fieldApi.bootstrap(effectiveSession.token)
+        const downloaded = mergeBootstrapDelta(cached.value, await fieldApi.bootstrap(effectiveSession.token, cached.value?.version || undefined))
         if (lockingRef.current) return
         setBootstrap(downloaded)
         await writeSecret('bootstrap', downloaded)
@@ -239,24 +272,23 @@ export default function App() {
     setGate('recovery')
   }, [])
 
-  // Auto-bind accurate background GPS position to active draft with zero delay
+  // Bind a background GPS fix to the active draft until the officer signs, and only when it is meaningfully more accurate.
   useEffect(() => {
-    if (draft && officerPosition && officerPosition.accuracy_meters <= 150) {
-      if (!draft.location || officerPosition.accuracy_meters < draft.location.accuracy_meters) {
-        setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? {
-          ...item,
-          location: {
-            latitude: officerPosition.latitude,
-            longitude: officerPosition.longitude,
-            accuracy_meters: officerPosition.accuracy_meters,
-            captured_at: new Date().toISOString(),
-          },
-        } : item))
-      }
-    }
+    if (!draft || !officerPosition || officerPosition.accuracy_meters > 150 || draft.signatures.officer_png_base64) return
+    if (draft.location && draft.location.accuracy_meters - officerPosition.accuracy_meters < GPS_REBIND_IMPROVEMENT_METRES) return
+    setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? {
+      ...item,
+      location: {
+        latitude: officerPosition.latitude,
+        longitude: officerPosition.longitude,
+        accuracy_meters: officerPosition.accuracy_meters,
+        captured_at: new Date().toISOString(),
+      },
+    } : item))
   }, [draft, officerPosition])
 
   useEffect(() => {
+    if (tabLock !== 'owned') return
     void (async () => {
       if (!await hasVault()) { setGate('login'); return }
       if (!await restoreVaultSession()) { setGate('unlock'); return }
@@ -269,7 +301,7 @@ export default function App() {
         setGate('unlock')
       }
     })()
-  }, [hydrate, requestSessionRepair])
+  }, [hydrate, requestSessionRepair, tabLock])
 
   const lockWorkspace = useCallback(async () => {
     if (gate !== 'ready' || !session) return
@@ -283,18 +315,21 @@ export default function App() {
     } finally {
       lockVault()
       queueRef.current = []
+      archivedRef.current = []; setArchivedVisits([])
       setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDrafts([]); setActiveDraftId(null); setView('home'); setGate('unlock')
     }
   }, [drafts, gate, persistDrafts, queue, session])
 
   useEffect(() => {
     const visibility = () => {
-      if (document.visibilityState === 'hidden') { hiddenAt.current = Date.now(); return }
+      if (document.visibilityState === 'hidden') { hiddenAt.current = Date.now(); void pendingDraftFlush.current?.(); return }
       if (shouldLockAfterBackground(hiddenAt.current, Date.now())) void lockWorkspace()
       hiddenAt.current = null
     }
+    const pageHide = () => { void pendingDraftFlush.current?.() }
     document.addEventListener('visibilitychange', visibility)
-    return () => document.removeEventListener('visibilitychange', visibility)
+    window.addEventListener('pagehide', pageHide)
+    return () => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', pageHide) }
   }, [lockWorkspace])
 
   const saveQueue = useCallback(async (update: QueuedVisit[] | ((current: QueuedVisit[]) => QueuedVisit[])) => {
@@ -310,18 +345,21 @@ export default function App() {
     await write
     return next
   }, [])
-  const syncQueue = useCallback(async (clientUuid?: string) => {
-    const pending = queueRef.current
+  // Automatic callers pass only eligible UUIDs; manual "Sync all now" passes nothing and sends every queued visit.
+  const syncQueue = useCallback(async (clientUuids?: string[]) => {
+    const pending = clientUuids ? queueRef.current.filter((entry) => clientUuids.includes(entry.client_uuid)) : queueRef.current
     if (!session || !navigator.onLine || !pending.length || syncingRef.current) return
     syncingRef.current = true
     setSyncing(true)
     let accepted = 0
     let storageFailed = false
     try {
-      for (const item of pending.filter((entry) => !clientUuid || entry.client_uuid === clientUuid)) {
+      for (const item of pending) {
         const record = { ...item }
         delete record.sync_error
         delete record.sync_attempted_at
+        delete record.sync_error_kind
+        delete record.sync_attempts
         try {
           await fieldApi.sync(session.token, [{ ...record, sync_source: 'offline_queue' }])
           await saveQueue((current) => current.filter((entry) => entry.client_uuid !== item.client_uuid)); accepted += 1
@@ -333,7 +371,10 @@ export default function App() {
           }
           const message = apiError(error, 'The server did not accept this visit. Review the error and retry it.')
           try {
-            await saveQueue((current) => current.map((entry) => entry.client_uuid === item.client_uuid ? { ...entry, sync_error: message, sync_attempted_at: new Date().toISOString() } : entry))
+            await saveQueue((current) => current.map((entry) => entry.client_uuid === item.client_uuid ? {
+              ...entry, sync_error: message, sync_attempted_at: new Date().toISOString(),
+              sync_error_kind: syncErrorKind(status), sync_attempts: (entry.sync_attempts ?? 0) + 1,
+            } : entry))
           } catch {
             storageFailed = true
             setNotice({ kind: 'error', title: 'Device storage unavailable', message: 'The visit remains encrypted in the sync queue, but its latest error could not be saved. Keep this screen open and free device storage before retrying.' })
@@ -360,7 +401,7 @@ export default function App() {
           const renewed = applyRenewedLease(session, drafts, lease)
           setSession(renewed.session); setDrafts(renewed.drafts)
           await writeSecret('session', renewed.session); await persistDrafts(renewed.drafts)
-          await syncQueue()
+          await syncQueue(queueRef.current.filter((item) => shouldRetryOnReconnect(item)).map((item) => item.client_uuid))
         } catch (error) {
           const status = (error as { response?: { status?: number } }).response?.status
           if (status === 401 || status === 403) {
@@ -371,11 +412,27 @@ export default function App() {
       })()
       return
     }
-    if (queue.some((item) => !item.sync_attempted_at)) void syncQueue()
+    const now = Date.now()
+    const due = queueRef.current.filter((item) => shouldAutoRetry(item, now))
+    if (due.length) void syncQueue(due.map((item) => item.client_uuid))
   }, [drafts, gate, online, persistDrafts, queue, session, syncQueue])
+  useEffect(() => { syncQueueRef.current = syncQueue }, [syncQueue])
+  useEffect(() => {
+    if (gate !== 'ready' || !online) return
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      const due = queueRef.current.filter((item) => shouldAutoRetry(item, now))
+      if (due.length) void syncQueueRef.current(due.map((item) => item.client_uuid))
+    }, SYNC_RETRY_CHECK_MS)
+    return () => window.clearInterval(timer)
+  }, [gate, online])
   useEffect(() => {
     if (gate !== 'ready') return
-    void persistDrafts(drafts).catch(() => setNotice({ kind: 'error', title: 'Device storage unavailable', message: 'Recent draft changes could not be secured. Keep this screen open and free device storage before continuing.' }))
+    // Debounced: re-encrypting every draft on each keystroke or GPS fix drains low-end phones. Hiding the page flushes it.
+    const save = () => persistDrafts(drafts).catch(() => setNotice({ kind: 'error', title: 'Device storage unavailable', message: 'Recent draft changes could not be secured. Keep this screen open and free device storage before continuing.' }))
+    const timer = window.setTimeout(() => { pendingDraftFlush.current = null; void save() }, DRAFT_SAVE_DEBOUNCE_MS)
+    pendingDraftFlush.current = () => { window.clearTimeout(timer); pendingDraftFlush.current = null; return save() }
+    return () => { window.clearTimeout(timer); pendingDraftFlush.current = null }
   }, [drafts, gate, persistDrafts])
   useEffect(() => {
     if (!session) return
@@ -499,6 +556,8 @@ export default function App() {
       await fieldApi.logout(session.token)
       await clearVault()
       queueRef.current = []
+      archivedRef.current = []
+      setArchivedVisits([])
       setSession(null)
       setBootstrap(EMPTY_BOOTSTRAP)
       setQueue([])
@@ -508,6 +567,27 @@ export default function App() {
       setGate('login')
     } catch (error) {
       setNotice({ kind: 'error', title: 'Sign out failed', message: apiError(error, 'Sign out could not revoke this device session. Try again while online.') })
+    }
+  }
+
+  const archiveRejectedVisit = async (clientUuid: string) => {
+    const item = queueRef.current.find((entry) => entry.client_uuid === clientUuid)
+    if (!item || item.sync_error_kind !== 'rejected') return
+    if (!window.confirm('Archive this visit? The server refused it, so it will not be uploaded. The evidence stays encrypted only on this device and is deleted if you sign out.')) return
+    try {
+      // Archive first, then dequeue, both on the queue write chain, so the visit is never in neither list.
+      const archive = queueWrite.current.catch(() => undefined).then(async () => {
+        const next = [...archivedRef.current.filter((entry) => entry.client_uuid !== clientUuid), { ...item, archived_at: new Date().toISOString() }]
+        await writeSecret('archived-visits', next)
+        archivedRef.current = next
+        setArchivedVisits(next)
+      })
+      queueWrite.current = archive
+      await archive
+      await saveQueue((current) => current.filter((entry) => entry.client_uuid !== clientUuid))
+      setNotice({ kind: 'info', title: 'Visit archived on this device', message: 'It was removed from the upload queue. Report it to your supervisor.' })
+    } catch {
+      setNotice({ kind: 'error', title: 'Visit could not be archived', message: 'The visit remains in the sync queue. Free device storage and try again.' })
     }
   }
 
@@ -575,7 +655,13 @@ export default function App() {
     <>
       <InstallPrompt />
       <PwaUpdatePrompt />
-      {gate === 'checking' ? <StartupGate /> : gate !== 'ready' ? (
+      {tabLock === 'blocked' ? (
+        <AuthShell contentKey="tab-blocked">
+          <SecurityMessage title="Workspace already open" detail="PRICE-Watch Field is already open in another tab or window. Close it there, then check again." icon={<TriangleAlert />}>
+            <button type="button" className="primary-button" onClick={() => { setTabLock('pending'); setTabLockAttempt((attempt) => attempt + 1) }}>Check again</button>
+          </SecurityMessage>
+        </AuthShell>
+      ) : gate === 'checking' ? <StartupGate /> : gate !== 'ready' ? (
         <AuthShell contentKey={gate}>
           {gate === 'login' && <LoginForm onAuthenticated={(next) => { setRepairingSession(false); setSession(next); setGate('pin') }} />}
           {gate === 'repair-login' && <SecurityMessage title="Repair device session" detail="Sign in online to replace only the unreadable device session. Encrypted drafts and pending uploads will remain on this device." icon={<ShieldCheck />}><LoginForm onAuthenticated={(next) => { setSession(next); setGate('repair-unlock') }} /></SecurityMessage>}
@@ -599,12 +685,18 @@ export default function App() {
         <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={actionableDrafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>
           {notice && <FieldToast notice={notice} onDismiss={dismissNotice} />}
           {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
+          {storagePersisted === false && (queue.length > 0 || actionableDrafts.length > 0 || archivedVisits.length > 0) && (
+            <div className="authorization-warning" role="status"><TriangleAlert size={18} /><span>{queue.length > 0 || actionableDrafts.length > 0
+              ? <><strong>Saved visits are at risk</strong> This device may clear saved visits. Connect and sync soon, or install the app to the home screen.</>
+              : <><strong>Archived visits are at risk</strong> This device may clear archived visits that could not be uploaded. Install the app to the home screen and report them to your supervisor.</>}</span></div>
+          )}
           {view === 'home' && (completion
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
             : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} onViewHistory={() => setView('history')} />)}
-          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue(uuid)} onStartAssigned={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
+          {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} archived={archivedVisits} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue([uuid])} onArchive={(uuid) => void archiveRejectedVisit(uuid)} onStartAssigned={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
           {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} verificationRequests={verificationRequests} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
+            await pendingDraftFlush.current?.()
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
             const queuedVisit = { ...finished, sync_source: navigator.onLine ? finished.sync_source : 'offline_queue' as const }
             await saveQueue((current) => current.some((item) => item.client_uuid === finished.client_uuid) ? current : [...current, queuedVisit])
@@ -617,7 +709,7 @@ export default function App() {
                 const status = (error as { response?: { status?: number } }).response?.status
                 const message = apiError(error, 'The server did not accept this visit. Review the error in Sync Queue and retry it.')
                 try {
-                  await saveQueue((current) => current.map((item) => item.client_uuid === finished.client_uuid ? { ...item, sync_source: 'offline_queue', sync_error: message, sync_attempted_at: new Date().toISOString() } : item))
+                  await saveQueue((current) => current.map((item) => item.client_uuid === finished.client_uuid ? { ...item, sync_source: 'offline_queue', sync_error: message, sync_attempted_at: new Date().toISOString(), sync_error_kind: syncErrorKind(status), sync_attempts: (item.sync_attempts ?? 0) + 1 } : item))
                   setNotice({ kind: status && status < 500 ? 'error' : 'warning', title: status && status < 500 ? 'Synchronization needs attention' : 'Visit queued securely', message })
                 } catch {
                   setNotice({ kind: 'error', title: 'Device storage unavailable', message: 'The accepted visit remains in the encrypted sync queue, but its latest status could not be saved. Keep this screen open and free device storage before retrying.' })
@@ -728,6 +820,11 @@ export default function App() {
                       <p>
                         Are you sure you want to sign out? Your offline authorization lease and cached data will be cleared from this device. You will need internet access and your credentials to sign in again.
                       </p>
+                      {archivedVisits.length > 0 && (
+                        <p role="alert">
+                          <strong>{archivedVisits.length} archived {archivedVisits.length === 1 ? 'visit' : 'visits'}</strong> that could not be uploaded will be permanently deleted from this device.
+                        </p>
+                      )}
                     </div>
                     <div className="field-dialog-actions">
                       <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
@@ -1072,7 +1169,8 @@ function VisitWizard({
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
 
-  const handleUpdatePrice = (srpId: number, recordedPrice: number | null) => {
+  // The issued reference must travel with the price: leases require a snapshot, and sync refuses visits without one.
+  const handleUpdatePrice = (srpId: number, recordedPrice: number | null, reference?: ReferenceSnapshot) => {
     if (recordedPrice === null || !Number.isFinite(recordedPrice) || recordedPrice <= 0) {
       onDraft({
         ...draft,
@@ -1082,7 +1180,7 @@ function VisitWizard({
       const without = draft.items.filter((item) => item.srp_id !== srpId)
       onDraft({
         ...draft,
-        items: [...without, { srp_id: srpId, recorded_price: recordedPrice }],
+        items: [...without, { srp_id: srpId, recorded_price: recordedPrice, ...(reference ? { reference_snapshot: reference } : {}) }],
       })
     }
     setError('')
@@ -1348,6 +1446,7 @@ function VisitWizard({
               bulletins={bootstrap.srp_bulletins}
               protocol={bootstrap.protocol}
               regulatoryPrices={bootstrap.regulatory_prices}
+              monitoringReferences={bootstrap.monitoring_references}
               onUpdatePrice={handleUpdatePrice}
               onPrevious={() => {
                 setError('')

@@ -1,4 +1,14 @@
-import type { Bulletin, MonitoringReference, RegulatoryPrice, VisitDraft, VisitItem } from '../types'
+import type { BootstrapData, Bulletin, MonitoringReference, RegulatoryPrice, VisitDraft, VisitItem } from '../types'
+
+// A delta response means nothing reference-related changed since `cached.version`; keep the cached lists, take the fresh envelope.
+export function mergeBootstrapDelta(cached: BootstrapData | undefined, fresh: BootstrapData): BootstrapData {
+  if (!fresh.is_delta || !cached) return fresh
+  return {
+    ...fresh,
+    stores: cached.stores, srp_bulletins: cached.srp_bulletins, monitoring_references: cached.monitoring_references,
+    regulatory_prices: cached.regulatory_prices, recent_prices: cached.recent_prices,
+  }
+}
 
 export function createDraft(offlineLeaseId: string, verificationRequestId?: number): VisitDraft {
   return {
@@ -6,7 +16,7 @@ export function createDraft(offlineLeaseId: string, verificationRequestId?: numb
     ...(verificationRequestId ? { verification_request_id: verificationRequestId } : {}),
     started_at: new Date().toISOString(), items: [], representative: { name: '', title: '' },
     signatures: { officer_png_base64: '', representative_png_base64: '' }, location: null,
-    sync_source: navigator.onLine ? 'online' : 'offline_queue', client_version: '1.1.0'
+    sync_source: navigator.onLine ? 'online' : 'offline_queue', client_version: __APP_VERSION__
   }
 }
 

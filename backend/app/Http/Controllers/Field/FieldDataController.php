@@ -47,11 +47,20 @@ class FieldDataController extends Controller
             ->unique(fn ($bulletin) => $bulletin->commodity_key ?: 'id:'.$bulletin->id)
             ->sortBy('commodity_name')->values();
 
-        $recentPrices = $isCurrent ? collect() : TemporalInspection::query()
+        $latestPerPair = TemporalInspection::query()
+            ->select('store_id', 'srp_id')->selectRaw('max(inspection_timestamp) as latest_at')
             ->where('validation_status', 'verified')
             ->where('inspection_timestamp', '>=', now()->subWeeks(3))
-            ->latest('inspection_timestamp')
-            ->get(['store_id', 'srp_id', 'recorded_price', 'inspection_timestamp'])
+            ->groupBy('store_id', 'srp_id');
+        $recentPrices = $isCurrent ? collect() : TemporalInspection::query()
+            ->joinSub($latestPerPair, 'latest', fn ($join) => $join
+                ->on('temporal_inspections.store_id', '=', 'latest.store_id')
+                ->on('temporal_inspections.srp_id', '=', 'latest.srp_id')
+                ->on('temporal_inspections.inspection_timestamp', '=', 'latest.latest_at'))
+            ->where('temporal_inspections.validation_status', 'verified')
+            ->orderByDesc('temporal_inspections.inspection_timestamp')->orderByDesc('temporal_inspections.id')
+            ->get(['temporal_inspections.store_id', 'temporal_inspections.srp_id', 'temporal_inspections.recorded_price', 'temporal_inspections.inspection_timestamp'])
+            // Only rows sharing a pair's exact latest timestamp reach here; keep the newest id.
             ->unique(fn ($inspection) => $inspection->store_id.':'.$inspection->srp_id)
             ->values();
 

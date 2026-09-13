@@ -18,7 +18,8 @@ export const fieldApi = {
     return (await client.get('/field/bootstrap', { ...auth(token), params: since ? { since } : undefined })).data.data
   },
   async sync(token: string, records: VisitDraft[]) {
-    return (await client.post('/field/monitoring-records/sync', { records }, auth(token))).data.data.results
+    // A sleeping free-tier server can take longer than the default to wake; a premature timeout forces a needless resend.
+    return (await client.post('/field/monitoring-records/sync', { records }, { ...auth(token), timeout: 60_000 })).data.data.results
   },
   async history(token: string, page = 1): Promise<Page<MonitoringRecord>> {
     return (await client.get('/field/monitoring-records', { ...auth(token), params: { page, per_page: 10 } })).data.data

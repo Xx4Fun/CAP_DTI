@@ -88,7 +88,14 @@ export interface VisitDraft {
   sync_source: 'online' | 'offline_queue'
   client_version: string
 }
-export interface QueuedVisit extends VisitDraft { sync_error?: string; sync_attempted_at?: string }
+export interface QueuedVisit extends VisitDraft {
+  sync_error?: string
+  sync_attempted_at?: string
+  // transient: no response, timeout, 408, 429 or 5xx (retried with backoff). rejected: other 4xx (never retried automatically).
+  sync_error_kind?: 'transient' | 'rejected'
+  sync_attempts?: number
+}
+export interface ArchivedVisit extends QueuedVisit { archived_at: string }
 export interface FieldVerificationRequest {
   id: number
   status: 'claimed'

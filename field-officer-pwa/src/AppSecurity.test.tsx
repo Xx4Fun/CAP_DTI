@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -94,6 +95,8 @@ describe('field workspace security flow', () => {
     fixtures.api.renewLease.mockResolvedValue({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
     Object.defineProperty(window.navigator, 'geolocation', { configurable: true, value: undefined })
+    Object.defineProperty(window.navigator, 'locks', { configurable: true, value: undefined })
+    fixtures.vault.requestPersistentStorage.mockResolvedValue(true)
   })
 
   afterEach(() => { cleanup(); vi.useRealTimers() })
@@ -1203,5 +1206,225 @@ describe('field workspace security flow', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect device PIN.')
     expect(pinInput).toHaveValue('')
+  })
+
+  describe('offline sync reliability', () => {
+    const queuedVisit = (overrides: Record<string, unknown> = {}) => ({ ...fixtures.draft, store_id: 7, finalized_at: '2026-08-28T01:00:00Z', ...overrides })
+    const rejectedVisit = (overrides: Record<string, unknown> = {}) => queuedVisit({
+      sync_error: 'The monitoring reference changed.', sync_attempted_at: '2026-08-28T02:00:00Z', sync_error_kind: 'rejected', sync_attempts: 1, ...overrides,
+    })
+    const unlockOnlineWith = async (secrets: Record<string, unknown>) => {
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
+      localStorage.setItem('field-guide:1:v1', 'complete')
+      fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
+        session: fixtures.session, bootstrap: { version: 'cached', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }, ...secrets,
+      } as Record<string, unknown>)[key])
+      render(<App />)
+      fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+      await screen.findByText(/Good day, Ana/i)
+    }
+    const sentUuids = () => fixtures.api.sync.mock.calls.map(([, records]) => records[0].client_uuid)
+    const openSyncQueue = () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Monitoring' })[0])
+      fireEvent.click(screen.getByRole('tab', { name: /Sync Queue/ }))
+    }
+
+    it('retries a transiently failed visit automatically once its backoff has passed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      fixtures.api.sync.mockRejectedValueOnce({ response: { status: 500 } }).mockResolvedValue([])
+      await unlockOnlineWith({ queue: [queuedVisit()] })
+
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('queue', [expect.objectContaining({ sync_error_kind: 'transient', sync_attempts: 1 })]))
+      expect(fixtures.api.sync).toHaveBeenCalledTimes(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
+      await waitFor(() => expect(fixtures.api.sync).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('queue', []))
+    }, 15_000)
+
+    it('sends only the due transient visit from a mixed queue', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+      fixtures.api.sync.mockResolvedValue([])
+      await unlockOnlineWith({ queue: [
+        queuedVisit({ client_uuid: 'due-transient', sync_error: 'x', sync_attempted_at: ago(40_000), sync_error_kind: 'transient', sync_attempts: 1 }),
+        queuedVisit({ client_uuid: 'waiting-transient', sync_error: 'x', sync_attempted_at: ago(1_000), sync_error_kind: 'transient', sync_attempts: 3 }),
+        rejectedVisit({ client_uuid: 'rejected', sync_attempted_at: ago(3_600_000) }),
+      ] })
+
+      await waitFor(() => expect(fixtures.api.sync).toHaveBeenCalledTimes(1))
+      await act(async () => { await vi.advanceTimersByTimeAsync(31_000) })
+      expect(sentUuids()).toEqual(['due-transient'])
+    }, 15_000)
+
+    it('gives a legacy failed visit one automatic retry and then classifies it', async () => {
+      fixtures.api.sync.mockRejectedValue({ response: { status: 422 } })
+      await unlockOnlineWith({ queue: [queuedVisit({ sync_error: 'Old failure', sync_attempted_at: '2026-08-28T02:00:00Z' })] })
+
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('queue', [expect.objectContaining({ sync_error_kind: 'rejected', sync_attempts: 1 })]))
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 50)) })
+      expect(fixtures.api.sync).toHaveBeenCalledTimes(1)
+    })
+
+    it('archives a refused visit before dequeuing it, unblocks sign out, and warns before deleting it', async () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await unlockOnlineWith({ queue: [rejectedVisit()] })
+      openSyncQueue()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Archive this visit' }))
+
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('queue', []))
+      expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('archived-visits', [expect.objectContaining({ client_uuid: fixtures.draft.client_uuid, archived_at: expect.any(String) })])
+      const keys = fixtures.vault.writeSecret.mock.calls.map(([key]) => key)
+      expect(keys.lastIndexOf('archived-visits')).toBeLessThan(keys.lastIndexOf('queue'))
+      expect(fixtures.api.sync).not.toHaveBeenCalled()
+      expect(await screen.findByText('Archived on this device (1)')).toBeInTheDocument()
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Open profile' })[0])
+      fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+      expect(await screen.findByRole('heading', { name: 'Sign out of PRICE-Watch?' })).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toHaveTextContent('1 archived visit that could not be uploaded will be permanently deleted')
+      expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+      confirm.mockRestore()
+    })
+
+    it('stops at recovery instead of opening the workspace when archived visits are unreadable', async () => {
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      fixtures.vault.readSecret.mockImplementation(async (key: string) => {
+        if (key === 'session') return fixtures.session
+        if (key === 'archived-visits') throw new Error('IndexedDB record unreadable')
+        return undefined
+      })
+      render(<App />)
+
+      fireEvent.change(await screen.findByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+
+      expect(await screen.findByRole('heading', { name: 'Encrypted field work needs recovery' })).toBeInTheDocument()
+      expect(screen.getByText(/PW-WORK-ARCHIVED/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Archive unreadable/ })).not.toBeInTheDocument()
+      expect(screen.queryByText(/Good day, Ana/i)).not.toBeInTheDocument()
+      expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      [{ queue: [rejectedVisit()] }, 'Saved visits are at risk'],
+      [{ 'archived-visits': [rejectedVisit({ archived_at: '2026-08-29T00:00:00Z' })] }, 'Archived visits are at risk'],
+    ])('warns when the device may clear saved evidence (case %#)', async (secrets, warning) => {
+      fixtures.vault.requestPersistentStorage.mockResolvedValue(false)
+      await unlockOnlineWith(secrets)
+      expect(await screen.findByText(warning)).toBeInTheDocument()
+    })
+
+    it('shows no eviction warning when the device keeps storage', async () => {
+      await unlockOnlineWith({ queue: [rejectedVisit()] })
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 20)) })
+      expect(screen.queryByText(/are at risk/)).not.toBeInTheDocument()
+    })
+
+    const lockManager = () => {
+      let held = false
+      return {
+        request: vi.fn(async (name: string, _options: unknown, callback: (lock: { name: string } | null) => unknown) => {
+          if (held) return callback(null)
+          held = true
+          try { return await callback({ name }) } finally { held = false }
+        }),
+      }
+    }
+
+    it('does not open the vault while another tab owns the workspace, and checks again on request', async () => {
+      const locks = lockManager()
+      let releaseOtherTab!: () => void
+      void locks.request('price-watch-field-app', {}, () => new Promise<void>((resolve) => { releaseOtherTab = resolve }))
+      Object.defineProperty(window.navigator, 'locks', { configurable: true, value: locks })
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      render(<App />)
+
+      expect(await screen.findByRole('heading', { name: 'Workspace already open' })).toBeInTheDocument()
+      expect(fixtures.vault.hasVault).not.toHaveBeenCalled()
+      expect(fixtures.vault.restoreVaultSession).not.toHaveBeenCalled()
+      expect(fixtures.vault.readSecret).not.toHaveBeenCalled()
+
+      await act(async () => { releaseOtherTab(); await new Promise((resolve) => window.setTimeout(resolve, 0)) })
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+      expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
+    })
+
+    it('waits for the tab lock decision before touching the vault', async () => {
+      let grant!: () => void
+      const request = vi.fn((name: string, _options: unknown, callback: (lock: { name: string } | null) => unknown) =>
+        new Promise((resolve) => { grant = () => resolve(callback({ name })) }))
+      Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request } })
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      render(<App />)
+
+      await waitFor(() => expect(request).toHaveBeenCalled())
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 20)) })
+      expect(fixtures.vault.hasVault).not.toHaveBeenCalled()
+      expect(fixtures.vault.restoreVaultSession).not.toHaveBeenCalled()
+
+      await act(async () => { grant() })
+      expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
+    })
+
+    it('keeps a single tab working under React StrictMode double effects', async () => {
+      Object.defineProperty(window.navigator, 'locks', { configurable: true, value: lockManager() })
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      render(<StrictMode><App /></StrictMode>)
+
+      expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Workspace already open' })).not.toBeInTheDocument()
+    })
+
+    it('saves rapid GPS draft changes once, ignores small improvements, and flushes when the page is hidden', async () => {
+      let emit: PositionCallback | undefined
+      Object.defineProperty(window.navigator, 'geolocation', { configurable: true, value: {
+        watchPosition: vi.fn((success: PositionCallback) => { emit = success; return 1 }), clearWatch: vi.fn(), getCurrentPosition: vi.fn(),
+      } })
+      const fix = (accuracy: number) => ({ coords: { latitude: 10.74, longitude: 121.98, accuracy } }) as GeolocationPosition
+      const draftWrites = () => fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts')
+      await unlockOnlineWith({ drafts: [{ ...fixtures.draft, store_id: 7, items: [{ srp_id: 3, recorded_price: 52 }] }] })
+      resumeOnlyDraft()
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 900)) })
+      fixtures.vault.writeSecret.mockClear()
+
+      for (let index = 0; index < 10; index += 1) await act(async () => { emit?.(fix(100 - index * 6)) })
+      expect(draftWrites()).toHaveLength(0)
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 900)) })
+      expect(draftWrites()).toHaveLength(1)
+      expect((draftWrites()[0][1] as Array<{ location: { accuracy_meters: number } }>)[0].location.accuracy_meters).toBe(46)
+
+      await act(async () => { emit?.(fix(43)) })
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 900)) })
+      expect(draftWrites()).toHaveLength(1)
+
+      await act(async () => { emit?.(fix(30)) })
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+      expect(draftWrites()).toHaveLength(2)
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    }, 15_000)
+
+    it('attaches the issued monitoring reference when an officer records a price', async () => {
+      const bootstrap = {
+        version: 'cached', is_delta: false, recent_prices: [],
+        stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }],
+        srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50, commodity_key: 'rice', effective_date: '2026-09-01', source_reference: 'SRP-2026' }],
+        monitoring_references: [{
+          srp_id: 3, commodity_key: 'rice', covered_by_price_freeze: false, status: 'available', type: 'standard_srp', source_id: 3,
+          value: 50, label: 'SRP baseline (provisional)', source: 'SRP-2026', effective_date: '2026-09-01', reference_version: 'ref-v-rice',
+        }],
+      }
+      fixtures.api.bootstrap.mockResolvedValue(bootstrap)
+      await unlockOnlineWith({ bootstrap })
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Start new visit' })[0])
+      fireEvent.click(await screen.findByRole('button', { name: 'Choose Market One to record prices' }))
+      fireEvent.change(await screen.findByLabelText('Observed shelf price for Rice'), { target: { value: '52' } })
+
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', [expect.objectContaining({
+        items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: expect.objectContaining({ reference_version: 'ref-v-rice', value: 50, source_reference: 'SRP-2026' }) }],
+      })]), { timeout: 3000 })
+    }, 15_000)
   })
 })
