@@ -45,11 +45,20 @@ class ShelfTagOcrService
         $language = (string) ($options['language'] ?? config('services.tesseract.language', 'eng'));
         $minimumConfidence = (int) ($options['minimum_confidence'] ?? 60);
 
-        $command = [$tesseractPath, $imagePath, 'stdout', '--psm', $psm, '-l', $language, 'tsv'];
+        $command = [$tesseractPath, $imagePath, 'stdout', '--psm', $psm];
+        // Optional receipt tuning; omitted options keep the shelf-tag command unchanged.
+        if (isset($options['dpi'])) {
+            array_push($command, '--dpi', (string) (int) $options['dpi']);
+        }
+        array_push($command, '-l', $language);
+        foreach ($options['config'] ?? [] as $key => $value) {
+            array_push($command, '-c', "{$key}={$value}");
+        }
+        $command[] = 'tsv';
 
         try {
             $output = $this->runProcess($command, $timeout);
-            return $this->parseTsvOutput($output, $minimumConfidence);
+            return $this->parseTsvOutput($output, $minimumConfidence, (bool) ($options['paragraph_lines'] ?? false));
         } catch (ProcessTimedOutException $e) {
             return $this->buildResponse('OCR_TIMEOUT');
         } catch (\Symfony\Component\Process\Exception\InvalidArgumentException | \Symfony\Component\Process\Exception\LogicException | \Symfony\Component\Process\Exception\RuntimeException $e) {
@@ -83,8 +92,11 @@ class ShelfTagOcrService
 
     /**
      * Parse TSV format string into structured OCR output.
+     *
+     * Tesseract restarts line_num in every paragraph, so multi-paragraph text (receipts) must key lines by
+     * paragraph too; $paragraphLines opts in without changing shelf-tag grouping.
      */
-    public function parseTsvOutput(string $tsvOutput, int $minimumConfidence = 60): array
+    public function parseTsvOutput(string $tsvOutput, int $minimumConfidence = 60, bool $paragraphLines = false): array
     {
         $rawLines = explode("\n", str_replace("\r\n", "\n", $tsvOutput));
         $words = [];
@@ -133,7 +145,7 @@ class ShelfTagOcrService
                 'block_num' => $blockNum,
             ];
 
-            $lineKey = "{$blockNum}_{$lineNum}";
+            $lineKey = $paragraphLines ? "{$blockNum}_".(int) ($cols[3] ?? 0)."_{$lineNum}" : "{$blockNum}_{$lineNum}";
             $lineMap[$lineKey][] = $text;
         }
 

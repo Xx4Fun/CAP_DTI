@@ -20,7 +20,7 @@ Retrieves global application configuration and regulatory state.
   "data": {
     "app_name": "PRICE-Watch",
     "state_of_calamity": false,
-    "privacy_notice_version": "1.0",
+    "privacy_notice_version": "1.1",
     "max_upload_size_mb": 10,
     "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
     "last_updated_at": "2026-07-22T00:00:00Z"
@@ -122,7 +122,7 @@ Submits a formal receipt report with live camera capture image, cryptographic SH
   * `image`: File (Image binary)
   * `image_hash`: String (SHA-256)
   * `extracted_text_json`: JSON string (Client OCR preview lines)
-  * `privacy_notice_version`: String ("1.0")
+  * `privacy_notice_version`: String, the notice version the customer accepted: `"1.1"` (current) or `"1.0"` (older installed apps). Any other value is rejected with 422.
 * **Response (201 Created):**
 ```json
 {

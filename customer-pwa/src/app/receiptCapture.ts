@@ -1,3 +1,5 @@
+import { PRIVACY_NOTICE_VERSION } from './privacyNotice';
+
 export type ReceiptCaptureMode = 'guided_photos_v1' | 'unsupported';
 
 export function receiptCaptureSupport(capabilities: { camera: boolean }): ReceiptCaptureMode {
@@ -18,7 +20,7 @@ export function buildReceiptReportPayload(input: {
   return {
     submission_uuid: input.submissionUuid,
     capture_token: input.captureToken,
-    privacy_notice_version: '1.0',
+    privacy_notice_version: PRIVACY_NOTICE_VERSION,
     tracking_token: input.trackingToken,
     resume_token: input.resumeToken,
   };

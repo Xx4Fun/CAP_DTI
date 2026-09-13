@@ -335,6 +335,11 @@ export interface ConsumerReportItemRecord {
   quantity?: string | null
   unit?: string | null
   observed_price?: string | number | null
+  unit_price?: string | number | null
+  line_total?: string | number | null
+  uncertain_fields?: string[] | null
+  section?: number | null
+  possible_duplicate_of?: number | null
   ocr_confidence?: number | null
   srp_id?: number | null
   commodity_key?: string | null
@@ -352,6 +357,51 @@ export interface ReceiptEvidenceAssetRecord {
   metadata: Record<string, unknown> | null
   attempt_number?: number
   is_current?: boolean
+}
+
+export interface ReceiptExtractionItemResult {
+  sequence: number
+  item_name?: string | null
+  raw_text?: string | null
+  quantity?: number | null
+  unit_price?: number | null
+  line_total?: number | null
+  uncertain_fields?: string[] | null
+  section?: number | null
+  possible_duplicate_of?: number | null
+}
+
+export interface ReceiptExtractionAmountLine {
+  description?: string | null
+  kind?: string
+  direction?: 'add' | 'subtract'
+  amount?: string | null
+  source_line?: string | null
+  uncertain?: boolean
+}
+
+/** Validated structured extraction stored in `processing_result_json` (Admin-only; every value read-only). */
+export interface ReceiptExtractionResult {
+  status?: string
+  reason_code?: string | null
+  items?: ReceiptExtractionItemResult[]
+  /** Per-item validator reasons, e.g. `{ line_total: 'inconsistent_source' }`; an empty list when there are none. */
+  item_flags?: Array<Record<string, string> | unknown[]>
+  rejected_item_lines?: string[]
+  transaction_date?: string | null
+  receipt_number?: string | null
+  subtotal?: string | null
+  subtotal_uncertain?: boolean
+  discounts?: ReceiptExtractionAmountLine[]
+  adjustments?: ReceiptExtractionAmountLine[]
+  total?: string | null
+  total_uncertain?: boolean
+  reconciliation?: { status?: string; checks?: Record<string, string>; items_sum?: string | null; duplicates_are_likely_genuine?: boolean } | null
+  evidence_assessment?: { legibility?: string; is_receipt?: boolean; problems?: string[]; total_region_visible?: boolean | null } | null
+  merchant?: { status?: string; display_name?: string | null; uncertain?: boolean } | null
+  warnings?: Array<{ code: string; message: string }>
+  engine?: { provider?: string; model?: string; route?: string; thinking_level?: string; image_resolution?: string; duration_ms?: number } | null
+  [key: string]: unknown
 }
 
 export interface ReceiptEvidenceManifest {

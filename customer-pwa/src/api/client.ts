@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { PRIVACY_NOTICE_VERSION } from '../app/privacyNotice';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -29,6 +30,7 @@ if (typeof window !== 'undefined' && window.location.protocol === 'https:' && AP
 export interface SystemConfig {
   app_name: string;
   state_of_calamity: boolean;
+  /** Informational: the notice version the server advertises. Consent is gated on the version stored with each report, not on this. */
   privacy_notice_version: string;
   max_upload_size_mb: number;
   allowed_mime_types: string[];
@@ -44,7 +46,7 @@ export interface SystemConfig {
 export const defaultConfig: SystemConfig = {
   app_name: 'PRICE-Watch',
   state_of_calamity: false,
-  privacy_notice_version: '1.0',
+  privacy_notice_version: PRIVACY_NOTICE_VERSION,
   max_upload_size_mb: 5,
   allowed_mime_types: ['image/jpeg', 'image/png'],
   receipt_guided_capture_enabled: true,

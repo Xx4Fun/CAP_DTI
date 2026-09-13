@@ -9,6 +9,7 @@ import {
 import { enableReceiptNotifications, currentReceiptNotificationAvailability } from '../app/receiptNotifications';
 import { saveReceiptResumeToken } from '../app/receiptResumeStore';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
+import { guideCropRect, outputSize } from '../app/captureCrop';
 
 interface GuidedReceiptCaptureProps {
   session: CaptureSessionResponse;
@@ -48,6 +49,7 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   const [uploadProgress, setUploadProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const guideRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const frameUrlsRef = useRef<string[]>([]);
   const credentialsRef = useRef(getOrCreateReceiptSubmissionCredentials(submissionUuid));
@@ -98,12 +100,21 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return null;
-    const scale = Math.min(1, 2000 / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
+    // Save what the customer framed inside the guide, not the whole sensor image: the preview is `object-fit: cover`,
+    // so an uncropped photo also contains a wide margin the customer never saw, which leaves the receipt small.
+    const guide = guideRef.current;
+    const crop = guideCropRect({
+      frame: { width: video.videoWidth, height: video.videoHeight },
+      videoRect: video.getBoundingClientRect(),
+      guideRect: guide ? guide.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 },
+      objectFit: typeof window !== 'undefined' ? window.getComputedStyle(video).objectFit : 'cover',
+    });
+    const output = outputSize(crop, 2000);
+    canvas.width = output.width;
+    canvas.height = output.height;
     const context = canvas.getContext('2d');
     if (!context) return null;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
     const maximumBytes = session.limits?.max_frame_bytes ?? 2 * 1024 * 1024;
     let result: Blob | null = null;
     for (const quality of [0.86, 0.72, 0.58]) {
@@ -276,7 +287,7 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
         <button type="button" className="receipt-camera-icon-button" onClick={() => void cancelCapture()} aria-label="Cancel receipt capture"><ArrowLeft size={20} /></button>
         <div className="receipt-camera-store"><strong>{storeName}</strong><span>{instruction}</span></div>
       </div>
-      <div className="receipt-scan-guide" aria-hidden="true"><span>Keep text flat, bright, and in focus</span><span>Include every receipt edge</span></div>
+      <div className="receipt-scan-guide" ref={guideRef} aria-hidden="true"><span>Keep text flat, bright, and in focus</span><span>Only what is inside this guide is saved</span></div>
       {frames.length > 0 && <div className="receipt-section-previews" aria-label="Captured receipt sections">
         {frames.map((frame, index) => <div key={frame.url} className="receipt-section-preview">
           <img src={frame.url} alt={`Receipt section ${index + 1}`} />

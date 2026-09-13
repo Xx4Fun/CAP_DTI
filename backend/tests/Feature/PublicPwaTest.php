@@ -51,7 +51,7 @@ class PublicPwaTest extends TestCase
         $response = $this->getJson('/api/public/config');
         $response->assertStatus(200)
                  ->assertJsonPath('data.app_name', 'PRICE-Watch')
-                 ->assertJsonPath('data.privacy_notice_version', '1.0');
+                 ->assertJsonPath('data.privacy_notice_version', '1.2');
     }
 
     public function test_can_search_public_commodities()
@@ -132,7 +132,8 @@ class PublicPwaTest extends TestCase
         $sessionId = $sessionRes->json('data.capture_session_id');
 
         $submissionUuid = 'sub-uuid-123456';
-        $fakeFile = UploadedFile::fake()->create('receipt.jpg', 100, 'image/jpeg');
+        // Receipt frames must be decodable images.
+        $fakeFile = UploadedFile::fake()->image('receipt.jpg', 1080, 1920);
 
         $this->withHeader('X-Capture-Token', $token)
             ->postJson("/api/public/capture-sessions/{$sessionId}/assets", [
@@ -149,12 +150,20 @@ class PublicPwaTest extends TestCase
             'extracted_text_json' => json_encode(['lines' => ['Rice 45.00']]),
         ])->assertUnprocessable();
 
+        // A report may only claim a privacy notice version the app has actually shown.
+        $this->postJson('/api/public/reports', [
+            'submission_uuid' => $submissionUuid,
+            'capture_token' => $token,
+            'store_id' => $this->store->id,
+            'privacy_notice_version' => '9.9',
+        ])->assertUnprocessable()->assertJsonValidationErrors('privacy_notice_version');
+
         // 2. Submit Report
         $response = $this->postJson('/api/public/reports', [
             'submission_uuid' => $submissionUuid,
             'capture_token' => $token,
             'store_id' => $this->store->id,
-            'privacy_notice_version' => '1.0',
+            'privacy_notice_version' => '1.2',
         ]);
 
         $response->assertStatus(201)

@@ -328,6 +328,56 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     })
   })
 
+  it('requires a per-unit price for multi-unit lines and never shows unverified statuses as verified', async () => {
+    const receiptReport = {
+      ...mockReports[0],
+      evidence_summary: { capture_mode: 'guided_photos_v1', processing_status: 'ready', asset_count: 1, continuity: null, merchant: null },
+      items: [
+        { id: 601, sequence: 0, item_name: 'SARDINES 155G', quantity: '2', observed_price: '110.00', line_total: '110.00', unit_price: null, commodity_key: 'sardines', commodity_name: 'Sardines' },
+        { id: 602, sequence: 1, item_name: 'COBRA 350ML', quantity: '3', observed_price: '81.00', line_total: '81.00', unit_price: '27.00', commodity_key: 'cobra', commodity_name: 'Cobra' },
+      ],
+    }
+    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
+      capture_mode: 'guided_photos_v1',
+      processing_status: 'ready',
+      continuity: null,
+      merchant: null,
+      processing_result: null,
+      assets: [{ id: 801, kind: 'source_frame', sequence: 0, mime_type: 'image/jpeg', size_bytes: 800, sha256: 'hash', metadata: null }],
+    })
+    vi.mocked(adminApi.getReportEvidenceAsset).mockResolvedValue(new Blob(['original'], { type: 'image/jpeg' }))
+    vi.mocked(adminApi.decideReport).mockResolvedValue({ ...receiptReport, status: 'Under regulatory review' })
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(await screen.findByText(/Continuity: Not available · Merchant: Not available/)).toBeInTheDocument()
+    const sardinesPrice = screen.getByRole('spinbutton', { name: /Receipt unit price for SARDINES 155G/i })
+    const cobraPrice = screen.getByRole('spinbutton', { name: /Receipt unit price for COBRA 350ML/i })
+    expect(sardinesPrice).toHaveValue(null)
+    expect(cobraPrice).toHaveValue(27)
+    expect(screen.getByText(/Unit price not available from the receipt extraction/)).toBeInTheDocument()
+    expect(screen.getByText(/line total ₱110.00 · qty 2/)).toBeInTheDocument()
+
+    const findings = screen.getAllByRole('combobox', { name: /Finding for/i })
+    await user.selectOptions(findings[0], 'confirmed_violation')
+    await user.selectOptions(findings[1], 'no_violation')
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Compared unit prices with the SRP.')
+    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeDisabled()
+
+    await user.type(sardinesPrice, '55')
+    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+
+    expect(adminApi.decideReport).toHaveBeenCalledWith(101, expect.objectContaining({
+      item_decisions: [
+        expect.objectContaining({ item_id: 601, receipt_price: 55 }),
+        expect.objectContaining({ item_id: 602, receipt_price: 27 }),
+      ],
+    }))
+  })
+
   it('shows every structured OCR item without presenting legacy confidence as measured', async () => {
     vi.mocked(adminApi.getReports).mockResolvedValue([{
       ...mockReports[0],

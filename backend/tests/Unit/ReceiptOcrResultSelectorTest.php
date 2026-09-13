@@ -37,6 +37,26 @@ class ReceiptOcrResultSelectorTest extends TestCase
         $this->assertSame('primary', $selector->selectedPass($primary, $primary));
     }
 
+    public function test_pos_layout_scoring_counts_two_line_items_only_when_enabled(): void
+    {
+        $selector = new ReceiptOcrResultSelector;
+        $primary = ['status' => 'OCR_SUCCESS', 'lines' => ['SHOP', 'RICE 45.00'], 'words' => [['confidence' => 99]]];
+        $fallback = ['status' => 'OCR_SUCCESS', 'lines' => ['004793487 1 111.75 111.75T', 'CALLA PWD', '004663895 1 27.00 27.00T', 'COBRA BERRY'], 'words' => [['confidence' => 50]]];
+
+        $this->assertSame('primary', $selector->selectedPass($primary, $fallback));
+        $this->assertSame('fallback', $selector->selectedPass($primary, $fallback, true));
+    }
+
+    public function test_pos_scoring_excludes_lines_naming_the_known_merchant(): void
+    {
+        $selector = new ReceiptOcrResultSelector;
+        $primary = ['status' => 'OCR_SUCCESS', 'lines' => ['004793487 1 111.75 111.75T', 'GAISANO GRAND ANTIQUE'], 'words' => [['confidence' => 99]]];
+        $fallback = ['status' => 'OCR_SUCCESS', 'lines' => ['RICE 45.00'], 'words' => [['confidence' => 50]]];
+
+        $this->assertSame('primary', $selector->selectedPass($primary, $fallback, true));
+        $this->assertSame('fallback', $selector->selectedPass($primary, $fallback, true, ['Gaisano Grand Mall of Antique']));
+    }
+
     public function test_ranking_reuses_production_item_and_total_rules(): void
     {
         $selector = new ReceiptOcrResultSelector;

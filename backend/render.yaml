@@ -30,6 +30,12 @@ services:
         value: 11
       - key: TESSERACT_SHELF_TAG_MINIMUM_CONFIDENCE
         value: 30
+      - key: RECEIPT_EXTRACTION_PROVIDER
+        value: tesseract
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
       - key: RECEIPT_EVIDENCE_DRIVER
         value: s3
       - key: RECEIPT_EVIDENCE_BUCKET
