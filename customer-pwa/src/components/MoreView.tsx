@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   Clock,
@@ -59,6 +59,11 @@ export const MoreView: React.FC<MoreViewProps> = ({
   const [activeAccordion, setActiveAccordion] = useState<string | null>(null);
   const [comparisons, setComparisons] = useState<StoredComparison[]>(getRecentComparisons);
   const [selectedComparison, setSelectedComparison] = useState<StoredComparison | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const clearDialogRef = useRef<HTMLElement>(null);
+  const cancelClearRef = useRef<HTMLButtonElement>(null);
+  const clearTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -68,13 +73,54 @@ export const MoreView: React.FC<MoreViewProps> = ({
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  useEffect(() => {
+    if (!showClearConfirm) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    cancelClearRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowClearConfirm(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = clearDialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      const returnTarget = clearTriggerRef.current;
+      if (returnTarget?.isConnected) returnTarget.focus();
+    };
+  }, [showClearConfirm]);
+
   const toggleAccordion = (id: string) => {
     setActiveAccordion((prev) => (prev === id ? null : id));
   };
 
-  const handleClearHistory = () => {
+  const handleClearClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    clearTriggerRef.current = event.currentTarget;
+    setShowClearConfirm(true);
+  };
+
+  const handleConfirmClear = () => {
     clearRecentComparisons();
     setComparisons([]);
+    setShowClearConfirm(false);
   };
 
   const handleSelectComparison = (item: StoredComparison) => {
@@ -178,7 +224,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
             <button
               type="button"
               className="more-history-clear-btn"
-              onClick={handleClearHistory}
+              onClick={handleClearClick}
               aria-label="Clear all comparison history"
             >
               <Trash2 size={13} />
@@ -212,8 +258,9 @@ export const MoreView: React.FC<MoreViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="more-comparison-list" role="feed" aria-label="Recent price comparisons">
-            {comparisons.map((item) => {
+          <div className="more-comparison-scroll-container" tabIndex={0} aria-label="Scrollable price comparison list">
+            <div className="more-comparison-list" role="feed" aria-label="Recent price comparisons">
+              {comparisons.map((item) => {
               const matchedCommodity = fallbackCommodities.find(
                 (c) => c.id === item.commodityId || c.commodity_name.trim().toLowerCase() === item.commodityName.trim().toLowerCase()
               );
@@ -272,6 +319,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
                 </article>
               );
             })}
+            </div>
           </div>
         )}
       </section>
@@ -421,6 +469,52 @@ export const MoreView: React.FC<MoreViewProps> = ({
         <div>Target Pilot: San Jose de Buenavista, Antique</div>
         <div>Department of Trade and Industry (DTI) Antique Provincial Office</div>
       </footer>
+
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div
+          className="more-dialog-scrim"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowClearConfirm(false);
+            }
+          }}
+        >
+          <section
+            ref={clearDialogRef}
+            className="more-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-history-title"
+          >
+            <span className="more-delete-icon" aria-hidden="true">
+              <Trash2 size={24} />
+            </span>
+            <h2 id="clear-history-title">Clear comparison history?</h2>
+            <p>
+              This will remove all saved price comparison items from this device. Your official DTI references will remain unaffected.
+            </p>
+            <div className="more-dialog-actions">
+              <button
+                type="button"
+                className="more-dialog-delete"
+                onClick={handleConfirmClear}
+              >
+                Clear History
+              </button>
+              <button
+                ref={cancelClearRef}
+                type="button"
+                className="more-dialog-cancel"
+                onClick={() => setShowClearConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

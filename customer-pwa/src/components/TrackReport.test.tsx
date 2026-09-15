@@ -275,6 +275,8 @@ describe('My Reports list', () => {
     fireEvent.pointerUp(row as HTMLElement, { pointerId: 2, clientX: 105, clientY: 103 });
 
     const dialog = screen.getByRole('dialog', { name: 'Remove report from this device?' });
+    const scrim = dialog.closest('.track-report-dialog-scrim') as HTMLElement;
+    expect(scrim).toBeInTheDocument();
     expect(dialog).toHaveTextContent('official report will remain submitted');
     expect(onDeleteReport).not.toHaveBeenCalled();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Delete from My Reports' }));

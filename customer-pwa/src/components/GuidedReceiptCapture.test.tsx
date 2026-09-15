@@ -11,6 +11,10 @@ const { saveResumeTokenMock, saveTrackingTokenMock } = vi.hoisted(() => ({
 
 vi.mock('../app/receiptResumeStore', () => ({ saveReceiptResumeToken: saveResumeTokenMock }));
 vi.mock('../app/reportTrackingStore', () => ({ saveReportTrackingToken: saveTrackingTokenMock }));
+vi.mock('../app/receiptNotifications', () => ({
+  currentReceiptNotificationAvailability: () => 'available',
+  enableReceiptNotifications: vi.fn(),
+}));
 
 const session: CaptureSessionResponse = {
   capture_session_id: 42,
@@ -47,6 +51,8 @@ describe('GuidedReceiptCapture', () => {
 
   it('previews, retakes, and uploads one original receipt image without video', async () => {
     const onDraftCreated = vi.fn();
+    const onGoHome = vi.fn();
+    const onCheckStatus = vi.fn();
     const postSpy = vi.spyOn(apiClient, 'post').mockImplementation(async (url, data) => {
       if (url === '/public/capture-sessions/42/assets') return { data: { success: true } };
       if (url === '/public/reports') {
@@ -59,7 +65,16 @@ describe('GuidedReceiptCapture', () => {
       throw new Error(`Unexpected POST ${url}`);
     });
     const user = userEvent.setup();
-    render(<GuidedReceiptCapture session={session} storeName="Receipt Test Mart" submissionUuid="sub-guided" onCancel={vi.fn()} onDraftCreated={onDraftCreated} />);
+    render(<GuidedReceiptCapture
+      session={session}
+      storeName="Receipt Test Mart"
+      submissionUuid="sub-guided"
+      vapidPublicKey="test_vapid"
+      onCancel={vi.fn()}
+      onDraftCreated={onDraftCreated}
+      onGoHome={onGoHome}
+      onCheckStatus={onCheckStatus}
+    />);
 
     await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
     expect(await screen.findByRole('img', { name: 'Receipt section 1' })).toBeInTheDocument();
@@ -70,6 +85,15 @@ describe('GuidedReceiptCapture', () => {
     await user.click(screen.getByRole('button', { name: 'Upload receipt photo' }));
 
     expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Check status' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Notify when ready/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Notify me when ready/i })).not.toBeInTheDocument();
+
+    const goHomeBtn = screen.getByRole('button', { name: 'Go Home' });
+    expect(goHomeBtn).toBeInTheDocument();
+    await user.click(goHomeBtn);
+    expect(onGoHome).toHaveBeenCalled();
+
     const assetCall = postSpy.mock.calls.find(([url]) => url === '/public/capture-sessions/42/assets');
     expect(assetCall).toBeDefined();
     expect((assetCall![1] as FormData).get('kind')).toBe('source_frame');
