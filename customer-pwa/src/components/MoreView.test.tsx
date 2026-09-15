@@ -126,7 +126,7 @@ describe('MoreView Component', () => {
     expect(screen.getByText('San Jose Mart')).toBeInTheDocument();
   });
 
-  it('clears comparison history when Clear button is clicked', async () => {
+  it('shows confirmation dialog before clearing history and supports cancel and confirm', async () => {
     const user = userEvent.setup();
     saveRecentComparison(sampleComparison);
 
@@ -136,8 +136,41 @@ describe('MoreView Component', () => {
     const clearBtn = screen.getByRole('button', { name: /Clear all comparison history/i });
     await user.click(clearBtn);
 
+    // Confirmation dialog appears
+    const dialog = screen.getByRole('dialog', { name: 'Clear comparison history?' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByText(/This will remove all saved price comparison items from this device/i)).toBeInTheDocument();
+
+    // Cancel preserves history
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
+    await user.click(cancelBtn);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('San Jose Mart')).toBeInTheDocument();
+
+    // Open dialog again and confirm
+    await user.click(clearBtn);
+    const confirmBtn = screen.getByRole('button', { name: 'Clear History' });
+    await user.click(confirmBtn);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByText('San Jose Mart')).not.toBeInTheDocument();
     expect(screen.getByText('No Price Comparisons Yet')).toBeInTheDocument();
+  });
+
+  it('dismisses clear confirmation dialog when Escape key is pressed', async () => {
+    const user = userEvent.setup();
+    saveRecentComparison(sampleComparison);
+
+    render(<MoreView />);
+
+    const clearBtn = screen.getByRole('button', { name: /Clear all comparison history/i });
+    await user.click(clearBtn);
+
+    expect(screen.getByRole('dialog', { name: 'Clear comparison history?' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('San Jose Mart')).toBeInTheDocument();
   });
 
   it('defaults accordions to closed and expands when clicked', async () => {
