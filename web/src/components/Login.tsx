@@ -13,9 +13,10 @@ interface LoginProps {
       absolute_timeout_seconds: number
     }
   }) => void
+  onPwaRequired?: (kind: 'field' | 'vendor') => void
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, onPwaRequired }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -32,7 +33,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       const response = await api.post('/login', { email, password })
       onLoginSuccess(response.data)
     } catch (err: any) {
-      if (err.response?.status === 422) {
+      const status = err.response?.data?.status
+      if (err.response?.status === 403 && onPwaRequired && (status === 'FIELD_PWA_REQUIRED' || status === 'VENDOR_PWA_REQUIRED')) {
+        onPwaRequired(status === 'FIELD_PWA_REQUIRED' ? 'field' : 'vendor')
+      } else if (err.response?.status === 422) {
         setError('The email or password is incorrect.')
       } else if (err.response?.status === 429) {
         setError('Too many sign-in attempts. Please wait and try again.')

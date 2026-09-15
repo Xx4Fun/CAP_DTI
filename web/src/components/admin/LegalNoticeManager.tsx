@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Check, ClipboardList, Eye, FilePenLine, FileText, Paperclip, Save, Send, ShieldAlert, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -6,6 +6,14 @@ import { adminApi } from '../../services/adminApi'
 import type { LegalNoticeRecord, MonitoringRecordRecord } from '../../types/admin'
 
 type View = 'queue' | 'prepare' | 'issued'
+
+const RESPONSE_REASONS: Record<string, string> = {
+  WHOLESALE_HIKE: 'Distributor or manufacturer wholesale price increase',
+  FREIGHT_SURCHARGE: 'Logistics or inter-island freight surcharge',
+  ENCODING_ERROR: 'POS or shelf tag clerical error',
+  PACKAGING_DISCREPANCY: 'Grammage or packaging variant mismatch',
+  FORCE_MAJEURE: 'Supply chain interruption',
+}
 
 const messageOf = (error: unknown, fallback: string) => {
   const candidate = error as { response?: { data?: { message?: string } } }
@@ -28,6 +36,9 @@ export const LegalNoticeManager = () => {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [deliveryState, setDeliveryState] = useState<'received' | 'refused' | 'failed'>('received')
+  // Bumped whenever the selected notice may change by another path, so a slower detail response cannot replace it.
+  const detailRequest = useRef(0)
+  useEffect(() => { detailRequest.current++ }, [view])
 
   const eligible = useMemo(() => record?.items.filter((item) => item.is_anomaly && item.reference_status === 'available' && item.reference_value != null) ?? [], [record])
 
@@ -101,6 +112,7 @@ export const LegalNoticeManager = () => {
 
   const recordDelivery = async () => {
     if (!notice) return
+    detailRequest.current++
     setBusy(true); setError('')
     try { const updated = await adminApi.recordLegalDelivery(notice.id, { state: deliveryState, recorded_at: new Date().toISOString() }); setNotice(updated); setNotices(notices.map((item) => item.id === updated.id ? updated : item)); toast.success('Delivery state recorded.') }
     catch (reason) { setError(messageOf(reason, 'Delivery could not be recorded.')) }
@@ -113,9 +125,27 @@ export const LegalNoticeManager = () => {
     catch (reason) { setError(messageOf(reason, 'The private document could not be opened.')) }
   }
 
+  const openAttachment = async (attachmentId: number) => {
+    if (!notice) return
+    // Open the window during the click; opening it after the download finishes is blocked as a popup by many browsers.
+    const opened = window.open('', '_blank')
+    if (!opened) { setError('Allow pop-ups for this site to open vendor attachments.'); return }
+    opened.opener = null
+    try { const url = URL.createObjectURL(await adminApi.downloadLegalAttachment(notice.id, attachmentId)); opened.location.href = url; setTimeout(() => URL.revokeObjectURL(url), 60_000) }
+    catch (reason) { opened.close(); setError(messageOf(reason, 'The vendor attachment could not be opened.')) }
+  }
+
+  const reviewIssued = (value: LegalNoticeRecord) => {
+    const request = ++detailRequest.current
+    openNotice(value)
+    void adminApi.getLegalNotice(value.id)
+      .then((detail) => { if (request === detailRequest.current) openNotice(detail) })
+      .catch((reason) => { if (request === detailRequest.current) setError(messageOf(reason, 'The notice details could not be refreshed.')) })
+  }
+
   const readiness = notice?.readiness ?? {}
   const complete = Object.values(readiness).length > 0 && Object.values(readiness).every(Boolean)
-  const issueDisabled = !notice || notice.policy.status !== 'LEGAL_POLICY_AVAILABLE' || !complete || busy
+  const issueDisabled = !notice || notice.policy?.status !== 'LEGAL_POLICY_AVAILABLE' || !complete || busy
 
   return <div className="legal-workspace">
     <nav className="legal-tabs" aria-label="Legal Actions views">
@@ -125,7 +155,7 @@ export const LegalNoticeManager = () => {
     </nav>
 
     {error && <div className="legal-alert" role="alert"><ShieldAlert size={18}/><span>{error}</span></div>}
-    {loading ? <div className="legal-loading" aria-label="Loading legal actions"/> : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openNotice}/> : view === 'issued' ? <><Queue notices={notices.filter((item) => item.status !== 'draft')} onOpen={openNotice} issued/>{notice && notice.status !== 'draft' && <section className="legal-issued-detail"><header><div><h3>{notice.control_number || `Notice #${notice.id}`}</h3><p>{notice.notice_type} · {notice.status.replace('_', ' ')}</p></div><button type="button" className="admin-button secondary" onClick={() => void openIssuedDocument()}><FileText size={17}/>Open document</button></header><div className="legal-facts"><Fact label="Establishment" value={notice.store?.store_name}/><Fact label="Delivery" value={notice.delivery_state.replace('_', ' ')}/><Fact label="Deadline" value={notice.due_date_timestamp ? new Date(notice.due_date_timestamp).toLocaleString() : 'Starts after delivery'}/></div>{notice.status === 'issued' && <div className="legal-delivery-controls"><label>Record delivery state<select value={deliveryState} onChange={(event) => setDeliveryState(event.target.value as typeof deliveryState)}><option value="received">Received</option><option value="refused">Refused</option><option value="failed">Failed</option></select></label><button type="button" className="admin-button primary" disabled={busy} onClick={() => void recordDelivery()}>Record delivery</button></div>}{!['closed', 'cancelled'].includes(notice.status) && <button type="button" className="admin-button secondary" onClick={() => window.confirm('Close this notice?') && void adminApi.closeLegalNotice(notice.id).then(openNotice)}>Close notice</button>}</section>}</> : <div className="legal-editor-layout">
+    {loading ? <div className="legal-loading" aria-label="Loading legal actions"/> : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openNotice}/> : view === 'issued' ? <><Queue notices={notices.filter((item) => item.status !== 'draft')} onOpen={reviewIssued} issued/>{notice && notice.status !== 'draft' && <section className="legal-issued-detail"><header><div><h3>{notice.control_number || `Notice #${notice.id}`}</h3><p>{notice.notice_type} · {notice.status.replace('_', ' ')}</p></div><button type="button" className="admin-button secondary" onClick={() => void openIssuedDocument()}><FileText size={17}/>Open document</button></header><div className="legal-facts"><Fact label="Establishment" value={notice.store?.store_name}/><Fact label="Delivery" value={notice.delivery_state.replace('_', ' ')}/><Fact label="Deadline" value={notice.due_date_timestamp ? new Date(notice.due_date_timestamp).toLocaleString() : 'Starts after delivery'}/></div>{notice.status === 'issued' && <div className="legal-delivery-controls"><label>Record delivery state<select value={deliveryState} onChange={(event) => setDeliveryState(event.target.value as typeof deliveryState)}><option value="received">Received</option><option value="refused">Refused</option><option value="failed">Failed</option></select></label><button type="button" className="admin-button primary" disabled={busy} onClick={() => void recordDelivery()}>Record delivery</button></div>}{notice.response_received_at && <section className="legal-vendor-response" aria-labelledby="legal-vendor-response-title"><h4 id="legal-vendor-response-title">Vendor response</h4><div className="legal-facts"><Fact label="Received" value={new Date(notice.response_received_at).toLocaleString()}/><Fact label="Stated reason" value={notice.response_reason_category ? RESPONSE_REASONS[notice.response_reason_category] ?? notice.response_reason_category : null}/><Fact label="Certified true and correct" value={notice.response_certified_at ? new Date(notice.response_certified_at).toLocaleString() : null}/></div>{notice.response_text && <p className="legal-response-text">{notice.response_text}</p>}<div className="legal-response-attachments">{notice.attachments?.filter((attachment) => attachment.kind === 'vendor_response').map((attachment) => <button type="button" key={attachment.id} className="admin-button secondary" onClick={() => void openAttachment(attachment.id)}><Paperclip size={16}/>{attachment.original_name}{attachment.category ? ` · ${attachment.category.replaceAll('_', ' ').toLowerCase()}` : ''}</button>)}</div></section>}{!['closed', 'cancelled'].includes(notice.status) && <button type="button" className="admin-button secondary" onClick={() => window.confirm('Close this notice?') && void adminApi.closeLegalNotice(notice.id).then((closed) => { detailRequest.current++; openNotice(closed) })}>Close notice</button>}</section>}</> : <div className="legal-editor-layout">
       <main className="legal-form-stack">
         <header className="legal-view-heading"><div><h2>Prepare Notice</h2><p>Build one evidence-backed notice for one accepted monitoring visit.</p></div><span className="legal-protocol">Evaluator review required</span></header>
 
@@ -156,7 +186,7 @@ export const LegalNoticeManager = () => {
         {!notice && <button type="button" className="admin-button primary legal-create" disabled={!record || !selectedIds.length || busy} onClick={() => void createDraft()}>{busy ? 'Creating…' : 'Create draft'}</button>}
       </main>
 
-      <aside className="legal-issuance-panel" aria-label="Issuance Panel"><h3>Issuance Panel</h3><p>Track completion and issue the notice.</p><div className="legal-status"><span>Status</span><strong>{notice?.status === 'draft' ? 'Drafting' : notice ? notice.status.replace('_', ' ') : 'Not started'}</strong></div><h4>Required fields</h4><ul>{['case_reference', 'notice_type_and_basis', 'recipient_and_delivery', 'evidence_and_attachments', 'internal_justification'].map((key) => <li key={key} className={readiness[key] ? 'done' : ''}>{readiness[key] ? <Check size={16}/> : <span/>}{key.replaceAll('_', ' ')}</li>)}</ul><div className="legal-panel-meta"><span>Assigned evaluator</span><strong>{notice?.preparer?.name || record?.officer.name || 'Not assigned'}</strong><span>Last saved</span><strong>{notice ? new Date(notice.updated_at).toLocaleString() : 'Not saved'}</strong>{saved && <em><Check size={14}/>All changes saved</em>}</div><button type="button" className="admin-button secondary" disabled={!notice || busy} onClick={() => void save()}><Save size={17}/>Save Draft</button><button type="button" className="admin-button secondary" disabled={!notice || busy} onClick={() => void showPreview()}><Eye size={17}/>Open Official Preview</button><button type="button" className="admin-button primary" disabled={issueDisabled} onClick={() => void issue()}><Send size={17}/>Issue Notice</button>{notice?.policy.status === 'LEGAL_POLICY_UNAVAILABLE' && <div className="legal-policy-lock"><strong>LEGAL_POLICY_UNAVAILABLE</strong><span>Issuance stays disabled until a complete approved policy is deployed.</span></div>}</aside>
+      <aside className="legal-issuance-panel" aria-label="Issuance Panel"><h3>Issuance Panel</h3><p>Track completion and issue the notice.</p><div className="legal-status"><span>Status</span><strong>{notice?.status === 'draft' ? 'Drafting' : notice ? notice.status.replace('_', ' ') : 'Not started'}</strong></div><h4>Required fields</h4><ul>{['case_reference', 'notice_type_and_basis', 'recipient_and_delivery', 'evidence_and_attachments', 'internal_justification'].map((key) => <li key={key} className={readiness[key] ? 'done' : ''}>{readiness[key] ? <Check size={16}/> : <span/>}{key.replaceAll('_', ' ')}</li>)}</ul><div className="legal-panel-meta"><span>Assigned evaluator</span><strong>{notice?.preparer?.name || record?.officer.name || 'Not assigned'}</strong><span>Last saved</span><strong>{notice ? new Date(notice.updated_at).toLocaleString() : 'Not saved'}</strong>{saved && <em><Check size={14}/>All changes saved</em>}</div><button type="button" className="admin-button secondary" disabled={!notice || busy} onClick={() => void save()}><Save size={17}/>Save Draft</button><button type="button" className="admin-button secondary" disabled={!notice || busy} onClick={() => void showPreview()}><Eye size={17}/>Open Official Preview</button><button type="button" className="admin-button primary" disabled={issueDisabled} onClick={() => void issue()}><Send size={17}/>Issue Notice</button>{notice?.policy?.status === 'LEGAL_POLICY_UNAVAILABLE' && <div className="legal-policy-lock"><strong>LEGAL_POLICY_UNAVAILABLE</strong><span>Issuance stays disabled until a complete approved policy is deployed.</span></div>}</aside>
     </div>}
 
     {preview && <div className="legal-preview" role="dialog" aria-modal="true" aria-label="Official notice preview"><header><strong>Official A4 preview</strong><div><button type="button" onClick={() => setPreviewSize('fit')}>Fit width</button><button type="button" onClick={() => setPreviewSize('actual')}>Actual size</button><button type="button" onClick={() => window.print()}>Print preview</button><button type="button" onClick={() => { const link=document.createElement('a'); link.href=URL.createObjectURL(new Blob([preview],{type:'text/html'})); link.download='watermarked-notice-preview.html'; link.click(); URL.revokeObjectURL(link.href) }}>Download watermarked</button><button type="button" onClick={() => setPreview('')} aria-label="Close preview"><X/></button></div></header><iframe className={previewSize} sandbox="" title="Watermarked legal draft preview" srcDoc={preview}/></div>}

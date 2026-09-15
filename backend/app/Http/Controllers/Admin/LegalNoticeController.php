@@ -89,9 +89,12 @@ class LegalNoticeController extends Controller
             'internal_justification' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
         DB::transaction(function () use ($request, $legalNotice, $data, $audit) {
-            $payload = array_merge($legalNotice->draft_payload ?? [], collect($data)->except(['intended_delivery_method', 'internal_justification'])->all());
-            $legalNotice->update(['draft_payload' => $payload] + collect($data)->only(['intended_delivery_method', 'internal_justification'])->all());
-            $audit->recordOrFail($request, 'legal.draft_saved', $legalNotice);
+            // Recheck under the lock issue() takes, so a save cannot change a notice issued meanwhile.
+            $notice = LegalNotice::whereKey($legalNotice->id)->lockForUpdate()->firstOrFail();
+            abort_unless($notice->status === 'draft', 409, 'Only drafts can be changed.');
+            $payload = array_merge($notice->draft_payload ?? [], collect($data)->except(['intended_delivery_method', 'internal_justification'])->all());
+            $notice->update(['draft_payload' => $payload] + collect($data)->only(['intended_delivery_method', 'internal_justification'])->all());
+            $audit->recordOrFail($request, 'legal.draft_saved', $notice);
         });
         return response()->json(['data' => $this->detail($legalNotice->fresh())]);
     }
@@ -126,13 +129,13 @@ class LegalNoticeController extends Controller
                 $notice->fill(['control_number' => $control, 'policy_version' => config('legal_policy.policy_version')]);
                 $bytes = Pdf::loadView($policy->templateFor($notice->notice_type), ['notice' => $notice, 'draft' => false, 'policy' => $rules])->setPaper('a4')->output();
                 $storedPath = "legal-notices/{$notice->id}/$control.pdf";
-                abort_unless(Storage::disk('local')->put($storedPath, $bytes), 503, 'Private document storage is unavailable.');
-                $notice->update(['issued_by' => $request->user()->id, 'pdf_disk' => 'local', 'pdf_file_path' => $storedPath, 'pdf_sha256' => hash('sha256', $bytes), 'issued_at' => now(), 'status' => 'issued']);
+                abort_unless(Storage::disk(LegalNotice::DOCUMENT_DISK)->put($storedPath, $bytes), 503, 'Private document storage is unavailable.');
+                $notice->update(['issued_by' => $request->user()->id, 'pdf_disk' => LegalNotice::DOCUMENT_DISK, 'pdf_file_path' => $storedPath, 'pdf_sha256' => hash('sha256', $bytes), 'issued_at' => now(), 'status' => 'issued']);
                 $audit->recordOrFail($request, 'legal.notice_issued', $notice, ['control_number' => $control, 'policy_version' => $notice->policy_version]);
                 return $notice;
             });
         } catch (\Throwable $error) {
-            if ($storedPath) Storage::disk('local')->delete($storedPath);
+            if ($storedPath) Storage::disk(LegalNotice::DOCUMENT_DISK)->delete($storedPath);
             throw $error;
         }
         $vendor = $issued->store()->with('vendor')->first()?->vendor;
@@ -145,13 +148,14 @@ class LegalNoticeController extends Controller
     public function delivery(Request $request, LegalNotice $legalNotice, AdminAuthorizationService $auth, AuditTrailService $audit, LegalPolicyService $policy)
     {
         $auth->requireManager($request->user());
-        abort_unless($legalNotice->status === 'issued', 409, 'Delivery can only be recorded for an issued notice.');
         $data = $request->validate(['state' => ['required', Rule::in(['received', 'refused', 'failed'])], 'recorded_at' => ['required', 'date'], 'details' => ['nullable', 'array']]);
         DB::transaction(function () use ($request, $legalNotice, $data, $audit, $policy) {
-            $rules = $policy->rulesFor($legalNotice->notice_type);
-            $deadline = $data['state'] === $rules['deadline_anchor'] ? $policy->responseDeadline(Carbon::parse($data['recorded_at']), $legalNotice->notice_type) : null;
-            $legalNotice->update(['delivery_state' => $data['state'], 'delivery_details' => $data['details'] ?? null, 'delivered_at' => $data['recorded_at'], 'due_date_timestamp' => $deadline]);
-            $audit->recordOrFail($request, 'legal.delivery_recorded', $legalNotice, ['state' => $data['state']]);
+            $notice = LegalNotice::whereKey($legalNotice->id)->lockForUpdate()->firstOrFail();
+            abort_unless($notice->status === 'issued', 409, 'Delivery can only be recorded for an issued notice.');
+            $rules = $policy->rulesFor($notice->notice_type);
+            $deadline = $data['state'] === $rules['deadline_anchor'] ? $policy->responseDeadline(Carbon::parse($data['recorded_at']), $notice->notice_type) : null;
+            $notice->update(['delivery_state' => $data['state'], 'delivery_details' => $data['details'] ?? null, 'delivered_at' => $data['recorded_at'], 'due_date_timestamp' => $deadline]);
+            $audit->recordOrFail($request, 'legal.delivery_recorded', $notice, ['state' => $data['state']]);
         });
         return response()->json(['data' => $this->detail($legalNotice->fresh())]);
     }
@@ -169,21 +173,38 @@ class LegalNoticeController extends Controller
         $auth->requireManager($request->user());
         abort_unless($legalNotice->status === 'draft', 409);
         $request->validate(['file' => ['required', 'file', 'mimes:pdf,jpeg,png', 'max:5120']]);
-        $file = $request->file('file'); $path = $file->store("legal-notices/{$legalNotice->id}/supplemental", 'local');
+        $file = $request->file('file'); $path = $file->store("legal-notices/{$legalNotice->id}/supplemental", LegalNotice::DOCUMENT_DISK);
         abort_unless($path, 503, 'Private attachment storage is unavailable.');
         try {
             $attachment = DB::transaction(function () use ($request, $legalNotice, $audit, $file, $path) {
-                $attachment = $legalNotice->attachments()->create(['uploaded_by' => $request->user()->id, 'kind' => 'supplemental', 'disk' => 'local', 'path' => $path, 'original_name' => $file->getClientOriginalName(), 'mime_type' => $file->getMimeType(), 'size_bytes' => $file->getSize(), 'sha256' => hash_file('sha256', $file->getRealPath())]);
-                $audit->recordOrFail($request, 'legal.attachment_added', $legalNotice, ['attachment_id' => $attachment->id]); return $attachment;
+                // Recheck under the same row lock issue() takes, so evidence cannot be added to a notice issued meanwhile.
+                $notice = LegalNotice::whereKey($legalNotice->id)->lockForUpdate()->firstOrFail();
+                abort_unless($notice->status === 'draft', 409, 'Only drafts can receive supplemental evidence.');
+                $attachment = $notice->attachments()->create(['uploaded_by' => $request->user()->id, 'kind' => 'supplemental', 'disk' => LegalNotice::DOCUMENT_DISK, 'path' => $path, 'original_name' => $file->getClientOriginalName(), 'mime_type' => $file->getMimeType(), 'size_bytes' => $file->getSize(), 'sha256' => hash_file('sha256', $file->getRealPath())]);
+                $audit->recordOrFail($request, 'legal.attachment_added', $notice, ['attachment_id' => $attachment->id]); return $attachment;
             });
-        } catch (\Throwable $error) { Storage::disk('local')->delete($path); throw $error; }
+        } catch (\Throwable $error) { Storage::disk(LegalNotice::DOCUMENT_DISK)->delete($path); throw $error; }
         return response()->json(['data' => $attachment], 201);
+    }
+
+    public function downloadAttachment(Request $request, LegalNotice $legalNotice, LegalNoticeAttachment $attachment, AdminAuthorizationService $auth, AuditTrailService $audit)
+    {
+        $auth->requireManager($request->user());
+        abort_unless((int) $attachment->legal_notice_id === (int) $legalNotice->id && Storage::disk($attachment->disk)->exists($attachment->path), 404);
+        $audit->recordOrFail($request, 'legal.attachment_accessed', $legalNotice, ['attachment_id' => $attachment->id]);
+        return Storage::disk($attachment->disk)->response($attachment->path, $attachment->original_name, ['Content-Type' => $attachment->mime_type]);
     }
 
     public function destroyAttachment(Request $request, LegalNotice $legalNotice, LegalNoticeAttachment $attachment, AdminAuthorizationService $auth, AuditTrailService $audit)
     {
-        $auth->requireManager($request->user()); abort_unless($legalNotice->status === 'draft' && $attachment->legal_notice_id === $legalNotice->id && $attachment->kind === 'supplemental', 409);
-        DB::transaction(function () use ($request, $legalNotice, $attachment, $audit) { $audit->recordOrFail($request, 'legal.attachment_deleted', $legalNotice, ['attachment_id' => $attachment->id]); $attachment->delete(); });
+        $auth->requireManager($request->user());
+        abort_unless((int) $attachment->legal_notice_id === (int) $legalNotice->id && $attachment->kind === 'supplemental', 409);
+        DB::transaction(function () use ($request, $legalNotice, $attachment, $audit) {
+            $notice = LegalNotice::whereKey($legalNotice->id)->lockForUpdate()->firstOrFail();
+            abort_unless($notice->status === 'draft', 409, 'Evidence on an issued notice cannot be removed.');
+            $audit->recordOrFail($request, 'legal.attachment_deleted', $notice, ['attachment_id' => $attachment->id]);
+            $attachment->delete();
+        });
         Storage::disk($attachment->disk)->delete($attachment->path);
         return response()->noContent();
     }
@@ -193,8 +214,15 @@ class LegalNoticeController extends Controller
 
     private function terminal(Request $request, LegalNotice $notice, AdminAuthorizationService $auth, AuditTrailService $audit, string $status)
     {
-        $auth->requireManager($request->user()); abort_if(in_array($notice->status, ['closed', 'cancelled'], true), 409);
-        DB::transaction(function () use ($request, $notice, $audit, $status) { $notice->update(['status' => $status, $status.'_at' => now()]); $audit->recordOrFail($request, "legal.notice_$status", $notice); });
+        $auth->requireManager($request->user());
+        DB::transaction(function () use ($request, $notice, $audit, $status) {
+            $locked = LegalNotice::whereKey($notice->id)->lockForUpdate()->firstOrFail();
+            // Close only a notice that was issued; cancel may also withdraw a draft. Nothing leaves a terminal state.
+            $allowed = $status === 'closed' ? ['issued', 'response_received'] : ['draft', 'issued', 'response_received'];
+            abort_unless(in_array($locked->status, $allowed, true), 409);
+            $locked->update(['status' => $status, $status.'_at' => now()]);
+            $audit->recordOrFail($request, "legal.notice_$status", $locked);
+        });
         return response()->json(['data' => $this->detail($notice->fresh())]);
     }
 

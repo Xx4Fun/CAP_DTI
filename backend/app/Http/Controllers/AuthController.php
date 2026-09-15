@@ -37,6 +37,17 @@ class AuthController extends Controller {
             ], 403);
         }
 
+        if ($user->role === 'vendor') {
+            $audit->recordAs($request, $user, 'auth.admin_login_redirected', $user, [
+                'required_client' => 'vendor-portal-pwa',
+            ]);
+
+            return response()->json([
+                'status' => 'VENDOR_PWA_REQUIRED',
+                'message' => 'Use the Vendor Portal PWA to sign in with this account.',
+            ], 403);
+        }
+
         $isDtiUser = in_array($user->role, ['super_admin', 'dti_evaluator'], true);
         $expiresAt = $isDtiUser
             ? now()->addHours(config('admin_security.absolute_timeout_hours'))

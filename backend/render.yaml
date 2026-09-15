@@ -50,3 +50,7 @@ services:
         sync: false
       - key: RECEIPT_EVIDENCE_USE_PATH_STYLE
         value: true
+      - key: LEGAL_DOCUMENTS_DRIVER
+        value: s3
+      - key: VENDOR_PWA_URL
+        sync: false

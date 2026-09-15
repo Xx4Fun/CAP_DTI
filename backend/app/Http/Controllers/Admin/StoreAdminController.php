@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
+use App\Services\Admin\VendorInvitationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -49,9 +50,16 @@ class StoreAdminController extends Controller
         return response()->json(['data' => $store], 201);
     }
 
-    public function update(Request $request, Store $store, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard)
+    public function update(Request $request, Store $store, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard, VendorInvitationService $invitations)
     {
         $auth->requireManager($request->user());
+        // Linking happens only through an accepted invitation; the only accepted vendor change here is unlinking.
+        if ($request->exists('vendor_user_id')) {
+            abort_if($request->input('vendor_user_id') !== null, 422, 'Vendors can only be linked through an accepted invitation.');
+            abort_if(count($request->except('vendor_user_id')) > 0, 422, 'Unlink the vendor in a separate request.');
+            $guard->requireRecentReauthentication($request);
+            return response()->json(['data' => $invitations->unlink($store, $request)]);
+        }
         $data = $request->validate([
             'dti_sec_number' => ['sometimes', 'nullable', 'string', Rule::unique('stores')->ignore($store->id)],
             'store_name' => 'sometimes|string|max:255', 'owner_name' => 'sometimes|nullable|string|max:255',

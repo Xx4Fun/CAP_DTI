@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Login } from './components/Login';
-import { VendorPortal } from './components/VendorPortal';
 import { AdminShell } from './components/admin/AdminShell';
-import { VendorInvitationAccept } from './components/VendorInvitationAccept';
 import type { AdminUser } from './types/admin';
 import {
   clearAdminSession,
@@ -32,6 +30,7 @@ interface SessionMetadata {
 }
 
 const fieldPwaUrl = (import.meta.env.VITE_FIELD_PWA_URL as string | undefined)?.trim()
+const vendorPwaUrl = (import.meta.env.VITE_VENDOR_PWA_URL as string | undefined)?.trim()
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -42,7 +41,7 @@ function App() {
   const [renewingSession, setRenewingSession] = useState(false);
   const [reauthenticationOpen, setReauthenticationOpen] = useState(false);
   const [reauthenticationError, setReauthenticationError] = useState('');
-  const [fieldOfficerHandoff, setFieldOfficerHandoff] = useState(false);
+  const [pwaHandoff, setPwaHandoff] = useState<'field' | 'vendor' | null>(null);
   const logoutInProgress = useRef(false);
   const sessionNoticeActive = useRef(false);
 
@@ -82,7 +81,7 @@ function App() {
       void ensureApiReady().then(() => api.get('/admin/session')).then((response) => {
         if (response.data.data.user.role === 'field_officer') {
           clearAdminSession();
-          setFieldOfficerHandoff(true);
+          setPwaHandoff('field');
           return;
         }
         setUser(response.data.data.user);
@@ -106,7 +105,7 @@ function App() {
     if (token && savedUser) {
       try {
         const parsed = JSON.parse(savedUser) as User;
-        if (['vendor', 'consumer'].includes(parsed.role)) {
+        if (parsed.role === 'consumer') {
           setUser(parsed);
         } else {
           localStorage.removeItem('token');
@@ -121,13 +120,13 @@ function App() {
   }, []);
 
   const handleLoginSuccess = (result: { token: string; user: User; session?: SessionMetadata }) => {
-    if (result.user.role === 'field_officer') {
+    if (result.user.role === 'field_officer' || result.user.role === 'vendor') {
       clearAdminSession();
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       setUser(null);
       setSession(null);
-      setFieldOfficerHandoff(true);
+      setPwaHandoff(result.user.role === 'vendor' ? 'vendor' : 'field');
       return;
     }
     const isDtiUser = ['super_admin', 'dti_evaluator'].includes(result.user.role);
@@ -142,7 +141,7 @@ function App() {
     }
     sessionNoticeActive.current = false;
     adminToast.dismiss('admin-session-ended');
-    setFieldOfficerHandoff(false);
+    setPwaHandoff(null);
     setUser(result.user);
   };
 
@@ -247,25 +246,33 @@ function App() {
 
   const invitationToken = new URLSearchParams(window.location.search).get('token');
   if (window.location.pathname === '/vendor-invitation' && invitationToken) {
-    return <VendorInvitationAccept token={invitationToken} />;
+    // Invitations are accepted in the Vendor Portal PWA; older links pointing here are forwarded with their token.
+    if (vendorPwaUrl) {
+      window.location.replace(`${vendorPwaUrl.replace(/\/$/, '')}/vendor-invitation?token=${encodeURIComponent(invitationToken)}`);
+      return <div className='admin-session-boot' role='status'>Opening the Vendor Portal...</div>;
+    }
+    return <main className="admin-session-boot"><p role="alert">The Vendor Portal address is not configured. Contact the system administrator.</p></main>;
   }
 
   if (booting) {
     return <div className='admin-session-boot' role='status'>Checking secure session...</div>;
   }
 
-  if (fieldOfficerHandoff) {
+  if (pwaHandoff) {
+    const isField = pwaHandoff === 'field';
+    const handoffUrl = isField ? fieldPwaUrl : vendorPwaUrl;
+    const appName = isField ? 'Field Monitoring PWA' : 'Vendor Portal';
     return (
       <main className="admin-session-boot">
-        <section aria-labelledby="field-pwa-handoff-title">
-          <h1 id="field-pwa-handoff-title">Use the Field Monitoring PWA</h1>
-          <p>Field Officer accounts are not authorized for the DTI Admin portal.</p>
-          {fieldPwaUrl ? (
-            <a className="admin-button primary" href={fieldPwaUrl}>Open Field Monitoring PWA</a>
+        <section aria-labelledby="pwa-handoff-title">
+          <h1 id="pwa-handoff-title">Use the {appName}</h1>
+          <p>{isField ? 'Field Officer accounts are not authorized for the DTI Admin portal.' : 'Vendor accounts sign in through the Vendor Portal, not the DTI Admin portal.'}</p>
+          {handoffUrl ? (
+            <a className="admin-button primary" href={handoffUrl}>Open {appName}</a>
           ) : (
-            <p role="alert">The Field Monitoring PWA address is not configured. Contact the system administrator.</p>
+            <p role="alert">The {appName} address is not configured. Contact the system administrator.</p>
           )}
-          <button type="button" className="admin-button secondary" onClick={() => setFieldOfficerHandoff(false)}>
+          <button type="button" className="admin-button secondary" onClick={() => setPwaHandoff(null)}>
             Return to Admin sign in
           </button>
         </section>
@@ -274,7 +281,7 @@ function App() {
   }
 
   if (!user) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return <Login onLoginSuccess={handleLoginSuccess} onPwaRequired={setPwaHandoff} />;
   }
 
   // Determine view based on role
@@ -418,14 +425,10 @@ function App() {
 
       {/* Main Content Area */}
       <main className="content-area">
-        {user.role === 'vendor' ? (
-          <VendorPortal />
-        ) : (
-          <div className="glass empty-state-card" style={{ padding: '40px', textAlign: 'center' }}>
-            <h2>Citizen Portal</h2>
-            <p>Citizen receipt scanning and submission features are accessible via the mobile edge nodes.</p>
-          </div>
-        )}
+        <div className="glass empty-state-card" style={{ padding: '40px', textAlign: 'center' }}>
+          <h2>Citizen Portal</h2>
+          <p>Citizen receipt scanning and submission features are accessible via the mobile edge nodes.</p>
+        </div>
       </main>
 
       {/* Footer */}

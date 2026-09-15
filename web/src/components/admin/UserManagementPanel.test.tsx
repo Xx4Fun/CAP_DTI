@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
 import { UserManagementPanel } from './UserManagementPanel'
 import adminCss from './admin.css?raw'
 import { AdminToastHost } from './AdminToastHost'
+import type { StoreRecord } from '../../types/admin'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -12,6 +13,11 @@ vi.mock('../../services/adminApi', () => ({
     createFieldOfficer: vi.fn(),
     updateManagedUser: vi.fn(),
     resetManagedUserPassword: vi.fn(),
+    getStores: vi.fn(),
+    inviteVendor: vi.fn(),
+    getVendorInvitations: vi.fn(),
+    cancelVendorInvitation: vi.fn(),
+    unlinkStoreVendor: vi.fn(),
   },
 }))
 
@@ -29,16 +35,29 @@ const usersPage = {
   counts: { total: 21, field_officer: 8, vendor: 13, inactive: 2 },
 }
 
+const store = (overrides: Partial<StoreRecord>): StoreRecord => ({
+  id: 1, store_name: 'Store', address: 'San Jose, Antique', latitude: 10, longitude: 121,
+  is_active: true, is_verified: true, is_public: true, vendor_user_id: null, ...overrides,
+})
+
+const invitationUrl = 'http://vendor.test/vendor-invitation?token=abc'
+
 describe('User Management', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.history.replaceState({}, '', '/')
     vi.mocked(adminApi.getManagedUsers).mockResolvedValue(usersPage)
+    vi.mocked(adminApi.getVendorInvitations).mockResolvedValue([])
+    vi.mocked(adminApi.getStores).mockResolvedValue([
+      store({ id: 4, store_name: 'Antique Market', vendor_user_id: 7 }),
+      store({ id: 9, store_name: 'Unlinked Grocery' }),
+    ])
+    vi.mocked(adminApi.inviteVendor).mockResolvedValue({ invitation_url: invitationUrl, invitation: { id: 31, email: 'owner@shop.test', expires_at: '2026-09-15T00:00:00Z' } })
   })
 
   it('renders a paginated user table and applies role filters', async () => {
     const user = userEvent.setup()
-    render(<UserManagementPanel vendorRegistration={<div>Existing vendor registration</div>} />)
+    render(<UserManagementPanel vendorRegistration={() => <div>Existing vendor registration</div>} />)
 
     expect(await screen.findByRole('table', { name: 'Managed user accounts' })).toBeInTheDocument()
     expect(screen.getByText('Maria Vendor')).toBeInTheDocument()
@@ -54,7 +73,7 @@ describe('User Management', () => {
   })
 
   it('uses an accessible status filter without a visible label', async () => {
-    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
+    render(<><UserManagementPanel /><AdminToastHost /></>)
 
     await screen.findByText('Maria Vendor')
     expect(screen.getByRole('combobox', { name: 'Filter users by status' })).toBeInTheDocument()
@@ -68,16 +87,99 @@ describe('User Management', () => {
     expect(adminCss).toMatch(/\.user-status-filter select\s*\{[^}]*height:\s*var\(--user-toolbar-control-height\);/s)
   })
 
-  it('uses the existing vendor flow and opens the dedicated officer page', async () => {
+  it('invites a vendor for an unlinked establishment and shows the invitation link', async () => {
     const user = userEvent.setup()
-    render(<UserManagementPanel vendorRegistration={<div>Existing vendor registration</div>} />)
+    render(<UserManagementPanel vendorRegistration={() => <div>Existing vendor registration</div>} />)
 
     await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Add user' }))
     await user.click(screen.getByRole('button', { name: /Vendor account/i }))
-    expect(screen.getByText('Existing vendor registration')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Back to User Management' }))
+    expect(screen.getByRole('heading', { name: 'Invite vendor account' })).toBeInTheDocument()
+    const option = await screen.findByRole('radio', { name: /Unlinked Grocery/ })
+    expect(screen.queryByRole('radio', { name: /Antique Market/ })).not.toBeInTheDocument()
+    await user.click(option)
+    await user.type(screen.getByLabelText('Vendor owner email address'), 'Owner@Shop.test')
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+
+    expect(adminApi.inviteVendor).toHaveBeenCalledWith(9, 'owner@shop.test')
+    const dialog = await screen.findByRole('dialog', { name: 'Vendor invitation sent' })
+    expect(within(dialog).getByText(invitationUrl)).toBeInTheDocument()
+    expect(within(dialog).getByText('owner@shop.test')).toBeInTheDocument()
+  })
+
+  it('continues to the invitation with the store returned by registration', async () => {
+    const user = userEvent.setup()
+    render(<UserManagementPanel vendorRegistration={({ onCreated }) => (
+      <button type="button" onClick={() => onCreated(store({ id: 42, store_name: 'Newly Registered Mart' }))}>Finish registration</button>
+    )} />)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await user.click(screen.getByRole('button', { name: /Vendor account/i }))
+    await user.click(await screen.findByRole('button', { name: 'Register new establishment' }))
+    await user.click(screen.getByRole('button', { name: 'Finish registration' }))
+
+    expect(screen.getByRole('radio', { name: /Newly Registered Mart/ })).toBeChecked()
+    await user.type(screen.getByLabelText('Vendor owner email address'), 'new@shop.test')
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+    expect(adminApi.inviteVendor).toHaveBeenCalledWith(42, 'new@shop.test')
+  })
+
+  it('shows the server message when the establishment is already linked', async () => {
+    vi.mocked(adminApi.inviteVendor).mockRejectedValue({ response: { data: { status: 'STORE_ALREADY_LINKED', message: 'This establishment already has a linked vendor account. Unlink it before inviting someone else.' } } })
+    const user = userEvent.setup()
+    render(<UserManagementPanel />)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await user.click(screen.getByRole('button', { name: /Vendor account/i }))
+    await user.click(await screen.findByRole('radio', { name: /Unlinked Grocery/ }))
+    await user.type(screen.getByLabelText('Vendor owner email address'), 'owner@shop.test')
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('already has a linked vendor account')
+  })
+
+  it('lists pending invitations with resend and cancel', async () => {
+    vi.mocked(adminApi.getVendorInvitations).mockResolvedValue([{
+      id: 31, email: 'pending@shop.test', status: 'pending', expires_at: '2026-09-15T00:00:00Z', created_at: '2026-09-14T00:00:00Z',
+      is_expired: false, store: { id: 9, store_name: 'Unlinked Grocery' }, inviter: { id: 1, name: 'Evaluator' },
+    }])
+    vi.mocked(adminApi.cancelVendorInvitation).mockResolvedValue({} as never)
+    const user = userEvent.setup()
+    render(<><UserManagementPanel /><AdminToastHost /></>)
+
+    const section = await screen.findByRole('region', { name: 'Pending vendor invitations' })
+    expect(within(section).getByText('pending@shop.test')).toBeInTheDocument()
+
+    await user.click(within(section).getByRole('button', { name: 'Resend invitation to pending@shop.test' }))
+    expect(adminApi.inviteVendor).toHaveBeenCalledWith(9, 'pending@shop.test')
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+
+    await user.click(within(await screen.findByRole('region', { name: 'Pending vendor invitations' })).getByRole('button', { name: 'Cancel invitation to pending@shop.test' }))
+    expect(adminApi.cancelVendorInvitation).toHaveBeenCalledWith(31)
+  })
+
+  it('unlinks a vendor establishment after confirmation', async () => {
+    vi.mocked(adminApi.unlinkStoreVendor).mockResolvedValue(store({ id: 4, store_name: 'Antique Market' }))
+    const user = userEvent.setup()
+    render(<><UserManagementPanel /><AdminToastHost /></>)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Actions for Maria Vendor' }))
+    await user.click(screen.getByRole('button', { name: 'Unlink Antique Market' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm unlink' }))
+
+    expect(adminApi.unlinkStoreVendor).toHaveBeenCalledWith(4)
+    expect(await screen.findByText('Antique Market was unlinked.')).toBeInTheDocument()
+  })
+
+  it('opens the dedicated officer page', async () => {
+    const user = userEvent.setup()
+    render(<UserManagementPanel />)
+
+    await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Add user' }))
     await user.click(screen.getByRole('button', { name: /DTI Field Monitoring account/i }))
     expect(screen.getByRole('heading', { name: 'Create field monitoring officer' })).toBeInTheDocument()
@@ -94,7 +196,7 @@ describe('User Management', () => {
       stores: [],
     })
     const user = userEvent.setup()
-    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
+    render(<><UserManagementPanel /><AdminToastHost /></>)
 
     await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Add user' }))
@@ -125,7 +227,7 @@ describe('User Management', () => {
   it('deactivates an account from its row actions', async () => {
     vi.mocked(adminApi.updateManagedUser).mockResolvedValue({ ...usersPage.records[0], is_active: false })
     const user = userEvent.setup()
-    render(<><UserManagementPanel vendorRegistration={<div />} /><AdminToastHost /></>)
+    render(<><UserManagementPanel /><AdminToastHost /></>)
 
     await screen.findByText('Maria Vendor')
     await user.click(screen.getByRole('button', { name: 'Actions for Maria Vendor' }))
@@ -136,5 +238,25 @@ describe('User Management', () => {
     const notice = await screen.findByText('Maria Vendor was deactivated.')
     expect(notice.closest('[data-sonner-toast]')).toBeInTheDocument()
     expect(screen.queryByText('Maria Vendor was deactivated.', { selector: '.admin-feedback' })).not.toBeInTheDocument()
+  })
+
+  it('shows a retryable error instead of an empty list when pending invitations fail to load', async () => {
+    vi.mocked(adminApi.getVendorInvitations)
+      .mockRejectedValueOnce({ response: { status: 500, data: {} } })
+      .mockResolvedValue([{
+        id: 31, email: 'pending@shop.test', status: 'pending', expires_at: '2026-09-16T00:00:00Z', created_at: '2026-09-15T00:00:00Z',
+        is_expired: false, store: { id: 9, store_name: 'Unlinked Grocery' }, inviter: { id: 1, name: 'Evaluator' },
+      }])
+    const user = userEvent.setup()
+    render(<UserManagementPanel />)
+
+    expect(await screen.findByText('Pending vendor invitations could not load.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Pending vendor invitations' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry invitations' }))
+
+    const section = await screen.findByRole('region', { name: 'Pending vendor invitations' })
+    expect(within(section).getByText('pending@shop.test')).toBeInTheDocument()
+    expect(screen.queryByText('Pending vendor invitations could not load.')).not.toBeInTheDocument()
   })
 })

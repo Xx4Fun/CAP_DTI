@@ -97,6 +97,9 @@ class UserManagementController extends Controller
             $data['email'] = strtolower($data['email']);
         }
         DB::transaction(function () use ($data, $request, $audit, $managedUser) {
+            // Lock the account row so vendor login and password changes serialize with deactivation.
+            User::whereKey($managedUser->id)->lockForUpdate()->firstOrFail();
+            $managedUser->refresh();
             $wasActive = (bool) $managedUser->is_active;
             $managedUser->fill($data)->save();
             if ($wasActive && ! $managedUser->is_active) {
@@ -116,6 +119,8 @@ class UserManagementController extends Controller
         $guard->requireRecentReauthentication($request);
         $data = $request->validate(['password' => ['required', 'string', 'min:12', 'confirmed']]);
         DB::transaction(function () use ($data, $request, $audit, $managedUser) {
+            // Same row lock as vendor login/password change: a reset cannot be undone by a credential check already in flight.
+            User::whereKey($managedUser->id)->lockForUpdate()->firstOrFail();
             $managedUser->forceFill([
                 'password' => $data['password'],
                 'must_change_password' => false,

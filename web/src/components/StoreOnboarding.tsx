@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import api from '../services/api'
 import { adminToast } from '../services/adminToast'
+import type { StoreRecord } from '../types/admin'
 
 interface NominatimSuggestion {
   place_id: number
@@ -21,7 +22,7 @@ interface NominatimSuggestion {
 }
 
 export interface StoreOnboardingProps {
-  onCreated?: () => void
+  onCreated?: (store: StoreRecord) => void
   onBack?: () => void
 }
 
@@ -243,7 +244,7 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
     setError('')
 
     try {
-      await api.post('/admin/stores', {
+      const response = await api.post<{ data: StoreRecord }>('/admin/stores', {
         dti_sec_number: secNumber.trim() || null,
         store_name: storeName.trim(),
         owner_name: ownerName.trim() || null,
@@ -254,7 +255,7 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
       adminToast.success('Establishment registered and published.', {
         id: 'store-onboard-success',
       })
-      onCreated?.()
+      onCreated?.(response.data.data)
     } catch (err: any) {
       if (err.response?.data?.message) {
         setError(err.response.data.message)

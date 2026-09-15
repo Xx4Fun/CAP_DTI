@@ -56,6 +56,7 @@ class DatabaseSeeder extends Seeder
 
         // 5. Reconcile the official San Jose de Buenavista establishment list.
         $this->call(OfficialEstablishmentSeeder::class);
+        // Vendor store links are created only by accepted invitations (or the local-only VendorPwaVerificationSeeder fixture).
 
         // 6. Seed official DTI SRP Master List & Image Mappings
         $this->call(SrpMasterListSeeder::class);

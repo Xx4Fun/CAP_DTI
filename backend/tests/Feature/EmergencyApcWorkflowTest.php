@@ -93,6 +93,8 @@ class EmergencyApcWorkflowTest extends TestCase
 
     public function test_activation_rejects_a_stale_review_then_creates_official_apc_from_the_refreshed_candidate(): void
     {
+        // Effective state compares against the Manila calendar; pin "today" inside the declaration window (09-09 to 09-10).
+        \Illuminate\Support\Carbon::setTestNow('2026-09-09 02:00:00');
         $admin = User::create([
             'name' => 'DTI Admin', 'email' => 'activate-admin@dti.test',
             'password' => 'password', 'role' => 'dti_evaluator',

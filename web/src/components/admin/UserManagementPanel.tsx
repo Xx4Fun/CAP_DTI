@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   EyeOff,
   ExternalLink,
   KeyRound,
+  MailPlus,
   MoreHorizontal,
   Plus,
   Search,
@@ -20,13 +21,16 @@ import {
   X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ManagedUserPage, ManagedUserRecord, ManagedUserRole } from '../../types/admin'
+import type { ManagedUserPage, ManagedUserRecord, ManagedUserRole, StoreRecord, VendorInvitationRecord } from '../../types/admin'
 import { adminToast } from '../../services/adminToast'
 import { StoreOnboarding } from '../StoreOnboarding'
+import { VendorInviteForm } from './VendorInviteForm'
 
 type ManagementView = 'list' | 'vendor' | 'field-officer'
 type RoleFilter = 'all' | ManagedUserRole
 type StatusFilter = 'all' | 'active' | 'inactive'
+
+export type VendorRegistrationRenderer = (controls: { onBack: () => void; onCreated: (store: StoreRecord) => void }) => ReactNode
 
 const emptyPage: ManagedUserPage = {
   records: [],
@@ -35,6 +39,7 @@ const emptyPage: ManagedUserPage = {
 }
 
 const fieldPwaUrl = (import.meta.env.VITE_FIELD_PWA_URL as string | undefined)?.trim()
+const vendorPwaUrl = (import.meta.env.VITE_VENDOR_PWA_URL as string | undefined)?.trim()
 
 function errorMessage(error: unknown, fallback: string): string {
   const response = (error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response
@@ -42,9 +47,9 @@ function errorMessage(error: unknown, fallback: string): string {
   return fieldError || response?.data?.message || fallback
 }
 
-export function UserManagementPanel({ vendorRegistration }: { vendorRegistration: ReactNode }) {
+export function UserManagementPanel({ vendorRegistration }: { vendorRegistration?: VendorRegistrationRenderer }) {
   const initialView = new URLSearchParams(window.location.search).get('view')
-  const [view, setView] = useState<ManagementView>(initialView === 'create-field-officer' ? 'field-officer' : 'list')
+  const [view, setView] = useState<ManagementView>(initialView === 'create-field-officer' ? 'field-officer' : initialView === 'register-vendor' ? 'vendor' : 'list')
   const [showAddMenu, setShowAddMenu] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(emptyPage)
@@ -60,7 +65,11 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
   const [editing, setEditing] = useState<ManagedUserRecord | null>(null)
   const [resetting, setResetting] = useState<ManagedUserRecord | null>(null)
   const [deactivating, setDeactivating] = useState<ManagedUserRecord | null>(null)
+  const [unlinking, setUnlinking] = useState<{ account: ManagedUserRecord; store: { id: number; store_name: string } } | null>(null)
   const [handoff, setHandoff] = useState<{ account: ManagedUserRecord; temporaryPassword: string } | null>(null)
+  const [vendorHandoff, setVendorHandoff] = useState<{ storeName: string; email: string; invitationUrl: string } | null>(null)
+  const [invitations, setInvitations] = useState<VendorInvitationRecord[]>([])
+  const [invitationsError, setInvitationsError] = useState('')
 
   const changeView = (next: ManagementView) => {
     setView(next)
@@ -113,34 +122,29 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
     }
   }, [debouncedSearch, role, status, pageNumber, perPage])
 
+  const loadInvitations = useCallback(async () => {
+    try {
+      setInvitations(await adminApi.getVendorInvitations())
+      setInvitationsError('')
+    } catch (requestError) {
+      // Keep rows already shown: a failed load must not look like "no pending invitations".
+      setInvitationsError(errorMessage(requestError, 'Pending vendor invitations could not load.'))
+    }
+  }, [])
+
   useEffect(() => { void loadUsers() }, [loadUsers])
+  useEffect(() => { if (view === 'list') void loadInvitations() }, [view, loadInvitations])
 
   if (view === 'vendor') {
-    const isCustomSimpleElement = isValidElement(vendorRegistration) && typeof vendorRegistration.type === 'string'
     return (
-      <div className="user-management-workspace">
-        {isCustomSimpleElement && (
-          <header className="admin-form-header-bar">
-            <button
-              type="button"
-              className="admin-header-back-button"
-              aria-label="Back to User Management"
-              title="Back to User Management"
-              onClick={() => changeView('list')}
-            >
-              <ArrowLeft size={18} strokeWidth={2.5} aria-hidden="true" />
-            </button>
-            <h2 className="admin-form-page-title">Register new establishment</h2>
-          </header>
-        )}
-        {vendorRegistration ? (
-          isValidElement(vendorRegistration)
-            ? cloneElement(vendorRegistration as React.ReactElement<any>, { onBack: () => changeView('list') })
-            : vendorRegistration
-        ) : (
-          <StoreOnboarding onBack={() => changeView('list')} />
-        )}
-      </div>
+      <VendorOnboarding
+        renderRegistration={vendorRegistration}
+        onBack={() => changeView('list')}
+        onInvited={(store, email, invitationUrl) => {
+          setVendorHandoff({ storeName: store.store_name, email, invitationUrl })
+          changeView('list')
+        }}
+      />
     )
   }
 
@@ -213,7 +217,7 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
                 </span>
                 <span className="user-add-dropdown-text">
                   <strong>Vendor account</strong>
-                  <small>Register establishment & send invitation</small>
+                  <small>Choose or register an establishment, then invite its vendor</small>
                 </span>
                 <ChevronRight size={16} className="user-add-dropdown-arrow" aria-hidden="true" />
               </button>
@@ -240,6 +244,18 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
       </section>
 
       {error && <div className="admin-feedback error" role="alert"><span>{error}</span><button type="button" onClick={() => void loadUsers()}>Retry</button></div>}
+      {role !== 'field_officer' && invitationsError && <div className="admin-feedback error" role="alert"><span>{invitationsError}</span><button type="button" onClick={() => void loadInvitations()}>Retry invitations</button></div>}
+
+      {role !== 'field_officer' && invitations.length > 0 && (
+        <PendingInvitations
+          invitations={invitations}
+          onResent={(invitation, invitationUrl) => {
+            setVendorHandoff({ storeName: invitation.store?.store_name ?? 'Establishment', email: invitation.email, invitationUrl })
+            void loadInvitations()
+          }}
+          onChanged={() => void loadInvitations()}
+        />
+      )}
 
       <section className="admin-table-card user-table-card">
         <div className="admin-table-wrap">
@@ -259,6 +275,9 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
                     {openActions === account.id && <div className="user-row-menu">
                       <button type="button" onClick={() => { setEditing(account); setOpenActions(null) }}>Edit account</button>
                       <button type="button" onClick={() => { setResetting(account); setOpenActions(null) }}>Set new password</button>
+                      {account.role === 'vendor' && account.stores.map((store) => (
+                        <button type="button" key={store.id} onClick={() => { setUnlinking({ account, store }); setOpenActions(null) }}>Unlink {store.store_name}</button>
+                      ))}
                       <button type="button" onClick={() => { if (account.is_active) setDeactivating(account); else void toggleAccount(account); setOpenActions(null) }}>{account.is_active ? 'Deactivate account' : 'Reactivate account'}</button>
                     </div>}
                   </td>
@@ -276,7 +295,9 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
       {editing && <EditUserDialog account={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); adminToast.success('Account details updated.', { id: 'managed-user-updated' }); void loadUsers() }} />}
       {resetting && <PasswordDialog account={resetting} onClose={() => setResetting(null)} onSaved={() => { setResetting(null); adminToast.success('Password updated and active sessions revoked.', { id: 'managed-user-password' }) }} />}
       {deactivating && <ConfirmDialog title="Deactivate account?" message={`${deactivating.name} will be signed out and unable to log in until reactivated.`} confirmLabel="Confirm deactivation" onClose={() => setDeactivating(null)} onConfirm={async () => { await toggleAccount(deactivating); setDeactivating(null) }} />}
+      {unlinking && <ConfirmDialog title="Unlink establishment?" message={`${unlinking.account.name} will lose Vendor Portal access to ${unlinking.store.store_name} and its notices. Pending invitations for this establishment are cancelled.`} confirmLabel="Confirm unlink" onClose={() => setUnlinking(null)} onConfirm={async () => { await unlinkStore(unlinking.store); setUnlinking(null) }} />}
       {handoff && <FieldOfficerHandoff account={handoff.account} temporaryPassword={handoff.temporaryPassword} onClose={() => setHandoff(null)} />}
+      {vendorHandoff && <VendorInvitationHandoff {...vendorHandoff} onClose={() => { setVendorHandoff(null); void loadInvitations() }} />}
     </div>
   )
 
@@ -289,6 +310,177 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
       adminToast.error(errorMessage(requestError, 'The account status could not be changed. Confirm your Admin password and try again.'), { id: `managed-user-status-error-${account.id}` })
     }
   }
+
+  async function unlinkStore(store: { id: number; store_name: string }) {
+    try {
+      await adminApi.unlinkStoreVendor(store.id)
+      adminToast.success(`${store.store_name} was unlinked.`, { id: `store-unlinked-${store.id}` })
+      await Promise.all([loadUsers(), loadInvitations()])
+    } catch (requestError) {
+      adminToast.error(errorMessage(requestError, 'The establishment could not be unlinked. Confirm your Admin password and try again.'), { id: `store-unlink-error-${store.id}` })
+    }
+  }
+}
+
+function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
+  renderRegistration?: VendorRegistrationRenderer
+  onBack: () => void
+  onInvited: (store: StoreRecord, email: string, invitationUrl: string) => void
+}) {
+  const [registering, setRegistering] = useState(false)
+  const [stores, setStores] = useState<StoreRecord[] | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<StoreRecord | null>(null)
+
+  useEffect(() => {
+    adminApi.getStores().then(setStores).catch((requestError) => setLoadError(errorMessage(requestError, 'Establishments could not load. Try again.')))
+  }, [])
+
+  const unlinked = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    return (stores ?? [])
+      .filter((store) => !store.vendor_user_id)
+      .filter((store) => !term || store.store_name.toLowerCase().includes(term) || store.address.toLowerCase().includes(term))
+      .slice(0, 50)
+  }, [stores, query])
+
+  if (registering) {
+    const controls = {
+      onBack: () => setRegistering(false),
+      onCreated: (store: StoreRecord) => { setStores((current) => [store, ...(current ?? [])]); setSelected(store); setRegistering(false) },
+    }
+    return <div className="user-management-workspace">{renderRegistration ? renderRegistration(controls) : <StoreOnboarding {...controls} />}</div>
+  }
+
+  return (
+    <div className="user-management-workspace vendor-onboarding">
+      <header className="admin-form-header-bar">
+        <button type="button" className="admin-header-back-button" aria-label="Back to User Management" title="Back to User Management" onClick={onBack}>
+          <ArrowLeft size={18} strokeWidth={2.5} aria-hidden="true" />
+        </button>
+        <h2 className="admin-form-page-title">Invite vendor account</h2>
+      </header>
+
+      <section className="field-officer-create-card vendor-onboarding-card">
+        <div className="field-officer-card-body">
+          <div className="field-officer-section">
+            <div className="field-officer-section-header">
+              <div className="field-section-icon"><Store size={22} /></div>
+              <div>
+                <h3>1. Establishment</h3>
+                <p>Vendors are linked to one establishment at a time. Only establishments without a linked vendor appear.</p>
+              </div>
+            </div>
+            <div className="field-officer-fields">
+              <div className="admin-search-field">
+                <Search size={17} aria-hidden="true" />
+                <input type="search" aria-label="Search establishments" placeholder="Search establishment name or address" value={query} onChange={(event) => setQuery(event.target.value)} />
+              </div>
+              {loadError && <p role="alert" className="admin-feedback error">{loadError}</p>}
+              {stores === null && !loadError && <p role="status">Loading establishments…</p>}
+              {stores !== null && (
+                <fieldset className="vendor-store-options">
+                  <legend className="sr-only">Establishment to invite a vendor for</legend>
+                  {unlinked.map((store) => (
+                    <label key={store.id} className={selected?.id === store.id ? 'selected' : ''}>
+                      <input type="radio" name="vendor-store" checked={selected?.id === store.id} onChange={() => setSelected(store)} />
+                      <span><strong>{store.store_name}</strong><small>{store.address}</small></span>
+                    </label>
+                  ))}
+                  {unlinked.length === 0 && <p className="field-helper-text">No unlinked establishment matches. Register a new one below.</p>}
+                </fieldset>
+              )}
+              <button type="button" className="admin-button secondary" onClick={() => setRegistering(true)}><Plus size={16} />Register new establishment</button>
+            </div>
+          </div>
+
+          <div className="field-officer-section">
+            <div className="field-officer-section-header">
+              <div className="field-section-icon"><MailPlus size={22} /></div>
+              <div>
+                <h3>2. Invitation</h3>
+                <p>{selected ? `Invite the vendor for ${selected.store_name}.` : 'Choose an establishment first.'}</p>
+              </div>
+            </div>
+            <div className="field-officer-fields">
+              {selected
+                ? <VendorInviteForm key={selected.id} store={selected} onCancel={() => setSelected(null)} onInvited={(url, email) => onInvited(selected, email, url)} />
+                : <p className="field-helper-text">The invitation link opens the Vendor Portal, where the vendor sets their own password.</p>}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function PendingInvitations({ invitations, onResent, onChanged }: {
+  invitations: VendorInvitationRecord[]
+  onResent: (invitation: VendorInvitationRecord, invitationUrl: string) => void
+  onChanged: () => void
+}) {
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const formatter = new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
+
+  const resend = async (invitation: VendorInvitationRecord) => {
+    if (!invitation.store) return
+    setBusyId(invitation.id)
+    try {
+      const result = await adminApi.inviteVendor(invitation.store.id, invitation.email)
+      onResent(invitation, result.invitation_url)
+    } catch (requestError) {
+      adminToast.error(errorMessage(requestError, 'The invitation could not be sent again.'), { id: `invitation-resend-${invitation.id}` })
+      onChanged()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const cancel = async (invitation: VendorInvitationRecord) => {
+    setBusyId(invitation.id)
+    try {
+      await adminApi.cancelVendorInvitation(invitation.id)
+      adminToast.success(`Invitation for ${invitation.email} was cancelled.`, { id: `invitation-cancel-${invitation.id}` })
+    } catch (requestError) {
+      adminToast.error(errorMessage(requestError, 'The invitation could not be cancelled.'), { id: `invitation-cancel-error-${invitation.id}` })
+    } finally {
+      setBusyId(null)
+      onChanged()
+    }
+  }
+
+  return (
+    <section className="admin-table-card vendor-invitations-card" aria-labelledby="pending-vendor-invitations-title">
+      <header className="vendor-invitations-header">
+        <h3 id="pending-vendor-invitations-title">Pending vendor invitations</h3>
+        <small>Vendors appear in the table after accepting.</small>
+      </header>
+      <div className="admin-table-wrap">
+        <table className="admin-data-table">
+          <thead><tr><th>Email</th><th>Establishment</th><th>Expires</th><th><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            {invitations.map((invitation) => (
+              <tr key={invitation.id}>
+                <td data-label="Email">{invitation.email}</td>
+                <td data-label="Establishment">{invitation.store?.store_name ?? 'Establishment removed'}</td>
+                <td data-label="Expires">{invitation.is_expired ? <span className="admin-status-badge history">Expired</span> : formatter.format(new Date(invitation.expires_at))}</td>
+                <td data-label="Actions" className="vendor-invitation-actions">
+                  <button type="button" className="admin-button secondary" disabled={busyId === invitation.id || !invitation.store} onClick={() => void resend(invitation)} aria-label={`Resend invitation to ${invitation.email}`}>Resend</button>
+                  <button type="button" className="admin-button secondary" disabled={busyId === invitation.id} onClick={() => void cancel(invitation)} aria-label={`Cancel invitation to ${invitation.email}`}>Cancel</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function VendorInvitationHandoff({ storeName, email, invitationUrl, onClose }: { storeName: string; email: string; invitationUrl: string; onClose: () => void }) {
+  const copy = (value: string) => void navigator.clipboard?.writeText(value)
+  return <div className="admin-modal-backdrop"><section className="admin-modal field-officer-handoff" role="dialog" aria-modal="true" aria-labelledby="vendor-invitation-handoff-title"><header><div><h2 id="vendor-invitation-handoff-title">Vendor invitation sent</h2><p>An email with this link was queued. You can also share the link directly; it works once and expires in 24 hours.</p></div><button type="button" className="admin-icon-button" aria-label="Close invitation handoff" onClick={onClose}><X size={18} /></button></header><div className="handoff-person"><Store size={20} /><span><strong>{storeName}</strong><small>{email}</small></span></div><dl><div><dt>Invitation link</dt><dd><code>{invitationUrl}</code><button type="button" aria-label="Copy vendor invitation link" onClick={() => copy(invitationUrl)}><Copy size={16} />Copy</button></dd></div>{vendorPwaUrl && <div><dt>Vendor Portal</dt><dd><span>{vendorPwaUrl}</span><button type="button" aria-label="Copy Vendor Portal link" onClick={() => copy(vendorPwaUrl)}><Copy size={16} />Copy</button></dd></div>}</dl><div className="handoff-warning"><KeyRound size={18} /><span><strong>The vendor sets their own password</strong><small>DTI never sees it. Resending cancels this link and issues a new one.</small></span></div><footer><button type="button" className="admin-button primary" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function AccountCount({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {

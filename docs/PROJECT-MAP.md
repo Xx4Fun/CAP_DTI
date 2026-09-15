@@ -43,6 +43,14 @@ tags:
 - Product constraints: `../PRODUCT.md`
 - Design: [[superpowers/specs/2026-08-24-field-officer-pwa-design]]
 
+## Vendor Portal PWA
+
+- Path: `vendor-pwa/`
+- Responsibility: invited vendor accounts — notices, formal responses with evidence, SRP self-check, advisories, and notification preferences.
+- Start with: `vendor-pwa/src/App.tsx`, `vendor-pwa/src/services/vendorApi.ts`, `vendor-pwa/src/app/rules.ts`; backend `backend/app/Http/Controllers/Vendor/` and `LegalNoticeController.php`.
+- Account management: DTI Admin User Management (`web/src/components/admin/UserManagementPanel.tsx`).
+- Decisions: [[DECISIONS]] entry 2026-09-14.
+
 ## Flutter client
 
 - Path: `mobile/`

@@ -51,7 +51,11 @@ class Store extends Model
 
     public function latestMonitoringRecord()
     {
-        return $this->hasOne(MonitoringRecord::class)->where('status', 'accepted')->latestOfMany('finalized_at');
+        // Status filters must sit inside the ofMany aggregate: an outer where lets a later non-accepted visit hide the latest accepted one.
+        return $this->hasOne(MonitoringRecord::class)->ofMany(
+            ['finalized_at' => 'max', 'id' => 'max'],
+            fn ($query) => $query->where('status', 'accepted'),
+        );
     }
 
     public function routineMonitoringRecords(): HasMany
@@ -61,9 +65,10 @@ class Store extends Model
 
     public function latestRoutineMonitoringRecord(): HasOne
     {
-        return $this->hasOne(MonitoringRecord::class)
-            ->where('status', 'accepted')->whereNull('field_verification_request_id')
-            ->latestOfMany('finalized_at');
+        return $this->hasOne(MonitoringRecord::class)->ofMany(
+            ['finalized_at' => 'max', 'id' => 'max'],
+            fn ($query) => $query->where('status', 'accepted')->whereNull('field_verification_request_id'),
+        );
     }
 
     public function verificationRequests(): HasMany

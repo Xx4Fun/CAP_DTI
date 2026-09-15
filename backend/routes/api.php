@@ -27,10 +27,13 @@ use App\Http\Controllers\PublicPwaController;
 use App\Http\Controllers\ReceiptEvidenceController;
 use App\Http\Controllers\ReceiptReportController;
 use App\Http\Controllers\SyncController;
+use App\Http\Controllers\Vendor\VendorAuthController;
+use App\Http\Controllers\Vendor\VendorPortalController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/field/login', [FieldAuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/vendor/login', [VendorAuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/vendor-invitations/{token}/accept', [VendorInvitationController::class, 'accept']);
 Route::get('/health/ready', [HealthController::class, 'ready'])->middleware('throttle:30,1');
 
@@ -80,6 +83,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-records/{monitoringRecord}', [FieldMonitoringController::class, 'show']);
         Route::post('/monitoring-records/sync', [FieldMonitoringController::class, 'sync']);
     });
+    Route::prefix('vendor')->group(function () {
+        Route::get('/session', [VendorAuthController::class, 'session']);
+        Route::post('/password', [VendorAuthController::class, 'password']);
+        Route::post('/logout', [VendorAuthController::class, 'logout']);
+        Route::get('/overview', [VendorPortalController::class, 'overview']);
+        Route::get('/srp', [VendorPortalController::class, 'srp']);
+        Route::get('/advisories', [VendorPortalController::class, 'advisories']);
+        Route::get('/preferences', [VendorPortalController::class, 'preferences']);
+        Route::put('/preferences', [VendorPortalController::class, 'updatePreferences']);
+        Route::get('/notices', [LegalNoticeController::class, 'index']);
+        Route::get('/notices/{id}', [LegalNoticeController::class, 'show']);
+        Route::get('/notices/{id}/document', [LegalNoticeController::class, 'document']);
+        Route::post('/notices/{id}/response', [LegalNoticeController::class, 'response']);
+    });
     Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {
         Route::get('/session', [AdminSessionController::class, 'show']);
         Route::post('/reauthenticate', [AdminSessionController::class, 'reauthenticate']);
@@ -104,6 +121,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/stores', [StoreAdminController::class, 'store']);
         Route::patch('/stores/{store}', [StoreAdminController::class, 'update']);
         Route::post('/stores/{store}/invitations', [VendorInvitationController::class, 'store']);
+        Route::get('/vendor-invitations', [VendorInvitationController::class, 'index']);
         Route::post('/invitations/{invitation}/cancel', [VendorInvitationController::class, 'cancel']);
         Route::get('/srp', [SrpManagementController::class, 'index']);
         Route::post('/srp', [SrpManagementController::class, 'store']);
@@ -137,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/legal-notices/{legalNotice}', [AdminLegalNoticeController::class, 'show']);
         Route::patch('/legal-notices/{legalNotice}', [AdminLegalNoticeController::class, 'update']);
         Route::post('/legal-notices/{legalNotice}/attachments', [AdminLegalNoticeController::class, 'attach']);
+        Route::get('/legal-notices/{legalNotice}/attachments/{attachment}', [AdminLegalNoticeController::class, 'downloadAttachment']);
         Route::delete('/legal-notices/{legalNotice}/attachments/{attachment}', [AdminLegalNoticeController::class, 'destroyAttachment']);
         Route::post('/legal-notices/{legalNotice}/preview', [AdminLegalNoticeController::class, 'preview']);
         Route::post('/legal-notices/{legalNotice}/issue', [AdminLegalNoticeController::class, 'issue']);
@@ -154,12 +173,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/sync/down', [SyncController::class, 'down']);
     Route::post('/sync/up', [SyncController::class, 'up']);
-
-    Route::get('/notices', [LegalNoticeController::class, 'index']);
-    Route::get('/notices/{id}', [LegalNoticeController::class, 'show']);
-    Route::get('/notices/{id}/document', [LegalNoticeController::class, 'document']);
-    Route::post('/notices/{id}/response', [LegalNoticeController::class, 'response']);
-    Route::post('/notices/{id}/rebuttal', [LegalNoticeController::class, 'response']);
 
     Route::get('/tips', [CitizenTipController::class, 'index'])
         ->middleware('dti.role:super_admin,dti_evaluator');

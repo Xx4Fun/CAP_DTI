@@ -8,6 +8,17 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-14 — Vendor Portal PWA and vendor account management
+
+- Vendors use the separate `vendor-pwa/` app. The DTI Admin web portal no longer serves vendors: `/api/login` answers `VENDOR_PWA_REQUIRED`, and old `/vendor-invitation` links forward to the PWA.
+- Vendor sessions use `/api/vendor/login` and a Sanctum token named `vendor-portal-pwa` that expires (default 720 hours, `VENDOR_TOKEN_HOURS`). Vendor routes check the token **name**, because Sanctum's `can()` also accepts legacy `['*']` tokens; those legacy vendor tokens were deleted by migration.
+- Vendor access to a store comes only from `stores.vendor_user_id`, which only an accepted invitation sets. The old owner-name fallback was removed **without** a name-based backfill, because a namesake would otherwise gain another store's notices. Unlinked vendors regain access through a new invitation.
+- Every writer of the vendor link (invite, accept, cancel, unlink) and the vendor notice response locks the store row before the invitation or notice row. A store with a linked vendor cannot be invited again until it is unlinked, and unlinking cancels pending invitations.
+- Legal notice PDFs and attachments are written to the private `legal_documents` disk (S3 in production, `LEGAL_DOCUMENTS_*` falling back to `RECEIPT_EVIDENCE_*`). Files previously written to the container's `local` disk were never durable across deploys and are not recoverable; their rows keep `disk = local` and return 404.
+- Vendor compliance status, advisories, and price references are derived from existing notices, emergencies, SRP bulletins, and `FieldReferenceResolver` at one Manila instant; no separate vendor tables. The self-check uses the field rule (standard SRP reviewed above +10%, emergency ceiling reviewed above the ceiling) and provisional wording only.
+- Notification preferences are stored in `users.preferences.vendor_notifications`; SMS/email delivery is not implemented.
+- Evidence: `docs/plans/vendor-pwa/PLAN.md` (Codex-approved revision 3), `docs/plans/vendor-pwa/PLAN-REVIEW-LOG.md`, `backend/tests/Feature/VendorAuthTest.php`, `VendorPortalTest.php`, `VendorInvitationFlowTest.php`, `LegalNoticeTest.php`.
+
 ## 2026-09-12 — Receipt extraction consent and free-tier demonstration
 
 - The PRICE-Watch capstone project team approves **privacy notice v1.2** — which names Google Gemini as the service that may read receipt

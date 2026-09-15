@@ -1,0 +1,10 @@
+@import './vendor.css';
+
+/* Font & Base reset */
+@import '@fontsource-variable/outfit';
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}

@@ -24,7 +24,7 @@ class LegacyLegalPolicyGuardTest extends TestCase
         $this->actingAs($admin, 'sanctum')->postJson('/api/notices/dispatch', [
             'store_id' => $store->id, 'srp_id' => $srp->id,
             'recorded_price' => 30, 'recorded_date' => '2026-07-26',
-        ])->assertStatus(405);
+        ])->assertNotFound();
 
         $this->assertSame(0, LegalNotice::count());
         $this->assertSame(0, $store->fresh()->recidivism_index);

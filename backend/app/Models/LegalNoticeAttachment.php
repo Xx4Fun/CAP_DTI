@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class LegalNoticeAttachment extends Model
 {
-    protected $fillable = ['legal_notice_id', 'uploaded_by', 'kind', 'disk', 'path', 'original_name', 'mime_type', 'size_bytes', 'sha256'];
+    protected $fillable = ['legal_notice_id', 'uploaded_by', 'kind', 'category', 'disk', 'path', 'original_name', 'mime_type', 'size_bytes', 'sha256'];
 
     protected $hidden = ['disk', 'path'];
 

@@ -63,6 +63,21 @@ class AuthControllerTest extends TestCase {
         $this->assertCount(0, $user->fresh()->tokens);
     }
 
+    public function test_vendor_is_directed_to_the_vendor_portal_pwa(): void {
+        $user = User::create([
+            'name' => 'Vendor',
+            'email' => 'vendor@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'vendor',
+        ]);
+
+        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'password123'])
+            ->assertStatus(403)
+            ->assertJsonPath('status', 'VENDOR_PWA_REQUIRED')
+            ->assertJsonMissingPath('token');
+        $this->assertCount(0, $user->fresh()->tokens);
+    }
+
     public function test_user_can_logout_and_revoke_token(): void {
         $user = User::create([
             'name' => 'John Doe',

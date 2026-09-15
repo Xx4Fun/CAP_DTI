@@ -310,12 +310,17 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
   )
 }
 
-export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) => void; onBack?: () => void }) {
+export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) => void; onBack?: () => void; onCreated?: (store: StoreRecord) => void }) {
   return (
     <Suspense fallback={<PanelLoader />}>
     <StoreOnboarding
       onBack={props.onBack}
-      onCreated={() => {
+      onCreated={(store) => {
+        // Callers continuing a flow (vendor invitation) take the new store; ordinary registration opens the GIS map.
+        if (props.onCreated) {
+          props.onCreated(store)
+          return
+        }
         if (props.onNavigate) {
           props.onNavigate('gis_monitoring')
         }
@@ -330,7 +335,7 @@ export function StoreMonitoringPanel() {
 }
 
 export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleId) => void }) {
-  return <Suspense fallback={<PanelLoader />}><UserManagementPanel vendorRegistration={<StoreRegistrationPanel onNavigate={props.onNavigate} />} /></Suspense>
+  return <Suspense fallback={<PanelLoader />}><UserManagementPanel vendorRegistration={({ onBack, onCreated }) => <StoreRegistrationPanel onNavigate={props.onNavigate} onBack={onBack} onCreated={onCreated} />} /></Suspense>
 }
 
 export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => void }) {

@@ -11,12 +11,15 @@ class LegalNotice extends Model
 {
     use HasFactory;
 
+    /** Durable private disk for official PDFs and notice attachments (S3 in production). */
+    public const DOCUMENT_DISK = 'legal_documents';
+
     protected $fillable = [
         'store_id', 'monitoring_record_id', 'preceding_notice_id', 'notice_type', 'prepared_by', 'issued_by',
         'control_number', 'policy_version', 'source_snapshot', 'draft_payload', 'internal_justification',
         'pdf_disk', 'pdf_file_path', 'pdf_sha256', 'status', 'issued_at', 'intended_delivery_method',
         'delivery_state', 'delivery_details', 'delivered_at', 'due_date_timestamp', 'response_text',
-        'response_received_at', 'closed_at', 'cancelled_at',
+        'response_reason_category', 'response_certified_at', 'response_received_at', 'closed_at', 'cancelled_at',
     ];
 
     protected $hidden = ['pdf_disk', 'pdf_file_path'];
@@ -24,7 +27,7 @@ class LegalNotice extends Model
     protected $casts = [
         'source_snapshot' => 'array', 'draft_payload' => 'array', 'delivery_details' => 'array',
         'issued_at' => 'datetime', 'delivered_at' => 'datetime', 'due_date_timestamp' => 'datetime',
-        'response_received_at' => 'datetime', 'closed_at' => 'datetime', 'cancelled_at' => 'datetime',
+        'response_received_at' => 'datetime', 'response_certified_at' => 'datetime', 'closed_at' => 'datetime', 'cancelled_at' => 'datetime',
     ];
 
     public function store(): BelongsTo

@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -87,9 +87,18 @@ export const adminApi = {
   async updateStore(id: number, changes: Partial<StoreRecord>): Promise<StoreRecord> {
     return data(await api.patch(`/admin/stores/${id}`, changes))
   },
-  async inviteVendor(storeId: number, email: string): Promise<{ invitation_url: string }> {
+  async inviteVendor(storeId: number, email: string): Promise<{ invitation_url: string; invitation: { id: number; email: string; expires_at: string } }> {
     const response = await api.post(`/admin/stores/${storeId}/invitations`, { email })
     return response.data
+  },
+  async getVendorInvitations(): Promise<VendorInvitationRecord[]> {
+    return data(await api.get('/admin/vendor-invitations', { params: { status: 'pending' } }))
+  },
+  async cancelVendorInvitation(id: number): Promise<VendorInvitationRecord> {
+    return data(await api.post(`/admin/invitations/${id}/cancel`))
+  },
+  async unlinkStoreVendor(storeId: number): Promise<StoreRecord> {
+    return data(await api.patch(`/admin/stores/${storeId}`, { vendor_user_id: null }))
   },
   async previewSrp(payload: unknown): Promise<Record<string, unknown>> {
     return data(await api.post('/admin/srp/import/preview', payload))
@@ -184,6 +193,12 @@ export const adminApi = {
   },
   async getLegalNotices(params: { search?: string; status?: string } = {}): Promise<LegalNoticePage> {
     return data(await api.get('/admin/legal-notices', { params }))
+  },
+  async getLegalNotice(id: number): Promise<LegalNoticeRecord> {
+    return data(await api.get(`/admin/legal-notices/${id}`))
+  },
+  async downloadLegalAttachment(id: number, attachmentId: number): Promise<Blob> {
+    return (await api.get(`/admin/legal-notices/${id}/attachments/${attachmentId}`, { responseType: 'blob' })).data
   },
   async createLegalNotice(payload: { monitoring_record_id: number; notice_type: 'LOI' | 'SCO'; item_ids: number[] }): Promise<LegalNoticeRecord> {
     return data(await api.post('/admin/legal-notices', payload))

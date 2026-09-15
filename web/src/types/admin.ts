@@ -28,6 +28,7 @@ export interface StoreRecord {
   is_verified: boolean
   is_public: boolean
   recidivism_index?: number
+  vendor_user_id?: number | null
 }
 
 export type ManagedUserRole = 'field_officer' | 'vendor'
@@ -501,10 +502,25 @@ export interface LegalNoticeRecord {
   draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[] }
   store?: { id: number; store_name: string; address: string }
   preparer?: { id: number; name: string } | null
-  attachments?: Array<{ id: number; kind: string; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
+  attachments?: Array<{ id: number; kind: string; category?: string | null; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
   readiness: Record<string, boolean>
   policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null }
   overdue?: boolean
+  response_text?: string | null
+  response_reason_category?: string | null
+  response_certified_at?: string | null
+  response_received_at?: string | null
+}
+
+export interface VendorInvitationRecord {
+  id: number
+  email: string
+  status: 'pending' | 'accepted' | 'expired' | 'cancelled'
+  expires_at: string
+  created_at: string
+  is_expired: boolean
+  store: { id: number; store_name: string } | null
+  inviter: { id: number; name: string } | null
 }
 
 export interface LegalNoticePage {

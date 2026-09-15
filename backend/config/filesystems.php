@@ -79,6 +79,25 @@ return [
             'throw' => true,
         ],
 
+        // Official legal notice PDFs and vendor/admin attachments. Falls back to the receipt evidence S3 settings.
+        'legal_documents' => [
+            'driver' => env('LEGAL_DOCUMENTS_DRIVER', 'local'),
+            'root' => env('LEGAL_DOCUMENTS_DRIVER', 'local') === 'local'
+                ? storage_path('app/private/legal-documents')
+                : null,
+            'key' => env('LEGAL_DOCUMENTS_ACCESS_KEY_ID', env('RECEIPT_EVIDENCE_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID'))),
+            'secret' => env('LEGAL_DOCUMENTS_SECRET_ACCESS_KEY', env('RECEIPT_EVIDENCE_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY'))),
+            'region' => env('LEGAL_DOCUMENTS_REGION', env('RECEIPT_EVIDENCE_REGION', env('AWS_DEFAULT_REGION'))),
+            'bucket' => env('LEGAL_DOCUMENTS_BUCKET', env('RECEIPT_EVIDENCE_BUCKET', 'receipt-evidence')),
+            'endpoint' => env('LEGAL_DOCUMENTS_ENDPOINT', env('RECEIPT_EVIDENCE_ENDPOINT', env('AWS_ENDPOINT'))),
+            'use_path_style_endpoint' => env('LEGAL_DOCUMENTS_USE_PATH_STYLE', env('RECEIPT_EVIDENCE_USE_PATH_STYLE', true)),
+            'visibility' => 'private',
+            // Legal notice writers check the boolean result and answer 503; failures are still reported to the log.
+            // Throwing here would bypass that 503 and let a failed cleanup delete mask the original error.
+            'throw' => false,
+            'report' => true,
+        ],
+
     ],
 
     /*

@@ -79,4 +79,21 @@ describe('Login', () => {
     releaseReadiness?.()
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
   })
+
+  it.each([
+    ['FIELD_PWA_REQUIRED', 'field'],
+    ['VENDOR_PWA_REQUIRED', 'vendor'],
+  ])('hands %s accounts to their dedicated application instead of showing an outage', async (status, kind) => {
+    const user = userEvent.setup()
+    const onPwaRequired = vi.fn()
+    vi.mocked(api.post).mockRejectedValue({ response: { status: 403, data: { status, message: 'Use the dedicated PWA.' } } })
+    render(<Login onLoginSuccess={vi.fn()} onPwaRequired={onPwaRequired} />)
+
+    await user.type(screen.getByLabelText(/email address/i), 'account@example.test')
+    await user.type(screen.getByLabelText(/^password$/i), 'secret')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await waitFor(() => expect(onPwaRequired).toHaveBeenCalledWith(kind))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

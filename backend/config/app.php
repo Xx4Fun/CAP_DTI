@@ -56,6 +56,10 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
 
+    'vendor_pwa_url' => env('VENDOR_PWA_URL', env('FRONTEND_URL', 'http://localhost:5173')),
+
+    'vendor_token_hours' => (int) env('VENDOR_TOKEN_HOURS', 720),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

@@ -8,6 +8,7 @@ use App\Models\MonitoringRecordItem;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
+use App\Http\Controllers\Vendor\VendorAuthController;
 use App\Mail\LegalNoticeAvailableMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -35,7 +36,9 @@ class LegalActionsWorkflowTest extends TestCase
         $this->assertSame($vendor->email, $notice->draft_payload['recipient_email']);
         $this->assertDatabaseHas('audit_events', ['action' => 'legal.draft_created', 'subject_id' => $notice->id]);
 
-        $this->actingAs($vendor, 'sanctum')->getJson('/api/notices')->assertOk()->assertJsonCount(0);
+        $this->app['auth']->forgetGuards();
+        $this->withToken($vendor->createToken(VendorAuthController::TOKEN_NAME, ['vendor-portal'])->plainTextToken)
+            ->getJson('/api/vendor/notices')->assertOk()->assertJsonCount(0);
     }
 
     public function test_draft_rejects_an_item_without_an_available_captured_reference(): void
@@ -71,12 +74,12 @@ class LegalActionsWorkflowTest extends TestCase
 
         $this->assertSame('draft', $notice->fresh()->status);
         $this->assertNull($notice->fresh()->pdf_file_path);
-        $this->actingAs($manager, 'sanctum')->postJson('/api/notices/dispatch', [])->assertStatus(405);
+        $this->actingAs($manager, 'sanctum')->postJson('/api/notices/dispatch', [])->assertNotFound();
     }
 
     public function test_approved_policy_issues_one_private_hashed_pdf_and_rejects_repeat_issue(): void
     {
-        Storage::fake('local');
+        Storage::fake(LegalNotice::DOCUMENT_DISK);
         Mail::fake();
         [$manager, $vendor, $record, $items] = $this->evidence();
         $vendor->forceFill(['email_verified_at' => now()])->save();
@@ -96,8 +99,9 @@ class LegalActionsWorkflowTest extends TestCase
         $this->assertSame('issued', $issued['status']);
         $this->assertMatchesRegularExpression('/^PM-\d{4}-LOI-\d{6}$/', $issued['control_number']);
         $stored = LegalNotice::findOrFail($issued['id']);
-        Storage::disk('local')->assertExists($stored->pdf_file_path);
-        $this->assertSame(hash('sha256', Storage::disk('local')->get($stored->pdf_file_path)), $stored->pdf_sha256);
+        $this->assertSame(LegalNotice::DOCUMENT_DISK, $stored->pdf_disk);
+        Storage::disk(LegalNotice::DOCUMENT_DISK)->assertExists($stored->pdf_file_path);
+        $this->assertSame(hash('sha256', Storage::disk(LegalNotice::DOCUMENT_DISK)->get($stored->pdf_file_path)), $stored->pdf_sha256);
         Mail::assertQueued(LegalNoticeAvailableMail::class, fn ($mail) => $mail->noticeId === $issued['id'] && count($mail->attachments) === 0);
         $this->postJson("/api/admin/legal-notices/{$draft['id']}/issue", ['confirmed' => true])->assertConflict();
     }

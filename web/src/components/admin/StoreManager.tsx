@@ -4,6 +4,7 @@ import type { StoreRecord } from '../../types/admin'
 import { StoreMap } from './StoreMap'
 import { getStoreStatusInfo } from './storeMapUtils'
 import { StoreDetailOverlay } from './StoreDetailOverlay'
+import { VendorInviteForm } from './VendorInviteForm'
 
 type StatusFilter = 'all' | 'no-findings' | 'pending' | 'inactive' | 'findings'
 
@@ -16,12 +17,8 @@ export const StoreManager: React.FC = () => {
   const [centerTrigger, setCenterTrigger] = useState<{ storeId: number; timestamp: number } | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [inviteStore, setInviteStore] = useState<StoreRecord | null>(null)
-  const [email, setEmail] = useState('')
-  const [link, setLink] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [inviteSending, setInviteSending] = useState(false)
-  const [inviteError, setInviteError] = useState('')
 
   const loadStores = () => {
     setLoading(true)
@@ -208,8 +205,6 @@ export const StoreManager: React.FC = () => {
               onCenterMap={() => handleCenterStore(detailStore.id)}
               onInviteVendor={(store) => {
                 setInviteStore(store)
-                setEmail('')
-                setLink('')
               }}
             />
           ) : isSidebarOpen ? (
@@ -468,9 +463,6 @@ export const StoreManager: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation()
                             setInviteStore(store)
-                            setEmail('')
-                            setLink('')
-                            setInviteError('')
                           }}
                           style={{
                             padding: '0.35rem 0.6rem',
@@ -557,108 +549,7 @@ export const StoreManager: React.FC = () => {
               </button>
             </div>
 
-            <form
-              onSubmit={async (event) => {
-                event.preventDefault()
-                setInviteSending(true)
-                setInviteError('')
-                try {
-                  const result = await adminApi.inviteVendor(inviteStore.id, email)
-                  setLink(result.invitation_url)
-                } catch (error: any) {
-                  setInviteError(error.response?.data?.message || error.response?.data?.errors?.email?.[0] || 'The vendor invitation could not be queued.')
-                } finally {
-                  setInviteSending(false)
-                }
-              }}
-              style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-            >
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', marginBottom: '0.35rem' }}>
-                  Vendor Owner Email Address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="owner@establishment.ph"
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.75rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    background: '#ffffff',
-                    color: '#0f172a',
-                    fontSize: '0.85rem',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-
-              {link && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#059669', marginBottom: '0.35rem' }}>
-                    One-time onboarding URL generated
-                  </label>
-                  <input
-                    readOnly
-                    value={link}
-                    onFocus={(event) => event.currentTarget.select()}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.75rem',
-                      border: '1px solid #a7f3d0',
-                      borderRadius: '8px',
-                      background: '#ecfdf5',
-                      color: '#047857',
-                      fontFamily: 'monospace',
-                      fontSize: '0.8rem',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-              )}
-              {inviteError && <p role="alert" className="admin-feedback error">{inviteError}</p>}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setInviteStore(null)}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    background: '#f1f5f9',
-                    color: '#475569',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={inviteSending}
-                  style={{
-                    padding: '0.55rem 1.1rem',
-                    background: '#1d4ed8',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                  }}
-                >
-                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> {inviteSending ? 'Queueing invitation...' : 'Generate and queue invitation'}
-                </button>
-              </div>
-            </form>
+            <VendorInviteForm store={inviteStore} onCancel={() => setInviteStore(null)} />
           </div>
         </div>
       )}
