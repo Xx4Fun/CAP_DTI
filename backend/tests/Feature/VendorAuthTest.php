@@ -33,6 +33,13 @@ class VendorAuthTest extends TestCase
         $this->postJson('/api/vendor/login', ['email' => 'vendor@shop.test', 'password' => 'wrong-password'])->assertUnprocessable();
     }
 
+    public function test_vendor_routes_return_json_unauthorized_without_an_accept_header(): void
+    {
+        $this->get('/api/vendor/overview')
+            ->assertUnauthorized()
+            ->assertJson(['message' => 'Unauthenticated.']);
+    }
+
     public function test_non_vendor_and_inactive_vendor_are_denied_without_tokens(): void
     {
         $evaluator = User::create(['name' => 'Evaluator', 'email' => 'eval@dti.test', 'password' => Hash::make('correct-password'), 'role' => 'dti_evaluator']);
