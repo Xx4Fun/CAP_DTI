@@ -103,7 +103,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
 
   return (
     <div className="rebuttal-wizard v-card">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', marginBottom: '18px' }}>
+      <div className="wizard-header">
         <div>
           <span className="badge badge-navy">Formal Response</span>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--dti-navy)', marginTop: '4px' }}>In Response to {reference}</h2>
@@ -114,12 +114,12 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
         </button>
       </div>
 
-      <ol aria-label="Response steps" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', listStyle: 'none', padding: 0 }}>
+      <ol aria-label="Response steps" className="wizard-steps">
         {['Reason', 'Explanation', 'Evidence', 'Certify'].map((title, index) => {
           const number = index + 1;
           return (
             <li key={title} aria-current={step === number ? 'step' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: step >= number ? 'var(--dti-navy)' : 'var(--text-muted)', fontWeight: step === number ? 700 : 500, fontSize: '0.82rem' }}>
-              <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: step >= number ? 'var(--dti-navy)' : '#E2E8F0', color: step >= number ? '#FFFFFF' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>{number}</span>
+              <span style={{ width: '24px', height: '24px', flexShrink: 0, borderRadius: '50%', background: step >= number ? 'var(--dti-navy)' : '#E2E8F0', color: step >= number ? '#FFFFFF' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>{number}</span>
               <span>{title}</span>
             </li>
           );
@@ -157,7 +157,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
               </label>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+          <div className="wizard-actions">
             <button type="button" className="btn btn-primary" onClick={() => setStep(2)}>
               <span>Next: Written Explanation</span>
               <ArrowRight size={16} />
@@ -187,7 +187,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
               Minimum {MIN_RESPONSE_LENGTH} characters. Current: {justification.trim().length} characters.
             </span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="wizard-actions">
             <button type="button" className="btn btn-secondary" onClick={() => setStep(1)}>
               <ArrowLeft size={16} />
               <span>Back</span>
@@ -265,7 +265,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
+          <div className="wizard-actions">
             <button type="button" className="btn btn-secondary" onClick={() => setStep(2)}>
               <ArrowLeft size={16} />
               <span>Back</span>
@@ -298,7 +298,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
             </span>
           </label>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="wizard-actions">
             <button type="button" className="btn btn-secondary" onClick={() => setStep(3)} disabled={isSubmitting}>
               <ArrowLeft size={16} />
               <span>Back</span>

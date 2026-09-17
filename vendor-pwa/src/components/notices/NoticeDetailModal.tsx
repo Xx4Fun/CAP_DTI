@@ -58,8 +58,8 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
             borderRadius: 'var(--radius-md)',
             marginBottom: '18px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className={`badge ${isSco ? 'badge-danger' : 'badge-warning'}`}>{noticeStatusLabel(notice)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span className={`badge ${isSco ? 'badge-danger' : 'badge-warning'}`} style={{ whiteSpace: 'nowrap' }}>{noticeStatusLabel(notice)}</span>
               <strong style={{ fontSize: '0.84rem' }}>{notice.control_number ?? `Notice #${notice.id}`}</strong>
             </div>
             {notice.status === 'issued' && <CountdownBadge dueAt={notice.due_date_timestamp} />}
@@ -85,25 +85,30 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
                   <thead>
                     <tr>
                       <th>Commodity</th>
-                      <th>Unit</th>
+                      <th className="phone-hidden">Unit</th>
                       <th>Reference</th>
                       <th>Observed price</th>
-                      <th>Variance</th>
+                      <th className="phone-hidden">Variance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {notice.flagged_items.map((item, index) => {
                       const variance = toNumber(item.variance_percent);
+                      const varianceBadge = variance !== null ? <span className="badge badge-danger">{variance > 0 ? '+' : ''}{variance.toFixed(1)}%</span> : null;
                       return (
                         <tr key={`${item.commodity_name}-${index}`}>
                           <td>
                             <strong>{item.commodity_name ?? 'Commodity'}</strong>
+                            {item.unit && <div className="cell-meta phone-only" aria-hidden="true">per {item.unit}</div>}
                             {item.reference_label && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{item.reference_label}</div>}
                           </td>
-                          <td>{item.unit ?? '—'}</td>
+                          <td className="phone-hidden">{item.unit ?? '—'}</td>
                           <td>{formatPeso(item.reference_value)}</td>
-                          <td style={{ color: 'var(--danger-color)', fontWeight: 700 }}>{formatPeso(item.observed_price)}</td>
-                          <td>{variance !== null ? <span className="badge badge-danger">{variance > 0 ? '+' : ''}{variance.toFixed(1)}%</span> : '—'}</td>
+                          <td style={{ color: 'var(--danger-color)', fontWeight: 700 }}>
+                            {formatPeso(item.observed_price)}
+                            {varianceBadge && <div className="phone-only" style={{ marginTop: '4px' }}>{varianceBadge}</div>}
+                          </td>
+                          <td className="phone-hidden">{varianceBadge ?? '—'}</td>
                         </tr>
                       );
                     })}

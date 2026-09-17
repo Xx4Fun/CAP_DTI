@@ -269,7 +269,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
       />
 
       {toast && (
-        <div role="status" style={{ position: 'fixed', top: '70px', right: '20px', left: '20px', maxWidth: '420px', marginLeft: 'auto', zIndex: 100, background: 'var(--dti-navy)', color: '#FFFFFF', padding: '10px 16px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: 600 }}>
+        <div role="status" className="app-toast">
           <CheckCircle2 size={16} color="#4ADE80" />
           <span>{toast}</span>
         </div>

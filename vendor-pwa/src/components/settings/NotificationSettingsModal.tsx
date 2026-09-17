@@ -74,12 +74,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
           {form && (
             <>
               <div className="v-card" style={{ padding: '14px', background: '#F8FAFC', marginBottom: '14px' }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: form.sms_enabled ? '10px' : 0 }}>
+                <label className="settings-toggle" style={{ marginBottom: form.sms_enabled ? '10px' : 0 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Smartphone size={18} color="var(--dti-navy)" />
                     <strong style={{ fontSize: '0.88rem' }}>SMS text alerts</strong>
                   </span>
-                  <input type="checkbox" checked={form.sms_enabled} onChange={(event) => setForm({ ...form, sms_enabled: event.target.checked })} style={{ width: '18px', height: '18px' }} />
+                  <input type="checkbox" checked={form.sms_enabled} onChange={(event) => setForm({ ...form, sms_enabled: event.target.checked })} />
                 </label>
                 {form.sms_enabled && (
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -90,12 +90,12 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
               </div>
 
               <div className="v-card" style={{ padding: '14px', background: '#F8FAFC', marginBottom: '16px' }}>
-                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: form.email_enabled ? '10px' : 0 }}>
+                <label className="settings-toggle" style={{ marginBottom: form.email_enabled ? '10px' : 0 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Mail size={18} color="var(--dti-navy)" />
                     <strong style={{ fontSize: '0.88rem' }}>Email alerts</strong>
                   </span>
-                  <input type="checkbox" checked={form.email_enabled} onChange={(event) => setForm({ ...form, email_enabled: event.target.checked })} style={{ width: '18px', height: '18px' }} />
+                  <input type="checkbox" checked={form.email_enabled} onChange={(event) => setForm({ ...form, email_enabled: event.target.checked })} />
                 </label>
                 {form.email_enabled && (
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -107,9 +107,9 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
 
               <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
                 <legend style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>Alert me</legend>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem' }}>
                   {TRIGGERS.map((trigger) => (
-                    <label key={trigger.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <label key={trigger.key} className="settings-trigger">
                       <input type="checkbox" checked={Boolean(form[trigger.key])} onChange={(event) => setForm({ ...form, [trigger.key]: event.target.checked })} />
                       <span>{trigger.label}</span>
                     </label>
