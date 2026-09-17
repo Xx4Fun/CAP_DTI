@@ -12,6 +12,8 @@ interface SrpDirectoryProps {
 // SRP revisions create new bulletin ids, so the self-check follows the commodity, not the row id.
 const keyOf = (item: SrpItem) => item.commodity_key ?? `id:${item.id}`;
 const hasReference = (item: SrpItem) => item.reference.status === 'available' && item.reference.value !== null;
+// Classifications arrive as codes (BASIC_NECESSITY); show them as words.
+const classificationLabel = (value: string) => value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry }) => {
   const [search, setSearch] = useState('');
@@ -55,10 +57,10 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
 
   return (
     <div className="srp-directory-view">
-      <div className="v-card-header" style={{ marginBottom: '16px' }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>Official DTI Suggested Retail Price (SRP) Directory</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <h2>Official DTI Suggested Retail Price (SRP) Directory</h2>
+          <p>
             {isEmergency
               ? `Price Freeze in effect${catalog.protocol.reference ? ` (${catalog.protocol.reference})` : ''}: covered goods use the official ceiling; other goods keep their SRP.`
               : 'Current SRP references for basic necessities and prime commodities in San Jose de Buenavista'}
@@ -136,31 +138,31 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '11px' }} />
-          <input type="search" aria-label="Search commodities" className="form-control" placeholder="Search commodities..." value={search} onChange={(event) => setSearch(event.target.value)} style={{ paddingLeft: '32px' }} />
+      <div className="srp-filters">
+        <div className="search-field">
+          <Search size={16} color="var(--text-muted)" />
+          <input type="search" aria-label="Search commodities" className="form-control" placeholder="Search commodities..." value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
-        <select aria-label="Filter by category" className="form-control" style={{ width: 'auto', minWidth: '150px' }} value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+        <select aria-label="Filter by category" className="form-control" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
           <option value="ALL">All Categories</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
-        <select aria-label="Filter by classification" className="form-control" style={{ width: 'auto', minWidth: '160px' }} value={classificationFilter} onChange={(event) => setClassificationFilter(event.target.value)}>
+        <select aria-label="Filter by classification" className="form-control" value={classificationFilter} onChange={(event) => setClassificationFilter(event.target.value)}>
           <option value="ALL">All Classifications</option>
-          {classifications.map((classification) => <option key={classification} value={classification}>{classification}</option>)}
+          {classifications.map((classification) => <option key={classification} value={classification}>{classificationLabel(classification)}</option>)}
         </select>
       </div>
 
-      <div className="v-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="v-table-wrap" style={{ border: 'none' }}>
+      <div className="v-card srp-table-card">
+        <div className="v-table-wrap">
           <table className="v-table">
             <caption className="sr-only">Current price references</caption>
             <thead>
               <tr>
                 <th>Commodity</th>
-                <th>Unit</th>
-                <th>Category</th>
-                <th>Classification</th>
+                <th className="phone-hidden">Unit</th>
+                <th className="phone-hidden">Category</th>
+                <th className="phone-hidden">Classification</th>
                 <th style={{ textAlign: 'right' }}>Reference</th>
                 <th style={{ textAlign: 'right' }}>Reviewed above</th>
               </tr>
@@ -172,13 +174,16 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                   : null;
                 return (
                   <tr key={keyOf(item)}>
-                    <td><strong>{item.commodity_name}</strong></td>
-                    <td>{item.unit ?? '—'}</td>
-                    <td>{item.category ?? '—'}</td>
-                    <td>{item.regulatory_classification ? <span className="badge badge-navy">{item.regulatory_classification}</span> : '—'}</td>
+                    <td>
+                      <strong>{item.commodity_name}</strong>
+                      <div className="cell-meta phone-only" aria-hidden="true">{[item.unit, item.category].filter(Boolean).join(' • ')}</div>
+                    </td>
+                    <td className="phone-hidden">{item.unit ?? '—'}</td>
+                    <td className="phone-hidden">{item.category ?? '—'}</td>
+                    <td className="phone-hidden">{item.regulatory_classification ? <span className="badge badge-navy">{classificationLabel(item.regulatory_classification)}</span> : '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--dti-navy)' }}>
                       {formatPeso(item.reference.value)}
-                      <div style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)' }}>{item.reference.label}</div>
+                      <div className="srp-reference-label">{item.reference.label}</div>
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatPeso(reviewAbove)}</td>
                   </tr>

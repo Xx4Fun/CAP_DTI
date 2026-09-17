@@ -15,10 +15,10 @@ export const AdvisoriesView: React.FC<AdvisoriesViewProps> = ({ advisories, emer
 
   return (
     <div className="advisories-view">
-      <div className="v-card-header" style={{ marginBottom: '16px' }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>DTI Regulatory Advisories & Price Freezes</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Emergency price freezes and recent SRP updates for San Jose de Buenavista</p>
+          <h2>DTI Regulatory Advisories & Price Freezes</h2>
+          <p>Emergency price freezes and recent SRP updates for San Jose de Buenavista</p>
         </div>
       </div>
 
@@ -73,7 +73,7 @@ export const AdvisoriesView: React.FC<AdvisoriesViewProps> = ({ advisories, emer
                       {advisory.category === 'PRICE_FREEZE' && <span className={`badge ${advisory.state === 'scheduled' ? 'badge-warning' : advisory.is_active ? 'badge-danger' : 'badge-success'}`}>{advisory.state === 'scheduled' ? 'Scheduled' : advisory.is_active ? 'In effect' : 'Ended'}</span>}
                     </span>
                     <span style={{ display: 'block', fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)' }}>{advisory.title}</span>
-                    <span style={{ display: 'flex', gap: '14px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={12} /><span>{formatDate(advisory.published_date)}{advisory.ends_on ? ` – ${formatDate(advisory.ends_on)}` : ''}</span></span>
                       {advisory.affected_areas.length > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /><span>{advisory.affected_areas.join(', ')}</span></span>}
                     </span>

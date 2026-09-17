@@ -25,16 +25,16 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
 
   return (
     <div className="notices-view">
-      <div className="v-card-header" style={{ marginBottom: '16px' }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>DTI Legal Notices & Inquiries</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Letters of Inquiry and Show Cause Orders issued to this establishment</p>
+          <h2>DTI Legal Notices & Inquiries</h2>
+          <p>Letters of Inquiry and Show Cause Orders issued to this establishment</p>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '11px' }} />
+      <div className="notice-filters">
+        <div className="search-field">
+          <Search size={16} color="var(--text-muted)" />
           <input
             type="search"
             aria-label="Search notices"
@@ -42,18 +42,16 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
             placeholder="Search by notice ref or commodity..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            style={{ paddingLeft: '32px' }}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '4px', background: '#F1F5F9', padding: '3px', borderRadius: 'var(--radius-md)' }}>
+        <div className="filter-segment">
           {(['ALL', 'ACTIVE', 'RESOLVED'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               className={`btn btn-sm ${filter === tab ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setFilter(tab)}
-              style={{ padding: '6px 12px' }}
             >
               {tab === 'ALL' ? 'All Notices' : tab === 'ACTIVE' ? 'Open' : 'Closed'}
             </button>
@@ -95,7 +93,7 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
                       {notice.flagged_items.map((item, index) => {
                         const variance = toNumber(item.variance_percent);
                         return (
-                          <span key={`${item.commodity_name}-${index}`} className="badge badge-navy" style={{ fontSize: '0.74rem' }}>
+                          <span key={`${item.commodity_name}-${index}`} className="badge badge-navy" style={{ fontSize: '0.74rem', textTransform: 'none', letterSpacing: 0, borderRadius: 'var(--radius-sm)' }}>
                             {item.commodity_name ?? 'Commodity'}{item.unit ? ` (${item.unit})` : ''} • reference {formatPeso(item.reference_value)} → <strong>{formatPeso(item.observed_price)}</strong>{variance !== null ? ` (${variance > 0 ? '+' : ''}${variance.toFixed(1)}%)` : ''}
                           </span>
                         );

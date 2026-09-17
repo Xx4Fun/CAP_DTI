@@ -16,10 +16,10 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
 
   return (
     <div className="rebuttals-view">
-      <div className="v-card-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+      <div className="page-header">
         <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>Submitted Responses & Explanations</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Record of explanations submitted to DTI Antique for this establishment</p>
+          <h2>Submitted Responses & Explanations</h2>
+          <p>Record of explanations submitted to DTI Antique for this establishment</p>
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={onStartNewRebuttal}>Respond to an open notice</button>
       </div>
@@ -54,7 +54,7 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {notice.attachments.map((attachment) => (
-                    <span key={attachment.id} className="badge badge-navy">
+                    <span key={attachment.id} className="badge badge-navy" style={{ textTransform: 'none', overflowWrap: 'anywhere' }}>
                       <Paperclip size={12} />
                       <span>{attachment.original_name} • {attachmentCategoryLabel(attachment.category)}</span>
                     </span>
