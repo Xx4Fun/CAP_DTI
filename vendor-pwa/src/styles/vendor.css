@@ -190,41 +190,58 @@ input, textarea, select {
   flex-shrink: 0;
 }
 
-.vendor-brand-logo {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  border-radius: 10px;
-  background: #FFFFFF;
-  padding: 3px;
+.brand-logo-frame {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  overflow: hidden;
+  border: 1px solid rgba(215, 230, 255, 0.85);
+  border-radius: 12px;
+  background: #F7FAFF;
+  box-shadow: 0 3px 10px rgba(2, 31, 110, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.22);
 }
 
-.vendor-brand-logo img {
-  width: 100%;
-  height: 100%;
+.brand-logo {
+  width: 32px;
+  height: 28px;
   object-fit: contain;
 }
 
-.vendor-brand-text h1 {
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: #FFFFFF;
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
   line-height: 1.15;
+}
+
+.brand-name {
+  font-size: 1.12rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
   white-space: nowrap;
 }
 
-.vendor-brand-text p {
-  font-size: 0.68rem;
+.brand-price {
+  color: #FFFFFF;
+}
+
+.brand-watch {
+  color: #FFFFFF;
+}
+
+.brand-sub {
+  font-size: 0.64rem;
   color: rgba(255, 255, 255, 0.82);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.045em;
   font-weight: 600;
   white-space: nowrap;
+  margin-top: 1px;
 }
 
 /* Desktop Navigation */
@@ -335,21 +352,27 @@ input, textarea, select {
     padding: 8px 12px;
   }
   .vendor-header-top {
-    gap: 6px;
+    gap: 8px;
+    flex-wrap: nowrap;
   }
-  .vendor-brand-logo {
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
+  .brand-logo-frame {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    border-radius: 10px;
   }
-  .vendor-brand-text h1 {
-    font-size: 0.92rem;
+  .brand-logo {
+    width: 28px;
+    height: 24px;
   }
-  .vendor-brand-text p {
-    font-size: 0.6rem;
+  .brand-name {
+    font-size: 1.02rem;
+  }
+  .brand-sub {
+    font-size: 0.58rem;
   }
   .header-store-badge {
-    max-width: 140px;
+    max-width: 125px;
     padding: 4px 8px;
     font-size: 0.72rem;
     gap: 4px;
@@ -439,16 +462,14 @@ input, textarea, select {
   left: 0;
   right: 0;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: #FFFFFF;
   border-top: 1px solid rgba(226, 232, 240, 0.9);
   display: flex;
   justify-content: space-around;
   align-items: center;
   height: calc(64px + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
 }
 
 @media (min-width: 900px) {
@@ -621,11 +642,28 @@ input, textarea, select {
    Dashboard Components: Clean Hero, Focused Notice Alert & Quick Services
    ========================================================================== */
 
+/* Dashboard Full-Bleed Page Container */
+.dashboard-page {
+  margin: -16px -16px 0 -16px;
+}
+
+@media (min-width: 768px) {
+  .dashboard-page {
+    margin: -24px -20px 0 -20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-page {
+    margin: -28px -32px 0 -32px;
+  }
+}
+
 /* 1. Welcoming Hero Banner */
 .dashboard-hero {
   background: linear-gradient(135deg, #072F5F 0%, #0A3C78 50%, #0E4E96 100%);
   color: #FFFFFF;
-  padding: 22px 16px 50px 16px;
+  padding: 18px 16px 44px 16px;
   position: relative;
   overflow: hidden;
 }
@@ -1548,11 +1586,11 @@ button.upload-dropzone { display: flex; flex-direction: column; align-items: cen
 button.upload-dropzone:disabled { cursor: not-allowed; opacity: 0.6; }
 button.upload-dropzone:focus-visible { outline: 3px solid var(--dti-navy); outline-offset: 2px; }
 
-/* Multi-store vendors on phones: the establishment selector takes its own full-width row. */
+/* Multi-store vendors on phones: keep establishment selector compact on the same row */
 @media (max-width: 560px) {
-  .vendor-header-top { flex-wrap: wrap; row-gap: 8px; }
-  .vendor-header-actions { flex: 1 1 100%; flex-shrink: 1; min-width: 0; justify-content: flex-end; }
-  .header-store-select { flex: 1 1 auto; max-width: none; min-width: 0; }
+  .vendor-header-top { flex-wrap: nowrap; gap: 8px; }
+  .vendor-header-actions { gap: 6px; }
+  .header-store-select { max-width: 130px; font-size: 0.72rem; padding: 4px 8px; }
 }
 
 /* Responsive Toast Notification */

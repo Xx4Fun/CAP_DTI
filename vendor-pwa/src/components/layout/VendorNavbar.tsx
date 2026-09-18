@@ -31,12 +31,15 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
     <header className="vendor-header">
       <div className="vendor-header-top">
         <div className="vendor-brand">
-          <div className="vendor-brand-logo">
-            <img src="/icons/dti-pwa-192x192.png" alt="DTI Logo" />
-          </div>
-          <div className="vendor-brand-text">
-            <h1>PRICE-Watch</h1>
-            <p>DTI Region VI • Vendor Portal</p>
+          <span className="brand-logo-frame">
+            <img src="/branding/dti-logo.svg" alt="DTI Official Logo" className="brand-logo" />
+          </span>
+          <div className="brand-text">
+            <div className="brand-name">
+              <span className="brand-price">PRICE-</span>
+              <span className="brand-watch">Watch</span>
+            </div>
+            <small className="brand-sub">Vendor Portal</small>
           </div>
         </div>
 
