@@ -5,3 +5,5 @@ dev-dist
 .env
 coverage
 *.log
+
+.vercel
