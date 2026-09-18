@@ -263,13 +263,19 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         stores={overview.stores}
         activeStoreId={storeId}
         hasPendingNotices={openNotices.length > 0}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab !== 'rebuttals') setRespondingTo(null);
+        }}
+        pendingNoticeCount={openNotices.length}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
         onOpenNotifications={() => setSettingsOpen(true)}
         onLogout={() => void logout()}
       />
 
       {toast && (
-        <div role="status" style={{ position: 'fixed', top: '70px', right: '20px', left: '20px', maxWidth: '420px', marginLeft: 'auto', zIndex: 100, background: 'var(--dti-navy)', color: '#FFFFFF', padding: '10px 16px', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: 600 }}>
+        <div role="status" className="vendor-toast">
           <CheckCircle2 size={16} color="#4ADE80" />
           <span>{toast}</span>
         </div>

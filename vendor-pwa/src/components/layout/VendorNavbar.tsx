@@ -1,11 +1,14 @@
 import React from 'react';
-import { Bell, LogOut, Store as StoreIcon } from 'lucide-react';
-import type { VendorStore } from '../../app/types';
+import { Bell, LogOut, Store as StoreIcon, Home, FileText, Send, BookOpen, Megaphone } from 'lucide-react';
+import type { ActiveTab, VendorStore } from '../../app/types';
 
 interface VendorNavbarProps {
   stores: VendorStore[];
   activeStoreId: number | null;
   hasPendingNotices: boolean;
+  activeTab?: ActiveTab;
+  onTabChange?: (tab: ActiveTab) => void;
+  pendingNoticeCount?: number;
   onSelectStore: (storeId: number) => void;
   onOpenNotifications: () => void;
   onLogout: () => void;
@@ -15,6 +18,9 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
   stores,
   activeStoreId,
   hasPendingNotices,
+  activeTab = 'overview',
+  onTabChange,
+  pendingNoticeCount = 0,
   onSelectStore,
   onOpenNotifications,
   onLogout,
@@ -33,6 +39,58 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             <p>DTI Region VI • Vendor Portal</p>
           </div>
         </div>
+
+        {onTabChange && (
+          <nav className="vendor-desktop-nav" aria-label="Desktop Navigation">
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'overview' ? 'active' : ''}`}
+              onClick={() => onTabChange('overview')}
+            >
+              <Home size={16} />
+              <span>Dashboard</span>
+            </button>
+
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'notices' ? 'active' : ''}`}
+              onClick={() => onTabChange('notices')}
+            >
+              <FileText size={16} />
+              <span>Notices</span>
+              {pendingNoticeCount > 0 && (
+                <span className="desktop-nav-badge">{pendingNoticeCount}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'rebuttals' ? 'active' : ''}`}
+              onClick={() => onTabChange('rebuttals')}
+            >
+              <Send size={16} />
+              <span>Rebuttals</span>
+            </button>
+
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'srp' ? 'active' : ''}`}
+              onClick={() => onTabChange('srp')}
+            >
+              <BookOpen size={16} />
+              <span>SRP Guide</span>
+            </button>
+
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'advisories' ? 'active' : ''}`}
+              onClick={() => onTabChange('advisories')}
+            >
+              <Megaphone size={16} />
+              <span>Advisories</span>
+            </button>
+          </nav>
+        )}
 
         <div className="vendor-header-actions">
           {stores.length > 1 ? (
