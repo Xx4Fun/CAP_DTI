@@ -15,7 +15,8 @@ class PublicCommodityController extends Controller
         CommodityImageStorage $imageStorage
     ) {
         $search = trim((string) $request->input('query', ''));
-        $currentRecords = $request->input('match_mode') === 'identity'
+        $identityMode = $request->input('match_mode') === 'identity';
+        $currentRecords = $identityMode
             ? $catalog->currentIdentityMatches($search, (int) $request->input('limit', 5))
             : $catalog->currentRecords($search);
 
@@ -38,7 +39,7 @@ class PublicCommodityController extends Controller
             ->filter()
             ->toArray();
 
-        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageMapByKey, $imageMapByName, $imageStorage) {
+        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageMapByKey, $imageMapByName, $imageStorage, $identityMode) {
             $rawPath = $record->image_path;
             if (! $rawPath && ! empty($record->commodity_key) && isset($imageMapByKey[$record->commodity_key])) {
                 $rawPath = $imageMapByKey[$record->commodity_key];
@@ -60,6 +61,7 @@ class PublicCommodityController extends Controller
                 'is_active' => (bool) $record->is_active,
                 'price_freeze_applicable' => (bool) $record->price_freeze_applicable,
                 'price_freeze_treatment' => $record->price_freeze_treatment,
+                ...($identityMode ? ['match_quality' => $record->match_quality] : []),
             ];
         })->values();
 

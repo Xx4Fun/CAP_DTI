@@ -106,6 +106,8 @@ export interface Commodity {
   is_active: boolean;
   price_freeze_applicable?: boolean;
   price_freeze_treatment?: string;
+  /** Identity search only: 'similar' means a typo guess, returned only when nothing matched as typed. */
+  match_quality?: 'exact' | 'similar';
 }
 
 export interface SrpHistoryEntry {

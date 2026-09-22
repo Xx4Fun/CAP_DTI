@@ -84,6 +84,59 @@ class PublicCommodityAliasSearchTest extends TestCase
         $this->assertContains($aliased->id, collect($response->json('data'))->pluck('id')->all());
     }
 
+    private function currentItem(string $name): SrpBulletin
+    {
+        return SrpBulletin::create([
+            'commodity_name' => $name,
+            'category' => 'Test',
+            'unit' => '1L',
+            'baseline_price' => 20.00,
+            'effective_date' => now()->subDay()->toDateString(),
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_short_correct_words_are_not_fuzzed_into_other_words(): void
+    {
+        $this->currentItem('Angel Filled Milk (370mL)');
+        $this->currentItem('Birch Tree Full Cream Milk (150g)');
+
+        $this->getJson('/api/public/commodities?query=milo&match_mode=identity&limit=5')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_typo_guesses_are_dropped_when_something_matches_as_typed(): void
+    {
+        $argentina = $this->currentItem('Argentina (170g)');
+        $this->currentItem('Argentini (150g)');
+
+        $this->getJson('/api/public/commodities?query=argentina&match_mode=identity&limit=5')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $argentina->id)
+            ->assertJsonPath('data.0.match_quality', 'exact');
+    }
+
+    public function test_typo_guesses_are_returned_and_labelled_when_nothing_matches_as_typed(): void
+    {
+        $absolute = $this->currentItem('Absolute (1L)');
+
+        $this->getJson('/api/public/commodities?query=absolte&match_mode=identity&limit=5')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $absolute->id)
+            ->assertJsonPath('data.0.match_quality', 'similar');
+    }
+
+    public function test_non_identity_search_does_not_expose_match_quality(): void
+    {
+        $this->currentItem('Absolute (1L)');
+
+        $response = $this->getJson('/api/public/commodities?query=absolute')->assertOk();
+        $this->assertArrayNotHasKey('match_quality', $response->json('data.0'));
+    }
+
     public function test_public_product_search_finds_current_product_by_shelf_label_alias(): void
     {
         $product = SrpBulletin::create([

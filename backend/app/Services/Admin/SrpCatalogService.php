@@ -123,28 +123,33 @@ class SrpCatalogService
             return collect();
         }
 
-        return $this->currentRecords()
+        $matches = $this->currentRecords()
             ->map(function (SrpBulletin $record) use ($normalizedQuery) {
-                $titleScore = $this->identityPhraseScore(
+                $titleMatch = $this->identityPhraseScore(
                     $normalizedQuery,
                     $this->normalizeIdentity($this->conciseTitle($record->commodity_name))
                 );
-                $aliasScore = $record->aliases
+                $aliasMatches = $record->aliases
                     ->map(fn ($alias) => $this->identityPhraseScore(
                         $normalizedQuery,
                         $this->normalizeIdentity((string) $alias->alias_name)
                     ))
-                    ->filter(fn ($score) => $score !== null)
-                    ->map(fn ($score) => min(100.0, $score + 1.0))
-                    ->max();
-                $record->setAttribute('identity_match_score', max(
-                    $titleScore ?? 0.0,
-                    $aliasScore ?? 0.0
-                ));
+                    ->filter()
+                    ->map(fn (array $match) => [min(100.0, $match[0] + 1.0), $match[1]]);
+                $allMatches = $aliasMatches->push($titleMatch)->filter();
+                $record->setAttribute('identity_match_score', (float) ($allMatches->max(fn (array $match) => $match[0]) ?? 0.0));
+                $record->setAttribute('match_quality', $allMatches->contains(fn (array $match) => $match[1]) ? 'exact' : 'similar');
 
                 return $record;
             })
-            ->filter(fn (SrpBulletin $record) => (float) $record->identity_match_score > 0)
+            ->filter(fn (SrpBulletin $record) => (float) $record->identity_match_score > 0);
+
+        // Typo guesses are only a fallback: when anything matches as typed, show just those.
+        if ($matches->contains(fn (SrpBulletin $record) => $record->match_quality === 'exact')) {
+            $matches = $matches->filter(fn (SrpBulletin $record) => $record->match_quality === 'exact');
+        }
+
+        return $matches
             ->sort(function (SrpBulletin $left, SrpBulletin $right) {
                 $scoreOrder = (float) $right->identity_match_score <=> (float) $left->identity_match_score;
 
@@ -171,38 +176,46 @@ class SrpCatalogService
         return trim(preg_replace('/\s+/', ' ', $normalized) ?? '');
     }
 
-    private function identityPhraseScore(string $query, string $candidate): ?float
+    /**
+     * @return array{0: float, 1: bool}|null Score, and whether it matched as typed (no typo tolerance needed).
+     */
+    private function identityPhraseScore(string $query, string $candidate): ?array
     {
         if ($candidate === '') {
             return null;
         }
         if ($query === $candidate) {
-            return 100.0;
+            return [100.0, true];
         }
         if (str_starts_with($candidate, $query)) {
-            return 92.0;
+            return [92.0, true];
         }
         if (strlen($query) >= 4 && str_contains($candidate, $query)) {
-            return 88.0;
+            return [88.0, true];
         }
 
         $candidateTokens = explode(' ', $candidate);
         $tokenScores = [];
+        $asTyped = true;
         foreach (explode(' ', $query) as $queryToken) {
             $best = 0.0;
+            $tokenAsTyped = false;
             foreach ($candidateTokens as $candidateToken) {
                 if ($queryToken === $candidateToken) {
                     $best = 1.0;
+                    $tokenAsTyped = true;
                     break;
                 }
 
                 $shorter = min(strlen($queryToken), strlen($candidateToken));
                 if ($shorter >= 3 && (str_starts_with($queryToken, $candidateToken) || str_starts_with($candidateToken, $queryToken))) {
                     $best = max($best, 0.95);
+                    $tokenAsTyped = true;
                     continue;
                 }
 
-                if (strlen($queryToken) >= 4 && strlen($candidateToken) >= 4) {
+                // Short words are too close to each other (milo/milk, salt/malt) to tolerate typos safely.
+                if ($shorter >= 5) {
                     $longer = max(strlen($queryToken), strlen($candidateToken));
                     $best = max($best, 1 - (levenshtein($queryToken, $candidateToken) / $longer));
                 }
@@ -211,10 +224,11 @@ class SrpCatalogService
             if ($best < 0.7) {
                 return null;
             }
+            $asTyped = $asTyped && $tokenAsTyped;
             $tokenScores[] = $best;
         }
 
-        return 70.0 + ((array_sum($tokenScores) / count($tokenScores)) * 20.0);
+        return [70.0 + ((array_sum($tokenScores) / count($tokenScores)) * 20.0), $asTyped];
     }
 
     private function lineageKey(SrpBulletin $record): string

@@ -1092,6 +1092,9 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
 
               {commoditySearchResults.length > 0 && (
                 <div className="shelf-compare-dropdown">
+                  {commoditySearchResults.every((item) => item.match_quality === 'similar') && (
+                    <div className="shelf-compare-dropdown-note">No exact match. Did you mean:</div>
+                  )}
                   {commoditySearchResults.map((item) => (
                     <button
                       key={item.id}
