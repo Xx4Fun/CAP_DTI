@@ -172,4 +172,30 @@ describe('approved Home experience', () => {
     await user.click(screen.getByRole('button', { name: 'Prices' }));
     expect(mockSetActiveTab).toHaveBeenCalledWith('prices');
   });
+
+  it('redirects to the More section and sets consumer-rights anchor when rights card is clicked', async () => {
+    const setActiveTab = vi.fn();
+    const user = userEvent.setup();
+    render(<Home setActiveTab={setActiveTab} stateOfCalamity={false} />);
+
+    const rightsCard = screen.getByRole('button', { name: /Know your rights as a customer/i });
+    await user.click(rightsCard);
+
+    expect(setActiveTab).toHaveBeenCalledWith('more');
+    expect(window.location.hash).toBe('#consumer-rights');
+  });
+
+  it('supports keyboard navigation via Enter and Space on rights card', async () => {
+    const setActiveTab = vi.fn();
+    const user = userEvent.setup();
+    render(<Home setActiveTab={setActiveTab} stateOfCalamity={false} />);
+
+    const rightsCard = screen.getByRole('button', { name: /Know your rights as a customer/i });
+    rightsCard.focus();
+    await user.keyboard('{Enter}');
+    expect(setActiveTab).toHaveBeenCalledWith('more');
+
+    await user.keyboard(' ');
+    expect(setActiveTab).toHaveBeenCalledTimes(2);
+  });
 });

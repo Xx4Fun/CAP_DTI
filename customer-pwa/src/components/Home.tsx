@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ArrowRight,
   ChevronRight,
@@ -30,7 +30,12 @@ export const Home: React.FC<HomeProps> = ({
   dataSource = 'checking',
   recentReports = [],
 }) => {
-  const [rightsExpanded, setRightsExpanded] = useState(false);
+  const handleNavigateToRights = () => {
+    setActiveTab('more');
+    if (typeof window !== 'undefined') {
+      window.location.hash = 'consumer-rights';
+    }
+  };
   const monitoringStatus = stateOfCalamity === undefined
     ? null
     : stateOfCalamity
@@ -223,7 +228,19 @@ export const Home: React.FC<HomeProps> = ({
             )}
           </section>
 
-          <section className={`home-rights-card ${rightsExpanded ? 'home-rights-card-expanded' : ''}`}>
+          <div
+            role="button"
+            tabIndex={0}
+            className="home-rights-card home-rights-card-interactive"
+            onClick={handleNavigateToRights}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleNavigateToRights();
+              }
+            }}
+            aria-label="Know your rights as a customer"
+          >
             <div className="home-rights-art-frame">
               <img
                 className="home-rights-art"
@@ -235,23 +252,11 @@ export const Home: React.FC<HomeProps> = ({
             </div>
             <div className="home-rights-copy">
               <h2>Know your rights as a customer</h2>
-              <p>Learn more about fair pricing and reporting violations.</p>
-              {rightsExpanded && (
-                <p className="home-rights-detail">
-                  Compare posted prices with current DTI references and keep your receipt when reporting a concern.
-                </p>
-              )}
             </div>
-            <button
-              type="button"
-              className="home-rights-action"
-              onClick={() => setRightsExpanded((expanded) => !expanded)}
-              aria-label="Learn about consumer rights"
-              aria-expanded={rightsExpanded}
-            >
-              <ArrowRight size={22} aria-hidden="true" />
-            </button>
-          </section>
+            <div className="home-rights-action" aria-hidden="true">
+              <ArrowRight size={20} />
+            </div>
+          </div>
         </div>
       </div>
     </div>

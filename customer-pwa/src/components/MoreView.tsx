@@ -15,6 +15,16 @@ import {
   History,
   Trash2,
   Package,
+  BookOpen,
+  FileText,
+  ShoppingBag,
+  Info,
+  Layers,
+  Users,
+  CheckCircle2,
+  GraduationCap,
+  Leaf,
+  Tag,
 } from 'lucide-react';
 import { navigate } from '../app/routing';
 import { resolveImageUrl } from '../api/client';
@@ -25,6 +35,13 @@ import {
   type StoredComparison,
 } from '../app/recentComparisons';
 import { ComparisonHistoryDetail } from './ComparisonHistoryDetail';
+import {
+  CONSUMER_RIGHTS,
+  CONSUMER_RESPONSIBILITIES,
+  PRICE_ACT_REGULATIONS,
+  PRICE_TAG_REGULATIONS,
+} from '../data/termsAndConditions';
+import { LegalDocDetail } from './LegalDocDetail';
 
 export function formatComparisonDate(isoString: string): string {
   try {
@@ -43,6 +60,17 @@ export function formatComparisonDate(isoString: string): string {
   }
 }
 
+const RIGHT_ICONS: Record<number, { icon: React.ComponentType<{ size?: number }>; badgeStyle: React.CSSProperties }> = {
+  1: { icon: ShoppingBag, badgeStyle: { background: '#eff6ff', color: '#2563eb' } },
+  2: { icon: Shield, badgeStyle: { background: '#fff1f2', color: '#e11d48' } },
+  3: { icon: Info, badgeStyle: { background: '#fffbeb', color: '#d97706' } },
+  4: { icon: Layers, badgeStyle: { background: '#faf5ff', color: '#9333ea' } },
+  5: { icon: Users, badgeStyle: { background: '#eef2ff', color: '#4f46e5' } },
+  6: { icon: CheckCircle2, badgeStyle: { background: '#ecfdf5', color: '#059669' } },
+  7: { icon: GraduationCap, badgeStyle: { background: '#ecfeff', color: '#0891b2' } },
+  8: { icon: Leaf, badgeStyle: { background: '#f0fdf4', color: '#16a34a' } },
+};
+
 interface MoreViewProps {
   setActiveTab?: (tab: string) => void;
   lastSyncTime?: string;
@@ -59,15 +87,44 @@ export const MoreView: React.FC<MoreViewProps> = ({
   const [activeAccordion, setActiveAccordion] = useState<string | null>(null);
   const [comparisons, setComparisons] = useState<StoredComparison[]>(getRecentComparisons);
   const [selectedComparison, setSelectedComparison] = useState<StoredComparison | null>(null);
+  const [selectedLegalDoc, setSelectedLegalDoc] = useState<'terms' | 'privacy' | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [highlightRights, setHighlightRights] = useState(false);
 
+  const rightsSectionRef = useRef<HTMLElement>(null);
   const clearDialogRef = useRef<HTMLElement>(null);
   const cancelClearRef = useRef<HTMLButtonElement>(null);
   const clearTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const checkHash = () => {
+      if (window.location.hash === '#consumer-rights' || window.location.hash === 'consumer-rights') {
+        setActiveAccordion('consumer-rights-8');
+        if (typeof rightsSectionRef.current?.scrollIntoView === 'function') {
+          rightsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        setHighlightRights(true);
+        clearTimeout(highlightTimer);
+        highlightTimer = setTimeout(() => {
+          setHighlightRights(false);
+        }, 2400);
+      }
+    };
+
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => {
+      window.removeEventListener('hashchange', checkHash);
+      clearTimeout(highlightTimer);
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       setSelectedComparison(null);
+      setSelectedLegalDoc(null);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -132,12 +189,42 @@ export const MoreView: React.FC<MoreViewProps> = ({
     setSelectedComparison(null);
   };
 
+  const handleSelectLegalDoc = (type: 'terms' | 'privacy') => {
+    window.history.pushState({ moreSubView: type }, '');
+    setSelectedLegalDoc(type);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  };
+
+  const handleBackFromLegal = () => {
+    setSelectedLegalDoc(null);
+    if (typeof window !== 'undefined' && window.history.state?.moreSubView) {
+      window.history.back();
+    }
+  };
+
   if (selectedComparison) {
     return (
       <div className="more-view-container" role="main" aria-label="Comparison History Record">
         <ComparisonHistoryDetail
           comparison={selectedComparison}
           onBack={handleBackFromDetail}
+        />
+      </div>
+    );
+  }
+
+  if (selectedLegalDoc) {
+    return (
+      <div
+        className="more-view-container"
+        role="main"
+        aria-label={selectedLegalDoc === 'terms' ? 'Terms of Use' : 'Privacy Notice'}
+      >
+        <LegalDocDetail
+          docType={selectedLegalDoc}
+          onBack={handleBackFromLegal}
         />
       </div>
     );
@@ -325,16 +412,107 @@ export const MoreView: React.FC<MoreViewProps> = ({
       </section>
 
       {/* 3. LEGAL RIGHTS & CONSUMER PRICE ACT */}
-      <section className="more-section-wrap" aria-labelledby="heading-legal-rights">
+      <section
+        ref={rightsSectionRef}
+        id="consumer-rights"
+        className={`more-section-wrap ${highlightRights ? 'rights-highlight-pulse' : ''}`}
+        aria-labelledby="heading-legal-rights"
+      >
         <h2 id="heading-legal-rights" className="more-section-title">Consumer Rights & Legal Protection</h2>
         <div className="report-accordion-group" style={{ paddingBottom: 0 }}>
-          {/* Card 1: Republic Act No. 7581 (Price Act) */}
+          {/* Accordion 1: Consumer Rights (R.A. 7394) */}
+          <div className="report-accordion-item">
+            <button
+              type="button"
+              className="report-accordion-trigger"
+              aria-expanded={activeAccordion === 'consumer-rights-8'}
+              aria-label="Consumer Rights (R.A. 7394)"
+              onClick={() => toggleAccordion('consumer-rights-8')}
+              style={{ width: '100%', background: 'transparent', border: 'none', padding: 0, textAlign: 'left', font: 'inherit', color: 'inherit' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
+                  <BookOpen size={18} />
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main, #0f172a)' }}>
+                  Consumer Rights (R.A. 7394)
+                </div>
+              </div>
+              <div>
+                <ChevronDown
+                  size={18}
+                  className={`report-accordion-chevron ${activeAccordion === 'consumer-rights-8' ? 'report-accordion-chevron--open' : ''}`}
+                />
+              </div>
+            </button>
+
+            {activeAccordion === 'consumer-rights-8' && (
+              <div className="report-accordion-body">
+                <div className="report-steps-container">
+                  {CONSUMER_RIGHTS.map((right) => {
+                    const itemConfig = RIGHT_ICONS[right.id] ?? {
+                      icon: BookOpen,
+                      badgeStyle: { background: '#eff6ff', color: '#2563eb' },
+                    };
+                    const IconComp = itemConfig.icon;
+
+                    return (
+                      <div key={right.id} className="report-step-item">
+                        <div className="report-step-icon-badge" style={itemConfig.badgeStyle}>
+                          <IconComp size={18} />
+                        </div>
+                        <div className="report-step-content">
+                          <div className="report-step-title">{right.id}. {right.title}:</div>
+                          <div className="report-step-desc">
+                            {right.description} {right.dtiProtection}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <ShieldCheck size={16} color="#2563eb" />
+                    <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#0f172a' }}>
+                      5 Consumer Responsibilities
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {CONSUMER_RESPONSIBILITIES.map((resp) => (
+                      <span
+                        key={resp.id}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '4px 8px',
+                          fontSize: '0.78rem',
+                          color: '#334155',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span style={{ color: '#2563eb', fontWeight: 700 }}>{resp.id}.</span>
+                        {resp.title}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Accordion 2: Price Act (R.A. 7581) */}
           <div className="report-accordion-item">
             <button
               type="button"
               className="report-accordion-trigger"
               aria-expanded={activeAccordion === 'price-act'}
-              aria-label="Republic Act No. 7581 (Price Act)"
+              aria-label="Price Act (R.A. 7581)"
               onClick={() => toggleAccordion('price-act')}
               style={{ width: '100%', background: 'transparent', border: 'none', padding: 0, textAlign: 'left', font: 'inherit', color: 'inherit' }}
             >
@@ -343,7 +521,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
                   <Scale size={18} />
                 </div>
                 <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main, #0f172a)' }}>
-                  Republic Act No. 7581 (Price Act)
+                  Price Act (R.A. 7581)
                 </div>
               </div>
               <div>
@@ -357,47 +535,102 @@ export const MoreView: React.FC<MoreViewProps> = ({
             {activeAccordion === 'price-act' && (
               <div className="report-accordion-body">
                 <div className="report-steps-container">
-                  <div className="report-step-item">
-                    <div className="report-step-icon-badge">
-                      <Scale size={18} />
-                    </div>
-                    <div className="report-step-content">
-                      <div className="report-step-title">1. Baseline SRP Protection:</div>
-                      <div className="report-step-desc">
-                        DTI publishes standard Suggested Retail Prices (SRP) for basic necessities and prime commodities to curb illegal profiteering.
-                      </div>
-                    </div>
-                  </div>
+                  {PRICE_ACT_REGULATIONS.map((item, idx) => {
+                    let badgeStyle: React.CSSProperties = { background: '#fffbeb', color: '#d97706' };
+                    let IconComponent = Scale;
+                    if (idx === 1) {
+                      badgeStyle = { background: '#eff6ff', color: '#2563eb' };
+                      IconComponent = TrendingUp;
+                    } else if (idx === 2) {
+                      badgeStyle = { background: '#fef2f2', color: '#dc2626' };
+                      IconComponent = AlertTriangle;
+                    }
 
-                  <div className="report-step-item">
-                    <div className="report-step-icon-badge" style={{ background: '#eff6ff', color: '#2563eb' }}>
-                      <TrendingUp size={18} />
-                    </div>
-                    <div className="report-step-content">
-                      <div className="report-step-title">2. The 10% Normal Market Rule:</div>
-                      <div className="report-step-desc">
-                        In standard market conditions, any retailer charging higher than 10% above the published SRP baseline triggers an automatic DTI Letter of Inquiry (LOI).
+                    return (
+                      <div key={item.id} className="report-step-item">
+                        <div className="report-step-icon-badge" style={badgeStyle}>
+                          <IconComponent size={18} />
+                        </div>
+                        <div className="report-step-content">
+                          <div className="report-step-title">{idx + 1}. {item.heading}:</div>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 600, color: '#64748b', marginBottom: '2px' }}>
+                            {item.lawReference}
+                          </div>
+                          <div className="report-step-desc">
+                            {item.description}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="report-step-item">
-                    <div className="report-step-icon-badge" style={{ background: '#fef2f2', color: '#dc2626' }}>
-                      <AlertTriangle size={18} />
-                    </div>
-                    <div className="report-step-content">
-                      <div className="report-step-title">3. Automatic Freeze in Calamity:</div>
-                      <div className="report-step-desc">
-                        When a State of Calamity is declared, Section 6 of R.A. 7581 enforces an automatic price freeze with zero percent markup tolerance.
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Card 2: Tamper-Proof Evidence Vault */}
+          {/* Accordion 3: Price Tag Law (R.A. 71) */}
+          <div className="report-accordion-item">
+            <button
+              type="button"
+              className="report-accordion-trigger"
+              aria-expanded={activeAccordion === 'price-tag'}
+              aria-label="Price Tag Law (R.A. 71)"
+              onClick={() => toggleAccordion('price-tag')}
+              style={{ width: '100%', background: 'transparent', border: 'none', padding: 0, textAlign: 'left', font: 'inherit', color: 'inherit' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
+                  <Tag size={18} />
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main, #0f172a)' }}>
+                  Price Tag Law (R.A. 71)
+                </div>
+              </div>
+              <div>
+                <ChevronDown
+                  size={18}
+                  className={`report-accordion-chevron ${activeAccordion === 'price-tag' ? 'report-accordion-chevron--open' : ''}`}
+                />
+              </div>
+            </button>
+
+            {activeAccordion === 'price-tag' && (
+              <div className="report-accordion-body">
+                <div className="report-steps-container">
+                  {PRICE_TAG_REGULATIONS.map((item, idx) => {
+                    let badgeStyle: React.CSSProperties = { background: '#f0fdf4', color: '#16a34a' };
+                    let IconComponent = Tag;
+                    if (idx === 1) {
+                      badgeStyle = { background: '#eff6ff', color: '#2563eb' };
+                      IconComponent = Scale;
+                    } else if (idx === 2) {
+                      badgeStyle = { background: '#fffbeb', color: '#d97706' };
+                      IconComponent = AlertTriangle;
+                    }
+
+                    return (
+                      <div key={item.id} className="report-step-item">
+                        <div className="report-step-icon-badge" style={badgeStyle}>
+                          <IconComponent size={18} />
+                        </div>
+                        <div className="report-step-content">
+                          <div className="report-step-title">{idx + 1}. {item.heading}:</div>
+                          <div style={{ fontSize: '0.76rem', fontWeight: 600, color: '#64748b', marginBottom: '2px' }}>
+                            {item.lawReference}
+                          </div>
+                          <div className="report-step-desc">
+                            {item.description}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Accordion 4: Tamper-Proof Evidence Vault */}
           <div className="report-accordion-item">
             <button
               type="button"
@@ -459,7 +692,69 @@ export const MoreView: React.FC<MoreViewProps> = ({
         </div>
       </section>
 
-      {/* 4. Footer Metadata */}
+      {/* 4. LEGAL & REGULATORY POLICIES */}
+      <section className="more-section-wrap" aria-labelledby="heading-legal-policies">
+        <h2 id="heading-legal-policies" className="more-section-title">Legal & Regulatory Policies</h2>
+        <div className="more-group-card">
+          <button
+            type="button"
+            className="more-group-row more-group-row-interactive"
+            aria-label="View Terms of Use"
+            onClick={() => handleSelectLegalDoc('terms')}
+            style={{ width: '100%', background: 'transparent', border: 'none', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+          >
+            <div className="more-row-left">
+              <div className="more-icon-tile more-icon-tile--blue">
+                <FileText size={18} />
+              </div>
+              <div className="more-row-texts">
+                <div
+                  className="more-row-label"
+                  style={{
+                    fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+                    fontWeight: 700,
+                    fontSize: '0.98rem',
+                    color: 'var(--text-main, #0f172a)',
+                  }}
+                >
+                  Terms of Use
+                </div>
+              </div>
+            </div>
+            <ChevronRight size={18} className="more-comparison-chevron" />
+          </button>
+
+          <button
+            type="button"
+            className="more-group-row more-group-row-interactive"
+            aria-label="View Privacy Notice"
+            onClick={() => handleSelectLegalDoc('privacy')}
+            style={{ width: '100%', background: 'transparent', border: 'none', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+          >
+            <div className="more-row-left">
+              <div className="more-icon-tile more-icon-tile--emerald">
+                <ShieldCheck size={18} />
+              </div>
+              <div className="more-row-texts">
+                <div
+                  className="more-row-label"
+                  style={{
+                    fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+                    fontWeight: 700,
+                    fontSize: '0.98rem',
+                    color: 'var(--text-main, #0f172a)',
+                  }}
+                >
+                  Privacy Notice
+                </div>
+              </div>
+            </div>
+            <ChevronRight size={18} className="more-comparison-chevron" />
+          </button>
+        </div>
+      </section>
+
+      {/* 5. Footer Metadata */}
       <footer className="more-footer">
         <div className="more-footer-tag">
           <Building2 size={12} />
@@ -468,6 +763,25 @@ export const MoreView: React.FC<MoreViewProps> = ({
         <div><strong>PRICE-Watch Consumer PWA</strong> · v1.3.0 Production</div>
         <div>Target Pilot: San Jose de Buenavista, Antique</div>
         <div>Department of Trade and Industry (DTI) Antique Provincial Office</div>
+        <div className="more-footer-links" style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '8px', fontSize: '0.8rem' }}>
+          <button
+            type="button"
+            onClick={() => handleSelectLegalDoc('terms')}
+            className="more-footer-link-btn"
+            style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+          >
+            Terms of Use
+          </button>
+          <span aria-hidden="true" style={{ color: '#cbd5e1' }}>·</span>
+          <button
+            type="button"
+            onClick={() => handleSelectLegalDoc('privacy')}
+            className="more-footer-link-btn"
+            style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+          >
+            Privacy Notice
+          </button>
+        </div>
       </footer>
 
       {/* Clear Confirmation Modal */}
