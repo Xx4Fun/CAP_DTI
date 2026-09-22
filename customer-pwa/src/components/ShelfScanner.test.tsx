@@ -134,7 +134,7 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     ]);
   });
 
-  it('compares a manually entered shelf price without starting the camera or scan APIs', async () => {
+  describe('manual live comparison', () => {
     const commodity = {
       id: 41,
       commodity_name: 'Absolute Distilled Water',
@@ -145,16 +145,7 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
       effective_date: '2026-08-01',
       is_active: true,
     };
-    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => {
-      if (url === '/public/establishments') {
-        return Promise.resolve({ data: { success: true, data: [store] } });
-      }
-      if (url === '/public/commodities') {
-        return Promise.resolve({ data: { success: true, data: [commodity] } });
-      }
-      return Promise.reject(new Error(`Unexpected endpoint: ${url}`));
-    });
-    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({
+    const comparisonFor = (price: number) => ({
       data: {
         success: true,
         data: {
@@ -162,55 +153,212 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
           product: commodity,
           commodity_name: commodity.commodity_name,
           package_size: commodity.package_size,
-          displayed_price: '37.00',
-          reference_price: '35.00',
-          regulatory_label: 'Current SRP',
-          comparison_status: 'ABOVE_SRP',
-          peso_difference: '2.00',
-          is_above_reference: true,
+          displayed_price: price,
+          baseline_price: 35,
+          comparison_label: 'Current SRP',
+          comparison_status: price > 35 ? 'ABOVE_SRP' : price < 35 ? 'BELOW_SRP' : 'MATCHES_SRP',
+          difference_pesos: price - 35,
+          previous_verified_price: 36,
+          previous_recorded_date: '01 Sep 2026',
         },
       },
     });
-    const getUserMedia = vi.fn();
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getUserMedia },
+    const storedHistory = () => JSON.parse(localStorage.getItem('price-watch-recent-comparisons') || '[]');
+    const slow = { timeout: 3000 };
+
+    const openManualEntry = async (props: { setActiveTab?: (tab: string) => void } = {}) => {
+      vi.spyOn(apiClient, 'get').mockImplementation((url: string) => {
+        if (url === '/public/establishments') return Promise.resolve({ data: { success: true, data: [store] } });
+        if (url === '/public/commodities') return Promise.resolve({ data: { success: true, data: [commodity] } });
+        return Promise.reject(new Error(`Unexpected endpoint: ${url}`));
+      });
+      const user = userEvent.setup();
+      render(
+        <BackNavigationProvider>
+          <ShelfScanner mode="manual" {...props} />
+        </BackNavigationProvider>,
+      );
+      await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+      return user;
+    };
+    const selectItem = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
+      await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
+    };
+    const priceInput = () => screen.getByRole('spinbutton', { name: 'Shelf price' });
+
+    it('checks price records and saves history automatically once item and price are set', async () => {
+      const getUserMedia = vi.fn();
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+      const postSpy = vi.spyOn(apiClient, 'post').mockImplementation((_url, body: any) => Promise.resolve(comparisonFor(body.displayed_price)));
+      const user = await openManualEntry();
+
+      expect(screen.getByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText('Capture Shutter')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Compare price' })).not.toBeInTheDocument();
+
+      await selectItem(user);
+      expect(screen.getByText('Official unit')).toBeInTheDocument();
+      expect(screen.getByText('Current SRP: ₱35.00')).toBeInTheDocument();
+      expect(priceInput()).toHaveAttribute('min', '0.01');
+
+      await user.type(priceInput(), '37.00');
+      expect(screen.getByText('₱2.00 above Current SRP baseline')).toBeInTheDocument();
+      expect(await screen.findByText('Saved to comparison history', {}, slow)).toBeInTheDocument();
+
+      expect(postSpy).toHaveBeenCalledTimes(1);
+      expect(postSpy).toHaveBeenCalledWith('/public/compare-price', {
+        store_id: 77,
+        srp_bulletin_id: 41,
+        displayed_price: 37,
+      }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      expect(postSpy.mock.calls.some(([url]) => String(url).includes('/scan-tag'))).toBe(false);
+      expect(screen.getByText('₱36.00')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Comparison Result' })).not.toBeInTheDocument();
+      expect(storedHistory()).toHaveLength(1);
+      expect(storedHistory()[0]).toMatchObject({ commodityId: 41, displayedPrice: 37, status: 'ABOVE_SRP' });
+
+      // Editing the price overwrites the same history entry instead of adding one.
+      await user.clear(priceInput());
+      await user.type(priceInput(), '34');
+      await waitFor(() => expect(storedHistory()[0]?.displayedPrice).toBe(34), slow);
+      expect(storedHistory()).toHaveLength(1);
+      expect(storedHistory()[0].status).toBe('BELOW_SRP');
     });
-    const user = userEvent.setup();
 
-    render(<ShelfScanner mode="manual" />);
-    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+    it('does not check or save when only the item is selected', async () => {
+      const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue(comparisonFor(35));
+      const user = await openManualEntry();
+      await selectItem(user);
 
-    expect(await screen.findByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
-    expect(getUserMedia).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText('Capture Shutter')).not.toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      expect(postSpy).not.toHaveBeenCalled();
+      expect(storedHistory()).toHaveLength(0);
+    });
 
-    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
-    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
-    expect(screen.getByText('Official unit')).toBeInTheDocument();
-    expect(screen.getByText('1L')).toBeInTheDocument();
-    expect(screen.getByText('Current SRP: ₱35.00')).toBeInTheDocument();
+    it('shows findings again when a saved price is cleared and re-entered', async () => {
+      const postSpy = vi.spyOn(apiClient, 'post').mockImplementation((_url, body: any) => Promise.resolve(comparisonFor(body.displayed_price)));
+      const user = await openManualEntry();
+      await selectItem(user);
 
-    const priceInput = screen.getByRole('spinbutton', { name: 'Shelf price' });
-    expect(priceInput).toHaveAttribute('min', '0.01');
-    await user.type(priceInput, '37.00');
-    await user.click(screen.getByRole('button', { name: 'Compare price' }));
+      await user.type(priceInput(), '35');
+      expect(await screen.findByText('Saved to comparison history', {}, slow)).toBeInTheDocument();
+      await user.clear(priceInput());
+      expect(screen.queryByText('Saved to comparison history')).not.toBeInTheDocument();
+      await user.type(priceInput(), '35');
+      expect(await screen.findByText('Saved to comparison history', {}, slow)).toBeInTheDocument();
+      expect(postSpy).toHaveBeenCalledTimes(2);
+      expect(storedHistory()).toHaveLength(1);
+    });
 
-    expect(await screen.findByRole('heading', { name: 'Comparison Result' })).toBeInTheDocument();
-    expect(postSpy).toHaveBeenCalledWith('/public/compare-price', {
-      store_id: 77,
-      srp_bulletin_id: 41,
-      displayed_price: 37,
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(postSpy.mock.calls.some(([url]) => String(url).includes('/scan-tag'))).toBe(false);
-    expect(screen.queryByText('Manual entry')).not.toBeInTheDocument();
-    expect(screen.queryByText(/OCR-Detected/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Shelf Price')).toBeInTheDocument();
-    expect(screen.queryByText('Displayed Shelf Price')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Report using receipt/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit item or price' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Compare another item' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Return to Prices' })).toBeInTheDocument();
+    it('drops a response that settles after the price or item changed', async () => {
+      const resolvers: Array<(value: unknown) => void> = [];
+      vi.spyOn(apiClient, 'post').mockImplementation(() => new Promise((resolve) => { resolvers.push(resolve); }));
+      const user = await openManualEntry();
+      await selectItem(user);
+
+      // A: 37 in flight, then price changes to 40 and A settles in the same tick.
+      await user.type(priceInput(), '37');
+      await waitFor(() => expect(resolvers).toHaveLength(1), slow);
+      act(() => {
+        fireEvent.change(priceInput(), { target: { value: '40' } });
+        resolvers[0](comparisonFor(37));
+      });
+      await act(async () => { await Promise.resolve(); });
+      expect(storedHistory()).toHaveLength(0);
+
+      // B: 40 in flight, then price is cleared before B settles.
+      await waitFor(() => expect(resolvers).toHaveLength(2), slow);
+      fireEvent.change(priceInput(), { target: { value: '' } });
+      await act(async () => { resolvers[1](comparisonFor(40)); });
+      expect(storedHistory()).toHaveLength(0);
+
+      // C: 41 in flight, then the item is deselected before C settles.
+      fireEvent.change(priceInput(), { target: { value: '41' } });
+      await waitFor(() => expect(resolvers).toHaveLength(3), slow);
+      await user.click(screen.getByRole('button', { name: 'Change item' }));
+      await act(async () => { resolvers[2](comparisonFor(41)); });
+      expect(storedHistory()).toHaveLength(0);
+      expect(screen.queryByText('Saved to comparison history')).not.toBeInTheDocument();
+    });
+
+    it('does not claim the comparison was saved when device storage fails', async () => {
+      vi.spyOn(apiClient, 'post').mockResolvedValue(comparisonFor(37));
+      const setItem = Storage.prototype.setItem;
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+        if (key === 'price-watch-recent-comparisons') throw new Error('QuotaExceededError');
+        return setItem.call(this, key, value);
+      });
+      const user = await openManualEntry();
+      await selectItem(user);
+      await user.type(priceInput(), '37');
+
+      expect(await screen.findByText("Couldn't save to this device's history", {}, slow)).toBeInTheDocument();
+      expect(screen.queryByText('Saved to comparison history')).not.toBeInTheDocument();
+    });
+
+    it('checks again when the same item is deselected and reselected with the same price', async () => {
+      const postSpy = vi.spyOn(apiClient, 'post').mockImplementation((_url, body: any) => Promise.resolve(comparisonFor(body.displayed_price)));
+      const user = await openManualEntry();
+      await selectItem(user);
+      fireEvent.change(priceInput(), { target: { value: '37' } });
+      expect(await screen.findByText('Saved to comparison history', {}, slow)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Change item' }));
+      await selectItem(user);
+      expect(screen.queryByText('Saved to comparison history')).not.toBeInTheDocument();
+      expect(await screen.findByText('Saved to comparison history', {}, slow)).toBeInTheDocument();
+      expect(postSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses the server reference once the check completes', async () => {
+      const frozen = comparisonFor(35);
+      Object.assign(frozen.data.data, { reference_price: 30, regulatory_label: 'Official frozen price reference' });
+      vi.spyOn(apiClient, 'post').mockResolvedValue(frozen);
+      const user = await openManualEntry();
+      await selectItem(user);
+      fireEvent.change(priceInput(), { target: { value: '35' } });
+
+      expect(screen.getByText('Matches Current SRP baseline exactly')).toBeInTheDocument();
+      expect(await screen.findByText('₱5.00 above Official frozen price reference', {}, slow)).toBeInTheDocument();
+    });
+
+    it('hides the SRP pill and saves nothing when no official reference exists', async () => {
+      vi.spyOn(apiClient, 'post').mockRejectedValue({
+        response: {
+          status: 422,
+          data: { success: false, status: 'REFERENCE_UNAVAILABLE', message: 'No official reference price is on record for this item right now, so this price cannot be compared.' },
+        },
+      });
+      const user = await openManualEntry();
+      await selectItem(user);
+      fireEvent.change(priceInput(), { target: { value: '35' } });
+
+      expect(await screen.findByText(/No official reference price is on record/, {}, slow)).toBeInTheDocument();
+      expect(screen.queryByText(/Current SRP baseline/)).not.toBeInTheDocument();
+      expect(storedHistory()).toHaveLength(0);
+
+      // Editing only the price must not bring back the catalog SRP comparison while re-checking.
+      fireEvent.change(priceInput(), { target: { value: '36' } });
+      expect(screen.queryByText(/Current SRP baseline/)).not.toBeInTheDocument();
+      expect(await screen.findByText(/No official reference price is on record/, {}, slow)).toBeInTheDocument();
+      expect(screen.queryByText(/Current SRP baseline/)).not.toBeInTheDocument();
+    });
+
+    it('keeps the selected store and resets entry when changing store', async () => {
+      vi.spyOn(apiClient, 'post').mockResolvedValue(comparisonFor(35));
+      const user = await openManualEntry();
+      await selectItem(user);
+      await user.type(priceInput(), '35');
+      expect(screen.getByText('Verified API Store')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Change store' }));
+      await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+      expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('');
+      expect(priceInput()).toHaveValue(null);
+    });
   });
 
   it('uses identity matching and concise labels for typo-tolerant manual product search', async () => {
@@ -246,75 +394,6 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
 
     await user.click(option);
     expect(screen.getByText('Absolute (1L)')).toBeInTheDocument();
-  });
-
-  it('keeps the selected store and handles the manual result actions', async () => {
-    const commodity = {
-      id: 41,
-      commodity_name: 'Absolute Distilled Water',
-      category: 'Bottled Water',
-      unit: '1L',
-      baseline_price: 35,
-      effective_date: '2026-08-01',
-      is_active: true,
-    };
-    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => Promise.resolve({
-      data: { success: true, data: url === '/public/establishments' ? [store] : [commodity] },
-    }));
-    vi.spyOn(apiClient, 'post').mockResolvedValue({
-      data: {
-        success: true,
-        data: {
-          store,
-          product: commodity,
-          displayed_price: '35.00',
-          reference_price: '35.00',
-          regulatory_label: 'Current SRP',
-          comparison_status: 'MATCHES_SRP',
-          peso_difference: '0.00',
-        },
-      },
-    });
-    const setActiveTab = vi.fn();
-    const user = userEvent.setup();
-
-    render(
-      <BackNavigationProvider>
-        <ShelfScanner mode="manual" setActiveTab={setActiveTab} />
-      </BackNavigationProvider>,
-    );
-    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
-    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
-    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
-    await user.type(screen.getByRole('spinbutton', { name: 'Shelf price' }), '35');
-    await user.click(screen.getByRole('button', { name: 'Compare price' }));
-    await screen.findByRole('heading', { name: 'Comparison Result' });
-
-    act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: null })));
-    expect(await screen.findByRole('heading', { name: 'Compare a shelf price' })).toBeInTheDocument();
-    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('Absolute Distilled Water');
-    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(35);
-
-    await user.click(screen.getByRole('button', { name: 'Compare price' }));
-    await screen.findByRole('heading', { name: 'Comparison Result' });
-    await user.click(screen.getByRole('button', { name: 'Edit item or price' }));
-    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('Absolute Distilled Water');
-    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(35);
-
-    await user.click(screen.getByRole('button', { name: 'Compare price' }));
-    await screen.findByRole('heading', { name: 'Comparison Result' });
-    await user.click(screen.getByRole('button', { name: 'Compare another item' }));
-    expect(screen.getByText('Verified API Store')).toBeInTheDocument();
-    expect(screen.getByRole('searchbox', { name: 'Search official item' })).toHaveValue('');
-    expect(screen.getByRole('spinbutton', { name: 'Shelf price' })).toHaveValue(null);
-
-    await user.type(screen.getByRole('searchbox', { name: 'Search official item' }), 'Absolute');
-    await user.click(await screen.findByRole('button', { name: 'Select Absolute Distilled Water' }));
-    await user.type(screen.getByRole('spinbutton', { name: 'Shelf price' }), '35');
-    await user.click(screen.getByRole('button', { name: 'Compare price' }));
-    await screen.findByRole('heading', { name: 'Comparison Result' });
-    await user.click(screen.getByRole('button', { name: 'Return to Prices' }));
-    expect(setActiveTab).toHaveBeenCalledWith('prices');
   });
 
   it('preselects the official item handed off from Prices', async () => {

@@ -23,7 +23,7 @@ import {
   type ComparisonResultResponse
 } from '../api/client';
 import { peekHandoff, clearHandoff, writeHandoff, type FlowHandoff } from '../app/handoffs';
-import { saveRecentComparison } from '../app/recentComparisons';
+import { saveRecentComparison, getRecentComparisons } from '../app/recentComparisons';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
 import { haversineKm, formatDistance, type GeoPosition } from '../app/geolocation';
 import { getRecentStoreIds, addRecentStore } from '../app/recentStores';
@@ -137,7 +137,15 @@ type ProductChoice = Pick<Commodity, 'id' | 'commodity_name'> &
 type ProductSource = 'OCR' | 'OCR_CANDIDATE_SELECTED' | 'MANUAL_SEARCH';
 type PriceSource = 'OCR_DETECTED' | 'USER_CONFIRMED' | 'USER_CORRECTED' | 'USER_ENTERED';
 
-const isCatalogCommodity = (candidate: ProductChoice): candidate is Commodity =>
+type InlineCheck = {
+  key: string;
+  status: 'pending' | 'done' | 'error';
+  result?: ComparisonResultResponse;
+  saved?: boolean;
+  message?: string;
+};
+
+const isCatalogCommodity =(candidate: ProductChoice): candidate is Commodity =>
   typeof candidate.baseline_price === 'number';
 
 export type ScannerStepState =
@@ -218,6 +226,11 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   });
   const [comparisonResult, setComparisonResult] = useState<ComparisonResultResponse | null>(initialComparison);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  // Manual entry: live server check + auto-save to history once item and price settle.
+  const [inlineCheck, setInlineCheck] = useState<InlineCheck | null>(null);
+  const inlineKeyRef = useRef<string | null>(null);
+  // `${storeId}-${itemId}` the server said has no official reference; sticks across price edits for that item.
+  const [unavailableProductKey, setUnavailableProductKey] = useState<string | null>(null);
 
   // Manual Commodity Directory Search State inside Scanner
   const [commoditySearchQuery, setCommoditySearchQuery] = useState('');
@@ -307,6 +320,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
     setUserPriceInput('');
     setComparisonResult(null);
     setErrorMessage('');
+    inlineKeyRef.current = null;
+    setInlineCheck(null);
     setShowManualDirectorySearch(false);
     setCommoditySearchQuery('');
     setCommoditySearchResults([]);
@@ -779,6 +794,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   };
 
   const handleManualEntryCommoditySelect = (commodity: Commodity) => {
+    inlineKeyRef.current = null;
     handedOffCommodityRef.current = null;
     setSelectedCandidate(commodity);
     setSelectedProductSource('MANUAL_SEARCH');
@@ -788,19 +804,72 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
     setErrorMessage('');
   };
 
-  const handleManualCompare = () => {
-    const parsedPrice = Number(userPriceInput);
-    if (!selectedCandidate) {
-      setErrorMessage('Select an official item before comparing its price.');
+  const inlineCents = Math.round(Number(userPriceInput) * 100);
+  const inlinePrice = inlineCents / 100;
+  const inlineKey = mode === 'manual'
+    && scannerState === 'MANUAL_ENTRY'
+    && selectedStore
+    && selectedCandidate
+    && Number.isFinite(inlinePrice)
+    && Number.isSafeInteger(inlineCents)
+    && inlineCents >= 1
+    ? `${selectedStore.id}-${selectedCandidate.id}-${inlineCents}`
+    : null;
+
+  // Raw inputs are deps so an edit that keeps the same key still restores the ref that handlers null out.
+  // inlineCheck is deliberately not a dep: setting it to 'pending' here must not cancel this run's timer.
+  useEffect(() => {
+    inlineKeyRef.current = inlineKey;
+    if (!inlineKey || !selectedStore || !selectedCandidate) {
+      // Invalidated input forgets the last result so re-entering the same item and price checks again.
+      setInlineCheck(null);
       return;
     }
-    if (!Number.isFinite(parsedPrice) || parsedPrice < 0.01) {
-      setErrorMessage('Enter a shelf price of at least ₱0.01.');
-      return;
-    }
-    setErrorMessage('');
-    void executeComparison(selectedCandidate, parsedPrice, 'MANUAL_SEARCH', 'USER_ENTERED');
-  };
+    if (inlineCheck?.key === inlineKey && inlineCheck.status === 'done') return;
+
+    setInlineCheck({ key: inlineKey, status: 'pending' });
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await apiClient.post('/public/compare-price', {
+          store_id: selectedStore.id,
+          srp_bulletin_id: selectedCandidate.id,
+          displayed_price: inlinePrice,
+        }, { signal: controller.signal });
+        if (inlineKeyRef.current !== inlineKey) return;
+        if (!res.data?.success || !res.data.data) throw new Error('Invalid comparison response.');
+        const result: ComparisonResultResponse = {
+          ...res.data.data,
+          product_source: 'MANUAL_SEARCH',
+          price_source: 'USER_ENTERED',
+        };
+        setUnavailableProductKey(null);
+        const next = saveRecentComparison(result);
+        // saveRecentComparison swallows storage failures; read back to confirm it persisted.
+        const saved = getRecentComparisons()[0]?.id === next[0]?.id;
+        setInlineCheck({ key: inlineKey, status: 'done', result, saved });
+      } catch (err: any) {
+        if (inlineKeyRef.current !== inlineKey || err?.code === 'ERR_CANCELED') return;
+        const referenceUnavailable = err?.response?.data?.status === 'REFERENCE_UNAVAILABLE';
+        if (referenceUnavailable) setUnavailableProductKey(`${selectedStore.id}-${selectedCandidate.id}`);
+        setInlineCheck({
+          key: inlineKey,
+          status: 'error',
+          message: referenceUnavailable
+            ? err.response.data.message || 'No official reference price is on record for this item right now.'
+            : err?.response?.status === 429
+              ? 'Too many checks right now. Try again in a minute.'
+              : "Couldn't check price records. The live SRP check above still applies.",
+        });
+      }
+    }, 900);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [inlineKey, userPriceInput, selectedCandidate, selectedStore]);
+
+  const visibleInlineCheck = inlineKey && inlineCheck?.key === inlineKey ? inlineCheck : null;
 
   const handleEditManualComparison = () => {
     setErrorMessage('');
@@ -990,6 +1059,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   value={commoditySearchQuery}
                   onChange={(event) => {
                     const query = event.target.value;
+                    inlineKeyRef.current = null;
                     if (selectedCandidate && query !== selectedCandidate.commodity_name) {
                       handedOffCommodityRef.current = null;
                       setSelectedCandidate(null);
@@ -1070,6 +1140,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                     aria-label="Change item"
                     className="shelf-compare-selected-clear-btn"
                     onClick={() => {
+                      inlineKeyRef.current = null;
                       handedOffCommodityRef.current = null;
                       setSelectedCandidate(null);
                       setCommoditySearchQuery('');
@@ -1108,6 +1179,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                   placeholder="0.00"
                   value={userPriceInput}
                   onChange={(event) => {
+                    inlineKeyRef.current = null;
                     setUserPriceInput(event.target.value);
                     setErrorMessage('');
                   }}
@@ -1119,30 +1191,36 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
               </p>
 
               {/* Live Reactive Price Delta Indicator */}
-              {selectedCandidate && userPriceInput && Number(userPriceInput) > 0 && (() => {
+              {selectedCandidate && userPriceInput && Number(userPriceInput) > 0 && unavailableProductKey !== `${selectedStore.id}-${selectedCandidate.id}` && (() => {
                 const userPrice = Number(userPriceInput);
-                const srp = Number(selectedCandidate.baseline_price || 0);
+                // Catalog SRP gives instant feedback; the server's reference replaces it once the check completes.
+                const serverResult = visibleInlineCheck?.status === 'done' ? visibleInlineCheck.result : undefined;
+                const srp = Number(serverResult
+                  ? serverResult.reference_price ?? serverResult.baseline_price ?? 0
+                  : selectedCandidate.baseline_price || 0);
+                const serverLabel = serverResult?.regulatory_label || serverResult?.comparison_label;
+                const refLabel = serverLabel && serverLabel !== 'Current SRP' ? serverLabel : 'Current SRP baseline';
                 const diff = Math.round((userPrice - srp) * 100) / 100;
                 const absDiff = Math.abs(diff).toFixed(2);
                 if (diff > 0) {
                   return (
                     <div className="shelf-compare-live-delta shelf-compare-live-delta--above">
                       <AlertTriangle size={15} color="#d97706" />
-                      <span>₱{absDiff} above Current SRP baseline</span>
+                      <span>₱{absDiff} above {refLabel}</span>
                     </div>
                   );
                 } else if (diff < 0) {
                   return (
                     <div className="shelf-compare-live-delta shelf-compare-live-delta--below">
                       <Scale size={15} color="#059669" />
-                      <span>₱{absDiff} below Current SRP baseline (Within SRP)</span>
+                      <span>₱{absDiff} below {refLabel} (within reference)</span>
                     </div>
                   );
                 } else {
                   return (
                     <div className="shelf-compare-live-delta shelf-compare-live-delta--exact">
                       <Scale size={15} color="#2563eb" />
-                      <span>Matches Current SRP baseline exactly</span>
+                      <span>Matches {refLabel} exactly</span>
                     </div>
                   );
                 }
@@ -1155,15 +1233,48 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              className="shelf-compare-submit-btn"
-              onClick={handleManualCompare}
-              disabled={!selectedCandidate || !Number.isFinite(Number(userPriceInput)) || Number(userPriceInput) < 0.01}
-            >
-              <Scale size={18} />
-              <span>Compare price</span>
-            </button>
+            {visibleInlineCheck?.status === 'pending' && (
+              <div role="status" style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                Checking price records…
+              </div>
+            )}
+            {visibleInlineCheck?.status === 'error' && (
+              <div role="status" style={{ color: '#b45309', fontSize: '0.8rem' }}>
+                {visibleInlineCheck.message}
+              </div>
+            )}
+            {visibleInlineCheck?.status === 'done' && visibleInlineCheck.result && (() => {
+              const result = visibleInlineCheck.result;
+              return (
+                <>
+                  <div className="shelf-result-history-strip">
+                    <History size={16} />
+                    {result.previous_verified_price ? (
+                      <div>
+                        Previous verified store price was{' '}
+                        <strong style={{ color: '#0f172a' }}>
+                          ₱{Number(result.previous_verified_price).toFixed(2)}
+                        </strong>{' '}
+                        on {result.previous_recorded_date}.
+                      </div>
+                    ) : (
+                      <div>No verified historical store price is currently available.</div>
+                    )}
+                  </div>
+                  <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: visibleInlineCheck.saved ? '#15803d' : '#b45309', fontSize: '0.78rem', fontWeight: 600 }}>
+                    {visibleInlineCheck.saved ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                    <span>
+                      {visibleInlineCheck.saved
+                        ? 'Saved to comparison history'
+                        : "Couldn't save to this device's history"}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, color: '#92400e', fontSize: '0.74rem', lineHeight: 1.35 }}>
+                    This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
+                  </p>
+                </>
+              );
+            })()}
           </section>
         </div>
       )}

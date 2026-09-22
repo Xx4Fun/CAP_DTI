@@ -47,6 +47,7 @@ class HistoricalPriceResolverTest extends TestCase
             'is_flagged' => false,
             'inspection_timestamp' => now()->subDays(10),
             'officer_signature' => 'sig_officer_abc',
+            'validation_status' => 'verified',
             'vendor_signature' => 'sig_vendor_xyz',
         ]);
 
@@ -58,6 +59,7 @@ class HistoricalPriceResolverTest extends TestCase
             'is_flagged' => false,
             'inspection_timestamp' => now()->subDays(2),
             'officer_signature' => 'sig_officer_abc',
+            'validation_status' => 'verified',
             'vendor_signature' => 'sig_vendor_xyz',
         ]);
 
@@ -114,6 +116,7 @@ class HistoricalPriceResolverTest extends TestCase
             'is_flagged' => false,
             'inspection_timestamp' => now()->subDays(1),
             'officer_signature' => 'sig_officer_123',
+            'validation_status' => 'verified',
         ]);
 
         // Query Store B with Product A (Wrong store)
@@ -183,6 +186,7 @@ class HistoricalPriceResolverTest extends TestCase
             'is_flagged' => false,
             'inspection_timestamp' => now()->subDays(3),
             'officer_signature' => 'sig_officer_int',
+            'validation_status' => 'verified',
         ]);
 
         $resolved = $this->resolver->resolve($store->id, $product->id);
@@ -236,5 +240,39 @@ class HistoricalPriceResolverTest extends TestCase
 
         $this->assertFalse($resolved['has_history']);
         $this->assertEquals('NO_VERIFIED_HISTORY', $resolved['status']);
+    }
+
+    public function test_ignores_newer_signed_inspection_that_is_not_yet_verified(): void
+    {
+        $store = Store::create([
+            'dti_sec_number' => 'SEC-HIST-007',
+            'store_name' => 'Pending Sync Mart',
+            'owner_name' => 'Pending Owner',
+            'latitude' => 10.7410,
+            'longitude' => 121.9386,
+            'address' => 'San Jose, Antique',
+        ]);
+        $product = SrpBulletin::create([
+            'commodity_name' => 'Pending Item 1kg',
+            'baseline_price' => 60.00,
+            'effective_date' => '2026-05-11',
+            'is_active' => true,
+        ]);
+
+        $verified = TemporalInspection::create([
+            'store_id' => $store->id, 'srp_id' => $product->id, 'recorded_price' => 58.00,
+            'is_flagged' => false, 'inspection_timestamp' => now()->subDays(5),
+            'officer_signature' => 'sig_verified', 'validation_status' => 'verified',
+        ]);
+        TemporalInspection::create([
+            'store_id' => $store->id, 'srp_id' => $product->id, 'recorded_price' => 99.00,
+            'is_flagged' => false, 'inspection_timestamp' => now()->subDay(),
+            'officer_signature' => 'sig_pending',
+        ]);
+
+        $resolved = $this->resolver->resolve($store, $product);
+
+        $this->assertSame($verified->id, $resolved['inspection_id']);
+        $this->assertEquals('58.00', $resolved['previous_verified_price']);
     }
 }
