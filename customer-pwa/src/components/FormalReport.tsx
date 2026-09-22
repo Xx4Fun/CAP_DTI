@@ -60,6 +60,17 @@ export const FormalReport: React.FC<FormalReportProps> = ({
     setOpenAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  // Privacy Modal Accordion State
+  const [privacyModalAccordions, setPrivacyModalAccordions] = useState<Record<string, boolean>>({
+    camera: false,
+    privacy: false,
+    evaluation: false,
+  });
+
+  const togglePrivacyModalAccordion = (key: string) => {
+    setPrivacyModalAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // Form State
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
   const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
@@ -822,51 +833,81 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       {showPrivacyModal && (
         <div className="modal-backdrop">
           <div className="modal-content" role="dialog" aria-modal="true" aria-labelledby="privacy-dialog-title" tabIndex={-1}>
-            <h2 id="privacy-dialog-title" style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '4px' }}>
+            <h2 id="privacy-dialog-title" style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '16px' }}>
               Before you submit a receipt
             </h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
-              Your receipt will be used to create a possible price-concern report for DTI evaluation.
-            </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
-              {/* Point 1: Camera use */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <div className="icon-wrapper-blue" style={{ width: '36px', height: '36px' }}>
-                  <Camera size={20} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>Camera use</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            <div className="privacy-accordion-group">
+              {/* Item 1: Camera use */}
+              <div className={`privacy-accordion-item ${privacyModalAccordions.camera ? 'privacy-accordion-item--open' : ''}`}>
+                <button
+                  type="button"
+                  className="privacy-accordion-trigger"
+                  onClick={() => togglePrivacyModalAccordion('camera')}
+                  aria-expanded={privacyModalAccordions.camera}
+                  aria-controls="privacy-item-camera-body"
+                >
+                  <div className="privacy-accordion-header-content">
+                    <div className="icon-wrapper-blue" style={{ width: '34px', height: '34px', flexShrink: 0 }}>
+                      <Camera size={18} />
+                    </div>
+                    <span className="privacy-accordion-title">Camera use</span>
+                  </div>
+                  <ChevronDown size={18} className={`privacy-accordion-chevron ${privacyModalAccordions.camera ? 'privacy-accordion-chevron--open' : ''}`} />
+                </button>
+                {privacyModalAccordions.camera && (
+                  <div id="privacy-item-camera-body" className="privacy-accordion-body">
                     Your camera is used only during receipt capture.
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Point 2: Privacy protection */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <div className="icon-wrapper-green" style={{ width: '36px', height: '36px' }}>
-                  <Shield size={20} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>Privacy protection</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              {/* Item 2: Privacy protection */}
+              <div className={`privacy-accordion-item ${privacyModalAccordions.privacy ? 'privacy-accordion-item--open' : ''}`}>
+                <button
+                  type="button"
+                  className="privacy-accordion-trigger"
+                  onClick={() => togglePrivacyModalAccordion('privacy')}
+                  aria-expanded={privacyModalAccordions.privacy}
+                  aria-controls="privacy-item-privacy-body"
+                >
+                  <div className="privacy-accordion-header-content">
+                    <div className="icon-wrapper-green" style={{ width: '34px', height: '34px', flexShrink: 0 }}>
+                      <Shield size={18} />
+                    </div>
+                    <span className="privacy-accordion-title">Privacy protection</span>
+                  </div>
+                  <ChevronDown size={18} className={`privacy-accordion-chevron ${privacyModalAccordions.privacy ? 'privacy-accordion-chevron--open' : ''}`} />
+                </button>
+                {privacyModalAccordions.privacy && (
+                  <div id="privacy-item-privacy-body" className="privacy-accordion-body">
                     An automated service (Google Gemini) may read the printed items for DTI. Otherwise only DTI staff see your photos.
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Point 3: Human evaluation */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <div className="icon-wrapper-amber" style={{ width: '36px', height: '36px' }}>
-                  <UserCheck size={20} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-main)' }}>Human evaluation</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              {/* Item 3: Human evaluation */}
+              <div className={`privacy-accordion-item ${privacyModalAccordions.evaluation ? 'privacy-accordion-item--open' : ''}`}>
+                <button
+                  type="button"
+                  className="privacy-accordion-trigger"
+                  onClick={() => togglePrivacyModalAccordion('evaluation')}
+                  aria-expanded={privacyModalAccordions.evaluation}
+                  aria-controls="privacy-item-evaluation-body"
+                >
+                  <div className="privacy-accordion-header-content">
+                    <div className="icon-wrapper-amber" style={{ width: '34px', height: '34px', flexShrink: 0 }}>
+                      <UserCheck size={18} />
+                    </div>
+                    <span className="privacy-accordion-title">Human evaluation</span>
+                  </div>
+                  <ChevronDown size={18} className={`privacy-accordion-chevron ${privacyModalAccordions.evaluation ? 'privacy-accordion-chevron--open' : ''}`} />
+                </button>
+                {privacyModalAccordions.evaluation && (
+                  <div id="privacy-item-evaluation-body" className="privacy-accordion-body">
                     Reports do not automatically confirm a violation.
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -1001,41 +1042,32 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       {showGuidelinesModal && (
         <div className="modal-backdrop">
           <div className="modal-content" role="dialog" aria-modal="true" aria-label="Receipt capture guidelines" tabIndex={-1}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                Capture your receipt
-              </h2>
-              <span className="badge badge-amber" style={{ fontSize: '0.72rem' }}>
-                {selectedStore?.store_name || 'Store Selected'}
-              </span>
-            </div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '8px' }}>
+              Capture your receipt
+            </h2>
 
-            <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Follow these guidelines to ensure your receipt photo can be OCR-processed and validated by DTI evaluators:
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', marginBottom: '18px' }}>
+              Follow this guidelines
             </p>
 
-            <ul style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px', paddingLeft: 0, listStyle: 'none' }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Place the receipt on a flat surface.
+            <ul style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', paddingLeft: 0, listStyle: 'none' }}>
+              <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.45 }}>
+                <CheckCircle2 size={18} color="var(--accent-green)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>Place the receipt on a flat surface.</span>
               </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Capture the whole receipt if it fits. For a long receipt, take sections from top to bottom with visible overlap.
+              <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.45 }}>
+                <CheckCircle2 size={18} color="var(--accent-green)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>Capture the whole receipt if it fits. For a long receipt, take sections from top to bottom with visible overlap.</span>
               </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Make the store name and transaction date visible.
+              <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.45 }}>
+                <CheckCircle2 size={18} color="var(--accent-green)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>Make the store name and transaction date visible.</span>
               </li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                <CheckCircle2 size={18} color="var(--accent-green)" /> Avoid glare, shadows, and blur.
+              <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: 1.45 }}>
+                <CheckCircle2 size={18} color="var(--accent-green)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>Avoid glare, shadows, and blur.</span>
               </li>
             </ul>
-
-            {/* SECURITY WARNING BANNER */}
-            <div className="banner-security" style={{ marginBottom: '20px' }}>
-              <Lock size={18} style={{ flexShrink: 0 }} />
-              <div>
-                ℹ️ Gallery uploads are unavailable for formal receipt reporting.
-              </div>
-            </div>
 
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: '10px' }}>

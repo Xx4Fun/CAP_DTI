@@ -47,8 +47,8 @@ Route::prefix('public')->group(function () {
         Route::post('/scan-tag/analyze', [PublicPwaController::class, 'analyzeTag']);
         Route::post('/scan-tag/manual-select', [PublicPwaController::class, 'manualSelect']);
         Route::post('/scan-tag/compare', [PublicPwaController::class, 'compareScanTag']);
-        Route::post('/compare-price', [PublicPwaController::class, 'comparePrice']);
     });
+    Route::post('/compare-price', [PublicPwaController::class, 'comparePrice'])->middleware('throttle:price-compare');
     Route::middleware('throttle:30,1')->group(function () {
         Route::post('/capture-session', [PublicPwaController::class, 'createCaptureSession']);
         Route::post('/capture-sessions/{session}/assets', [ReceiptEvidenceController::class, 'storeAsset']);

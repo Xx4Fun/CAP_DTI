@@ -27,6 +27,7 @@ class HistoricalPriceResolver
         $record = TemporalInspection::query()
             ->where('store_id', $storeId)
             ->where('srp_id', $srpId)
+            ->where('validation_status', 'verified')
             ->whereNotNull('inspection_timestamp')
             ->whereNotNull('officer_signature')
             ->where('officer_signature', '!=', '')

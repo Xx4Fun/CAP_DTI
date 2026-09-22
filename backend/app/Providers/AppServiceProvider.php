@@ -63,6 +63,9 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        // Customer PWA compares live as the shopper types; keep it off the OCR and report buckets.
+        RateLimiter::for('price-compare', fn (Request $request) => Limit::perMinute(30)->by('price-compare:'.$request->ip()));
+
         Sanctum::authenticateAccessTokensUsing(function ($accessToken, bool $isValid): bool {
             if (! $accessToken->can('dti-admin')) {
                 return $isValid;

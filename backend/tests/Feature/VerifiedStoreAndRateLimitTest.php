@@ -174,6 +174,27 @@ class VerifiedStoreAndRateLimitTest extends TestCase
         $this->assertStringContainsString('Retry-After', $res11->headers->get('Access-Control-Expose-Headers', ''));
     }
 
+    public function test_compare_price_has_its_own_limit_separate_from_ocr_scans()
+    {
+        $payload = [
+            'store_id' => $this->activeVerifiedStore->id,
+            'srp_bulletin_id' => $this->bulletin->id,
+            'displayed_price' => 24.00,
+        ];
+
+        for ($i = 0; $i < 30; $i++) {
+            $this->postJson('/api/public/compare-price', $payload)->assertStatus(200);
+        }
+
+        $this->postJson('/api/public/compare-price', $payload)->assertStatus(429);
+
+        // Live comparisons must not use up the OCR scan allowance.
+        $this->postJson('/api/public/scan-tag', [
+            'store_id' => $this->activeVerifiedStore->id,
+            'image' => UploadedFile::fake()->create('tag.jpg', 200, 'image/jpeg'),
+        ])->assertStatus(200);
+    }
+
     public function test_public_payload_does_not_contain_dti_sec_number_or_owner_name()
     {
         // 1. Check establishments endpoint

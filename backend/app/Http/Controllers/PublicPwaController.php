@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Services\FieldReferenceResolver;
+use App\Services\Ocr\HistoricalPriceResolver;
 use App\Services\Ocr\ScanSessionRepository;
 use App\Services\Receipt\ReceiptCaptureModes;
 use App\Services\Ocr\ShelfTagFieldParser;
@@ -643,52 +645,48 @@ class PublicPwaController extends Controller
     /**
      * Dynamic Regulatory Price Comparison Engine Endpoint
      */
-    public function comparePrice(Request $request)
+    public function comparePrice(Request $request, FieldReferenceResolver $references, HistoricalPriceResolver $history)
     {
         $request->validate([
             'store_id' => 'required',
             'srp_bulletin_id' => 'required|exists:srp_bulletins,id',
-            'displayed_price' => 'required|numeric|min:0.01',
+            // decimal:0,2 rejects exponents and sub-centavo input; the cap keeps centavo math in integer range.
+            'displayed_price' => 'required|numeric|decimal:0,2|min:0.01|max:1000000',
         ]);
 
         $store = $this->getVerifiedStore($request->store_id);
-        $bulletin = SrpBulletin::findOrFail($request->srp_bulletin_id);
-        $stateOfCalamity = (bool) Cache::get('state_of_calamity', false);
+        $observedAt = now('Asia/Manila');
+        $submitted = SrpBulletin::findOrFail($request->srp_bulletin_id);
+        // Same lineage rule as FieldReferenceResolver, so reference, product and history all use one bulletin.
+        $bulletin = $submitted->commodity_key
+            ? SrpBulletin::query()->where('commodity_key', $submitted->commodity_key)
+                ->whereDate('effective_date', '<=', $observedAt)
+                ->latest('effective_date')->latest('id')->first() ?? $submitted
+            : $submitted;
+        $reference = $references->resolve($bulletin, $observedAt);
 
-        $displayedPrice = (float) $request->displayed_price;
-        $baselinePrice = (float) $bulletin->baseline_price;
+        // The legacy calamity toggle has no price records behind it; never relabel the SRP as a frozen price.
+        $legacyFreezeWithoutRecord = (bool) Cache::get('state_of_calamity', false)
+            && $bulletin->price_freeze_applicable
+            && $reference['type'] !== 'emergency_ceiling';
 
-        $diffPesos = $displayedPrice - $baselinePrice;
-        $percentageSrp = $baselinePrice > 0 ? (($displayedPrice - $baselinePrice) / $baselinePrice) * 100 : 0;
-
-        // Fetch latest verified store price from temporal_inspections table
-        $lastInspection = DB::table('temporal_inspections')
-            ->where('store_id', $store->id)
-            ->where('srp_id', $bulletin->id)
-            ->orderBy('inspection_timestamp', 'desc')
-            ->first();
-
-        $previousPrice = $lastInspection ? (float) $lastInspection->recorded_price : null;
-        $previousRecordedDate = $lastInspection ? date('d M Y', strtotime($lastInspection->inspection_timestamp)) : null;
-        $percentagePrevious = ($previousPrice && $previousPrice > 0)
-            ? (($displayedPrice - $previousPrice) / $previousPrice) * 100
-            : null;
-
-        // Determine regulatory status label & card state
-        $comparisonLabel = 'Current SRP';
-        $comparisonStatus = 'MATCHES_SRP';
-
-        if (abs($diffPesos) < 0.01) {
-            $comparisonStatus = 'MATCHES_SRP';
-        } elseif ($diffPesos > 0) {
-            $comparisonStatus = 'ABOVE_SRP';
-        } else {
-            $comparisonStatus = 'BELOW_SRP';
+        if ($reference['status'] !== 'available' || $legacyFreezeWithoutRecord) {
+            return response()->json([
+                'success' => false,
+                'status' => 'REFERENCE_UNAVAILABLE',
+                'message' => 'No official reference price is on record for this item right now, so this price cannot be compared.',
+            ], 422);
         }
 
-        if ($stateOfCalamity && $bulletin->price_freeze_applicable) {
-            $comparisonLabel = 'Frozen prevailing price';
-        }
+        $displayedCentavos = (int) round(((float) $request->displayed_price) * 100);
+        $referenceCentavos = (int) round($reference['value'] * 100);
+        $diffCentavos = $displayedCentavos - $referenceCentavos;
+        $referencePrice = $referenceCentavos / 100;
+        $label = $reference['type'] === 'emergency_ceiling' ? $reference['label'] : 'Current SRP';
+        $comparisonStatus = $diffCentavos === 0 ? 'MATCHES_SRP' : ($diffCentavos > 0 ? 'ABOVE_SRP' : 'BELOW_SRP');
+
+        $previous = $history->resolve($store, $bulletin);
+        $previousPrice = $previous['has_history'] ? (float) $previous['previous_verified_price'] : null;
 
         return response()->json([
             'success' => true,
@@ -701,19 +699,26 @@ class PublicPwaController extends Controller
                     'category' => $bulletin->category,
                     'unit' => $bulletin->unit,
                     'regulatory_classification' => $bulletin->regulatory_classification,
-                    'baseline_price' => $baselinePrice,
+                    'baseline_price' => (float) $bulletin->baseline_price,
                     'effective_date' => $bulletin->effective_date ?? '11 May 2026',
                 ],
-                'displayed_price' => $displayedPrice,
-                'baseline_price' => $baselinePrice,
-                'comparison_label' => $comparisonLabel,
+                'displayed_price' => $displayedCentavos / 100,
+                'baseline_price' => (float) $bulletin->baseline_price,
+                'reference_price' => $referencePrice,
+                'regulatory_label' => $label,
+                'regulatory_mode' => $reference['type'] === 'emergency_ceiling' ? 'EMERGENCY_PRICE_FREEZE' : 'NORMAL_SRP',
+                'comparison_label' => $label,
                 'comparison_status' => $comparisonStatus,
-                'difference_pesos' => round($diffPesos, 2),
-                'percentage_srp' => round($percentageSrp, 1),
+                'is_above_reference' => $diffCentavos > 0,
+                'difference_pesos' => $diffCentavos / 100,
+                'percentage_srp' => $referenceCentavos > 0 ? round(($diffCentavos / $referenceCentavos) * 100, 1) : 0,
                 'previous_verified_price' => $previousPrice,
-                'previous_recorded_date' => $previousRecordedDate,
-                'percentage_previous' => $percentagePrevious !== null ? round($percentagePrevious, 1) : null,
-                'state_of_calamity' => $stateOfCalamity,
+                'previous_recorded_date' => $previous['verification_date']
+                    ? date('d M Y', strtotime($previous['verification_date']))
+                    : null,
+                'percentage_previous' => $previousPrice
+                    ? round(((($displayedCentavos / 100) - $previousPrice) / $previousPrice) * 100, 1)
+                    : null,
                 'informational_notice' => 'A possible price difference was found. This does not automatically confirm a violation.',
             ]
         ]);

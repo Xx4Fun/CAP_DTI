@@ -33,7 +33,6 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   vapidPublicKey = '',
   onCancel,
   onDraftCreated,
-  onCheckStatus,
   onGoHome,
   recapture,
 }) => {
@@ -265,10 +264,13 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
             {recoveryCopied ? 'Recovery token copied' : 'Copy recovery token'}
           </button>
         </div>}
-        {resumeStored && notificationState === 'available' && vapidPublicKey && <button type="button" className="btn-primary" onClick={enableNotifications}><Bell size={18} /> Notify me when ready</button>}
         {notificationState === 'enabled' && <p className="receipt-notification-status">Notifications are enabled for this receipt.</p>}
         <div className="receipt-uploaded-actions">
-          {onCheckStatus && <button type="button" className="btn-primary" onClick={() => onCheckStatus(draft.report_reference)}>Check status</button>}
+          {resumeStored && notificationState === 'available' && vapidPublicKey && (
+            <button type="button" className="btn-primary" onClick={enableNotifications}>
+              <Bell size={18} /> Notify when ready
+            </button>
+          )}
           {onGoHome && <button type="button" className="btn-secondary" onClick={onGoHome}>Go Home</button>}
         </div>
       </section>

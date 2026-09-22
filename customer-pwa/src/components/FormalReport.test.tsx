@@ -135,6 +135,10 @@ describe('FormalReport legacy accessibility', () => {
     expect(postSpy).toHaveBeenCalledWith('/public/capture-session', { store_id: store.id, capture_mode: 'guided_photos_v1' });
     const guidelines = await screen.findByRole('dialog', { name: 'Receipt capture guidelines' });
     expect(guidelines).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Capture your receipt' })).toBeInTheDocument();
+    expect(screen.getByText('Follow this guidelines')).toBeInTheDocument();
+    expect(screen.queryByText(/Gallery uploads are unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Store Selected')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Open camera/i }));
     expect(await screen.findByLabelText('Guided receipt scanner')).toBeInTheDocument();
   });
@@ -178,4 +182,42 @@ describe('FormalReport legacy accessibility', () => {
     expect(screen.queryByRole('dialog', { name: 'Receipt capture guidelines' })).not.toBeInTheDocument();
   });
 
+  it('renders privacy modal as collapsible accordions without redundant subtext', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [] } });
+    const user = userEvent.setup();
+    render(<FormalReport />);
+
+    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
+    const dialog = screen.getByRole('dialog', { name: /Before you submit a receipt/i });
+    expect(dialog).toBeInTheDocument();
+
+    // Verify subtext is removed
+    expect(screen.queryByText(/Your receipt will be used to create a possible price-concern report/i)).not.toBeInTheDocument();
+
+    // Verify 3 accordion triggers exist and start collapsed
+    const cameraTrigger = screen.getByRole('button', { name: /Camera use/i });
+    const privacyTrigger = screen.getByRole('button', { name: /Privacy protection/i });
+    const evaluationTrigger = screen.getByRole('button', { name: /Human evaluation/i });
+
+    expect(cameraTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(privacyTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(evaluationTrigger).toHaveAttribute('aria-expanded', 'false');
+
+    // Bodies should be hidden by default
+    expect(screen.queryByText('Your camera is used only during receipt capture.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/An automated service \(Google Gemini\) may read/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Reports do not automatically confirm a violation.')).not.toBeInTheDocument();
+
+    // Expanding Camera use reveals its body
+    await user.click(cameraTrigger);
+    expect(cameraTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Your camera is used only during receipt capture.')).toBeInTheDocument();
+
+    // Collapsing Camera use hides its body again
+    await user.click(cameraTrigger);
+    expect(cameraTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Your camera is used only during receipt capture.')).not.toBeInTheDocument();
+  });
+
 });
+
