@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MoreView } from './MoreView';
 import { saveRecentComparison } from '../app/recentComparisons';
@@ -12,6 +12,8 @@ describe('MoreView Component', () => {
     vi.restoreAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    window.location.hash = '';
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
   const sampleComparison: ComparisonResultResponse = {
@@ -182,7 +184,7 @@ describe('MoreView Component', () => {
     expect(screen.queryByText(/Cryptographic Sealing:/i)).not.toBeInTheDocument();
 
     // Click Price Act accordion
-    const priceActBtn = screen.getByRole('button', { name: /Republic Act No\. 7581/i });
+    const priceActBtn = screen.getByRole('button', { name: /Price Act \(R\.A\. 7581\)/i });
     await user.click(priceActBtn);
 
     expect(screen.getByText(/1\. Baseline SRP Protection:/i)).toBeInTheDocument();
@@ -193,5 +195,107 @@ describe('MoreView Component', () => {
 
     expect(screen.getByText(/Cryptographic Sealing:/i)).toBeInTheDocument();
     expect(screen.queryByText(/1\. Baseline SRP Protection:/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the 8 Consumer Rights under R.A. 7394 inside the rights section', async () => {
+    const user = userEvent.setup();
+    render(<MoreView />);
+
+    const rightsTrigger = screen.getByRole('button', { name: /Consumer Rights \(R\.A\. 7394\)/i });
+    expect(rightsTrigger).toBeInTheDocument();
+    await user.click(rightsTrigger);
+
+    expect(screen.getByText(/1\. Right to Basic Needs:/i)).toBeInTheDocument();
+    expect(screen.queryByText('Karapatan sa Pangunahing Pangangailangan')).not.toBeInTheDocument();
+    expect(screen.getByText(/3\. Right to Information:/i)).toBeInTheDocument();
+    expect(screen.getByText(/6\. Right to Redress:/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 Consumer Responsibilities/i)).toBeInTheDocument();
+    expect(screen.getByText(/Critical Awareness/i)).toBeInTheDocument();
+  });
+
+  it('renders the Legal & Regulatory Policies card and opens dedicated legal detail view with back button', async () => {
+    const user = userEvent.setup();
+    render(<MoreView />);
+
+    expect(screen.getByRole('heading', { name: 'Legal & Regulatory Policies', level: 2 })).toBeInTheDocument();
+    expect(screen.queryByText('Regulatory Jurisdiction & Pilot Scope')).not.toBeInTheDocument();
+    // Subtexts under Terms of Use and Privacy Notice should be removed
+    expect(screen.queryByText(/Platform rules & evidence integrity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Data Privacy Act of 2012 & Vault Security/i)).not.toBeInTheDocument();
+
+    const termsRow = screen.getByRole('button', { name: /View Terms of Use/i });
+    await user.click(termsRow);
+
+    // Dedicated view with header, back button, and white container
+    expect(screen.getByRole('heading', { name: 'Terms of Use', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/Purpose of Platform/i)).toBeInTheDocument();
+
+    // Click Back to More button
+    const backBtn = screen.getByRole('button', { name: /Back to More/i });
+    expect(backBtn).toBeInTheDocument();
+    await user.click(backBtn);
+
+    // Returned to More view
+    expect(screen.getByRole('heading', { name: 'Legal & Regulatory Policies', level: 2 })).toBeInTheDocument();
+
+    // Open Privacy Notice
+    const privacyRow = screen.getByRole('button', { name: /View Privacy Notice/i });
+    await user.click(privacyRow);
+    expect(screen.getByRole('heading', { name: 'Privacy Notice', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/Scope/i)).toBeInTheDocument();
+    expect(screen.queryByText(/DTI Consumer Evidence Vault Privacy Notice/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Data Privacy Commitment:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Public Notice:/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Department of Trade and Industry \(DTI\) Antique Provincial Office/i)).not.toBeInTheDocument();
+  });
+
+  it('renders Price Act regulations when Price Act (R.A. 7581) accordion is clicked', async () => {
+    const user = userEvent.setup();
+    render(<MoreView />);
+
+    const priceActBtn = screen.getByRole('button', { name: /Price Act \(R\.A\. 7581\)/i });
+    await user.click(priceActBtn);
+
+    expect(screen.getByText(/1\. Baseline SRP Protection:/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\. The 10% Normal Market Rule:/i)).toBeInTheDocument();
+    expect(screen.getByText(/3\. Automatic Price Freeze in Calamity:/i)).toBeInTheDocument();
+    expect(screen.getByText(/R\.A\. 7581 \(Price Act\) §10/i)).toBeInTheDocument();
+  });
+
+  it('renders Price Tag Law regulations when Price Tag Law (R.A. 71) accordion is clicked', async () => {
+    const user = userEvent.setup();
+    render(<MoreView />);
+
+    const priceTagBtn = screen.getByRole('button', { name: /Price Tag Law \(R\.A\. 71\)/i });
+    await user.click(priceTagBtn);
+
+    expect(screen.getByText(/1\. Mandatory Price Tagging:/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\. Cashier Price Matching \(One-Price Policy\):/i)).toBeInTheDocument();
+    expect(screen.getByText(/3\. No Hidden Surcharges or Additional Fees:/i)).toBeInTheDocument();
+    expect(screen.getByText(/R\.A\. 71 & R\.A\. 7394 Art\. 81/i)).toBeInTheDocument();
+  });
+
+  it('deep-links with hash #consumer-rights and automatically expands the rights accordion', () => {
+    window.location.hash = '#consumer-rights';
+    render(<MoreView />);
+
+    expect(screen.getByText(/Right to Basic Needs/i)).toBeInTheDocument();
+    expect(screen.queryByText('Karapatan sa Pangunahing Pangangailangan')).not.toBeInTheDocument();
+    expect(screen.getByText(/Right to Information/i)).toBeInTheDocument();
+    expect(screen.getByText(/Right to Redress/i)).toBeInTheDocument();
+  });
+
+  it('expands consumer rights accordion on window hashchange to #consumer-rights', async () => {
+    window.location.hash = '';
+    render(<MoreView />);
+
+    expect(screen.queryByText(/Right to Basic Needs/i)).not.toBeInTheDocument();
+
+    window.location.hash = '#consumer-rights';
+    window.dispatchEvent(new Event('hashchange'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Right to Basic Needs/i)).toBeInTheDocument();
+    });
   });
 });

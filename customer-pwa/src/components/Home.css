@@ -657,6 +657,41 @@
   box-shadow: 0 8px 20px rgba(4, 35, 112, 0.07);
 }
 
+.home-rights-card-interactive {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.home-rights-card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: #bfdbfe;
+  box-shadow: 0 12px 26px rgba(7, 89, 255, 0.12);
+}
+
+.home-rights-card-interactive:active {
+  transform: scale(0.99);
+}
+
+.home-rights-card-interactive:focus-visible {
+  outline: 3px solid rgba(7, 89, 255, 0.35);
+  outline-offset: 3px;
+}
+
+.home-rights-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  width: fit-content;
+}
+
 .home-rights-art-frame {
   align-self: stretch;
   position: relative;
