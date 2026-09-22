@@ -396,6 +396,39 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     expect(screen.getByText('Absolute (1L)')).toBeInTheDocument();
   });
 
+  it('labels typo guesses only when nothing matched as typed', async () => {
+    const commodity = {
+      id: 41,
+      commodity_name: 'Absolute (1L)',
+      unit: '1L',
+      baseline_price: 25,
+      effective_date: '2026-08-01',
+      is_active: true,
+    };
+    let quality: 'exact' | 'similar' = 'similar';
+    vi.spyOn(apiClient, 'get').mockImplementation((url: string) => Promise.resolve({
+      data: {
+        success: true,
+        data: url === '/public/establishments' ? [store] : [{ ...commodity, match_quality: quality }],
+      },
+    }));
+    const user = userEvent.setup();
+
+    render(<ShelfScanner mode="manual" />);
+    await user.click(await screen.findByRole('button', { name: 'Continue with Verified API Store' }));
+    const search = screen.getByRole('searchbox', { name: 'Search official item' });
+
+    await user.type(search, 'absolte');
+    await screen.findByRole('button', { name: 'Select Absolute (1L)' });
+    expect(screen.getByText('No exact match. Did you mean:')).toBeInTheDocument();
+
+    quality = 'exact';
+    await user.clear(search);
+    await user.type(search, 'absolute');
+    expect(await screen.findByRole('button', { name: 'Select Absolute (1L)' })).toBeInTheDocument();
+    expect(screen.queryByText('No exact match. Did you mean:')).not.toBeInTheDocument();
+  });
+
   it('preselects the official item handed off from Prices', async () => {
     const commodity = {
       id: 41,

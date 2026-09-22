@@ -6499,6 +6499,13 @@ body {
   font-size: 0.74rem;
 }
 
+.shelf-compare-dropdown-note {
+  padding: 6px 12px 2px;
+  color: #b45309;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
 /* Selected Official Item Card - Compact & Streamlined */
 .shelf-compare-selected-card {
   border: 1.5px solid #bfdbfe;
