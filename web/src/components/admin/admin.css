@@ -6935,3 +6935,242 @@
 .evidence-section-nav-attempt { color: var(--admin-muted); }
 
 .receipt-extraction-flags { margin-top: 0.15rem; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports header
+   -------------------------------------------------------------------------- */
+
+.consumer-report-panel { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+.consumer-report-header {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem 1.5rem;
+}
+
+.consumer-report-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.consumer-report-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.consumer-report-title h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--admin-text);
+  letter-spacing: -0.02em;
+}
+
+.consumer-report-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--admin-muted);
+}
+
+.consumer-report-protocol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #a7f3d0;
+  border-radius: 20px;
+  background: #ecfdf5;
+  color: var(--admin-success);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.consumer-report-protocol-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.consumer-report-protocol.is-emergency {
+  border-color: #fed7aa;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.consumer-report-protocol.is-emergency .consumer-report-protocol-dot { background: #f59e0b; }
+
+.consumer-report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.consumer-report-filters .filter-pill {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface);
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.consumer-report-filters .filter-pill.active { border-width: 1.5px; }
+.consumer-report-filters .filter-pill.tone-accent.active { border-color: var(--admin-accent); background: var(--admin-accent-soft); color: var(--admin-accent); }
+.consumer-report-filters .filter-pill.tone-warn.active { border-color: #d97706; background: #fffbeb; color: #b45309; }
+.consumer-report-filters .filter-pill.tone-muted.active { border-color: #64748b; background: #f1f5f9; color: #334155; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports queue
+   -------------------------------------------------------------------------- */
+
+.consumer-report-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.consumer-report-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.consumer-report-queue-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-queue-head h3 svg { color: var(--admin-accent); }
+
+.consumer-report-queue-count {
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.consumer-report-search { position: relative; width: 100%; }
+
+.consumer-report-search svg {
+  position: absolute;
+  top: 50%;
+  left: 0.65rem;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.consumer-report-search input {
+  width: 100%;
+  padding: 0.45rem 0.65rem 0.45rem 2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface-subtle);
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.consumer-report-queue-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--admin-muted);
+  font-size: 0.82rem;
+}
+
+.consumer-report-queue-empty.has-surface {
+  padding: 2rem 0.5rem;
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-queue-empty svg { display: block; margin: 0 auto 0.4rem; color: #94a3b8; }
+.consumer-report-queue-empty .spin-icon { color: var(--admin-accent); }
+.consumer-report-queue-empty-title { font-weight: 600; color: #334155; }
+
+.consumer-report-queue-row {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.consumer-report-queue-row.is-selected {
+  border: 2px solid var(--admin-accent);
+  background: var(--admin-accent-soft);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.08);
+}
+
+.consumer-report-queue-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.consumer-report-queue-row-top strong {
+  color: var(--admin-text);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.consumer-report-queue-row.is-selected .consumer-report-queue-row-top strong { color: var(--admin-accent); }
+
+.consumer-report-queue-store {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.consumer-report-queue-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.consumer-report-queue-date { color: var(--admin-muted); font-size: 0.72rem; }
+
+.consumer-report-status {
+  padding: 0.12rem 0.45rem;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.consumer-report-status.tone-accent { background: var(--admin-accent-soft); color: var(--admin-accent); border-color: #bfdbfe; }
+.consumer-report-status.tone-warn { background: #fffbeb; color: #b45309; border-color: #fed7aa; }
+.consumer-report-status.tone-muted { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+
+.consumer-report-above-badge {
+  padding: 0.05rem 0.3rem;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: var(--admin-danger);
+  font-size: 0.66rem;
+  font-weight: 800;
+  white-space: nowrap;
+}

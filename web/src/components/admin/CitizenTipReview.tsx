@@ -286,18 +286,12 @@ export const CitizenTipReview: React.FC = () => {
     }
   }
 
-  const getStatusBadgeStyle = (status: string) => {
+  /** Names the status tone; admin.css owns the colours. */
+  const getStatusTone = (status: string) => {
     const s = status.toLowerCase()
-    if (s.includes('validate') || s.includes('violation') || s.includes('loi') || s.includes('field')) {
-      return { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }
-    }
-    if (s.includes('pending') || s.includes('under') || s.includes('submit')) {
-      return { background: '#fffbeb', color: '#b45309', border: '1px solid #fed7aa' }
-    }
-    if (s.includes('dismiss') || s.includes('no_violation') || s.includes('reject') || s.includes('close')) {
-      return { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }
-    }
-    return { background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }
+    if (s.includes('validate') || s.includes('violation') || s.includes('loi') || s.includes('field')) return 'accent'
+    if (s.includes('pending') || s.includes('under') || s.includes('submit')) return 'warn'
+    return 'muted'
   }
 
   const getReadableStatus = (status: string) => {
@@ -476,36 +470,19 @@ export const CitizenTipReview: React.FC = () => {
   const detectedMerchant = typeof merchantResult?.display_name === 'string' ? merchantResult.display_name : null
 
   return (
-    <div className="citizen-tip-review-workspace consumer-report-panel" style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
-      {/* PAGE HEADER: DTI Regulatory Clean Header */}
-      <div
-        className="review-header-bar"
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '1.15rem 1.5rem',
-          display: 'grid',
-          gap: '1rem',
-          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+    <div className="citizen-tip-review-workspace consumer-report-panel">
+      <div className="review-header-bar consumer-report-card consumer-report-header">
+        <div className="consumer-report-header-row">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <h2
-                aria-label="Consumer Reports — Formal Receipt OCR Review Queue"
-                style={{ margin: 0, fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}
-              >
-                Consumer Reports
-              </h2>
+            <div className="consumer-report-title">
+              <h2 aria-label="Consumer Reports — Formal Receipt OCR Review Queue">Consumer Reports</h2>
               {/* Derived from the emergency in force on the selected receipt's transaction date, not
                   from today's state: a receipt bought during a freeze is judged under that freeze. */}
               {(() => {
                 const emergency = selected?.protocol?.mode === 'emergency'
                 return (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: emergency ? '#fffbeb' : '#ecfdf5', color: emergency ? '#b45309' : '#047857', border: `1px solid ${emergency ? '#fed7aa' : '#a7f3d0'}`, padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: emergency ? '#f59e0b' : '#10b981' }} />
+                  <span className={`consumer-report-protocol${emergency ? ' is-emergency' : ''}`}>
+                    <span className="consumer-report-protocol-dot" />
                     {!selected
                       ? 'Select a report to see the applicable protocol'
                       : emergency
@@ -515,90 +492,30 @@ export const CitizenTipReview: React.FC = () => {
                 )
               })()}
             </div>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+            <p className="consumer-report-subtitle">
               Review submitted consumer price concerns and determine the next action.
             </p>
           </div>
 
-          {/* Unified Status Filter Row */}
-          <div className="status-filter-pills" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className={`filter-pill ${filter === 'all' ? 'active' : ''}`}
-              onClick={() => setFilter('all')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'all' ? '1.5px solid #1d4ed8' : '1px solid #e2e8f0',
-                background: filter === 'all' ? '#eff6ff' : '#ffffff',
-                color: filter === 'all' ? '#1d4ed8' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Reports on this page ({reports.length})
-            </button>
-
-            <button
-              type="button"
-              className={`filter-pill ${filter === 'pending' ? 'active' : ''}`}
-              onClick={() => setFilter('pending')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'pending' ? '1.5px solid #d97706' : '1px solid #e2e8f0',
-                background: filter === 'pending' ? '#fffbeb' : '#ffffff',
-                color: filter === 'pending' ? '#b45309' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Pending Review ({pendingCount})
-            </button>
-
-            <button
-              type="button"
-              aria-label={`Field Verification / Validated / LOI Issued (${validatedCount})`}
-              className={`filter-pill ${filter === 'validated' ? 'active' : ''}`}
-              onClick={() => setFilter('validated')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'validated' ? '1.5px solid #1d4ed8' : '1px solid #e2e8f0',
-                background: filter === 'validated' ? '#eff6ff' : '#ffffff',
-                color: filter === 'validated' ? '#1d4ed8' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Field Verification ({validatedCount})
-            </button>
-
-            <button
-              type="button"
-              aria-label={`Closed / Dismissed (${dismissedCount})`}
-              className={`filter-pill ${filter === 'dismissed' ? 'active' : ''}`}
-              onClick={() => setFilter('dismissed')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'dismissed' ? '1.5px solid #64748b' : '1px solid #e2e8f0',
-                background: filter === 'dismissed' ? '#f1f5f9' : '#ffffff',
-                color: filter === 'dismissed' ? '#334155' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Closed ({dismissedCount})
-            </button>
+          {/* One pill per bucket. The tone is named, not spelled out per button: these were four
+              near-identical style objects differing only in colour. */}
+          <div className="status-filter-pills consumer-report-filters">
+            {([
+              { id: 'all', tone: 'accent', label: `Reports on this page (${reports.length})` },
+              { id: 'pending', tone: 'warn', label: `Pending Review (${pendingCount})` },
+              { id: 'validated', tone: 'accent', label: `Field Verification (${validatedCount})`, aria: `Field Verification / Validated / LOI Issued (${validatedCount})` },
+              { id: 'dismissed', tone: 'muted', label: `Closed (${dismissedCount})`, aria: `Closed / Dismissed (${dismissedCount})` },
+            ] as const).map((pill) => (
+              <button
+                key={pill.id}
+                type="button"
+                aria-label={'aria' in pill ? pill.aria : undefined}
+                className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
+                onClick={() => setFilter(pill.id)}
+              >
+                {pill.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -612,109 +529,66 @@ export const CitizenTipReview: React.FC = () => {
         {/* =========================================================================
             LEFT COLUMN: Report Queue Inbox
             ========================================================================= */}
-        <div
-          className="admin-card"
-          style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <FileText size={16} color="#1d4ed8" /> Consumer Reports
-            </h3>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
-              {filteredReports.length}
-            </span>
+        <div className="admin-card consumer-report-card consumer-report-queue">
+          <div className="consumer-report-queue-head">
+            <h3><FileText size={16} /> Consumer Reports</h3>
+            <span className="consumer-report-queue-count">{filteredReports.length}</span>
           </div>
 
-          {/* Compact Search Input */}
-          <div style={{ position: 'relative', width: '100%' }}>
-            <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <div className="admin-search-field consumer-report-search">
+            <Search size={14} />
             <input
               type="text"
               placeholder="Search reference, store..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.45rem 0.65rem 0.45rem 2rem',
-                border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-                fontSize: '0.82rem',
-                outline: 'none',
-                background: '#f8fafc',
-                boxSizing: 'border-box',
-              }}
             />
           </div>
 
           {loading && (
-            <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
-              <RefreshCw size={16} className="spin-icon" style={{ margin: '0 auto 0.4rem', color: '#1d4ed8' }} />
+            <div className="consumer-report-queue-empty">
+              <RefreshCw size={16} className="spin-icon" />
               Loading reports...
             </div>
           )}
 
           {!loading && filteredReports.length === 0 && (
-            <div style={{ padding: '2rem 0.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.82rem', background: '#f8fafc', borderRadius: '8px' }}>
-              <Shield size={20} style={{ margin: '0 auto 0.35rem', color: '#94a3b8' }} />
-              <div style={{ fontWeight: 600, color: '#334155' }}>No reports</div>
+            <div className="consumer-report-queue-empty has-surface">
+              <Shield size={20} />
+              <div className="consumer-report-queue-empty-title">No reports</div>
             </div>
           )}
 
-          {/* Compact Inbox List */}
           <div className="admin-list consumer-report-queue-list">
             {filteredReports.map((report) => {
               const isSelected = selected?.id === report.id
-              const badgeStyle = getStatusBadgeStyle(report.status)
+              const tone = getStatusTone(report.status)
               const readableStatus = getReadableStatus(report.status)
 
               return (
                 <button
                   key={report.id}
+                  className={`consumer-report-queue-row${isSelected ? ' is-selected' : ''}`}
                   onClick={() => selectReport(report)}
-                  style={{
-                    display: 'grid',
-                    textAlign: 'left',
-                    gap: '0.25rem',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    background: isSelected ? '#eff6ff' : '#ffffff',
-                    border: isSelected ? '2px solid #1d4ed8' : '1px solid #e2e8f0',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: isSelected ? '0 2px 8px rgba(29, 78, 216, 0.08)' : 'none',
-                  }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ color: isSelected ? '#1d4ed8' : '#0f172a', fontSize: '0.84rem', fontWeight: 800 }}>
-                      {report.report_reference}
-                    </strong>
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', ...badgeStyle }}>
-                      {readableStatus}
-                    </span>
+                  <div className="consumer-report-queue-row-top">
+                    <strong>{report.report_reference}</strong>
+                    <span className={`consumer-report-status tone-${tone}`}>{readableStatus}</span>
                   </div>
 
-                  <div style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className="consumer-report-queue-store">
                     {report.store_name || 'Store unmapped'}
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  <div className="consumer-report-queue-row-bottom">
+                    <span className="consumer-report-queue-date">
                       {report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
                     </span>
                     {/* Lets an evaluator triage the queue without opening every report. */}
                     {(report.above_reference_count ?? 0) > 0 && (
                       <span
+                        className="consumer-report-above-badge"
                         title={`${report.above_reference_count} item(s) priced above the applicable reference`}
-                        style={{ fontSize: '0.66rem', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '0.05rem 0.3rem', whiteSpace: 'nowrap' }}
                       >
                         {report.above_reference_count} above SRP
                       </span>
