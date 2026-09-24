@@ -16,7 +16,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
+import type { ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
 import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
 import { ItemReferenceVerdict } from './ItemReferenceVerdict'
@@ -336,6 +336,10 @@ export const CitizenTipReview: React.FC = () => {
 
   const ocrItems = parseOcrItems(selected?.raw_ocr_json ?? null)
   const hasItemReview = (selected?.items?.length ?? 0) > 0
+
+  /** The suggestion an evaluator picked, matched by the commodity key the option submitted. */
+  const candidateFor = (item: ConsumerReportItemRecord, commodityKey: string) =>
+    (item.reference?.match_candidates ?? []).find((candidate) => candidate.commodity_key === commodityKey)
 
   /**
    * Report-level roll-up of the per-item references the server resolved. Items with no applicable
@@ -1173,17 +1177,34 @@ export const CitizenTipReview: React.FC = () => {
                               list={`commodity-options-${item.id}`}
                               aria-label={`Commodity key for ${item.item_name || item.id}`}
                               value={decision?.commodity_key || ''}
-                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], commodity_key: event.target.value } }))}
+                              onChange={(event) => setItemDecisions((current) => ({
+                                ...current,
+                                [item.id]: {
+                                  ...current[item.id],
+                                  commodity_key: event.target.value,
+                                  // Choosing a suggestion must carry its name across too. Updating only
+                                  // the key would store a canonical key beside the unmatched OCR name.
+                                  commodity_name: candidateFor(item, event.target.value)?.commodity_name
+                                    ?? current[item.id]?.commodity_name
+                                    ?? '',
+                                },
+                              }))}
                               style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
                             />
                             <datalist id={`commodity-options-${item.id}`}>
-                              {(item.reference?.match_candidates ?? []).map((candidate) => (
-                                <option key={candidate.id} value={candidate.commodity_name}>
-                                  {candidate.commodity_name}
-                                  {candidate.package_size ? ` · ${candidate.package_size}` : ''}
-                                  {` · match ${candidate.match_score}`}
-                                </option>
-                              ))}
+                              {/* The value is the commodity KEY, because the server resolves the
+                                  regulatory reference by exact key. Offering the display name here
+                                  made every chosen suggestion fail to resolve. Keyless bulletins
+                                  cannot resolve at all, so they are not offered. */}
+                              {(item.reference?.match_candidates ?? [])
+                                .filter((candidate) => Boolean(candidate.commodity_key))
+                                .map((candidate) => (
+                                  <option key={candidate.id} value={candidate.commodity_key as string}>
+                                    {candidate.commodity_name}
+                                    {candidate.package_size ? ` · ${candidate.package_size}` : ''}
+                                    {` · match ${candidate.match_score}`}
+                                  </option>
+                                ))}
                             </datalist>
                           </label>
                           <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
@@ -1216,6 +1237,41 @@ export const CitizenTipReview: React.FC = () => {
                     {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
                   </section>
                 )}
+                {/* Referral is available for BOTH report shapes. It used to live only in the
+                    legacy branch below, so on an item report — the normal case — the officer
+                    selector never rendered and a referral could not be made at all. */}
+                {!selected.verification_request && (
+                  <section aria-label="Refer for field verification" style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#f8fafc' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                      <input
+                        type="checkbox"
+                        checked={verificationChosen}
+                        onChange={(event) => {
+                          setVerificationChosen(event.target.checked)
+                          setDecisionIntent(event.target.checked ? 'verify' : 'close')
+                          if (!event.target.checked) setFieldOfficerId('')
+                        }}
+                      />
+                      <Send size={14} aria-hidden="true" /> Refer this report for field verification
+                    </label>
+                    {verificationChosen && (
+                      <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                        Field Officer
+                        <select
+                          aria-label="Field Officer"
+                          required
+                          value={fieldOfficerId}
+                          onChange={(event) => setFieldOfficerId(event.target.value)}
+                          style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' }}
+                        >
+                          <option value="">Select active officer</option>
+                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </section>
+                )}
+
                 {!hasItemReview ? (
                   <div style={{ display: 'grid', gap: '0.75rem' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
@@ -1302,12 +1358,8 @@ export const CitizenTipReview: React.FC = () => {
                     </div>
 
                     <div style={{ display: 'grid', gap: '0.35rem' }}>
-                      {verificationChosen && <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>Field Officer
-                        <select aria-label="Field Officer" required value={fieldOfficerId} onChange={(event) => setFieldOfficerId(event.target.value)} style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' }}>
-                          <option value="">Select active officer</option>
-                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
-                        </select>
-                      </label>}
+                      {/* The officer selector now lives in the shared referral section above, so
+                          both report shapes reach it. */}
                       <label htmlFor="decision-reason-text" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
                         {decisionIntent === 'verify' ? 'Verification reason' : 'Closure reason'}
                       </label>

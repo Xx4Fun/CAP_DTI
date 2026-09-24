@@ -302,6 +302,10 @@ class ShelfTagProductMatcher
         // Exclude baseline_price and any price information.
         return [
             'id' => (int) $bulletin->id,
+            // Nullable: srp_bulletins.commodity_key is nullable, so an active bulletin may have none.
+            // Consumers that resolve a regulatory reference by key must treat a keyless candidate as
+            // unusable rather than assume this is always present.
+            'commodity_key' => $bulletin->commodity_key === null ? null : (string) $bulletin->commodity_key,
             'commodity_name' => (string) $commodityName,
             'brand' => (string) $brand,
             'category' => (string) ($bulletin->category ?? 'General'),

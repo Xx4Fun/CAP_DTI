@@ -295,6 +295,34 @@ class ConsumerReportPriceReferenceTest extends TestCase
         $this->getJson('/api/admin/reports')->assertOk()->assertJsonPath('data.0.above_reference_count', 2);
     }
 
+    public function test_an_unmatched_item_corrected_with_a_suggested_commodity_key_is_accepted(): void
+    {
+        // The panel offers ranked candidates for an item the matcher could not confidently match.
+        // Choosing one submits the candidate's commodity_key; the server resolves the reference by
+        // exact key, so the decision must be accepted rather than fail the fail-closed guard.
+        $bulletin = $this->bulletin();
+        $report = $this->report(items: [['item_name' => 'ZZQX UNREADABLE LINE', 'unit_price' => 30.00]]);
+        $item = $report->items()->first();
+        $this->assertNull($item->srp_id, 'Precondition: this item is unmatched.');
+
+        $this->postJson("/api/admin/reports/{$report->id}/decision", [
+            'action' => 'correct',
+            'reason' => 'Commodity identified from the receipt photo.',
+            'item_decisions' => [[
+                'item_id' => $item->id,
+                'commodity_key' => $bulletin->commodity_key,
+                'commodity_name' => $bulletin->commodity_name,
+                'receipt_price' => 30.00,
+                'observed_at' => '2026-07-20',
+                'regulatory_finding' => 'confirmed_violation',
+            ]],
+        ])->assertOk();
+
+        $finding = RegulatoryFinding::sole();
+        $this->assertSame($bulletin->id, $finding->srp_bulletin_id);
+        $this->assertSame(21.5, $finding->reference_value);
+    }
+
     public function test_the_backfill_command_is_idempotent_and_writes_no_findings(): void
     {
         $bulletin = $this->bulletin();

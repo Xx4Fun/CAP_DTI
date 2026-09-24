@@ -72,8 +72,10 @@ class ShelfTagProductMatcherTest extends TestCase
         $this->assertArrayNotHasKey('price', $topCandidate);
         $this->assertArrayNotHasKey('srp', $topCandidate);
 
-        // Verify exact expected keys
-        $expectedKeys = ['id', 'commodity_name', 'brand', 'category', 'package_size', 'unit', 'match_score', 'match_level', 'match_basis'];
+        // Verify exact expected keys. commodity_key is an identifier, not pricing: the DTI review
+        // panel resolves a regulatory reference by exact key, so a candidate the evaluator picks
+        // has to carry one.
+        $expectedKeys = ['id', 'commodity_key', 'commodity_name', 'brand', 'category', 'package_size', 'unit', 'match_score', 'match_level', 'match_basis'];
         $this->assertEqualsCanonicalizing($expectedKeys, array_keys($topCandidate));
     }
 
@@ -125,6 +127,38 @@ class ShelfTagProductMatcherTest extends TestCase
                 $this->assertLessThan($topCandidate['match_score'], $candidate['match_score']);
             }
         }
+    }
+
+    public function test_candidates_carry_the_commodity_key_used_to_resolve_a_regulatory_reference(): void
+    {
+        $keyed = SrpBulletin::create([
+            'commodity_name' => 'Alaska Evaporated Milk 370 mL',
+            'category' => 'Milk', 'unit' => '370 mL', 'regulatory_classification' => 'BASIC_NECESSITY',
+            'commodity_key' => 'alaska-evaporated-milk-370ml',
+            'baseline_price' => 42.00, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+
+        $candidates = $this->matcher->match(['ALSK', 'EVAP', 'MLK'], '370 mL');
+
+        $this->assertSame($keyed->id, $candidates[0]['id']);
+        $this->assertSame('alaska-evaporated-milk-370ml', $candidates[0]['commodity_key']);
+    }
+
+    public function test_a_bulletin_without_a_commodity_key_yields_a_null_key_rather_than_failing(): void
+    {
+        // commodity_key is nullable, so an active catalogue row may legitimately have none. The
+        // matcher must still return it; callers that resolve by key decide it is unusable.
+        SrpBulletin::create([
+            'commodity_name' => 'Alaska Evaporated Milk 370 mL',
+            'category' => 'Milk', 'unit' => '370 mL', 'regulatory_classification' => 'BASIC_NECESSITY',
+            'baseline_price' => 42.00, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+
+        $candidates = $this->matcher->match(['ALSK', 'EVAP', 'MLK'], '370 mL');
+
+        $this->assertNotEmpty($candidates);
+        $this->assertArrayHasKey('commodity_key', $candidates[0]);
+        $this->assertNull($candidates[0]['commodity_key']);
     }
 
     public function test_exact_catalog_alias_resolves_abbreviated_shelf_label_as_strong_match(): void

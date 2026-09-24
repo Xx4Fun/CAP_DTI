@@ -374,7 +374,19 @@ export interface ItemPriceReference {
   /** null when either side is unknown — never a false "within reference". */
   is_above_reference?: boolean | null
   auto_matched?: boolean
-  match_candidates?: Array<{ id: number; commodity_name: string; package_size?: string; match_score: number; match_level?: string }>
+  /**
+   * Ranked alternatives when the automatic match was not confident.
+   * `commodity_key` is nullable because `srp_bulletins.commodity_key` is: a keyless candidate
+   * cannot resolve a regulatory reference, so the selector must not offer it as choosable.
+   */
+  match_candidates?: Array<{
+    id: number
+    commodity_key: string | null
+    commodity_name: string
+    package_size?: string
+    match_score: number
+    match_level?: string
+  }>
 }
 
 export interface ReceiptEvidenceAssetRecord {

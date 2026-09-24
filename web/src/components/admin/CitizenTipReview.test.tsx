@@ -476,6 +476,53 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.queryByText('Within reference')).not.toBeInTheDocument()
   })
 
+  it('offers commodity suggestions by key, not display name, and skips keyless candidates', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [{
+        id: 701, sequence: 0, item_name: 'ZZQX UNREADABLE', quantity: '1', unit_price: '30.00',
+        reference: {
+          status: 'unavailable', label: 'No applicable reference', is_above_reference: null,
+          auto_matched: false,
+          match_candidates: [
+            { id: 11, commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines', package_size: '155 g', match_score: 62 },
+            { id: 12, commodity_key: null, commodity_name: 'Keyless Commodity', match_score: 55 },
+          ],
+        },
+      }],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    const options = document.querySelectorAll('datalist option')
+    // The server resolves the reference by exact commodity key, so the option's value must be the
+    // key. Submitting the display name made every chosen suggestion fail to resolve.
+    expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual(['saba-sardines-155g'])
+    // A keyless bulletin can never resolve a reference, so it is not offered at all.
+    expect(screen.queryByText(/Keyless Commodity/)).not.toBeInTheDocument()
+  })
+
+  it('lets an item report be referred for field verification', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      verification_request: null,
+      items: [{ id: 801, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00' }],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    // The referral controls used to live only in the legacy branch, so on an item report — the
+    // normal case — the officer selector never rendered and referral was impossible.
+    await user.click(screen.getByRole('checkbox', { name: /Refer this report for field verification/i }))
+    expect(await screen.findByRole('combobox', { name: 'Field Officer' })).toBeInTheDocument()
+  })
+
   it('shows the price freeze protocol when the receipt falls inside a declared emergency', async () => {
     vi.mocked(adminApi.getReports).mockResolvedValue([{
       ...mockReports[0],
