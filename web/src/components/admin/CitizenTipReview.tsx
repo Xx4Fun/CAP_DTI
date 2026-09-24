@@ -748,27 +748,19 @@ export const CitizenTipReview: React.FC = () => {
             {/* =========================================================================
                 RIGHT COLUMN: System Finding & DTI Review
                 ========================================================================= */}
-            <section
-              className="ocr-breakdown-column-container consumer-report-card"
-              style={{ padding: '1.25rem', display: 'grid', gap: '1.25rem' }}
-            >
-              {/* SYSTEM FINDING SECTION */}
-              <div style={{ display: 'grid', gap: '0.65rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    System extraction status
-                  </h3>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fed7aa' }}>
-                    OCR FLAG — REVIEW
-                  </span>
+            <section className="ocr-breakdown-column-container consumer-report-card consumer-report-findings">
+              <div className="consumer-report-findings-block">
+                <div className="consumer-report-findings-head">
+                  <h3>System extraction status</h3>
+                  <span className="consumer-report-ocr-flag">OCR FLAG — REVIEW</span>
                 </div>
 
-                {/* Detected Comparison Card.
-                    An item report is summarised from the per-item references resolved by the server;
-                    the single-price tiles below are the legacy path, which has one price and no items. */}
+                {/* An item report is summarised from the per-item references resolved by the
+                    server; the single-price tiles are the legacy path, which has one price and
+                    no items. */}
                 {hasItemReview ? (
-                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: comparisonSummary.compared > 0 ? '#0f172a' : '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
+                  <div className="consumer-report-comparison">
+                    <div className={`consumer-report-comparison-head${comparisonSummary.compared > 0 ? '' : ' is-blocked'}`}>
                       <AlertCircle size={16} />
                       <span>
                         {comparisonSummary.compared > 0
@@ -777,85 +769,85 @@ export const CitizenTipReview: React.FC = () => {
                       </span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Items above reference</div>
-                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: comparisonSummary.above > 0 ? '#dc2626' : '#0f172a' }}>
+                    <div className="consumer-report-tiles">
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Items above reference</div>
+                        <div className={`consumer-report-tile-value${comparisonSummary.above > 0 ? ' is-danger' : ''}`}>
                           {comparisonSummary.above}
                         </div>
                       </div>
 
-                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Items within reference</div>
-                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>{comparisonSummary.within}</div>
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Items within reference</div>
+                        <div className="consumer-report-tile-value is-success">{comparisonSummary.within}</div>
                       </div>
 
-                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total excess</div>
-                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: comparisonSummary.excess > 0 ? '#dc2626' : '#0f172a' }}>
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Total excess</div>
+                        <div className={`consumer-report-tile-value${comparisonSummary.excess > 0 ? ' is-danger' : ''}`}>
                           {comparisonSummary.above > 0 ? `+₱${comparisonSummary.excess.toFixed(2)}` : '₱0.00'}
                         </div>
                       </div>
                     </div>
 
                     {comparisonSummary.unresolved > 0 && (
-                      <p style={{ margin: 0, fontSize: '0.72rem', color: '#b45309', fontWeight: 600 }}>
+                      <p className="consumer-report-comparison-caution">
                         {comparisonSummary.unresolved} item(s) have no applicable reference and are not counted above.
                       </p>
                     )}
 
-                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4 }}>
+                    <p className="consumer-report-comparison-note">
                       System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
                     </p>
                   </div>
                 ) : (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
-                    <AlertCircle size={16} />
-                    <span>{priceDifference !== null ? 'Automated price comparison available' : 'No automated price comparison available'}</span>
+                  <div className="consumer-report-comparison">
+                    <div className="consumer-report-comparison-head is-blocked">
+                      <AlertCircle size={16} />
+                      <span>{priceDifference !== null ? 'Automated price comparison available' : 'No automated price comparison available'}</span>
+                    </div>
+
+                    <div className="consumer-report-tiles">
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Receipt Price</div>
+                        <div className="consumer-report-tile-value">
+                          {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Unavailable'}
+                        </div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Applicable SRP</div>
+                        <div className="consumer-report-tile-value is-success">
+                          {rawSrpPrice !== null ? `₱${rawSrpPrice.toFixed(2)}` : 'Unavailable'}
+                        </div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Difference</div>
+                        <div className="consumer-report-tile-value is-danger">
+                          {priceDifference !== null ? `${priceDifference > 0 ? '+' : ''}₱${priceDifference.toFixed(2)}` : 'Unavailable'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="consumer-report-comparison-note">
+                      System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
+                    </p>
                   </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Receipt Price</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
-                        {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Unavailable'}
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Applicable SRP</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
-                        {rawSrpPrice !== null ? `₱${rawSrpPrice.toFixed(2)}` : 'Unavailable'}
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Difference</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#dc2626' }}>
-                        {priceDifference !== null ? `${priceDifference > 0 ? '+' : ''}₱${priceDifference.toFixed(2)}` : 'Unavailable'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4 }}>
-                    System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
-                  </p>
-                </div>
                 )}
 
                 {/* Legacy reports only. When the report has persisted items, the same rows already
                     appear twice — read-only under "System extraction" and editable under
                     "Item-by-item findings" — so a third copy here only cost the evaluator a re-read. */}
                 {!hasItemReview && structuredOcrItems.length > 0 && (
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
-                    <table style={{ width: '100%', fontSize: '0.76rem', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  <div className="consumer-report-legacy-items">
+                    <table>
+                      <thead>
                         <tr>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Item</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Quantity</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>Price</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>OCR confidence</th>
+                          <th>Item</th>
+                          <th>Quantity</th>
+                          <th className="is-numeric">Price</th>
+                          <th className="is-numeric">OCR confidence</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -863,11 +855,11 @@ export const CitizenTipReview: React.FC = () => {
                           const confidence = Number(item.ocr_confidence)
                           const measuredConfidence = item.ocr_confidence !== null && item.ocr_confidence !== undefined && Number.isFinite(confidence) && confidence !== 0.8
                           return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '0.4rem 0.55rem', fontWeight: 600, color: '#0f172a' }}>{String(item.name || item.product || 'Item label not detected')}</td>
-                              <td style={{ padding: '0.4rem 0.55rem' }}>{item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : 'Quantity unavailable'}</td>
-                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', fontWeight: 700 }}>{item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Price unavailable'}</td>
-                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right' }}>{measuredConfidence ? `${Math.round(confidence * 100)}% measured` : 'Confidence unavailable'}</td>
+                            <tr key={idx}>
+                              <td className="is-name">{String(item.name || item.product || 'Item label not detected')}</td>
+                              <td>{item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : 'Quantity unavailable'}</td>
+                              <td className="is-numeric">{item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Price unavailable'}</td>
+                              <td className="is-numeric">{measuredConfidence ? `${Math.round(confidence * 100)}% measured` : 'Confidence unavailable'}</td>
                             </tr>
                           )
                         })}
