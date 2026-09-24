@@ -553,6 +553,28 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getByRole('button', { name: /Record finding/i })).toBeDisabled()
   })
 
+  it('marks each item decided or not so an incomplete row is findable at a glance', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        { id: 911, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00', commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines' },
+        { id: 912, sequence: 1, item_name: 'Cooking Oil', quantity: '1', unit_price: '75.00' },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getAllByText('Needs a decision')).toHaveLength(2)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'no_violation')
+
+    expect(await screen.findByText('Decided')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs a decision')).toHaveLength(1)
+  })
+
   it('lets an item report be referred for field verification', async () => {
     vi.mocked(adminApi.getReports).mockResolvedValue([{
       ...mockReports[0],

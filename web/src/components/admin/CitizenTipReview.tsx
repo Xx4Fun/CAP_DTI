@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
+  CheckCircle2,
+  Circle,
   AlertCircle,
   Download,
   FileText,
@@ -745,17 +747,8 @@ export const CitizenTipReview: React.FC = () => {
                 put a column boundary through the comparison the evaluator has to make.
                 ========================================================================= */}
             <section
-              className="evidence-column-container consumer-report-evidence"
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.25rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem',
-                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-              }}
+              className="evidence-column-container consumer-report-evidence consumer-report-card"
+              style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
             >
               {/* Context Header */}
               <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
@@ -1044,16 +1037,8 @@ export const CitizenTipReview: React.FC = () => {
                 RIGHT COLUMN: System Finding & DTI Review
                 ========================================================================= */}
             <section
-              className="ocr-breakdown-column-container"
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.25rem',
-                display: 'grid',
-                gap: '1.25rem',
-                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-              }}
+              className="ocr-breakdown-column-container consumer-report-card"
+              style={{ padding: '1.25rem', display: 'grid', gap: '1.25rem' }}
             >
               {/* SYSTEM FINDING SECTION */}
               <div style={{ display: 'grid', gap: '0.65rem' }}>
@@ -1197,11 +1182,20 @@ export const CitizenTipReview: React.FC = () => {
                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Item-by-item findings</div>
                     {selected.items!.map((item) => {
                       const decision = itemDecisions[item.id]
+                      const decided = isItemDecided(item.id)
                       return (
-                        <fieldset key={item.id} style={{ display: 'grid', gap: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.65rem', background: '#f8fafc' }}>
-                          <legend style={{ padding: '0 0.35rem', fontWeight: 800, fontSize: '0.8rem', color: '#0f172a' }}>
-                            {item.item_name || `Item ${item.sequence + 1}`}
-                            {' · '}
+                        <fieldset key={item.id} className={`consumer-report-item${decided ? ' is-decided' : ''}`}>
+                          {/* Identity, then the verdict, then the fields that settle it. These read
+                              as one unit now; previously the three inputs stacked under a legend as
+                              four unrelated controls with nothing tying them together. */}
+                          <div className="consumer-report-item-head">
+                            <strong>{item.item_name || `Item ${item.sequence + 1}`}</strong>
+                            <span className={`consumer-report-item-state${decided ? ' done' : ''}`}>
+                              {decided ? <CheckCircle2 size={13} aria-hidden="true" /> : <Circle size={13} aria-hidden="true" />}
+                              {decided ? 'Decided' : 'Needs a decision'}
+                            </span>
+                          </div>
+                          <div className="consumer-report-item-meta">
                             {toPrice(item.line_total ?? item.observed_price) !== null
                               ? `line total ₱${toPrice(item.line_total ?? item.observed_price)!.toFixed(2)}`
                               : 'line total not available'}
@@ -1209,80 +1203,79 @@ export const CitizenTipReview: React.FC = () => {
                             {toPrice(item.ocr_confidence) !== null && toPrice(item.ocr_confidence) !== 0.8
                               ? ` · OCR ${Math.round(toPrice(item.ocr_confidence)! * 100)}%`
                               : ''}
-                          </legend>
+                          </div>
                           <ItemReferenceVerdict reference={item.reference} />
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Receipt unit price (₱)
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              required
-                              aria-label={`Receipt unit price for ${item.item_name || item.id}`}
-                              value={decision?.receipt_price ?? ''}
-                              onChange={(event) => setItemDecisions((current) => ({
-                                ...current,
-                                [item.id]: { ...current[item.id], receipt_price: event.target.value === '' ? '' : Number(event.target.value) },
-                              }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
-                            />
-                            {suggestedUnitPrice(item) === null && (
-                              <small style={{ color: '#b45309', fontWeight: 600 }}>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
-                            )}
-                          </label>
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Commodity key
-                            {/* Pre-filled from the automatic match when one was confident. The list
-                                offers the ranked alternatives so a wrong or missing match is corrected
-                                by choosing, not by recalling an exact key from memory. */}
-                            <input
-                              list={`commodity-options-${item.id}`}
-                              aria-label={`Commodity key for ${item.item_name || item.id}`}
-                              value={decision?.commodity_key || ''}
-                              onChange={(event) => setItemDecisions((current) => ({
-                                ...current,
-                                [item.id]: {
-                                  ...current[item.id],
-                                  commodity_key: event.target.value,
-                                  // Choosing a suggestion must carry its name across too. Updating only
-                                  // the key would store a canonical key beside the unmatched OCR name.
-                                  commodity_name: candidateFor(item, event.target.value)?.commodity_name
-                                    ?? current[item.id]?.commodity_name
-                                    ?? '',
-                                },
-                              }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
-                            />
-                            <datalist id={`commodity-options-${item.id}`}>
-                              {/* The value is the commodity KEY, because the server resolves the
-                                  regulatory reference by exact key. Offering the display name here
-                                  made every chosen suggestion fail to resolve. Keyless bulletins
-                                  cannot resolve at all, so they are not offered. */}
-                              {(item.reference?.match_candidates ?? [])
-                                .filter((candidate) => Boolean(candidate.commodity_key))
-                                .map((candidate) => (
-                                  <option key={candidate.id} value={candidate.commodity_key as string}>
-                                    {candidate.commodity_name}
-                                    {candidate.package_size ? ` · ${candidate.package_size}` : ''}
-                                    {` · match ${candidate.match_score}`}
-                                  </option>
-                                ))}
-                            </datalist>
-                          </label>
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Finding
-                            <select
-                              aria-label={`Finding for ${item.item_name || item.id}`}
-                              value={decision?.regulatory_finding || ''}
-                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#fff', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-                            >
-                              <option value="">Select a finding</option>
-                              <option value="confirmed_violation">Confirmed violation</option>
-                              <option value="no_violation">No violation</option>
-                              <option value="insufficient_evidence">Insufficient evidence</option>
-                            </select>
-                          </label>
+                          <div className="consumer-report-item-fields">
+                            <label>
+                              Receipt unit price (₱)
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                aria-label={`Receipt unit price for ${item.item_name || item.id}`}
+                                value={decision?.receipt_price ?? ''}
+                                onChange={(event) => setItemDecisions((current) => ({
+                                  ...current,
+                                  [item.id]: { ...current[item.id], receipt_price: event.target.value === '' ? '' : Number(event.target.value) },
+                                }))}
+                              />
+                              {suggestedUnitPrice(item) === null && (
+                                <small>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
+                              )}
+                            </label>
+                            <label>
+                              Commodity key
+                              {/* Pre-filled from the automatic match when one was confident. The list
+                                  offers the ranked alternatives so a wrong or missing match is corrected
+                                  by choosing, not by recalling an exact key from memory. */}
+                              <input
+                                list={`commodity-options-${item.id}`}
+                                aria-label={`Commodity key for ${item.item_name || item.id}`}
+                                value={decision?.commodity_key || ''}
+                                onChange={(event) => setItemDecisions((current) => ({
+                                  ...current,
+                                  [item.id]: {
+                                    ...current[item.id],
+                                    commodity_key: event.target.value,
+                                    // Choosing a suggestion must carry its name across too. Updating only
+                                    // the key would store a canonical key beside the unmatched OCR name.
+                                    commodity_name: candidateFor(item, event.target.value)?.commodity_name
+                                      ?? current[item.id]?.commodity_name
+                                      ?? '',
+                                  },
+                                }))}
+                              />
+                              <datalist id={`commodity-options-${item.id}`}>
+                                {/* The value is the commodity KEY, because the server resolves the
+                                    regulatory reference by exact key. Offering the display name here
+                                    made every chosen suggestion fail to resolve. Keyless bulletins
+                                    cannot resolve at all, so they are not offered. */}
+                                {(item.reference?.match_candidates ?? [])
+                                  .filter((candidate) => Boolean(candidate.commodity_key))
+                                  .map((candidate) => (
+                                    <option key={candidate.id} value={candidate.commodity_key as string}>
+                                      {candidate.commodity_name}
+                                      {candidate.package_size ? ` · ${candidate.package_size}` : ''}
+                                      {` · match ${candidate.match_score}`}
+                                    </option>
+                                  ))}
+                              </datalist>
+                            </label>
+                            <label>
+                              Finding
+                              <select
+                                aria-label={`Finding for ${item.item_name || item.id}`}
+                                value={decision?.regulatory_finding || ''}
+                                onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
+                              >
+                                <option value="">Select a finding</option>
+                                <option value="confirmed_violation">Confirmed violation</option>
+                                <option value="no_violation">No violation</option>
+                                <option value="insufficient_evidence">Insufficient evidence</option>
+                              </select>
+                            </label>
+                          </div>
                         </fieldset>
                       )
                     })}
@@ -1519,10 +1512,11 @@ export const CitizenTipReview: React.FC = () => {
                 </div>
 
                 {/* Collapsible Technical & Audit Data Accordion */}
-                <details style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
-                  <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#475569' }}>
-                    Audit Data & Technical Traceability
-                  </summary>
+                {/* Reference material, not working surface. Each payload used to sit in its own
+                    90-140px scrollport, so a collapsed accordion still contained three nested
+                    scroll areas. */}
+                <details className="consumer-report-technical" style={{ marginTop: '0.5rem' }}>
+                  <summary>Technical detail &amp; audit traceability</summary>
                   <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.5rem' }}>
                     <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#1d4ed8', background: '#eff6ff', padding: '0.35rem 0.5rem', borderRadius: '4px' }}>
                       Formal receipt | Consumer report | Human validation required
@@ -1532,23 +1526,7 @@ export const CitizenTipReview: React.FC = () => {
                       <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
                         Raw OCR payload
                       </h4>
-                      <pre
-                        className="admin-code"
-                        style={{
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '6px',
-                          padding: '0.5rem',
-                          color: '#0f172a',
-                          fontFamily: 'monospace',
-                          fontSize: '0.72rem',
-                          maxHeight: '90px',
-                          overflow: 'auto',
-                          margin: 0,
-                        }}
-                      >
-                        {JSON.stringify(selected.raw_ocr_json, null, 2)}
-                      </pre>
+                      <pre className="admin-code">{JSON.stringify(selected.raw_ocr_json, null, 2)}</pre>
                     </div>
 
                     {evidenceManifest?.processing_result && (
@@ -1556,9 +1534,7 @@ export const CitizenTipReview: React.FC = () => {
                         <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
                           OCR processing diagnostics
                         </h4>
-                        <pre className="admin-code" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.5rem', color: '#0f172a', fontFamily: 'monospace', fontSize: '0.72rem', maxHeight: '140px', overflow: 'auto', margin: 0 }}>
-                          {JSON.stringify(evidenceManifest.processing_result, null, 2)}
-                        </pre>
+                        <pre className="admin-code">{JSON.stringify(evidenceManifest.processing_result, null, 2)}</pre>
                       </div>
                     )}
 
@@ -1567,23 +1543,7 @@ export const CitizenTipReview: React.FC = () => {
                         <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
                           DTI evaluator findings
                         </h4>
-                        <pre
-                          className="admin-code"
-                          style={{
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '6px',
-                            padding: '0.5rem',
-                            color: '#0f172a',
-                            fontFamily: 'monospace',
-                            fontSize: '0.72rem',
-                            maxHeight: '90px',
-                            overflow: 'auto',
-                            margin: 0,
-                          }}
-                        >
-                          {JSON.stringify(selected.evaluator_confirmed_json, null, 2)}
-                        </pre>
+                        <pre className="admin-code">{JSON.stringify(selected.evaluator_confirmed_json, null, 2)}</pre>
                       </div>
                     )}
 

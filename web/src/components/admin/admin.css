@@ -6606,3 +6606,142 @@
     box-shadow: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports: visual hierarchy
+
+   Every region used to be the same white card with the same 1px border at the
+   same elevation, so evidence, the price comparison, the decision form and the
+   audit accordion all read as equally important and nothing drew the eye to
+   where the evaluator acts. Three levels now: the panel canvas, raised working
+   cards, and the accented decision bar.
+   -------------------------------------------------------------------------- */
+
+.consumer-report-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* The decision bar is where the evaluator acts, so it sits above the cards. */
+.consumer-report-decision-bar {
+  border-color: #c7d7f5;
+  box-shadow: 0 -8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.consumer-report-decision-bar::before {
+  content: "";
+  display: block;
+  height: 3px;
+  margin: -0.85rem -0.85rem 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--admin-accent);
+}
+
+/* One item = one visual unit: identity, the verdict, then the fields that
+   decide it. Previously the three inputs read as unrelated controls stacked
+   under a legend. */
+.consumer-report-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid var(--admin-border);
+  border-left: 3px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-item.is-decided {
+  border-left-color: var(--admin-success);
+  background: var(--admin-surface);
+}
+
+.consumer-report-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.consumer-report-item-head strong {
+  color: var(--admin-text);
+  font-weight: 800;
+}
+
+.consumer-report-item-meta {
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Mirrors the checklist state LegalNoticeManager uses for its issuance steps. */
+.consumer-report-item-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--admin-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.consumer-report-item-state.done {
+  color: var(--admin-success);
+}
+
+.consumer-report-item-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.consumer-report-item-fields label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #334155;
+  min-width: 0;
+}
+
+.consumer-report-item-fields input,
+.consumer-report-item-fields select {
+  min-height: 34px;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  font-size: 0.8rem;
+}
+
+.consumer-report-item-fields small {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+/* Technical payloads are reference material, not working surface: collapsed by
+   default, and no longer each in their own little scrollport. */
+.consumer-report-technical {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: var(--admin-muted);
+  font-size: 0.78rem;
+}
+
+.consumer-report-technical > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #475569;
+}
+
+/* .admin-code already supplies the surface, border and its own 20rem cap - the house
+   pattern for code blocks. Only the long-key wrapping is specific to these payloads. */
+.consumer-report-technical pre {
+  margin: 0;
+  font-size: 0.72rem;
+  word-break: break-word;
+}
