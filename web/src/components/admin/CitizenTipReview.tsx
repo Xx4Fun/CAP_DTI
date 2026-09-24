@@ -60,6 +60,12 @@ export const CitizenTipReview: React.FC = () => {
   const [itemDecisions, setItemDecisions] = useState<Record<number, ItemDecision>>({})
   /** Identifies the newest evidence fetch, so a slower earlier one cannot replace it. */
   const evidenceRequestRef = useRef(0)
+  /**
+   * The decision values as they stood when the report was opened. `correct` must be sent only when
+   * the evaluator actually changed an extracted value, and live state cannot answer that: it is
+   * seeded from extraction, so comparing against it would call every report a correction.
+   */
+  const decisionBaselineRef = useRef<Record<number, ItemDecision> | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -114,17 +120,25 @@ export const CitizenTipReview: React.FC = () => {
     setDecisionIntent(report.status.toLowerCase().includes('dismiss') ? 'close' : 'verify')
     setVerificationChosen(false)
     setFieldOfficerId('')
-    setItemDecisions(Object.fromEntries((report.items ?? []).map((item) => [item.id, {
-      item_id: item.id,
-      commodity_key: item.commodity_key || '',
-      commodity_name: item.commodity_name || item.item_name || '',
-      receipt_price: suggestedUnitPrice(item) ?? '',
+    const observedAt = report.observed_at
       // The purchase date decides which SRP revision applies. Submission can be weeks later, and
       // using it silently judged older receipts against a bulletin that did not exist yet.
-      observed_at: report.observed_at
-        || (report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10)),
-      regulatory_finding: String(item.evaluator_decision_json?.regulatory_finding || ''),
-    }])))
+      || (report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
+    const seeded = Object.fromEntries((report.items ?? []).map((item) => {
+      // A previously recorded decision is the baseline when one exists; otherwise the extraction is.
+      const saved = item.evaluator_decision_json as Partial<ItemDecision> | null | undefined
+      return [item.id, {
+        item_id: item.id,
+        commodity_key: String(saved?.commodity_key ?? item.commodity_key ?? ''),
+        commodity_name: String(saved?.commodity_name ?? item.commodity_name ?? item.item_name ?? ''),
+        receipt_price: typeof saved?.receipt_price === 'number' ? saved.receipt_price : (suggestedUnitPrice(item) ?? ''),
+        observed_at: String(saved?.observed_at ?? observedAt),
+        regulatory_finding: String(saved?.regulatory_finding ?? ''),
+      } satisfies ItemDecision]
+    }))
+    setItemDecisions(seeded)
+    // Snapshot for the correct-vs-validate decision; see decisionBaselineRef.
+    decisionBaselineRef.current = JSON.parse(JSON.stringify(seeded))
 
     if (evidenceUrl) {
       URL.revokeObjectURL(evidenceUrl)
@@ -370,6 +384,54 @@ export const CitizenTipReview: React.FC = () => {
       && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
   })
 
+  /** Per-item completeness, so progress and the blocking reason share one definition. */
+  const isItemDecided = (itemId: number) => {
+    const decision = itemDecisions[itemId]
+    return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
+      && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
+  }
+
+  const decidedItemCount = (selected?.items ?? []).filter((item) => isItemDecided(item.id)).length
+
+  /**
+   * Why the submit is blocked, in words. Previously the button was simply dimmed, which on a
+   * 12-item receipt left the evaluator hunting for the row that was still missing a field.
+   */
+  const blockingReason = (() => {
+    if (!reason) return 'Add a decision reason'
+    const pending = (selected?.items ?? []).filter((item) => !isItemDecided(item.id))
+    if (pending.length === 0) return ''
+    const first = pending[0]
+    const missing = (() => {
+      const decision = itemDecisions[first.id]
+      if (!decision?.commodity_key) return 'commodity'
+      if (typeof decision.receipt_price !== 'number') return 'unit price'
+      return 'finding'
+    })()
+    return pending.length === 1
+      ? `${first.item_name || `Item ${first.sequence + 1}`} still needs a ${missing}`
+      : `${pending.length} items incomplete — next: ${first.item_name || `Item ${first.sequence + 1}`} needs a ${missing}`
+  })()
+
+  /**
+   * Whether this submission edits values the system extracted, which decides `correct` vs
+   * `validate` and therefore which audit event is recorded. Compared against a snapshot taken
+   * when the report was selected, not against live state — live state is seeded from extraction,
+   * so comparing with it would mark untouched reports as corrected.
+   */
+  const isCorrection = (() => {
+    const baseline = decisionBaselineRef.current
+    if (!baseline) return false
+    return Object.entries(itemDecisions).some(([itemId, decision]) => {
+      const original = baseline[Number(itemId)]
+      if (!original) return true
+      return original.commodity_key !== decision.commodity_key
+        || original.commodity_name !== decision.commodity_name
+        || original.receipt_price !== decision.receipt_price
+        || original.observed_at !== decision.observed_at
+    })
+  })()
+
   const showEvidenceAsset = async (asset: ReceiptEvidenceAssetRecord) => {
     if (!selected) return
     const request = ++evidenceRequestRef.current
@@ -412,7 +474,7 @@ export const CitizenTipReview: React.FC = () => {
   const detectedMerchant = typeof merchantResult?.display_name === 'string' ? merchantResult.display_name : null
 
   return (
-    <div className="citizen-tip-review-workspace" style={{ display: 'grid', gap: '1.25rem', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
+    <div className="citizen-tip-review-workspace consumer-report-panel" style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
       {/* PAGE HEADER: DTI Regulatory Clean Header */}
       <div
         className="review-header-bar"
@@ -539,16 +601,12 @@ export const CitizenTipReview: React.FC = () => {
         </div>
       </div>
 
-      {/* 3-COLUMN WORKSPACE: LEFT (Queue) -> CENTER (Evidence) -> RIGHT (Finding & Decision) */}
-      <div
-        className="admin-split"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '300px minmax(320px, 1fr) minmax(340px, 1.15fr)',
-          gap: '1.25rem',
-          alignItems: 'start',
-        }}
-      >
+      {/* TWO PANES: Queue | Workspace, where the workspace holds evidence beside the
+          item list so the receipt and the line being decided stay adjacent.
+          Sizing lives in admin.css (.consumer-report-*) and is driven by container
+          width; the inline grid-template-columns this replaced beat the stylesheet's
+          media query, so the layout never reflowed at any width. */}
+      <div className="consumer-report-split">
         {/* =========================================================================
             LEFT COLUMN: Report Queue Inbox
             ========================================================================= */}
@@ -610,7 +668,7 @@ export const CitizenTipReview: React.FC = () => {
           )}
 
           {/* Compact Inbox List */}
-          <div className="admin-list" style={{ display: 'grid', gap: '0.5rem', maxHeight: '640px', overflowY: 'auto', paddingRight: '0.15rem' }}>
+          <div className="admin-list consumer-report-queue-list">
             {filteredReports.map((report) => {
               const isSelected = selected?.id === report.id
               const badgeStyle = getStatusBadgeStyle(report.status)
@@ -678,12 +736,16 @@ export const CitizenTipReview: React.FC = () => {
             CENTER & RIGHT COLUMNS: Detail Workspace
             ========================================================================= */}
         {selected ? (
-          <>
+          // Two elements on purpose: the outer one is the query container, the inner one is the
+          // grid it sizes. A container query cannot restyle its own container element.
+          <div className="consumer-report-workspace"><div className="consumer-report-panes">
             {/* =========================================================================
-                CENTER COLUMN: Receipt Evidence & Extracted Details
+                EVIDENCE: sticky, so the receipt stays on screen while the item list
+                beside it scrolls. These two used to be separate top-level columns, which
+                put a column boundary through the comparison the evaluator has to make.
                 ========================================================================= */}
             <section
-              className="evidence-column-container"
+              className="evidence-column-container consumer-report-evidence"
               style={{
                 background: '#ffffff',
                 border: '1px solid #e2e8f0',
@@ -1391,118 +1453,69 @@ export const CitizenTipReview: React.FC = () => {
                   </div>
                 )}
 
-                {error && (
-                  <div className="error-badge" role="alert" style={{ background: '#fef2f2', borderLeft: '4px solid #dc2626', color: '#b91c1c', padding: '0.6rem 0.75rem', borderRadius: '0 6px 6px 0', fontSize: '0.8rem', fontWeight: 600 }}>
-                    {error}
+                {/* DECISION BAR - sticky, so it is reachable without scrolling past every
+                    item. Four controls, each named for what it writes. The previous five
+                    included a duplicate "Validate" and a primary labelled "Mark for Field
+                    Verification" that actually sent `validate`. Closure labels deliberately
+                    avoid naming a determination: `dismiss` and `reject` record NO finding and
+                    delete any prior one, so calling them "no violation" would claim a
+                    regulatory conclusion the backend never stores. Every determination -
+                    confirmed violation, no violation, insufficient evidence - goes through
+                    Record finding, where the per-item selector already carries the choice. */}
+                <div className="consumer-report-decision-bar">
+                  {error && (
+                    <p className="admin-feedback error" role="alert">{error}</p>
+                  )}
+
+                  {hasItemReview && (
+                    <div className="consumer-report-progress">
+                      <span>{decidedItemCount} of {selected.items!.length} items decided</span>
+                      {!itemReviewComplete && (
+                        <span className="is-blocked">{blockingReason}</span>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="consumer-report-actions">
+                    <button
+                      type="button"
+                      className="admin-button primary"
+                      disabled={decisionSaving || !reason || !verificationChosen || !fieldOfficerId}
+                      title={verificationChosen ? undefined : 'Tick "Refer this report for field verification" above to enable'}
+                      onClick={() => void requestVerification()}
+                    >
+                      <Send size={15} aria-hidden="true" /> Refer for field verification
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button primary"
+                      disabled={decisionSaving || !reason || verificationChosen || (hasItemReview ? !itemReviewComplete : !finding)}
+                      onClick={() => void decide(isCorrection ? 'correct' : 'validate')}
+                    >
+                      {decisionSaving ? 'Saving decision...' : 'Record finding'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button secondary"
+                      disabled={decisionSaving || !reason || verificationChosen}
+                      title="Resolves the report without recording any regulatory finding"
+                      onClick={() => void decide('dismiss')}
+                    >
+                      Resolve without a finding
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button danger"
+                      disabled={decisionSaving || !reason || verificationChosen}
+                      title="Closes the report without recording any regulatory finding"
+                      onClick={() => void decide('reject')}
+                    >
+                      <XCircle size={15} aria-hidden="true" /> Reject report
+                    </button>
                   </div>
-                )}
-
-                {/* Primary Action Buttons */}
-                <div className="admin-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', borderTop: '1px solid #f1f5f9', paddingTop: '0.85rem' }}>
-                  <button
-                    type="button"
-                    aria-label="Mark for Field Verification — Validate findings"
-                    disabled={decisionSaving || !reason || (verificationChosen && !fieldOfficerId) || (hasItemReview ? !itemReviewComplete : !finding)}
-                    onClick={() => void (verificationChosen ? requestVerification() : decide('validate'))}
-                    style={{
-                      flex: 1,
-                      padding: '0.65rem 1.15rem',
-                      borderRadius: '8px',
-                      background: '#1d4ed8',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 'not-allowed' : 'pointer',
-                      opacity: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 0.5 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem',
-                    }}
-                  >
-                    <Send size={15} /> {decisionSaving ? 'Saving decision...' : 'Mark for Field Verification'}
-                  </button>
-
-                  <button
-                    type="button"
-                    aria-label="Close Report — Dismiss Report"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('dismiss')}
-                    style={{
-                      flex: 1,
-                      padding: '0.65rem 1.15rem',
-                      borderRadius: '8px',
-                      background: '#dc2626',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: !reason ? 'not-allowed' : 'pointer',
-                      opacity: !reason ? 0.5 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem',
-                    }}
-                  >
-                    <XCircle size={15} /> Close Report
-                  </button>
-
-                  {/* Secondary Compatibility Buttons */}
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('correct')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Correct
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('validate')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Validate
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('reject')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reject
-                  </button>
                 </div>
 
                 {/* Collapsible Technical & Audit Data Accordion */}
@@ -1592,11 +1605,11 @@ export const CitizenTipReview: React.FC = () => {
                 </details>
               </div>
             </section>
-          </>
+          </div></div>
         ) : (
           <div
             style={{
-              gridColumn: '2 / -1',
+              gridColumn: 'auto',
               background: '#ffffff',
               border: '1px solid #e2e8f0',
               borderRadius: '12px',

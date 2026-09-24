@@ -6437,3 +6437,172 @@
 .legal-vendor-response h4 { margin: 0; color: var(--admin-text); }
 .legal-response-text { margin: 0; white-space: pre-wrap; color: var(--admin-text); line-height: 1.55; }
 .legal-response-attachments { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+/* ==========================================================================
+   Consumer Reports review workspace
+
+   The evaluator's task is a two-pane comparison: the receipt image on one side,
+   the line being decided on the other. The previous three-column layout put a
+   column boundary through the middle of that comparison, and sized itself with
+   an inline grid-template-columns that overrode the app's breakpoint, so it
+   never reflowed at any width.
+
+   Sizing is driven by CONTENT width, not viewport width: the 290px sidebar
+   means a 1024px viewport leaves this panel roughly 690px, so a viewport
+   breakpoint describes the wrong thing. Two separate containers are required
+   because one cannot answer for both nesting levels — just above 900px of
+   panel width the workspace is only ~580px, which is already past its own
+   collapse point.
+   ========================================================================== */
+
+.consumer-report-panel {
+  container-type: inline-size;
+  container-name: consumer-report-panel;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.consumer-report-split {
+  display: grid;
+  /* The queue is deliberately narrow: at 1280px the panel has ~942px of content, and every
+     pixel the queue takes comes off the workspace. A 20rem queue left the workspace at 587px,
+     below its own collapse point, so the side-by-side receipt/items view - the whole point of
+     this layout - never appeared on the most common laptop width. */
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+ /* The container and the grid must be SEPARATE elements: an element is not styled by
+    its own container query, so putting grid-template-columns on the container itself
+    meant the collapse rule silently did nothing while descendant rules still fired. */
+.consumer-report-workspace {
+  container-type: inline-size;
+  container-name: consumer-report-workspace;
+  min-width: 0;
+}
+
+.consumer-report-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  min-width: 0;
+}
+
+/* The receipt stays on screen while the item list scrolls beside it. Offset is
+   the .admin-panel scrollport's own top padding — the app header sits OUTSIDE
+   that scrollport, so using its height here would apply the offset twice. */
+.consumer-report-evidence {
+  position: sticky;
+  top: 1.25rem;
+  min-width: 0;
+}
+
+.consumer-report-queue-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: calc(100vh - 20rem);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+/* Always reachable: the decision used to sit below every item, so a 12-item
+   receipt buried it ~3000px down. */
+.consumer-report-decision-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-surface);
+  box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.consumer-report-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--admin-muted);
+}
+
+.consumer-report-progress .is-blocked {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+.consumer-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.consumer-report-actions .admin-button {
+  flex: 1 1 12rem;
+  justify-content: center;
+  min-height: 40px;
+}
+
+@container consumer-report-workspace (max-width: 620px) {
+  .consumer-report-panes {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked, a sticky evidence pane would pin above the items it is meant to
+     sit beside, so it reverts to flowing with the content. */
+  .consumer-report-evidence {
+    position: static;
+  }
+}
+
+@container consumer-report-panel (max-width: 900px) {
+  .consumer-report-split {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked, the queue sits above the workspace: left unbounded, 20 cards would
+     push the report off-screen after every selection. */
+  .consumer-report-queue-list {
+    max-height: 22rem;
+  }
+}
+
+/* Fallback where container queries are unavailable. Viewport-based, so it is
+   deliberately conservative: it only has to avoid a broken layout, not
+   reproduce the container behaviour exactly. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1280px) {
+    .consumer-report-panes {
+      grid-template-columns: 1fr;
+    }
+
+    .consumer-report-evidence {
+      position: static;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .consumer-report-split {
+      grid-template-columns: 1fr;
+    }
+
+    .consumer-report-queue-list {
+      max-height: 22rem;
+    }
+  }
+}
+
+/* A pinned bar on a short screen steals list space and can cover the last
+   item's own controls. */
+@media (max-height: 820px) {
+  .consumer-report-decision-bar {
+    position: static;
+    box-shadow: none;
+  }
+}

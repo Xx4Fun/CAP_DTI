@@ -140,9 +140,31 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getAllByText(/Super Extra Rice 1kg/i).length).toBeGreaterThan(0)
     expect(screen.getByText('OCR FLAG — REVIEW')).toBeInTheDocument()
 
-    // DTI Evaluator Single-Click Action Buttons
-    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Dismiss Report/i })).toBeInTheDocument()
+    // Four decision controls, each named for what it writes. Closure labels deliberately do not
+    // claim a determination: dismiss and reject record no finding at all.
+    expect(screen.getByRole('button', { name: /Refer for field verification/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Resolve without a finding/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reject report/i })).toBeInTheDocument()
+    // The duplicate "Validate" pill and the primary mislabelled "Mark for Field Verification"
+    // while sending `validate` are both gone.
+    expect(screen.queryByRole('button', { name: /^Validate$/i })).not.toBeInTheDocument()
+  })
+
+  it('maps each decision control to its own backend action', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+    await user.selectOptions(screen.getByRole('combobox', { name: /Regulatory finding/i }), 'no_violation')
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Checked against the bulletin.')
+
+    // dismiss -> Resolved, reject -> Closed; the backend treats these differently and neither
+    // records a finding, so they must stay distinct controls.
+    await user.click(screen.getByRole('button', { name: /Resolve without a finding/i }))
+    expect(adminApi.decideReport).toHaveBeenLastCalledWith(101, expect.objectContaining({ action: 'dismiss' }))
+
+    await user.click(screen.getByRole('button', { name: /Reject report/i }))
+    expect(adminApi.decideReport).toHaveBeenLastCalledWith(101, expect.objectContaining({ action: 'reject' }))
   })
 
   it('shows an honest missing-evidence state without fabricating a receipt', async () => {
@@ -169,7 +191,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Overpriced shelf item detected.')
 
     // Click single-click Validate & Issue LOI
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(
       101,
@@ -200,7 +222,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(screen.getByRole('button', { name: /Require Field Verification/i }))
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the shelf price in person.')
-    await user.click(screen.getByRole('button', { name: /Mark for Field Verification/i }))
+    await user.click(screen.getByRole('button', { name: /Refer for field verification/i }))
 
     expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.', field_officer_id: 9 })
     expect(adminApi.decideReport).not.toHaveBeenCalled()
@@ -316,7 +338,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.selectOptions(findings[0], 'confirmed_violation')
     await user.selectOptions(findings[1], 'no_violation')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Reviewed each confirmed receipt line.')
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(101, {
       action: 'validate',
@@ -365,10 +387,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.selectOptions(findings[0], 'confirmed_violation')
     await user.selectOptions(findings[1], 'no_violation')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Compared unit prices with the SRP.')
-    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeDisabled()
 
     await user.type(sardinesPrice, '55')
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(101, expect.objectContaining({
       item_decisions: [
@@ -503,6 +525,32 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual(['saba-sardines-155g'])
     // A keyless bulletin can never resolve a reference, so it is not offered at all.
     expect(screen.queryByText(/Keyless Commodity/)).not.toBeInTheDocument()
+  })
+
+  it('reports item progress and names what is blocking the decision', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        { id: 901, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00', commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines' },
+        { id: 902, sequence: 1, item_name: 'Cooking Oil', quantity: '1', unit_price: '75.00' },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText('0 of 2 items decided')).toBeInTheDocument()
+    // A disabled submit used to give no reason at all, leaving the evaluator to hunt the row.
+    expect(screen.getByText(/Add a decision reason/i)).toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Checked.')
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'confirmed_violation')
+
+    expect(await screen.findByText('1 of 2 items decided')).toBeInTheDocument()
+    expect(screen.getByText(/Cooking Oil still needs a commodity/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeDisabled()
   })
 
   it('lets an item report be referred for field verification', async () => {
