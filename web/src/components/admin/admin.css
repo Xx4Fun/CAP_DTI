@@ -6745,3 +6745,193 @@
   font-size: 0.72rem;
   word-break: break-word;
 }
+
+/* Per-item price verdict. Three outcomes that must stay visually distinct: an item with no
+   resolvable reference must never read like a compliant one. */
+.consumer-report-verdict {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 0.74rem;
+}
+
+.consumer-report-verdict.is-unresolved {
+  border-color: #cbd5e1;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-verdict.is-above {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.consumer-report-verdict.is-within {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.consumer-report-verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 800;
+}
+
+.consumer-report-verdict.is-unresolved .consumer-report-verdict-head { color: #475569; }
+.consumer-report-verdict.is-above .consumer-report-verdict-head { color: var(--admin-danger); }
+.consumer-report-verdict.is-within .consumer-report-verdict-head { color: var(--admin-success); }
+
+.consumer-report-verdict-delta { font-weight: 700; }
+
+.consumer-report-verdict-note { color: var(--admin-muted); }
+
+.consumer-report-verdict-detail {
+  display: grid;
+  gap: 0.15rem;
+  color: #475569;
+}
+
+.consumer-report-verdict-source {
+  font-weight: 600;
+  color: #475569;
+}
+
+/* An emergency ceiling and an ordinary SRP are different legal instruments. */
+.consumer-report-verdict-source.is-emergency { color: var(--admin-warning); }
+
+.consumer-report-verdict-warning {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Receipt extraction panel (read-only evidence of what the OCR saw)
+   -------------------------------------------------------------------------- */
+
+.receipt-extraction {
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.receipt-extraction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.receipt-extraction-head h4 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.receipt-extraction-group {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.receipt-extraction-field {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.receipt-extraction-field > span { color: var(--admin-muted); }
+.receipt-extraction-field > strong { color: var(--admin-text); text-align: right; }
+
+.receipt-extraction-tablewrap { overflow-x: auto; }
+
+.receipt-extraction-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.receipt-extraction-table th,
+.receipt-extraction-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+  text-align: left;
+}
+
+.receipt-extraction-table th { color: var(--admin-muted); }
+.receipt-extraction-itemname { font-weight: 700; color: var(--admin-text); }
+
+.receipt-extraction-raw {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.68rem;
+  color: var(--admin-muted);
+}
+
+.receipt-extraction-rejected > summary {
+  cursor: pointer;
+  color: #475569;
+}
+
+.receipt-extraction-reconciliation { display: grid; gap: 0.3rem; }
+.receipt-extraction-reconciliation strong { color: var(--admin-text); margin-right: 0.35rem; }
+.receipt-extraction-sum { color: var(--admin-muted); }
+.receipt-extraction-caution { color: #92400e; }
+
+.receipt-extraction-warnings {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+  color: #92400e;
+}
+
+/* Tone badges: one class per meaning, so a caller names the meaning not the colour. */
+.receipt-badge {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.receipt-badge.tone-ok { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.receipt-badge.tone-bad { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.receipt-badge.tone-warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.receipt-badge.tone-muted { background: #f1f5f9; color: #475569; border-color: var(--admin-border); }
+.receipt-badge.tone-info { background: var(--admin-accent-soft); color: var(--admin-accent); border-color: #bfdbfe; }
+
+.evidence-section-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #334155;
+}
+
+.evidence-section-nav button {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: var(--admin-surface);
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.evidence-section-nav button:disabled { opacity: 0.5; cursor: not-allowed; }
+.evidence-section-nav-attempt { color: var(--admin-muted); }
+
+.receipt-extraction-flags { margin-top: 0.15rem; }
