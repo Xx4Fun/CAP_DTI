@@ -428,9 +428,63 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     render(<CitizenTipReview />)
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    expect(screen.getByText('Rice 1kg')).toBeInTheDocument()
-    expect(screen.getByText('Item label not detected')).toBeInTheDocument()
-    expect(screen.getByText('93% measured')).toBeInTheDocument()
-    expect(screen.getByText('Confidence unavailable')).toBeInTheDocument()
+    // Persisted items are reviewed item by item. The duplicate read-only copy of the same rows was
+    // removed, so these assert the surviving decision surface rather than that table.
+    expect(screen.getByRole('spinbutton', { name: /Receipt unit price for Rice 1kg/i })).toBeInTheDocument()
+    expect(screen.getByText(/Rice 1kg/)).toBeInTheDocument()
+    expect(screen.getByText(/OCR 93%/)).toBeInTheDocument()
+    // The unnamed second item is still reviewable, labelled by position.
+    expect(screen.getByText(/Item 2/)).toBeInTheDocument()
+    // Nothing was invented from raw OCR metadata.
+    expect(screen.queryByText('Item label not detected')).not.toBeInTheDocument()
+  })
+
+  it('states the price comparison per item and never guesses when no reference applies', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        {
+          id: 601, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00',
+          commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines',
+          reference: {
+            status: 'available', type: 'standard_srp', label: 'SRP baseline (provisional)',
+            value: 21.5, effective_date: '2026-05-11', receipt_unit_price: 30,
+            peso_difference: 8.5, percent_difference: 39.5, is_above_reference: true, auto_matched: true,
+          },
+        },
+        {
+          id: 602, sequence: 1, item_name: 'Unmatched line', quantity: '1', unit_price: '12.00',
+          reference: { status: 'unavailable', label: 'No applicable reference', is_above_reference: null },
+        },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText('Above reference')).toBeInTheDocument()
+    expect(screen.getByText(/\+₱8\.50/)).toBeInTheDocument()
+    expect(screen.getByText(/SRP baseline \(provisional\)/)).toBeInTheDocument()
+    // An item with no reference must not read as compliant.
+    expect(screen.getByText('No applicable reference')).toBeInTheDocument()
+    expect(screen.queryByText('Within reference')).not.toBeInTheDocument()
+  })
+
+  it('shows the price freeze protocol when the receipt falls inside a declared emergency', async () => {
+    vi.mocked(adminApi.getReports).mockResolvedValue([{
+      ...mockReports[0],
+      evidence_available: false,
+      protocol: { mode: 'emergency', reference: 'PDRRMC-2026-07' },
+      items: [],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText(/Price Freeze Protocol/)).toBeInTheDocument()
+    expect(screen.getByText(/PDRRMC-2026-07/)).toBeInTheDocument()
   })
 })

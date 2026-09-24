@@ -19,6 +19,7 @@ import { adminApi } from '../../services/adminApi'
 import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
 import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
+import { ItemReferenceVerdict } from './ItemReferenceVerdict'
 
 type ItemDecision = {
   item_id: number
@@ -118,7 +119,10 @@ export const CitizenTipReview: React.FC = () => {
       commodity_key: item.commodity_key || '',
       commodity_name: item.commodity_name || item.item_name || '',
       receipt_price: suggestedUnitPrice(item) ?? '',
-      observed_at: report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      // The purchase date decides which SRP revision applies. Submission can be weeks later, and
+      // using it silently judged older receipts against a bulletin that did not exist yet.
+      observed_at: report.observed_at
+        || (report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10)),
       regulatory_finding: String(item.evaluator_decision_json?.regulatory_finding || ''),
     }])))
 
@@ -403,10 +407,21 @@ export const CitizenTipReview: React.FC = () => {
               >
                 Consumer Reports
               </h2>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
-                Normal Market Protocol
-              </span>
+              {/* Derived from the emergency in force on the selected receipt's transaction date, not
+                  from today's state: a receipt bought during a freeze is judged under that freeze. */}
+              {(() => {
+                const emergency = selected?.protocol?.mode === 'emergency'
+                return (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: emergency ? '#fffbeb' : '#ecfdf5', color: emergency ? '#b45309' : '#047857', border: `1px solid ${emergency ? '#fed7aa' : '#a7f3d0'}`, padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: emergency ? '#f59e0b' : '#10b981' }} />
+                    {!selected
+                      ? 'Select a report to see the applicable protocol'
+                      : emergency
+                        ? `Price Freeze Protocol${selected.protocol?.reference ? ` · ${selected.protocol.reference}` : ''}`
+                        : 'Normal Market Protocol'}
+                  </span>
+                )
+              })()}
             </div>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
               Review submitted consumer price concerns and determine the next action.
@@ -603,8 +618,19 @@ export const CitizenTipReview: React.FC = () => {
                     {report.store_name || 'Store unmapped'}
                   </div>
 
-                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    {report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                      {report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
+                    </span>
+                    {/* Lets an evaluator triage the queue without opening every report. */}
+                    {(report.above_reference_count ?? 0) > 0 && (
+                      <span
+                        title={`${report.above_reference_count} item(s) priced above the applicable reference`}
+                        style={{ fontSize: '0.66rem', fontWeight: 800, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '0.05rem 0.3rem', whiteSpace: 'nowrap' }}
+                      >
+                        {report.above_reference_count} above SRP
+                      </span>
+                    )}
                   </div>
                 </button>
               )
@@ -985,8 +1011,10 @@ export const CitizenTipReview: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Structured OCR line items, including uncertain and legacy values. */}
-                {structuredOcrItems.length > 0 && (
+                {/* Legacy reports only. When the report has persisted items, the same rows already
+                    appear twice — read-only under "System extraction" and editable under
+                    "Item-by-item findings" — so a third copy here only cost the evaluator a re-read. */}
+                {!hasItemReview && structuredOcrItems.length > 0 && (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
                     <table style={{ width: '100%', fontSize: '0.76rem', borderCollapse: 'collapse' }}>
                       <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -1042,7 +1070,11 @@ export const CitizenTipReview: React.FC = () => {
                               ? `line total ₱${toPrice(item.line_total ?? item.observed_price)!.toFixed(2)}`
                               : 'line total not available'}
                             {toPrice(item.quantity) !== null ? ` · qty ${toPrice(item.quantity)}` : ''}
+                            {toPrice(item.ocr_confidence) !== null && toPrice(item.ocr_confidence) !== 0.8
+                              ? ` · OCR ${Math.round(toPrice(item.ocr_confidence)! * 100)}%`
+                              : ''}
                           </legend>
+                          <ItemReferenceVerdict reference={item.reference} />
                           <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
                             Receipt unit price (₱)
                             <input
@@ -1064,12 +1096,25 @@ export const CitizenTipReview: React.FC = () => {
                           </label>
                           <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
                             Commodity key
+                            {/* Pre-filled from the automatic match when one was confident. The list
+                                offers the ranked alternatives so a wrong or missing match is corrected
+                                by choosing, not by recalling an exact key from memory. */}
                             <input
+                              list={`commodity-options-${item.id}`}
                               aria-label={`Commodity key for ${item.item_name || item.id}`}
                               value={decision?.commodity_key || ''}
                               onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], commodity_key: event.target.value } }))}
                               style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
                             />
+                            <datalist id={`commodity-options-${item.id}`}>
+                              {(item.reference?.match_candidates ?? []).map((candidate) => (
+                                <option key={candidate.id} value={candidate.commodity_name}>
+                                  {candidate.commodity_name}
+                                  {candidate.package_size ? ` · ${candidate.package_size}` : ''}
+                                  {` · match ${candidate.match_score}`}
+                                </option>
+                              ))}
+                            </datalist>
                           </label>
                           <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
                             Finding

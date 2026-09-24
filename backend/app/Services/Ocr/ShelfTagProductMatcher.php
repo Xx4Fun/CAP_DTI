@@ -68,10 +68,7 @@ class ShelfTagProductMatcher
 
     public function match(array|string $productInput, ?string $packageSize = null, array $options = []): array
     {
-        $bulletins = SrpBulletin::query()
-            ->where('is_active', true)
-            ->with('aliases')
-            ->get();
+        $bulletins = $this->activeBulletins();
 
         if ($bulletins->isEmpty()) {
             return [];
@@ -118,6 +115,20 @@ class ShelfTagProductMatcher
         }
 
         return $candidates;
+    }
+
+    /**
+     * Held for the lifetime of this instance: a receipt is matched line by line, and reloading the
+     * whole active catalogue per line turned one query into one per item.
+     */
+    protected ?\Illuminate\Support\Collection $activeBulletins = null;
+
+    protected function activeBulletins(): \Illuminate\Support\Collection
+    {
+        return $this->activeBulletins ??= SrpBulletin::query()
+            ->where('is_active', true)
+            ->with('aliases')
+            ->get();
     }
 
     /**

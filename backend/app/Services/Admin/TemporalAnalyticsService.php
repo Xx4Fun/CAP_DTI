@@ -23,8 +23,11 @@ class TemporalAnalyticsService
             if ($commodityKey && $srp?->commodity_key !== $commodityKey) {
                 continue;
             }
-            $resolved = $commodityKey ? $this->resolver->resolve($commodityKey, $finding->observed_at) : $srp;
-            $rows->push(['date' => $finding->observed_at->format('Y-m-d'), 'price' => $finding->observed_price, 'srp' => $resolved?->baseline_price, 'source' => 'Validated receipt']);
+            // Plot the reference the finding was decided against. Re-resolving here redrew history
+            // whenever a bulletin was revised, and could not represent an emergency ceiling at all.
+            $baseline = $finding->reference_value
+                ?? ($commodityKey ? $this->resolver->resolve($commodityKey, $finding->observed_at)?->baseline_price : $srp?->baseline_price);
+            $rows->push(['date' => $finding->observed_at->format('Y-m-d'), 'price' => $finding->observed_price, 'srp' => $baseline, 'source' => 'Validated receipt']);
         }
         $inspections = TemporalInspection::with('bulletin')->where('store_id', $store->id)
             ->where('validation_status', 'verified')->whereNotNull('officer_signature')->where('officer_signature', '!=', '')

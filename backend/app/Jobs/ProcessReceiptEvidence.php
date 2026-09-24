@@ -7,6 +7,7 @@ use App\Models\ReportStatusHistory;
 use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\Extraction\RetryableExtractionException;
 use App\Services\Receipt\ReceiptEvidencePipeline;
+use App\Services\Receipt\ReceiptItemSrpMatcher;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,8 +34,12 @@ class ProcessReceiptEvidence implements ShouldQueue
         $this->onQueue('receipt-processing');
     }
 
-    public function handle(ReceiptEvidencePipeline $pipeline): void
+    // $srpMatcher is optional so the many tests that invoke handle() directly keep working; the queue
+    // worker resolves it either way.
+    public function handle(ReceiptEvidencePipeline $pipeline, ?ReceiptItemSrpMatcher $srpMatcher = null): void
     {
+        $srpMatcher ??= app(ReceiptItemSrpMatcher::class);
+
         $report = ConsumerReport::where('report_reference', $this->reportReference)
             ->with('evidenceBundle')
             ->firstOrFail();
@@ -81,11 +86,19 @@ class ProcessReceiptEvidence implements ShouldQueue
             : ($internalStatus === 'needs_recapture' ? 'Needs recapture' : 'Processing failed');
         $reasonCode = (string) ($result['reason_code'] ?? ($internalStatus === 'failed' ? ReceiptFailureCodes::PROCESSING_FAILED : ''));
 
-        DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus, $reasonCode) {
+        DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus, $reasonCode, $srpMatcher) {
             $report->items()->delete();
             if ($internalStatus === 'ready') {
                 foreach (($result['items'] ?? []) as $item) {
                     $report->items()->create($item);
+                }
+                // Suggest an SRP bulletin per line so the evaluator corrects a match instead of
+                // typing every commodity key. A failure here must not fail the extraction: the
+                // report is still reviewable unmatched, which is exactly the old behaviour.
+                try {
+                    $srpMatcher->matchReport($report);
+                } catch (Throwable $exception) {
+                    report($exception);
                 }
             }
 

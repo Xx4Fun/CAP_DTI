@@ -8,12 +8,62 @@ use App\Models\RegulatoryFinding;
 use App\Models\ReportStatusHistory;
 use App\Models\Store;
 use App\Models\User;
+use App\Services\Receipt\ReceiptPriceComparison;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ReportReviewService
 {
-    public function __construct(private readonly AuditTrailService $audit, private readonly TemporalSrpResolver $srpResolver) {}
+    /** Outcomes that assert a price determination, and therefore must cite a real reference. */
+    private const FINDING_OUTCOMES = ['confirmed_violation', 'no_violation'];
+
+    public function __construct(
+        private readonly AuditTrailService $audit,
+        private readonly TemporalSrpResolver $srpResolver,
+        private readonly ReceiptPriceComparison $comparison,
+    ) {}
+
+    /**
+     * The reference a finding will cite, or a 422 when none applies.
+     *
+     * A confirmed violation with no baseline behind it is not a defensible regulatory record, and
+     * previously the resolver simply returned null and the finding saved anyway. Outcomes that assert
+     * nothing about price (insufficient evidence, rejection) never reach this.
+     *
+     * @return array<string, mixed>
+     */
+    private function requireReference(string $commodityKey, string $observedAt, string $finding): array
+    {
+        $reference = $this->comparison->referenceFor($commodityKey, $observedAt);
+
+        abort_if(
+            ($reference['status'] ?? null) !== 'available',
+            422,
+            sprintf(
+                'No authoritative price reference applies to "%s" on %s, so this finding cannot be recorded. %s',
+                $commodityKey,
+                $observedAt,
+                $reference['label'] ?? 'The commodity or date may be wrong.',
+            ),
+        );
+
+        return $reference;
+    }
+
+    /** The reference columns a finding stores, so it keeps showing the baseline it was decided against. */
+    private function referenceColumns(array $reference): array
+    {
+        return [
+            'srp_bulletin_id' => $reference['srp_bulletin_id'] ?? null,
+            'reference_type' => $reference['type'] ?? null,
+            'reference_source_id' => $reference['source_id'] ?? null,
+            'reference_value' => $reference['value'] ?? null,
+            'reference_effective_date' => $reference['effective_date'] ?? null,
+            'reference_label' => $reference['label'] ?? null,
+            'reference_source' => $reference['source'] ?? null,
+            'reference_version' => $reference['version'] ?? null,
+        ];
+    }
 
     public function decide(ConsumerReport $report, string $action, array $corrected, string $reason, User $actor, Request $request): ConsumerReport
     {
@@ -32,16 +82,24 @@ class ReportReviewService
                 'internal_notes' => $reason, 'actor_type' => 'dti_evaluator', 'actor_id' => $actor->id,
             ]);
 
-            if ($action !== 'dismiss') {
-                $srp = isset($corrected['commodity_key'], $corrected['observed_at'])
-                    ? $this->srpResolver->resolve($corrected['commodity_key'], $corrected['observed_at']) : null;
-                $decision = $action === 'reject' ? 'rejected' : ($confirmedViolation ? 'confirmed' : 'not_confirmed');
+            $finding = $corrected['regulatory_finding'] ?? null;
+            // Only a real price determination records a finding. Dismissal and rejection assert
+            // nothing, and an earlier finding must not survive a decision that withdraws it.
+            if ($reviewed && in_array($finding, self::FINDING_OUTCOMES, true)) {
+                $reference = $this->requireReference(
+                    $corrected['commodity_key'],
+                    $corrected['observed_at'],
+                    $finding,
+                );
                 RegulatoryFinding::updateOrCreate(
                     ['source_type' => 'consumer_report', 'source_id' => $report->id],
-                    ['store_id' => $report->store_id, 'srp_bulletin_id' => $srp?->id, 'observed_price' => $corrected['receipt_price'] ?? null,
-                     'observed_at' => $corrected['observed_at'] ?? $report->created_at, 'decision' => $decision,
+                    ['store_id' => $report->store_id, 'observed_price' => $corrected['receipt_price'] ?? null,
+                     'observed_at' => $corrected['observed_at'], 'decision' => $confirmedViolation ? 'confirmed' : 'not_confirmed',
                      'reason' => $reason, 'decided_by' => $actor->id, 'decided_at' => now()]
+                    + $this->referenceColumns($reference)
                 );
+            } else {
+                RegulatoryFinding::where('source_type', 'consumer_report')->where('source_id', $report->id)->delete();
             }
             if ($report->store_id) $this->recalculateRecidivism(Store::findOrFail($report->store_id));
             $this->audit->recordOrFail($request, 'report.'.$action, $report, [
@@ -93,21 +151,38 @@ class ReportReviewService
                     'reviewed_by' => $actor->id,
                     'reviewed_at' => now(),
                 ]);
-                $srp = $this->srpResolver->resolve($decision['commodity_key'], $decision['observed_at']);
+
+                // Insufficient evidence asserts nothing about price, so it records no finding — and
+                // supersedes any earlier one, which would otherwise keep counting toward recidivism.
+                if (! in_array($decision['regulatory_finding'], self::FINDING_OUTCOMES, true)) {
+                    RegulatoryFinding::where('source_type', 'consumer_report_item')
+                        ->where('source_id', $item->id)->delete();
+
+                    continue;
+                }
+
+                $reference = $this->requireReference(
+                    $decision['commodity_key'],
+                    $decision['observed_at'],
+                    $decision['regulatory_finding'],
+                );
                 RegulatoryFinding::updateOrCreate(
                     ['source_type' => 'consumer_report_item', 'source_id' => $item->id],
                     [
                         'store_id' => $report->store_id,
-                        'srp_bulletin_id' => $srp?->id,
                         'observed_price' => $decision['receipt_price'],
                         'observed_at' => $decision['observed_at'],
                         'decision' => $decision['regulatory_finding'] === 'confirmed_violation' ? 'confirmed' : 'not_confirmed',
                         'reason' => $reason,
                         'decided_by' => $actor->id,
                         'decided_at' => now(),
-                    ]
+                    ] + $this->referenceColumns($reference)
                 );
             }
+
+            // An item decision supersedes any report-level finding from an earlier pass, so the two
+            // paths cannot both count the same report.
+            RegulatoryFinding::where('source_type', 'consumer_report')->where('source_id', $report->id)->delete();
 
             $report->update([
                 'evaluator_confirmed_json' => ['items' => $itemDecisions],

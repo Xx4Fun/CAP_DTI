@@ -315,6 +315,10 @@ export interface ConsumerReportRecord {
     merchant?: string | null
   } | null
   items?: ConsumerReportItemRecord[]
+  /** The receipt's own transaction date, which governs which reference applies. */
+  observed_at?: string | null
+  protocol?: { mode: 'standard' | 'emergency'; reference?: string | null }
+  above_reference_count?: number
   verification_request?: {
     id: number
     status: 'open' | 'claimed' | 'completed' | 'cancelled'
@@ -346,6 +350,31 @@ export interface ConsumerReportItemRecord {
   commodity_key?: string | null
   commodity_name?: string | null
   evaluator_decision_json?: Record<string, unknown> | null
+  reference?: ItemPriceReference
+}
+
+/**
+ * The regulatory reference that applied to one receipt line on the purchase date, and the arithmetic
+ * comparison against it. `is_above_reference` is a computed fact, not a finding: a DTI evaluator
+ * still decides whether a violation occurred.
+ */
+export interface ItemPriceReference {
+  status: 'available' | 'unavailable'
+  type?: 'standard_srp' | 'emergency_ceiling' | null
+  label?: string | null
+  value?: number | null
+  source?: string | null
+  effective_date?: string | null
+  version?: string | null
+  commodity_key?: string | null
+  commodity_name?: string | null
+  receipt_unit_price?: number | null
+  peso_difference?: number | null
+  percent_difference?: number | null
+  /** null when either side is unknown — never a false "within reference". */
+  is_above_reference?: boolean | null
+  auto_matched?: boolean
+  match_candidates?: Array<{ id: number; commodity_name: string; package_size?: string; match_score: number; match_level?: string }>
 }
 
 export interface ReceiptEvidenceAssetRecord {
