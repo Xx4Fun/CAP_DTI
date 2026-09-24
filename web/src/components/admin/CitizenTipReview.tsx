@@ -336,6 +336,30 @@ export const CitizenTipReview: React.FC = () => {
 
   const ocrItems = parseOcrItems(selected?.raw_ocr_json ?? null)
   const hasItemReview = (selected?.items?.length ?? 0) > 0
+
+  /**
+   * Report-level roll-up of the per-item references the server resolved. Items with no applicable
+   * reference are counted separately and never folded into "within reference", so an unmatched line
+   * can never read as compliant.
+   */
+  const comparisonSummary = (selected?.items ?? []).reduce(
+    (totals, item) => {
+      const above = item.reference?.is_above_reference
+      if (above === true) {
+        totals.above += 1
+        totals.compared += 1
+        totals.excess += item.reference?.peso_difference ?? 0
+      } else if (above === false) {
+        totals.within += 1
+        totals.compared += 1
+      } else {
+        totals.unresolved += 1
+      }
+      totals.total += 1
+      return totals
+    },
+    { above: 0, within: 0, unresolved: 0, compared: 0, total: 0, excess: 0 },
+  )
   const itemReviewComplete = hasItemReview && selected!.items!.every((item) => {
     const decision = itemDecisions[item.id]
     return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
@@ -976,7 +1000,52 @@ export const CitizenTipReview: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Detected Comparison Card */}
+                {/* Detected Comparison Card.
+                    An item report is summarised from the per-item references resolved by the server;
+                    the single-price tiles below are the legacy path, which has one price and no items. */}
+                {hasItemReview ? (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: comparisonSummary.compared > 0 ? '#0f172a' : '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
+                      <AlertCircle size={16} />
+                      <span>
+                        {comparisonSummary.compared > 0
+                          ? `Compared ${comparisonSummary.compared} of ${comparisonSummary.total} item(s) against the applicable reference`
+                          : 'No item could be compared — match a commodity to each line below'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Items above reference</div>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: comparisonSummary.above > 0 ? '#dc2626' : '#0f172a' }}>
+                          {comparisonSummary.above}
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Items within reference</div>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>{comparisonSummary.within}</div>
+                      </div>
+
+                      <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Total excess</div>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 800, color: comparisonSummary.excess > 0 ? '#dc2626' : '#0f172a' }}>
+                          {comparisonSummary.above > 0 ? `+₱${comparisonSummary.excess.toFixed(2)}` : '₱0.00'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {comparisonSummary.unresolved > 0 && (
+                      <p style={{ margin: 0, fontSize: '0.72rem', color: '#b45309', fontWeight: 600 }}>
+                        {comparisonSummary.unresolved} item(s) have no applicable reference and are not counted above.
+                      </p>
+                    )}
+
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4 }}>
+                      System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
+                    </p>
+                  </div>
+                ) : (
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
                     <AlertCircle size={16} />
@@ -1010,6 +1079,7 @@ export const CitizenTipReview: React.FC = () => {
                     System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
                   </p>
                 </div>
+                )}
 
                 {/* Legacy reports only. When the report has persisted items, the same rows already
                     appear twice — read-only under "System extraction" and editable under

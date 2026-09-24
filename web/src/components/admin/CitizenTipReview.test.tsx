@@ -465,8 +465,12 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(await screen.findByText('RPT-2026-001'))
 
     expect(screen.getByText('Above reference')).toBeInTheDocument()
-    expect(screen.getByText(/\+₱8\.50/)).toBeInTheDocument()
+    // Twice by design: once on the item badge, once in the report's total-excess tile.
+    expect(screen.getAllByText(/\+₱8\.50/)).toHaveLength(2)
     expect(screen.getByText(/SRP baseline \(provisional\)/)).toBeInTheDocument()
+    // The report roll-up counts only what was actually compared.
+    expect(screen.getByText(/Compared 1 of 2 item\(s\)/)).toBeInTheDocument()
+    expect(screen.getByText(/1 item\(s\) have no applicable reference/)).toBeInTheDocument()
     // An item with no reference must not read as compliant.
     expect(screen.getByText('No applicable reference')).toBeInTheDocument()
     expect(screen.queryByText('Within reference')).not.toBeInTheDocument()
