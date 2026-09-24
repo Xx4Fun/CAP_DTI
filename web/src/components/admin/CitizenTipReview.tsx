@@ -870,20 +870,16 @@ export const CitizenTipReview: React.FC = () => {
               </div>
 
               {/* DTI DECISION & REVIEW SECTION */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'grid', gap: '0.85rem' }}>
+              <div className="consumer-report-decision">
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    DTI evaluator findings and decision
-                  </h3>
-                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                    What should happen to this report?
-                  </p>
+                  <h3 className="consumer-report-decision-title">DTI evaluator findings and decision</h3>
+                  <p className="consumer-report-decision-lede">What should happen to this report?</p>
                 </div>
 
                 {/* Structured Multi-Item Forms (when applicable) */}
                 {hasItemReview && (
-                  <div style={{ display: 'grid', gap: '0.65rem' }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Item-by-item findings</div>
+                  <div className="consumer-report-item-list">
+                    <div className="consumer-report-item-list-title">Item-by-item findings</div>
                     {selected.items!.map((item) => {
                       const decision = itemDecisions[item.id]
                       const decided = isItemDecided(item.id)
@@ -988,11 +984,11 @@ export const CitizenTipReview: React.FC = () => {
 
                 {/* Decision Intent & Regulatory Finding Controls */}
                 {selected.verification_request && (
-                  <section aria-label="Field verification request" style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#eff6ff' }}>
+                  <section aria-label="Field verification request" className="consumer-report-referral is-active">
                     <strong>Field verification request</strong>
                     <small>{selected.status}</small>
                     <span>{selected.verification_request.status.charAt(0).toUpperCase() + selected.verification_request.status.slice(1)}</span>
-                    <p style={{ margin: 0 }}>{selected.verification_request.reason}</p>
+                    <p>{selected.verification_request.reason}</p>
                     {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
                   </section>
                 )}
@@ -1000,8 +996,8 @@ export const CitizenTipReview: React.FC = () => {
                     legacy branch below, so on an item report — the normal case — the officer
                     selector never rendered and a referral could not be made at all. */}
                 {!selected.verification_request && (
-                  <section aria-label="Refer for field verification" style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#f8fafc' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                  <section aria-label="Refer for field verification" className="consumer-report-referral">
+                    <label className="consumer-report-referral-toggle">
                       <input
                         type="checkbox"
                         checked={verificationChosen}
@@ -1014,14 +1010,13 @@ export const CitizenTipReview: React.FC = () => {
                       <Send size={14} aria-hidden="true" /> Refer this report for field verification
                     </label>
                     {verificationChosen && (
-                      <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                      <label className="consumer-report-field">
                         Field Officer
                         <select
                           aria-label="Field Officer"
                           required
                           value={fieldOfficerId}
                           onChange={(event) => setFieldOfficerId(event.target.value)}
-                          style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' }}
                         >
                           <option value="">Select active officer</option>
                           {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
@@ -1032,8 +1027,8 @@ export const CitizenTipReview: React.FC = () => {
                 )}
 
                 {!hasItemReview ? (
-                  <div style={{ display: 'grid', gap: '0.75rem' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div className="consumer-report-legacy-decision">
+                    <div className="consumer-report-intents">
                       {!selected.verification_request && <button
                         type="button"
                         onClick={() => {
@@ -1041,23 +1036,12 @@ export const CitizenTipReview: React.FC = () => {
                           setFinding('confirmed_violation')
                           setVerificationChosen(true)
                         }}
-                        style={{
-                          padding: '0.65rem 0.75rem',
-                          borderRadius: '8px',
-                          border: decisionIntent === 'verify' ? '2px solid #1d4ed8' : '1px solid #cbd5e1',
-                          background: decisionIntent === 'verify' ? '#eff6ff' : '#ffffff',
-                          color: decisionIntent === 'verify' ? '#1d4ed8' : '#475569',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className={`consumer-report-intent tone-accent${decisionIntent === 'verify' ? ' is-selected' : ''}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div className="consumer-report-intent-title">
                           <Send size={14} /> Require Field Verification
                         </div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 500, color: '#64748b', marginTop: '0.15rem' }}>
+                        <div className="consumer-report-intent-note">
                           Mark the report for a separate field-verification workflow
                         </div>
                       </button>}
@@ -1068,30 +1052,19 @@ export const CitizenTipReview: React.FC = () => {
                           setDecisionIntent('close')
                           setFinding('no_violation')
                         }}
-                        style={{
-                          padding: '0.65rem 0.75rem',
-                          borderRadius: '8px',
-                          border: decisionIntent === 'close' ? '2px solid #475569' : '1px solid #cbd5e1',
-                          background: decisionIntent === 'close' ? '#f1f5f9' : '#ffffff',
-                          color: decisionIntent === 'close' ? '#0f172a' : '#475569',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className={`consumer-report-intent tone-muted${decisionIntent === 'close' ? ' is-selected' : ''}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div className="consumer-report-intent-title">
                           <ShieldCheck size={14} /> Close Report
                         </div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 500, color: '#64748b', marginTop: '0.15rem' }}>
+                        <div className="consumer-report-intent-note">
                           No regulatory action required
                         </div>
                       </button>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '0.35rem' }}>
-                      <label htmlFor="regulatory-finding-select" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                    <div className="consumer-report-field-group">
+                      <label htmlFor="regulatory-finding-select" className="consumer-report-field-label">
                         Regulatory finding
                       </label>
                       <select
@@ -1105,7 +1078,7 @@ export const CitizenTipReview: React.FC = () => {
                           if (val === 'confirmed_violation') setDecisionIntent('verify')
                           else if (val === 'no_violation' || val === 'insufficient_evidence') setDecisionIntent('close')
                         }}
-                        style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem' }}
+                        className="consumer-report-control"
                       >
                         <option value="">Select a finding / reason</option>
                         <option value="confirmed_violation">Confirmed price violation (Require Field Verification)</option>
@@ -1116,10 +1089,10 @@ export const CitizenTipReview: React.FC = () => {
                       </select>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '0.35rem' }}>
+                    <div className="consumer-report-field-group">
                       {/* The officer selector now lives in the shared referral section above, so
                           both report shapes reach it. */}
-                      <label htmlFor="decision-reason-text" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                      <label htmlFor="decision-reason-text" className="consumer-report-field-label">
                         {decisionIntent === 'verify' ? 'Verification reason' : 'Closure reason'}
                       </label>
                       <textarea
@@ -1129,13 +1102,13 @@ export const CitizenTipReview: React.FC = () => {
                         value={reason}
                         onChange={(event) => setReason(event.target.value)}
                         placeholder={decisionIntent === 'verify' ? 'Required reasoning for the field-verification decision...' : 'Required explanation for closing this report...'}
-                        style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                        className="consumer-report-control"
                       />
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gap: '0.35rem' }}>
-                    <label htmlFor="decision-reason-text-multi" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                  <div className="consumer-report-field-group">
+                    <label htmlFor="decision-reason-text-multi" className="consumer-report-field-label">
                       Decision reason / Verification Note
                     </label>
                     <textarea
@@ -1145,7 +1118,7 @@ export const CitizenTipReview: React.FC = () => {
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
                       placeholder="State regulatory reasoning or instructions for this continuous capture..."
-                      style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                      className="consumer-report-control"
                     />
                   </div>
                 )}
@@ -1219,15 +1192,15 @@ export const CitizenTipReview: React.FC = () => {
                 {/* Reference material, not working surface. Each payload used to sit in its own
                     90-140px scrollport, so a collapsed accordion still contained three nested
                     scroll areas. */}
-                <details className="consumer-report-technical" style={{ marginTop: '0.5rem' }}>
+                <details className="consumer-report-technical">
                   <summary>Technical detail &amp; audit traceability</summary>
-                  <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.5rem' }}>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#1d4ed8', background: '#eff6ff', padding: '0.35rem 0.5rem', borderRadius: '4px' }}>
+                  <div className="consumer-report-technical-body">
+                    <div className="consumer-report-provenance">
                       Formal receipt | Consumer report | Human validation required
                     </div>
 
                     <div>
-                      <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                      <h4 className="consumer-report-technical-title">
                         Raw OCR payload
                       </h4>
                       <pre className="admin-code">{JSON.stringify(selected.raw_ocr_json, null, 2)}</pre>
@@ -1235,7 +1208,7 @@ export const CitizenTipReview: React.FC = () => {
 
                     {evidenceManifest?.processing_result && (
                       <div>
-                        <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                        <h4 className="consumer-report-technical-title">
                           OCR processing diagnostics
                         </h4>
                         <pre className="admin-code">{JSON.stringify(evidenceManifest.processing_result, null, 2)}</pre>
@@ -1244,7 +1217,7 @@ export const CitizenTipReview: React.FC = () => {
 
                     {selected.evaluator_confirmed_json && (
                       <div>
-                        <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                        <h4 className="consumer-report-technical-title">
                           DTI evaluator findings
                         </h4>
                         <pre className="admin-code">{JSON.stringify(selected.evaluator_confirmed_json, null, 2)}</pre>
@@ -1253,7 +1226,7 @@ export const CitizenTipReview: React.FC = () => {
 
                     {!hasItemReview && (
                       <div>
-                        <label htmlFor="eval-confirmed-json" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: '0.2rem' }}>
+                        <label htmlFor="eval-confirmed-json" className="consumer-report-json-label">
                           Evaluator-confirmed JSON
                         </label>
                         <textarea
@@ -1261,7 +1234,7 @@ export const CitizenTipReview: React.FC = () => {
                           rows={2}
                           value={correctedText}
                           onChange={(event) => setCorrectedText(event.target.value)}
-                          style={{ width: '100%', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.72rem', boxSizing: 'border-box' }}
+                          className="consumer-report-json-input"
                         />
                       </div>
                     )}
@@ -1271,82 +1244,37 @@ export const CitizenTipReview: React.FC = () => {
             </section>
           </div></div>
         ) : (
-          <div
-            style={{
-              gridColumn: 'auto',
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '12px',
-              padding: '4rem 2rem',
-              textAlign: 'center',
-              color: '#64748b',
-              boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-            }}
-          >
-            <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.75rem', color: '#1d4ed8' }}>
+          <div className="consumer-report-empty consumer-report-card">
+            <div className="consumer-report-empty-icon">
               <FileText size={24} />
             </div>
-            <h3 style={{ margin: '0 0 0.35rem', color: '#0f172a', fontWeight: 800, fontSize: '1.1rem' }}>
-              No Report Selected
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.86rem', maxWidth: '380px', marginInline: 'auto' }}>
+            <h3>No Report Selected</h3>
+            <p>
               Select a consumer report from the left inbox queue to review the receipt evidence and determine the DTI regulatory action.
             </p>
           </div>
         )}
       </div>
 
-      {/* Full Screen Image Modal */}
       {isFullScreen && selected && (
-        <div
-          className="fullscreen-image-modal"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(15, 23, 42, 0.94)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '1.5rem',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', color: '#ffffff' }}>
-            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
-              <Shield size={18} color="#38bdf8" /> Receipt Evidence: {selected.report_reference} ({selected.store_name})
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsFullScreen(false)}
-              style={{
-                padding: '0.45rem 1rem',
-                borderRadius: '6px',
-                background: '#dc2626',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
+        <div className="fullscreen-image-modal consumer-report-fullscreen">
+          <div className="consumer-report-fullscreen-head">
+            <h3><Shield size={18} /> Receipt Evidence: {selected.report_reference} ({selected.store_name})</h3>
+            <button type="button" className="admin-button danger" onClick={() => setIsFullScreen(false)}>
               Close Full View
             </button>
           </div>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
+          <div className="consumer-report-fullscreen-body">
             {evidenceUrl ? (
               <img
                 src={evidenceUrl}
                 alt="Full size evidence"
-                style={{
-                  maxHeight: '90vh',
-                  maxWidth: '90vw',
-                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                  transition: 'transform 0.2s ease',
-                  borderRadius: '6px',
-                }}
+                /* Live user state; see the inline viewport transform above. */
+                style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
               />
             ) : (
-              <div style={{ color: '#ffffff', fontSize: '1.1rem', textAlign: 'center' }}>
-                <Lock size={28} style={{ margin: '0 auto 0.5rem', color: '#94a3b8' }} />
+              <div className="consumer-report-fullscreen-locked">
+                <Lock size={28} />
                 Private Receipt Evidence Locked in Vault
               </div>
             )}
