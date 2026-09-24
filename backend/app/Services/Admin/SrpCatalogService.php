@@ -231,7 +231,7 @@ class SrpCatalogService
         return [70.0 + ((array_sum($tokenScores) / count($tokenScores)) * 20.0), $asTyped];
     }
 
-    private function lineageKey(SrpBulletin $record): string
+    public function lineageKey(SrpBulletin $record): string
     {
         return (string) ($record->commodity_key
             ?: Str::slug(trim($record->commodity_name.' '.($record->unit ?? ''))));

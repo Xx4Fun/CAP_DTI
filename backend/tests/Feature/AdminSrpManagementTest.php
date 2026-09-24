@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\MonitoringRecord;
+use App\Models\MonitoringRecordItem;
 use App\Models\SrpBulletin;
+use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -228,6 +231,72 @@ final class AdminSrpManagementTest extends TestCase
         $item->refresh();
         $this->assertSame('Mega Sardines Tomato', $item->commodity_name);
         $this->assertSame(20.00, (float) $item->baseline_price);
+    }
+
+    public function test_metadata_unit_change_is_blocked_once_any_revision_has_monitoring_prices(): void
+    {
+        $srp = fn (string $unit, string $effective) => SrpBulletin::create([
+            'commodity_name' => 'Evaporated Milk',
+            'unit' => $unit,
+            'commodity_key' => 'evap-milk',
+            'baseline_price' => 30,
+            'effective_date' => $effective,
+            'source_reference' => 'DTI-SRP-2026-05',
+            'is_active' => true,
+        ]);
+        $pack = $srp('pack', '2026-05-01');
+        $kg = $srp('kg', '2026-06-01');
+        $payload = fn (string $unit) => ['commodity_name' => 'Evaporated Milk', 'unit' => $unit];
+
+        // No recorded prices yet: unit edits are still allowed.
+        $this->putJson("/api/admin/srp/{$kg->id}", $payload('kg'))->assertOk();
+        SrpBulletin::whereKey($pack->id)->update(['unit' => 'pack']);
+
+        $this->recordPrice($pack);
+
+        // Editing the kg sibling with unit kg would relabel the priced pack revision.
+        $this->putJson("/api/admin/srp/{$kg->id}", $payload('kg'))->assertStatus(422)->assertJsonValidationErrors('unit');
+        $this->putJson("/api/admin/srp/{$pack->id}", $payload('kg'))->assertStatus(422)->assertJsonValidationErrors('unit');
+        $this->assertSame('pack', $pack->fresh()->unit);
+
+        // A name-only edit that keeps every priced unit is still allowed.
+        SrpBulletin::whereKey($kg->id)->update(['unit' => 'pack']);
+        $this->putJson("/api/admin/srp/{$pack->id}", ['commodity_name' => 'Evap Milk', 'unit' => ' Pack'])->assertOk();
+        $this->assertSame('Evap Milk', $pack->fresh()->commodity_name);
+    }
+
+    private function recordPrice(SrpBulletin $srp): void
+    {
+        $officer = User::create(['name' => 'Field Officer', 'email' => 'srp-officer@dti.test', 'password' => 'password', 'role' => 'field_officer']);
+        $store = Store::create(['store_name' => 'Store A', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94, 'is_active' => true]);
+        $record = MonitoringRecord::create([
+            'client_uuid' => 'srp-guard-1',
+            'officer_user_id' => $officer->id,
+            'store_id' => $store->id,
+            'status' => 'accepted',
+            'started_at' => now()->subHour(),
+            'finalized_at' => now(),
+            'received_at' => now(),
+            'latitude' => 10.74,
+            'longitude' => 121.94,
+            'location_accuracy_meters' => 5,
+            'location_captured_at' => now(),
+            'representative_name' => 'Store Rep',
+            'officer_signature_disk' => 'local',
+            'officer_signature_path' => 'sig1.png',
+            'officer_signature_sha256' => hash('sha256', 'sig1'),
+            'representative_signature_disk' => 'local',
+            'representative_signature_path' => 'sig2.png',
+            'representative_signature_sha256' => hash('sha256', 'sig2'),
+        ]);
+        MonitoringRecordItem::create([
+            'monitoring_record_id' => $record->id,
+            'srp_id' => $srp->id,
+            'recorded_price' => 30,
+            'baseline_price' => 30,
+            'variance_percent' => 0,
+            'is_anomaly' => false,
+        ]);
     }
 
     public function test_admin_can_batch_update_srp_prices(): void

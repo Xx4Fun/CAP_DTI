@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\MonitoringRecordItem;
 use App\Models\SrpBulletin;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class SrpManagementController extends Controller
 {
@@ -102,9 +104,23 @@ class SrpManagementController extends Controller
 
         // Sync metadata and image_path across all revisions of this commodity lineage
         DB::transaction(function () use ($srp, $commodityKey, $data, $targetImagePath, $request, $audit) {
-            SrpBulletin::query()
+            $lineage = fn () => SrpBulletin::query()
                 ->where('commodity_key', $srp->commodity_key)
-                ->orWhere('commodity_name', $srp->commodity_name)
+                ->orWhere('commodity_name', $srp->commodity_name);
+
+            // Monitoring items capture no unit, so rewriting the unit of a priced revision would silently
+            // relabel recorded prices. The row lock serializes with item inserts via the srp_id foreign key.
+            $unit = fn ($value) => strtolower(trim((string) $value));
+            $pricedWithOtherUnit = $lineage()->lockForUpdate()->get(['id', 'unit'])
+                ->filter(fn ($bulletin) => $unit($bulletin->unit) !== $unit($data['unit'] ?? null))
+                ->pluck('id');
+            if ($pricedWithOtherUnit->isNotEmpty() && MonitoringRecordItem::whereIn('srp_id', $pricedWithOtherUnit)->exists()) {
+                throw ValidationException::withMessages([
+                    'unit' => ['Unit cannot be changed after monitoring prices were recorded. Publish a new SRP revision with the new unit instead.'],
+                ]);
+            }
+
+            $lineage()
                 ->update([
                     'commodity_key' => $commodityKey,
                     'commodity_name' => $data['commodity_name'],

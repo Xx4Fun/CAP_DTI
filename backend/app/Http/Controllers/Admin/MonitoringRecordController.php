@@ -11,6 +11,7 @@ use App\Models\Store;
 use App\Models\User;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
+use App\Services\Admin\SrpCatalogService;
 use App\Services\FieldNotificationService;
 use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
@@ -105,7 +106,7 @@ class MonitoringRecordController extends Controller
         return response()->json(['data' => $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
     }
 
-    public function matrix(Request $request, AdminAuthorizationService $auth)
+    public function matrix(Request $request, AdminAuthorizationService $auth, SrpCatalogService $catalog)
     {
         $auth->requireManager($request->user());
         $filters = $request->validate([
@@ -114,33 +115,24 @@ class MonitoringRecordController extends Controller
             'date_to' => ['nullable', 'date'],
         ]);
 
-        $commodities = SrpBulletin::query()
-            ->where('is_active', true)
-            ->orderBy('category')
-            ->orderBy('commodity_name')
-            ->get([
-                'id',
-                'commodity_name',
-                'unit',
-                'category',
-                'regulatory_classification',
-                'baseline_price',
-            ])
-            ->map(function ($srp) {
-                $rawClassification = strtoupper(trim((string) $srp->regulatory_classification));
-                $classificationLabel = str_contains($rawClassification, 'PRIME')
-                    ? 'Prime Commodities'
-                    : 'Basic Necessities';
-
-                return [
-                    'id' => $srp->id,
-                    'commodity_name' => $srp->commodity_name,
-                    'unit' => $srp->unit,
-                    'category' => $srp->category ?? 'General',
-                    'regulatory_classification' => $classificationLabel,
-                    'srp' => (float) $srp->baseline_price,
-                ];
-            });
+        // One row per commodity lineage and unit: every SRP revision folds into the current record, or, for a
+        // unit the lineage no longer uses, into that unit's latest effective revision. Prices in different
+        // units never share a row, so the weekly MIN/MAX/AVERAGE only compares like with like.
+        $groupOf = fn (SrpBulletin $srp) => $catalog->lineageKey($srp).'|'.strtolower(trim((string) $srp->unit));
+        $current = $catalog->currentRecords();
+        $currentByGroup = $current->keyBy($groupOf);
+        $currentIds = $current->pluck('id')->flip();
+        $today = now()->toDateString();
+        $canonical = [];
+        SrpBulletin::query()->get()->groupBy($groupOf)->each(function ($members, $group) use ($currentByGroup, $today, &$canonical) {
+            $pick = $currentByGroup->get($group)
+                ?? $members->filter(fn ($srp) => $srp->effective_date?->toDateString() <= $today)
+                    ->sortBy([['effective_date', 'desc'], ['id', 'desc']])->first()
+                ?? $members->sortBy([['effective_date', 'asc'], ['id', 'asc']])->first();
+            foreach ($members as $member) {
+                $canonical[$member->id] = $pick;
+            }
+        });
 
         $query = MonitoringRecord::query()
             ->where('status', 'accepted')
@@ -162,6 +154,7 @@ class MonitoringRecordController extends Controller
         });
 
         $weeksData = [];
+        $pricedRows = [];
         $weekIndex = 1;
         foreach ($groupedWeeks as $weekKey => $weekRecords) {
             [$startsAt, $endsAt] = explode('_', $weekKey);
@@ -175,7 +168,11 @@ class MonitoringRecordController extends Controller
                 $prices = [];
                 foreach ($storeRecords as $record) {
                     foreach ($record->items as $item) {
-                        $prices[$item->srp_id] = [
+                        $row = $canonical[$item->srp_id] ?? null;
+                        if ($row && ! isset($currentIds[$row->id])) {
+                            $pricedRows[$row->id] = $row;
+                        }
+                        $prices[$row?->id ?? $item->srp_id] = [
                             'recorded_price' => (float) $item->recorded_price,
                             'is_anomaly' => (bool) $item->is_anomaly,
                         ];
@@ -200,6 +197,20 @@ class MonitoringRecordController extends Controller
                 'establishments' => $storesData,
             ];
         }
+
+        $commodities = $current->concat(array_values($pricedRows))
+            ->map(fn (SrpBulletin $srp) => [
+                'id' => $srp->id,
+                'commodity_name' => $srp->commodity_name,
+                'unit' => $srp->unit,
+                'category' => $srp->category ?? 'General',
+                'regulatory_classification' => str_contains(strtoupper(trim((string) $srp->regulatory_classification)), 'PRIME')
+                    ? 'Prime Commodities'
+                    : 'Basic Necessities',
+                'srp' => (float) $srp->baseline_price,
+            ])
+            ->sortBy([['category', 'asc'], ['commodity_name', 'asc']])
+            ->values();
 
         return response()->json(['data' => [
             'period' => $filters['period'] ?? 'all_time',
