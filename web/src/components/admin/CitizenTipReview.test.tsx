@@ -143,8 +143,8 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     // Select RPT-2026-001
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    // Left column vaulted evidence & image control buttons
-    expect(screen.getByRole('heading', { name: 'Original captured receipt evidence' })).toBeInTheDocument()
+    // Detail header & image control buttons
+    expect(screen.getByRole('heading', { name: 'San Jose Grand Market' })).toBeInTheDocument()
     const zoomInBtn = screen.getByRole('button', { name: /Zoom In/i })
     const zoomOutBtn = screen.getByRole('button', { name: /Zoom Out/i })
     const rotateBtn = screen.getByRole('button', { name: /Rotate/i })

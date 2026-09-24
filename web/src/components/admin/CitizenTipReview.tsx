@@ -87,6 +87,10 @@ export const CitizenTipReview: React.FC = () => {
     setError('')
     // Filtering is server-side: the pills describe the whole queue, not the 20 rows that happen to
     // be loaded, and the buckets are stored statuses rather than guesses at the status text.
+    //
+    // No `typeof adminApi.getReportPage === 'function'` guard here. It can only be false against a
+    // partial test mock, and its synthetic meta omitted `from`/`to`, which broke the typecheck. The
+    // mock supplies getReportPage via mockReportPage(), so production code needs no fallback.
     void adminApi.getReportPage({ page: reportPage.current_page, per_page: reportPage.per_page, filter })
       .then((response) => {
         setReports(response.data)
@@ -503,55 +507,41 @@ export const CitizenTipReview: React.FC = () => {
 
   return (
     <div className="citizen-tip-review-workspace consumer-report-panel">
-      <div className="review-header-bar consumer-report-card consumer-report-header">
-        <div className="consumer-report-header-row">
-          <div>
-            <div className="consumer-report-title">
-              <h2 aria-label="Consumer Reports — Formal Receipt OCR Review Queue">Consumer Reports</h2>
-              {/* Derived from the emergency in force on the selected receipt's transaction date, not
-                  from today's state: a receipt bought during a freeze is judged under that freeze. */}
-              {(() => {
-                const emergency = selected?.protocol?.mode === 'emergency'
-                return (
-                  <span className={`consumer-report-protocol${emergency ? ' is-emergency' : ''}`}>
-                    <span className="consumer-report-protocol-dot" />
-                    {!selected
-                      ? 'Select a report to see the applicable protocol'
-                      : emergency
-                        ? `Price Freeze Protocol${selected.protocol?.reference ? ` · ${selected.protocol.reference}` : ''}`
-                        : 'Normal Market Protocol'}
-                  </span>
-                )
-              })()}
+      {!selected && (
+        <div className="review-header-bar consumer-report-card consumer-report-header">
+          <div className="consumer-report-header-row">
+            <div>
+              <div className="consumer-report-title">
+                <h2 aria-label="Consumer Reports — Formal Receipt OCR Review Queue">Consumer Reports</h2>
+                <span className="consumer-report-protocol">
+                  <span className="consumer-report-protocol-dot" />
+                  Select a report to see the applicable protocol
+                </span>
+              </div>
+              <p className="consumer-report-subtitle">
+                Review submitted consumer price concerns and determine the next action.
+              </p>
             </div>
-            <p className="consumer-report-subtitle">
-              Review submitted consumer price concerns and determine the next action.
-            </p>
-          </div>
 
-          {/* One pill per bucket. The tone is named, not spelled out per button: these were four
-              near-identical style objects differing only in colour. */}
-          <div className="status-filter-pills consumer-report-filters">
-            {FILTERS.map((pill) => (
-              <button
-                key={pill.id}
-                type="button"
-                className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
-                onClick={() => { setFilter(pill.id); setReportPage((current) => ({ ...current, current_page: 1 })) }}
-              >
-                {pill.label}
-                {filterCounts[pill.id] === undefined ? '' : ` (${filterCounts[pill.id]})`}
-              </button>
-            ))}
+            {/* One pill per bucket. */}
+            <div className="status-filter-pills consumer-report-filters">
+              {FILTERS.map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
+                  onClick={() => { setFilter(pill.id); setReportPage((current) => ({ ...current, current_page: 1 })) }}
+                >
+                  {pill.label}
+                  {filterCounts[pill.id] === undefined ? '' : ` (${filterCounts[pill.id]})`}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* LIST OR DETAIL, never both. The queue column used to sit beside the workspace
-          permanently, which earned its width only while choosing a report and cost it during
-          the part of the job that needs it: at 1280px the workspace measured 655px, barely
-          above the point where evidence and items collapse to stacked. One report at full
-          width gets the whole panel. */}
+      {/* LIST OR DETAIL, never both. One report at full width gets the whole panel. */}
       {!selected ? (
         <section className="admin-table-card consumer-report-list" aria-label="Consumer reports">
           <div className="consumer-report-list-head">
@@ -648,42 +638,60 @@ export const CitizenTipReview: React.FC = () => {
         </section>
       ) : (
         <div className="consumer-report-detail">
-          <div className="consumer-report-detail-bar">
-            <button type="button" className="admin-button secondary" onClick={backToList}>
-              <ArrowLeft size={15} aria-hidden="true" /> Back to reports
-            </button>
-            <h2 tabIndex={-1}>
-              {selected.report_reference}
-              <span>{selected.store_name || 'Store unmapped'}</span>
-            </h2>
-          </div>
+          <header className="consumer-report-card consumer-report-detail-header">
+            <div className="consumer-report-detail-header-left">
+              <button
+                type="button"
+                className="admin-button secondary consumer-report-back-btn"
+                onClick={backToList}
+                aria-label="Back to reports"
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+                <span>Back to reports</span>
+              </button>
+
+              <span className="consumer-report-header-divider" aria-hidden="true" />
+
+              <h2 tabIndex={-1} className="consumer-report-detail-title">
+                {selected.store_name || 'Store unmapped'}
+              </h2>
+            </div>
+
+            <div className="consumer-report-detail-header-right">
+              {selected.protocol?.mode === 'emergency' && (
+                <span className="consumer-report-protocol is-emergency">
+                  <span className="consumer-report-protocol-dot" />
+                  Price Freeze Protocol{selected.protocol?.reference ? ` · ${selected.protocol.reference}` : ''}
+                </span>
+              )}
+              <span className="consumer-report-detail-meta-pill">
+                <strong>Ref:</strong> {selected.report_reference}
+              </span>
+              {selected.submitted_at && (
+                <span className="consumer-report-detail-meta-pill">
+                  <strong>Submitted:</strong> {new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              )}
+              <span className={`consumer-report-status tone-${getStatusTone(selected.status)}`}>
+                {getReadableStatus(selected.status)}
+              </span>
+            </div>
+          </header>
 
           {/* The evidence-beside-items split is unchanged from the two-pane layout; it simply
               has the whole panel now instead of what the queue column left over. */}
           <div className="consumer-report-workspace"><div className="consumer-report-panes">
             {/* =========================================================================
                 EVIDENCE: sticky, so the receipt stays on screen while the item list
-                beside it scrolls. These two used to be separate top-level columns, which
-                put a column boundary through the comparison the evaluator has to make.
+                beside it scrolls.
                 ========================================================================= */}
             <section className="evidence-column-container consumer-report-evidence consumer-report-card consumer-report-evidence-card">
-              <div className="consumer-report-evidence-head">
-                <div className="consumer-report-evidence-head-row">
-                  <div>
-                    <h3>Original captured receipt evidence</h3>
-                    <div className="consumer-report-evidence-store">
-                      {selected.store_name || 'Store unavailable'}
-                    </div>
-                  </div>
-                  <span className="consumer-report-reference">{selected.report_reference}</span>
-                </div>
-                <div className="consumer-report-evidence-submitted">
-                  Submitted {selected.submitted_at ? new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
-                </div>
-              </div>
-
               {evidenceManifest && (
                 <div className="consumer-report-assets">
+                  <div className="consumer-report-assets-head">
+                    <span className="consumer-report-assets-title">Captured Sections</span>
+                    <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
+                  </div>
                   <div className="consumer-report-asset-list">
                     {evidenceManifest.assets.map((asset) => (
                       <button
@@ -693,15 +701,20 @@ export const CitizenTipReview: React.FC = () => {
                         aria-label={`${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
                         onClick={() => void showEvidenceAsset(asset)}
                       >
-                        {asset.kind === 'source_frame' ? `Original section ${asset.sequence + 1}` : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
-                        {asset.attempt_number ? ` · attempt ${asset.attempt_number}${asset.is_current ? ' (current)' : ''}` : ''}
+                        {asset.kind === 'source_frame'
+                          ? `Section ${asset.sequence + 1}`
+                          : asset.kind === 'stitched_preview'
+                            ? 'Stitched preview'
+                            : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
+                        {asset.attempt_number && (!asset.is_current || asset.attempt_number > 1) ? ` (Att. ${asset.attempt_number})` : ''}
                       </button>
                     ))}
                   </div>
-                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
-                  <span className="consumer-report-asset-meta">
-                    Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
-                  </span>
+                  <div className="consumer-report-asset-meta-row">
+                    <span className="consumer-report-asset-meta consumer-report-meta-chip">
+                      Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -1072,7 +1085,7 @@ export const CitizenTipReview: React.FC = () => {
                   </section>
                 )}
 
-                {!hasItemReview ? (
+                {!hasItemReview && (
                   <div className="consumer-report-legacy-decision">
                     <div className="consumer-report-intents">
                       {!selected.verification_request && <button
@@ -1152,32 +1165,8 @@ export const CitizenTipReview: React.FC = () => {
                       />
                     </div>
                   </div>
-                ) : (
-                  <div className="consumer-report-field-group">
-                    <label htmlFor="decision-reason-text-multi" className="consumer-report-field-label">
-                      Decision reason / Verification Note
-                    </label>
-                    <textarea
-                      id="decision-reason-text-multi"
-                      aria-label="Decision reason"
-                      rows={2}
-                      value={reason}
-                      onChange={(event) => setReason(event.target.value)}
-                      placeholder="State regulatory reasoning or instructions for this continuous capture..."
-                      className="consumer-report-control"
-                    />
-                  </div>
                 )}
-
-                {/* DECISION BAR - sticky, so it is reachable without scrolling past every
-                    item. Four controls, each named for what it writes. The previous five
-                    included a duplicate "Validate" and a primary labelled "Mark for Field
-                    Verification" that actually sent `validate`. Closure labels deliberately
-                    avoid naming a determination: `dismiss` and `reject` record NO finding and
-                    delete any prior one, so calling them "no violation" would claim a
-                    regulatory conclusion the backend never stores. Every determination -
-                    confirmed violation, no violation, insufficient evidence - goes through
-                    Record finding, where the per-item selector already carries the choice. */}
+                {/* DECISION CONSOLE - sticky, unifying progress, note input, and actions */}
                 <div className="consumer-report-decision-bar">
                   {error && (
                     <p className="admin-feedback error" role="alert">{error}</p>
@@ -1189,6 +1178,23 @@ export const CitizenTipReview: React.FC = () => {
                       {!itemReviewComplete && (
                         <span className="is-blocked">{blockingReason}</span>
                       )}
+                    </div>
+                  )}
+
+                  {hasItemReview && (
+                    <div className="consumer-report-field-group consumer-report-decision-note-group">
+                      <label htmlFor="decision-reason-text-multi" className="consumer-report-field-label">
+                        Decision reason / Verification Note
+                      </label>
+                      <textarea
+                        id="decision-reason-text-multi"
+                        aria-label="Decision reason"
+                        rows={2}
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
+                        placeholder="State regulatory reasoning or instructions for this continuous capture..."
+                        className="consumer-report-control consumer-report-decision-textarea"
+                      />
                     </div>
                   )}
 
