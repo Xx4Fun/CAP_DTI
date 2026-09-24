@@ -7174,3 +7174,197 @@
   font-weight: 800;
   white-space: nowrap;
 }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports evidence pane
+   -------------------------------------------------------------------------- */
+
+.consumer-report-evidence-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.consumer-report-evidence-head {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.consumer-report-evidence-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.consumer-report-evidence-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-evidence-store {
+  margin-top: 0.15rem;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.consumer-report-evidence-submitted {
+  margin-top: 0.2rem;
+  color: var(--admin-muted);
+  font-size: 0.74rem;
+}
+
+.consumer-report-reference {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 4px;
+  background: var(--admin-surface-subtle);
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+}
+
+.consumer-report-assets {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-asset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.consumer-report-asset {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.consumer-report-asset.is-selected {
+  border: 1.5px solid var(--admin-accent);
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+}
+
+.consumer-report-asset-meta { color: var(--admin-muted); font-size: 0.72rem; }
+
+.consumer-report-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: var(--admin-surface);
+  color: #334155;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* Full Screen is the one emphasised action, pushed to the end of the bar. */
+.consumer-report-toolbar button.is-primary {
+  margin-left: auto;
+  padding: 0.25rem 0.55rem;
+  border-color: #bfdbfe;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+  font-weight: 700;
+}
+
+.consumer-report-viewport {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: var(--admin-text);
+}
+
+.consumer-report-viewport img,
+.consumer-report-viewport video {
+  max-height: 100%;
+  max-width: 100%;
+}
+
+.consumer-report-viewport img {
+  object-fit: contain;
+  transition: transform 0.2s ease;
+}
+
+.consumer-report-viewport-status {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.consumer-report-viewport-status .spin-icon {
+  display: block;
+  margin: 0 auto 0.4rem;
+  color: var(--admin-focus);
+}
+
+.consumer-report-viewport-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.consumer-report-viewport-empty span { font-size: 0.76rem; }
+
+.consumer-report-detected {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.consumer-report-detected h4 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-detected-group {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+  font-size: 0.8rem;
+}
+
+.consumer-report-detected-row { display: flex; justify-content: space-between; }
+.consumer-report-detected-row > span { color: var(--admin-muted); }
+.consumer-report-detected-row > strong { color: var(--admin-text); }
+
+.consumer-report-download { width: 100%; justify-content: center; gap: 0.35rem; }

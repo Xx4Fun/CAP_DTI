@@ -620,50 +620,32 @@ export const CitizenTipReview: React.FC = () => {
                 beside it scrolls. These two used to be separate top-level columns, which
                 put a column boundary through the comparison the evaluator has to make.
                 ========================================================================= */}
-            <section
-              className="evidence-column-container consumer-report-evidence consumer-report-card"
-              style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}
-            >
-              {/* Context Header */}
-              <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <section className="evidence-column-container consumer-report-evidence consumer-report-card consumer-report-evidence-card">
+              <div className="consumer-report-evidence-head">
+                <div className="consumer-report-evidence-head-row">
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                      Original captured receipt evidence
-                    </h3>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', marginTop: '0.15rem' }}>
+                    <h3>Original captured receipt evidence</h3>
+                    <div className="consumer-report-evidence-store">
                       {selected.store_name || 'Store unavailable'}
                     </div>
                   </div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                    {selected.report_reference}
-                  </span>
+                  <span className="consumer-report-reference">{selected.report_reference}</span>
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.2rem' }}>
+                <div className="consumer-report-evidence-submitted">
                   Submitted {selected.submitted_at ? new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
                 </div>
               </div>
 
-              {/* Multi-Asset Selector Bar (if present) */}
               {evidenceManifest && (
-                <div style={{ display: 'grid', gap: '0.4rem', background: '#f8fafc', padding: '0.6rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                <div className="consumer-report-assets">
+                  <div className="consumer-report-asset-list">
                     {evidenceManifest.assets.map((asset) => (
                       <button
                         key={asset.id}
                         type="button"
+                        className={`consumer-report-asset${selectedAsset?.id === asset.id ? ' is-selected' : ''}`}
                         aria-label={`${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
                         onClick={() => void showEvidenceAsset(asset)}
-                        style={{
-                          padding: '0.3rem 0.65rem',
-                          borderRadius: '6px',
-                          border: selectedAsset?.id === asset.id ? '1.5px solid #1d4ed8' : '1px solid #cbd5e1',
-                          background: selectedAsset?.id === asset.id ? '#eff6ff' : '#ffffff',
-                          color: selectedAsset?.id === asset.id ? '#1d4ed8' : '#334155',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
                       >
                         {asset.kind === 'source_frame' ? `Original section ${asset.sequence + 1}` : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
                         {asset.attempt_number ? ` · attempt ${asset.attempt_number}${asset.is_current ? ' (current)' : ''}` : ''}
@@ -671,158 +653,36 @@ export const CitizenTipReview: React.FC = () => {
                     ))}
                   </div>
                   <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  <span className="consumer-report-asset-meta">
                     Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
                   </span>
                 </div>
               )}
 
-              {/* Compact Toolbar */}
-              <div
-                className="image-controls-toolbar"
-                style={{
-                  display: 'flex',
-                  gap: '0.35rem',
-                  alignItems: 'center',
-                  background: '#f8fafc',
-                  padding: '0.35rem 0.5rem',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <button
-                  type="button"
-                  title="Zoom Out"
-                  aria-label="Zoom Out"
-                  onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+              {/* Five near-identical buttons; only Full Screen differs in tone and placement. */}
+              <div className="image-controls-toolbar consumer-report-toolbar">
+                <button type="button" title="Zoom Out" aria-label="Zoom Out" onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}>
                   <ZoomOut size={13} /> Zoom Out
                 </button>
-
-                <button
-                  type="button"
-                  title="Zoom In"
-                  aria-label="Zoom In"
-                  onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Zoom In" aria-label="Zoom In" onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}>
                   <ZoomIn size={13} /> Zoom In
                 </button>
-
-                <button
-                  type="button"
-                  title="Rotate"
-                  aria-label="Rotate"
-                  onClick={() => setRotation((r) => (r + 90) % 360)}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Rotate" aria-label="Rotate" onClick={() => setRotation((r) => (r + 90) % 360)}>
                   <RotateCw size={13} /> Rotate
                 </button>
-
-                <button
-                  type="button"
-                  title="Reset"
-                  aria-label="Reset"
-                  onClick={() => {
-                    setZoom(1)
-                    setRotation(0)
-                  }}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Reset" aria-label="Reset" onClick={() => { setZoom(1); setRotation(0) }}>
                   <RefreshCw size={13} /> Reset
                 </button>
-
-                <button
-                  type="button"
-                  title="Full Size"
-                  aria-label="Full Size"
-                  onClick={() => setIsFullScreen(true)}
-                  style={{
-                    padding: '0.25rem 0.55rem',
-                    borderRadius: '4px',
-                    border: '1px solid #bfdbfe',
-                    background: '#eff6ff',
-                    color: '#1d4ed8',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 700,
-                    marginLeft: 'auto',
-                  }}
-                >
+                <button type="button" title="Full Size" aria-label="Full Size" className="is-primary" onClick={() => setIsFullScreen(true)}>
                   <Maximize2 size={13} /> Full Screen
                 </button>
               </div>
 
               {/* Receipt Viewport Canvas */}
-              <div
-                className="evidence-viewport"
-                style={{
-                  minHeight: '280px',
-                  background: '#0f172a',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  position: 'relative',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid #334155',
-                }}
-              >
+              <div className="evidence-viewport consumer-report-viewport">
                 {evidenceLoading ? (
-                  <div style={{ color: '#94a3b8', fontSize: '0.82rem', textAlign: 'center' }}>
-                    <RefreshCw size={20} className="spin-icon" style={{ margin: '0 auto 0.4rem', color: '#38bdf8' }} />
+                  <div className="consumer-report-viewport-status">
+                    <RefreshCw size={20} className="spin-icon" />
                     Loading receipt image...
                   </div>
                 ) : evidenceUrl && selectedAsset?.mime_type.startsWith('video/') ? (
@@ -830,42 +690,34 @@ export const CitizenTipReview: React.FC = () => {
                     src={evidenceUrl}
                     controls
                     aria-label={`Evidence video for ${selected.report_reference}`}
-                    style={{ maxHeight: '100%', maxWidth: '100%' }}
                   />
                 ) : evidenceUrl ? (
                   <img
                     src={evidenceUrl}
                     alt={`Evidence receipt for ${selected.report_reference}`}
-                    style={{
-                      maxHeight: '100%',
-                      maxWidth: '100%',
-                      objectFit: 'contain',
-                      transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                      transition: 'transform 0.2s ease',
-                    }}
+                    /* Zoom and rotation are live user state, so they stay inline: a stylesheet
+                       cannot express a value that changes on every click. */
+                    style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
                   />
-                ) : <div style={{ color: '#cbd5e1', padding: '1.25rem', display: 'grid', justifyItems: 'center', gap: '0.5rem', textAlign: 'center' }}>
-                  <Lock size={26} />
-                  <strong>Receipt evidence unavailable</strong>
-                  <span style={{ fontSize: '0.76rem' }}>No stored original can be displayed for this report.</span>
-                </div>}
+                ) : (
+                  <div className="consumer-report-viewport-empty">
+                    <Lock size={26} />
+                    <strong>Receipt evidence unavailable</strong>
+                    <span>No stored original can be displayed for this report.</span>
+                  </div>
+                )}
               </div>
 
-              {/* Extracted Receipt Details Section */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
-                <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
-                  Raw OCR and system-extracted information
-                </h4>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem', display: 'grid', gap: '0.4rem', fontSize: '0.8rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Merchant OCR:</span>
-                    <strong style={{ color: '#0f172a' }}>{detectedMerchant || 'Not detected'}</strong>
+              <div className="consumer-report-detected">
+                <h4>Raw OCR and system-extracted information</h4>
+                <div className="consumer-report-detected-group">
+                  <div className="consumer-report-detected-row">
+                    <span>Merchant OCR:</span>
+                    <strong>{detectedMerchant || 'Not detected'}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Transaction Date:</span>
-                    <strong style={{ color: '#0f172a' }}>
-                      {detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}
-                    </strong>
+                  <div className="consumer-report-detected-row">
+                    <span>Transaction Date:</span>
+                    <strong>{detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}</strong>
                   </div>
                 </div>
 
@@ -874,6 +726,7 @@ export const CitizenTipReview: React.FC = () => {
                 {selected.evidence_available && (
                   <button
                     type="button"
+                    className="admin-button secondary consumer-report-download"
                     onClick={async () => {
                       const blob = selectedAsset
                         ? await adminApi.getReportEvidenceAsset(selected.id, selectedAsset.id)
@@ -884,21 +737,6 @@ export const CitizenTipReview: React.FC = () => {
                       link.download = `${selected.report_reference}-${selectedAsset?.kind || 'evidence'}`
                       link.click()
                       URL.revokeObjectURL(url)
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem 0.85rem',
-                      borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
-                      background: '#ffffff',
-                      color: '#475569',
-                      fontWeight: 600,
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.35rem',
                     }}
                   >
                     <Download size={14} /> Download private receipt evidence
