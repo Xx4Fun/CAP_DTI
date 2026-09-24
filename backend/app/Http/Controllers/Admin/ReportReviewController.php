@@ -17,6 +17,7 @@ use App\Services\FieldReferenceResolver;
 use App\Services\Receipt\ReceiptPriceComparison;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -26,15 +27,41 @@ class ReportReviewController extends Controller
     {
     }
 
+    /**
+     * Where a report sits in the evaluator's workflow, as stored statuses.
+     *
+     * The panel previously guessed buckets from substrings of the status text, which matched only
+     * two of the six statuses the system actually writes — "Submitted" (the default for every new
+     * report) and "Referred for field verification" (written by this very controller) fell into no
+     * bucket at all, leaving two filter pills permanently empty.
+     */
+    private const FILTERS = [
+        'to_review' => ['Submitted', 'Under initial evaluation'],
+        'with_officer' => ['Referred for field verification'],
+        // Written only when an item decision is confirmed_violation.
+        'violations' => ['Under regulatory review'],
+        // Covers both a recorded no-violation finding and a report resolved without one; the two
+        // are distinguishable only by the presence of regulatory_findings rows.
+        'no_violation' => ['Resolved'],
+        'rejected' => ['Closed'],
+    ];
+
     public function index(Request $request, AdminAuthorizationService $auth, ReceiptPriceComparison $comparison)
     {
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:50',
+            'filter' => ['sometimes', 'string', Rule::in(array_merge(['all'], array_keys(self::FILTERS)))],
         ]);
-        $paginator = $this->reviewQuery()
-            ->latest()->paginate($filters['per_page'] ?? 20);
+        $filter = $filters['filter'] ?? 'all';
+
+        $query = $this->reviewQuery();
+        if (isset(self::FILTERS[$filter])) {
+            $query->whereIn('status', self::FILTERS[$filter]);
+        }
+
+        $paginator = $query->latest()->paginate($filters['per_page'] ?? 20);
         $reports = $paginator->getCollection()->map(fn ($report) => $this->reportRow($report, $comparison));
         return response()->json([
             'data' => $reports,
@@ -45,8 +72,38 @@ class ReportReviewController extends Controller
                 'total' => $paginator->total(),
                 'from' => $paginator->firstItem(),
                 'to' => $paginator->lastItem(),
+                'filter' => $filter,
+                // Queue-wide, so a pill shows how much work exists rather than how much of it
+                // happens to be on the page being viewed.
+                'filter_counts' => $this->filterCounts(),
             ],
         ]);
+    }
+
+    /**
+     * How many reports sit in each workflow state across the whole queue.
+     *
+     * A status outside the map is a bug, but it must not fail the request: consumer_reports.status
+     * is an unconstrained string and cancelling a referral restores a value captured in immutable
+     * context_json. Unrecognised rows stay reachable under "all" and are logged instead.
+     */
+    private function filterCounts(): array
+    {
+        $byStatus = $this->reviewQuery()->getQuery()
+            ->select('status')->selectRaw('count(*) as aggregate')
+            ->groupBy('status')->pluck('aggregate', 'status');
+
+        $counts = ['all' => (int) $byStatus->sum()];
+        foreach (self::FILTERS as $name => $statuses) {
+            $counts[$name] = (int) collect($statuses)->sum(fn ($status) => $byStatus[$status] ?? 0);
+        }
+
+        $unmapped = $byStatus->keys()->diff(collect(self::FILTERS)->flatten());
+        if ($unmapped->isNotEmpty()) {
+            Log::warning('Consumer report statuses outside the workflow filter map.', ['statuses' => $unmapped->values()->all()]);
+        }
+
+        return $counts;
     }
 
     /** Relations every review payload needs, loaded once so a row never triggers per-item queries. */

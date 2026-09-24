@@ -52,7 +52,8 @@ class ConsumerReportPriceReferenceTest extends TestCase
     {
         $report = ConsumerReport::create(array_merge([
             'report_reference' => 'REP-REF-'.fake()->unique()->numberBetween(1000, 9999),
-            'tracking_token_hash' => hash('sha256', 'tracking'),
+            // Unique-constrained, so a shared literal collides as soon as a test needs two reports.
+            'tracking_token_hash' => hash('sha256', 'tracking-'.fake()->unique()->uuid()),
             'store_id' => $this->store->id,
             'submission_uuid' => (string) \Illuminate\Support\Str::uuid(),
             'image_hash' => hash('sha256', 'image'),
@@ -293,6 +294,61 @@ class ConsumerReportPriceReferenceTest extends TestCase
         ]);
 
         $this->getJson('/api/admin/reports')->assertOk()->assertJsonPath('data.0.above_reference_count', 2);
+    }
+
+    public function test_each_workflow_filter_returns_only_its_own_statuses(): void
+    {
+        // One report per status the system actually writes.
+        $statuses = [
+            'to_review' => 'Submitted',
+            'with_officer' => 'Referred for field verification',
+            'violations' => 'Under regulatory review',
+            'no_violation' => 'Resolved',
+            'rejected' => 'Closed',
+        ];
+        foreach ($statuses as $status) {
+            $this->report(['status' => $status]);
+        }
+
+        foreach ($statuses as $filter => $status) {
+            $response = $this->getJson("/api/admin/reports?filter={$filter}")->assertOk();
+            $this->assertSame([$status], $response->json('data.*.status'), "filter={$filter}");
+        }
+
+        $this->getJson('/api/admin/reports?filter=all')->assertOk()->assertJsonCount(5, 'data');
+    }
+
+    public function test_filter_counts_cover_the_whole_queue_not_just_the_page(): void
+    {
+        foreach (range(1, 3) as $ignored) {
+            $this->report(['status' => 'Submitted']);
+        }
+        $this->report(['status' => 'Closed']);
+
+        // One row per page, so a page-scoped count would report 1 instead of 3.
+        $response = $this->getJson('/api/admin/reports?filter=to_review&per_page=1')->assertOk();
+
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('meta.filter_counts.to_review', 3);
+        $response->assertJsonPath('meta.filter_counts.rejected', 1);
+        $response->assertJsonPath('meta.filter_counts.all', 4);
+    }
+
+    public function test_a_status_outside_the_filter_map_stays_reachable_instead_of_failing(): void
+    {
+        // consumer_reports.status is an unconstrained string, and cancelling a referral restores a
+        // value from immutable context_json, so a drifted value must not break the queue.
+        $this->report(['status' => 'Some unmapped legacy status']);
+
+        $this->getJson('/api/admin/reports?filter=all')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/admin/reports?filter=to_review')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_an_unknown_filter_is_rejected_rather_than_silently_ignored(): void
+    {
+        $this->report(['status' => 'Submitted']);
+
+        $this->getJson('/api/admin/reports?filter=not-a-filter')->assertUnprocessable();
     }
 
     public function test_an_unmatched_item_corrected_with_a_suggested_commodity_key_is_accepted(): void

@@ -11,6 +11,7 @@ const reopenFieldVerification = vi.hoisted(() => vi.fn())
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getReports: vi.fn(),
+    getReportPage: vi.fn(),
     decideReport: vi.fn(),
     requestFieldVerification,
     getManagedUsers: vi.fn(),
@@ -23,6 +24,19 @@ vi.mock('../../services/adminApi', () => ({
 }))
 
 describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
+  /** The panel loads a filtered page, so a test states its rows and gets the envelope around them. */
+  const mockReportPage = (rows: unknown[]) => {
+    vi.mocked(adminApi.getReportPage).mockResolvedValue({
+      data: rows as never,
+      meta: {
+        current_page: 1, last_page: 1, per_page: 20, total: rows.length,
+        from: rows.length ? 1 : null, to: rows.length || null,
+        filter: 'all',
+        filter_counts: { all: rows.length, to_review: rows.length, with_officer: 0, violations: 0, no_violation: 0, rejected: 0 },
+      },
+    })
+  }
+
   const mockReports = [
     {
       id: 101,
@@ -61,7 +75,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(adminApi.getReports).mockResolvedValue(mockReports)
+    mockReportPage(mockReports)
     vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
     vi.mocked(adminApi.getReportEvidence).mockResolvedValue(new Blob(['fake-image-bytes'], { type: 'image/jpeg' }))
     vi.mocked(adminApi.decideReport).mockResolvedValue({
@@ -79,32 +93,47 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     }
   })
 
-  it('renders status filter pills and filters consumer reports queue', async () => {
+  it('lists reports in workflow filters and shows queue-wide counts', async () => {
     render(<CitizenTipReview />)
 
-    // Verify workspace title and status filter pills
     expect(await screen.findByRole('heading', { name: /Formal Receipt OCR Review Queue/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Reports on this page/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Pending Review \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Closed \/ Dismissed \(/i })).toBeInTheDocument()
 
-    // Default renders all reports in left list
+    // Workflow states, replacing buckets that matched only two of the six statuses the system
+    // writes and left two pills permanently empty.
+    expect(screen.getByRole('button', { name: /To review/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /With field officer/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Violations/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /No violation/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Rejected/i })).toBeInTheDocument()
+
     expect(screen.getByText('RPT-2026-001')).toBeInTheDocument()
     expect(screen.getByText('RPT-2026-002')).toBeInTheDocument()
     expect(screen.getByText('RPT-2026-003')).toBeInTheDocument()
 
-    // Filter by Pending Review
+    // Filtering is the server's job now, so choosing a pill re-queries rather than slicing rows.
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /Pending Review \(/i }))
-    expect(screen.getByText('RPT-2026-001')).toBeInTheDocument()
-    expect(screen.queryByText('RPT-2026-002')).not.toBeInTheDocument()
-    expect(screen.queryByText('RPT-2026-003')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Violations/i }))
+    expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'violations' }))
+  })
 
-    // Filter by Validated / LOI Issued
-    await user.click(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i }))
-    expect(screen.queryByText('RPT-2026-001')).not.toBeInTheDocument()
+  it('opens a report at full width and returns to the list', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    // The list is the whole view: no report detail until one is chosen.
+    expect(await screen.findByText('RPT-2026-001')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record finding/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('RPT-2026-001'))
+
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeInTheDocument()
+    // The other reports are gone: one report occupies the panel.
+    expect(screen.queryByText('RPT-2026-002')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Back to reports/i }))
+
     expect(screen.getByText('RPT-2026-002')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record finding/i })).not.toBeInTheDocument()
   })
 
   it('renders dual-column inspection workspace with image controls for evidence', async () => {
@@ -231,7 +260,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('shows the existing request and cancels it instead of offering a duplicate', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       status: 'Referred for field verification',
       verification_request: {
@@ -303,7 +332,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         },
       ],
     }
-    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    mockReportPage([receiptReport])
     vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
       capture_mode: 'continuous_video_v1',
       processing_status: 'confirmed',
@@ -359,7 +388,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         { id: 602, sequence: 1, item_name: 'COBRA 350ML', quantity: '3', observed_price: '81.00', line_total: '81.00', unit_price: '27.00', commodity_key: 'cobra', commodity_name: 'Cobra' },
       ],
     }
-    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    mockReportPage([receiptReport])
     vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
       capture_mode: 'guided_photos_v1',
       processing_status: 'ready',
@@ -401,7 +430,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('shows every structured OCR item without presenting legacy confidence as measured', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       raw_ocr_json: {
@@ -432,7 +461,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('uses persisted guided receipt items instead of inventing an item from raw OCR metadata', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       raw_ocr_json: {
@@ -462,7 +491,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('states the price comparison per item and never guesses when no reference applies', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       items: [
@@ -499,7 +528,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('offers commodity suggestions by key, not display name, and skips keyless candidates', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       items: [{
@@ -528,7 +557,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('reports item progress and names what is blocking the decision', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       items: [
@@ -554,7 +583,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('marks each item decided or not so an incomplete row is findable at a glance', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       items: [
@@ -576,7 +605,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('lets an item report be referred for field verification', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       verification_request: null,
@@ -594,7 +623,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('shows the price freeze protocol when the receipt falls inside a declared emergency', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       protocol: { mode: 'emergency', reference: 'PDRRMC-2026-07' },

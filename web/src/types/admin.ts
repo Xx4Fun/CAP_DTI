@@ -298,6 +298,12 @@ export interface FieldVerificationRequestActionRecord {
   cancelled_at: string | null
 }
 
+/**
+ * Where a report sits in the evaluator's workflow. These replace the old substring buckets, which
+ * matched only two of the six statuses the system writes and left two pills permanently empty.
+ */
+export type ConsumerReportFilter = 'all' | 'to_review' | 'with_officer' | 'violations' | 'no_violation' | 'rejected'
+
 export interface ConsumerReportRecord {
   id: number
   report_reference: string

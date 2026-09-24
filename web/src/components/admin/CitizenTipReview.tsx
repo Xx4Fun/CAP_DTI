@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
   Circle,
   AlertCircle,
+  ArrowLeft,
   Download,
-  FileText,
   Lock,
   Maximize2,
   RefreshCw,
@@ -18,7 +18,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
+import type { ConsumerReportFilter, ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
 import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
 import { ItemReferenceVerdict } from './ItemReferenceVerdict'
@@ -44,7 +44,8 @@ export const CitizenTipReview: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [reportPage, setReportPage] = useState({ current_page: 1, last_page: 1, per_page: 20, total: 0, from: null as number | null, to: null as number | null })
-  const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'dismissed'>('all')
+  const [filter, setFilter] = useState<ConsumerReportFilter>('to_review')
+  const [filterCounts, setFilterCounts] = useState<Partial<Record<ConsumerReportFilter, number>>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [decisionIntent, setDecisionIntent] = useState<'verify' | 'close'>('verify')
   const [verificationChosen, setVerificationChosen] = useState(false)
@@ -69,28 +70,33 @@ export const CitizenTipReview: React.FC = () => {
    */
   const decisionBaselineRef = useRef<Record<number, ItemDecision> | null>(null)
 
+  /**
+   * URL state, mirroring FieldMonitoringRecords: opening a report is a navigation, so browser Back
+   * must return to the list with the filter intact rather than leaving the admin module entirely.
+   */
+  const updateUrl = useCallback((changes: Record<string, string | number | null>) => {
+    const url = new URL(window.location.href)
+    Object.entries(changes).forEach(([key, value]) => value === null || value === ''
+      ? url.searchParams.delete(key)
+      : url.searchParams.set(key, String(value)))
+    window.history.pushState({ consumerReports: true }, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     setError('')
-    const pagedLoader = (adminApi as any).getReportPage
-    const request = typeof pagedLoader === 'function'
-      ? pagedLoader.call(adminApi, { page: reportPage.current_page, per_page: reportPage.per_page })
-      : adminApi.getReports().then((data) => ({ data, meta: {
-          current_page: reportPage.current_page,
-          last_page: 1,
-          per_page: reportPage.per_page,
-          total: data.length,
-          from: data.length ? 1 : null,
-          to: data.length || null,
-        } }))
-    void request.then((response: { data: ConsumerReportRecord[]; meta: typeof reportPage }) => {
-      setReports(response.data)
-      setReportPage(response.meta)
-    }).catch(() => {
-      setReports([])
-      setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
-    }).finally(() => setLoading(false))
-  }, [reportPage.current_page, reportPage.per_page])
+    // Filtering is server-side: the pills describe the whole queue, not the 20 rows that happen to
+    // be loaded, and the buckets are stored statuses rather than guesses at the status text.
+    void adminApi.getReportPage({ page: reportPage.current_page, per_page: reportPage.per_page, filter })
+      .then((response) => {
+        setReports(response.data)
+        setReportPage(response.meta)
+        if (response.meta.filter_counts) setFilterCounts(response.meta.filter_counts)
+      }).catch(() => {
+        setReports([])
+        setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
+      }).finally(() => setLoading(false))
+  }, [reportPage.current_page, reportPage.per_page, filter])
 
   useEffect(() => {
     if (!verificationChosen) return
@@ -106,6 +112,46 @@ export const CitizenTipReview: React.FC = () => {
       }
     }
   }, [evidenceUrl])
+
+  /**
+   * Browser Back returns to the list with the filter it was left on. Scroll position is restored
+   * too: FieldMonitoringRecords does not, which drops the evaluator at the top of a long list
+   * after every report.
+   */
+  const listScrollRef = useRef(0)
+  useEffect(() => {
+    const restore = () => {
+      const params = new URLSearchParams(window.location.search)
+      const reportId = Number(params.get('report'))
+      const nextFilter = params.get('report_filter') as ConsumerReportFilter | null
+      if (nextFilter) setFilter(nextFilter)
+      if (reportId > 0) {
+        const match = reports.find((report) => report.id === reportId)
+        if (match) selectReport(match)
+      } else {
+        setSelected(null)
+        window.requestAnimationFrame(() => document.querySelector('.admin-panel')?.scrollTo({ top: listScrollRef.current }))
+      }
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+    // selectReport is stable for the lifetime of a render pass and reads the report it is given.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports])
+
+  /** Opening a report is a navigation: it replaces the list, so it pushes history. */
+  const openReport = (report: ConsumerReportRecord) => {
+    listScrollRef.current = document.querySelector('.admin-panel')?.scrollTop ?? 0
+    selectReport(report)
+    updateUrl({ report: report.id, report_filter: filter })
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.consumer-report-detail h2')?.focus())
+  }
+
+  const backToList = () => {
+    setSelected(null)
+    setError('')
+    updateUrl({ report: null })
+  }
 
   const selectReport = (report: ConsumerReportRecord) => {
     // Any evidence fetch still in flight belongs to the previous report and must never paint into this one.
@@ -302,41 +348,27 @@ export const CitizenTipReview: React.FC = () => {
     return 'Submitted'
   }
 
-  const pendingCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('pending') || s.includes('under')
-  }).length
-
-  const validatedCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('validate') || s.includes('violation') || s.includes('loi')
-  }).length
-
-  const dismissedCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('dismiss') || s.includes('no_violation') || s.includes('reject')
-  }).length
-
+  /**
+   * Search still narrows the loaded page. Status filtering moved to the server, so the counts on
+   * the pills come from meta.filter_counts and describe the whole queue.
+   */
   const filteredReports = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    const matchesFilter =
-      filter === 'all'
-        ? true
-        : filter === 'pending'
-          ? s.includes('pending') || s.includes('under')
-          : filter === 'validated'
-            ? s.includes('validate') || s.includes('violation') || s.includes('loi')
-            : s.includes('dismiss') || s.includes('no_violation') || s.includes('reject')
-
-    if (!matchesFilter) return false
     if (!searchTerm.trim()) return true
-
     const query = searchTerm.toLowerCase()
-    const refMatch = r.report_reference.toLowerCase().includes(query)
-    const storeMatch = (r.store_name || '').toLowerCase().includes(query)
-    const rawMatch = JSON.stringify(r.raw_ocr_json || '').toLowerCase().includes(query)
-    return refMatch || storeMatch || rawMatch
+    return r.report_reference.toLowerCase().includes(query)
+      || (r.store_name || '').toLowerCase().includes(query)
+      || JSON.stringify(r.raw_ocr_json || '').toLowerCase().includes(query)
   })
+
+  /** Workflow states, in the order an evaluator meets them. */
+  const FILTERS: Array<{ id: ConsumerReportFilter; label: string; tone: 'accent' | 'warn' | 'muted' }> = [
+    { id: 'to_review', label: 'To review', tone: 'warn' },
+    { id: 'with_officer', label: 'With field officer', tone: 'accent' },
+    { id: 'violations', label: 'Violations', tone: 'accent' },
+    { id: 'no_violation', label: 'No violation', tone: 'muted' },
+    { id: 'rejected', label: 'Rejected', tone: 'muted' },
+    { id: 'all', label: 'All', tone: 'muted' },
+  ]
 
   const parseOcrItems = (rawJson: Record<string, unknown> | null) => {
     if (!rawJson) return []
@@ -500,49 +532,38 @@ export const CitizenTipReview: React.FC = () => {
           {/* One pill per bucket. The tone is named, not spelled out per button: these were four
               near-identical style objects differing only in colour. */}
           <div className="status-filter-pills consumer-report-filters">
-            {([
-              { id: 'all', tone: 'accent', label: `Reports on this page (${reports.length})` },
-              { id: 'pending', tone: 'warn', label: `Pending Review (${pendingCount})` },
-              { id: 'validated', tone: 'accent', label: `Field Verification (${validatedCount})`, aria: `Field Verification / Validated / LOI Issued (${validatedCount})` },
-              { id: 'dismissed', tone: 'muted', label: `Closed (${dismissedCount})`, aria: `Closed / Dismissed (${dismissedCount})` },
-            ] as const).map((pill) => (
+            {FILTERS.map((pill) => (
               <button
                 key={pill.id}
                 type="button"
-                aria-label={'aria' in pill ? pill.aria : undefined}
                 className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
-                onClick={() => setFilter(pill.id)}
+                onClick={() => { setFilter(pill.id); setReportPage((current) => ({ ...current, current_page: 1 })) }}
               >
                 {pill.label}
+                {filterCounts[pill.id] === undefined ? '' : ` (${filterCounts[pill.id]})`}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* TWO PANES: Queue | Workspace, where the workspace holds evidence beside the
-          item list so the receipt and the line being decided stay adjacent.
-          Sizing lives in admin.css (.consumer-report-*) and is driven by container
-          width; the inline grid-template-columns this replaced beat the stylesheet's
-          media query, so the layout never reflowed at any width. */}
-      <div className="consumer-report-split">
-        {/* =========================================================================
-            LEFT COLUMN: Report Queue Inbox
-            ========================================================================= */}
-        <div className="admin-card consumer-report-card consumer-report-queue">
-          <div className="consumer-report-queue-head">
-            <h3><FileText size={16} /> Consumer Reports</h3>
-            <span className="consumer-report-queue-count">{filteredReports.length}</span>
-          </div>
-
-          <div className="admin-search-field consumer-report-search">
-            <Search size={14} />
-            <input
-              type="text"
-              placeholder="Search reference, store..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+      {/* LIST OR DETAIL, never both. The queue column used to sit beside the workspace
+          permanently, which earned its width only while choosing a report and cost it during
+          the part of the job that needs it: at 1280px the workspace measured 655px, barely
+          above the point where evidence and items collapse to stacked. One report at full
+          width gets the whole panel. */}
+      {!selected ? (
+        <section className="admin-table-card consumer-report-list" aria-label="Consumer reports">
+          <div className="consumer-report-list-head">
+            <div className="admin-search-field consumer-report-search">
+              <Search size={14} />
+              <input
+                type="text"
+                placeholder="Search reference, store..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
           </div>
 
           {loading && (
@@ -555,49 +576,67 @@ export const CitizenTipReview: React.FC = () => {
           {!loading && filteredReports.length === 0 && (
             <div className="consumer-report-queue-empty has-surface">
               <Shield size={20} />
-              <div className="consumer-report-queue-empty-title">No reports</div>
+              <div className="consumer-report-queue-empty-title">No reports in this view</div>
             </div>
           )}
 
-          <div className="admin-list consumer-report-queue-list">
-            {filteredReports.map((report) => {
-              const isSelected = selected?.id === report.id
-              const tone = getStatusTone(report.status)
-              const readableStatus = getReadableStatus(report.status)
-
-              return (
-                <button
-                  key={report.id}
-                  className={`consumer-report-queue-row${isSelected ? ' is-selected' : ''}`}
-                  onClick={() => selectReport(report)}
-                >
-                  <div className="consumer-report-queue-row-top">
-                    <strong>{report.report_reference}</strong>
-                    <span className={`consumer-report-status tone-${tone}`}>{readableStatus}</span>
-                  </div>
-
-                  <div className="consumer-report-queue-store">
-                    {report.store_name || 'Store unmapped'}
-                  </div>
-
-                  <div className="consumer-report-queue-row-bottom">
-                    <span className="consumer-report-queue-date">
-                      {report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
-                    </span>
-                    {/* Lets an evaluator triage the queue without opening every report. */}
-                    {(report.above_reference_count ?? 0) > 0 && (
-                      <span
-                        className="consumer-report-above-badge"
-                        title={`${report.above_reference_count} item(s) priced above the applicable reference`}
+          {!loading && filteredReports.length > 0 && (
+            <div className="admin-table-wrap">
+              <table className="admin-data-table consumer-report-table">
+                <caption className="sr-only">Consumer reports awaiting or completed review</caption>
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Store</th>
+                    <th>Receipt date</th>
+                    <th className="is-numeric">Items</th>
+                    <th className="is-numeric">Above SRP</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReports.map((report) => {
+                    const above = report.above_reference_count ?? 0
+                    return (
+                      <tr
+                        key={report.id}
+                        className="consumer-report-table-row"
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open ${report.report_reference}`}
+                        onClick={() => openReport(report)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openReport(report)
+                          }
+                        }}
                       >
-                        {report.above_reference_count} above SRP
-                      </span>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+                        <td data-label="Reference"><strong>{report.report_reference}</strong></td>
+                        <td data-label="Store">{report.store_name || 'Store unmapped'}</td>
+                        <td data-label="Receipt date">
+                          {report.observed_at
+                            || (report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable')}
+                        </td>
+                        <td data-label="Items" className="is-numeric">{report.items?.length ?? 0}</td>
+                        <td data-label="Above SRP" className="is-numeric">
+                          {above > 0
+                            ? <span className="consumer-report-above-badge">{above}</span>
+                            : <span className="consumer-report-table-muted">0</span>}
+                        </td>
+                        <td data-label="Status">
+                          <span className={`consumer-report-status tone-${getStatusTone(report.status)}`}>
+                            {getReadableStatus(report.status)}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <nav className="admin-pagination" aria-label="Consumer report pagination">
             <span>Showing {reportPage.from ?? 0}–{reportPage.to ?? 0} of {reportPage.total}</span>
             <div>
@@ -606,14 +645,21 @@ export const CitizenTipReview: React.FC = () => {
               <button type="button" disabled={reportPage.current_page >= reportPage.last_page || loading} onClick={() => setReportPage((current) => ({ ...current, current_page: current.current_page + 1 }))}>Next</button>
             </div>
           </nav>
-        </div>
+        </section>
+      ) : (
+        <div className="consumer-report-detail">
+          <div className="consumer-report-detail-bar">
+            <button type="button" className="admin-button secondary" onClick={backToList}>
+              <ArrowLeft size={15} aria-hidden="true" /> Back to reports
+            </button>
+            <h2 tabIndex={-1}>
+              {selected.report_reference}
+              <span>{selected.store_name || 'Store unmapped'}</span>
+            </h2>
+          </div>
 
-        {/* =========================================================================
-            CENTER & RIGHT COLUMNS: Detail Workspace
-            ========================================================================= */}
-        {selected ? (
-          // Two elements on purpose: the outer one is the query container, the inner one is the
-          // grid it sizes. A container query cannot restyle its own container element.
+          {/* The evidence-beside-items split is unchanged from the two-pane layout; it simply
+              has the whole panel now instead of what the queue column left over. */}
           <div className="consumer-report-workspace"><div className="consumer-report-panes">
             {/* =========================================================================
                 EVIDENCE: sticky, so the receipt stays on screen while the item list
@@ -1243,18 +1289,8 @@ export const CitizenTipReview: React.FC = () => {
               </div>
             </section>
           </div></div>
-        ) : (
-          <div className="consumer-report-empty consumer-report-card">
-            <div className="consumer-report-empty-icon">
-              <FileText size={24} />
-            </div>
-            <h3>No Report Selected</h3>
-            <p>
-              Select a consumer report from the left inbox queue to review the receipt evidence and determine the DTI regulatory action.
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {isFullScreen && selected && (
         <div className="fullscreen-image-modal consumer-report-fullscreen">
