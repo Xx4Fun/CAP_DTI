@@ -2,19 +2,51 @@ import { describe, expect, it } from 'vitest';
 import { guideCropRect, outputSize } from './captureCrop';
 
 describe('guideCropRect', () => {
-  // A 1920x1080 landscape sensor shown in a 390x780 portrait viewport: `cover` hides most of the frame's width.
+  // MEASURED from the running app at a 390x844 viewport, not invented: .receipt-capture-frame's
+  // 16px padding-inline and the one-row control tray put .receipt-scan-guide at left 16, top 88,
+  // 358x646. Re-derive these numbers if the frame's insets or the tray height change — an invented
+  // fixture here silently tests a shape the app does not render, which is what this one used to do.
   const portrait = {
     frame: { width: 1080, height: 1920 },
-    videoRect: { left: 0, top: 0, width: 390, height: 780 },
-    guideRect: { left: 31.2, top: 140.4, width: 327.6, height: 468 },
+    videoRect: { left: 0, top: 0, width: 390, height: 844 },
+    guideRect: { left: 16, top: 88, width: 358, height: 646 },
   };
 
   it('maps the guide onto the camera frame instead of keeping the whole image', () => {
     const crop = guideCropRect({ ...portrait, objectFit: 'cover', margin: 0 });
 
-    // Scale 780/1920 = 0.40625, so the 1080-wide frame renders 438.75 wide in a 390 box: 24.375 is hidden each side.
-    expect(crop).toEqual({ sx: 137, sy: 346, sw: 806, sh: 1152 });
-    expect(crop.sw * crop.sh).toBeLessThan(portrait.frame.width * portrait.frame.height * 0.5);
+    // Scale = max(390/1080, 844/1920) = 0.439583, so the 1080-wide frame renders 474.75 wide in a
+    // 390 box and 42.375 is hidden each side.
+    expect(crop).toEqual({ sx: 133, sy: 200, sw: 814, sh: 1470 });
+    // Still a real crop rather than the whole sensor. The bound is 85%, not the 50% this asserted
+    // when the guide was half the screen: the frame is now ~77% of viewport height by design, so a
+    // tighter bound would be asserting the old cramped layout rather than the current one.
+    expect(crop.sw * crop.sh).toBeLessThan(portrait.frame.width * portrait.frame.height * 0.85);
+  });
+
+  // The test above pins the exact crop for a normally sized guide, which is also what proves the
+  // minimum-crop floor never touches a good capture: if it did, those numbers would move.
+  it('grows a degenerately small guide to a crop worth reading', () => {
+    // A layout bug that collapses the guide to 40px would otherwise upload a ~98px-tall image.
+    // Nothing downstream can recover it: outputSize never upscales, and the OCR preprocessor's
+    // 200px floor rejects it as a terminal bad capture rather than a retry.
+    const collapsed = guideCropRect({
+      ...portrait,
+      guideRect: { ...portrait.guideRect, height: 40 },
+      objectFit: 'cover',
+      margin: 0,
+    });
+
+    expect(collapsed.sw).toBeGreaterThanOrEqual(portrait.frame.width * 0.35);
+    expect(collapsed.sh).toBeGreaterThanOrEqual(portrait.frame.height * 0.35);
+    // Still a legal crop inside the sensor.
+    expect(collapsed.sx).toBeGreaterThanOrEqual(0);
+    expect(collapsed.sy).toBeGreaterThanOrEqual(0);
+    expect(collapsed.sx + collapsed.sw).toBeLessThanOrEqual(portrait.frame.width);
+    expect(collapsed.sy + collapsed.sh).toBeLessThanOrEqual(portrait.frame.height);
+    // And comfortably clear of the 200px floor that would fail it in the worker.
+    const out = outputSize(collapsed, 2000);
+    expect(Math.min(out.width, out.height)).toBeGreaterThan(200);
   });
 
   it('adds a margin so text touching the guide is not clipped', () => {

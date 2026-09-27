@@ -1614,19 +1614,20 @@ body {
   transform: translate(-50%, -50%) scale(0.9);
 }
 
-/* Fills its media box so a missing photo reads as a placeholder tile rather than stray text.
-   The tint matches .progressive-product-image__placeholder, the box shown while an image loads. */
 .price-product-fallback {
   display: flex;
-  width: 100%;
-  height: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  background: #e8eef6;
   color: #8291a9;
   text-align: center;
+}
+
+.price-product-fallback--neutral span {
+  font-size: 0.56rem;
+  font-weight: 700;
+  line-height: 1.1;
 }
 
 .price-product-info {
@@ -2148,8 +2149,11 @@ body {
 
 .progressive-product-image--detail .price-product-fallback {
   min-height: 0;
-  border-radius: 10px;
   color: #71829a;
+}
+
+.progressive-product-image--detail .price-product-fallback--neutral span {
+  font-size: 0.72rem;
 }
 
 .product-detail-image-trigger {
@@ -3390,19 +3394,6 @@ body {
 
 }
 
-@media (orientation: landscape) and (max-height: 560px) {
-  .receipt-scan-guide {
-    inset: 19% 18% 30%;
-  }
-
-  .receipt-capture-shade--bottom {
-    min-height: 112px;
-    padding-top: 24px;
-    flex-direction: row;
-    align-items: flex-end;
-  }
-}
-
 .product-detail-compare {
   width: 100%;
   min-height: 48px;
@@ -4029,6 +4020,36 @@ body {
   }
 }
 
+/* Plain layout wrapper so the back control sits ABOVE the white card instead of inside it, the
+   same shape ReportDetail uses. The card keeps its own surface; this only stacks them. */
+.receipt-draft-layout {
+  width: min(100%, 680px);
+  margin: 18px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The wrapper owns the outer spacing now, so the card must not apply it a second time. */
+.receipt-draft-layout > .receipt-draft-page,
+.receipt-draft-layout > .receipt-draft-loading {
+  max-width: none;
+  margin: 0;
+}
+
+.receipt-draft-back-header {
+  display: flex;
+  align-items: center;
+}
+
+/* .track-report-back is absolutely positioned for the hero banner it was built for; in this flat
+   header it has to sit in normal flow. */
+.receipt-draft-back-header .track-report-back {
+  position: relative;
+  top: auto;
+  left: auto;
+}
+
 .receipt-draft-page,
 .receipt-draft-loading {
   max-width: 680px;
@@ -4313,50 +4334,200 @@ body {
   padding-bottom: 48px;
 }
 
-/* Continuous receipt capture */
+/* Continuous receipt capture.
+   Three flex zones rather than stacked absolute layers: top bar, frame, controls. Because they are
+   siblings in a column, the controls cannot grow over the frame no matter how much they contain —
+   which is what the old percentage-inset overlays did. */
 .continuous-receipt-capture {
   position: fixed;
   inset: 0;
+  /* Anything opened from inside this screen must exceed 1000. Body-level portals (PriceSheet at
+     220, ProductImageLightbox at 400) are siblings of this element in the root stacking context, so
+     they paint UNDERNEATH it — and this background is opaque, so they vanish entirely rather than
+     showing through. A native <dialog> using showModal() is exempt: the top layer beats every
+     z-index. See .captured-photos-backdrop. */
   z-index: 1000;
   width: 100vw;
   height: 100dvh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: #020617;
   color: #fff;
 }
 
+/* The video is the backdrop for all three zones, so it leaves the flow entirely. */
 .continuous-receipt-capture > video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.receipt-capture-shade {
-  position: absolute;
-  right: 0;
-  left: 0;
+.receipt-capture-top {
+  position: relative;
   z-index: 3;
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-inline: 16px;
-}
-
-.receipt-capture-shade--top {
-  top: 0;
-  padding-top: max(14px, env(safe-area-inset-top));
-  padding-bottom: 38px;
+  flex-direction: column;
+  gap: 8px;
+  padding: max(14px, env(safe-area-inset-top)) 16px 20px;
   background: linear-gradient(180deg, rgb(2 6 23 / 92%) 0%, transparent 100%);
 }
 
-.receipt-capture-shade--bottom {
-  bottom: 0;
-  min-height: 150px;
+.receipt-capture-top-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Takes whatever the control row leaves, which makes it a constant: the guide is this element's
+   size, and the guide is the crop region, so a frame that changed size would change the resolution
+   of every photo after the first. */
+/* padding-inline here rather than a margin on the guide, so the guide keeps `margin: … auto` and
+   stays centred once the viewport exceeds its max-width. Note this narrows the crop: the guide IS
+   the crop region, so the inset costs ~32px of captured width at 390px. */
+.receipt-capture-frame {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 20vh;
+  display: flex;
+  padding-inline: 16px;
+}
+
+/* One row of controls, camera-style. Everything that used to stack here — thumbnail strip, count,
+   second action — moved into the captured-photos sheet, so this height is a single row and never
+   changes. Messages inside it are absolutely positioned and add no height. */
+.receipt-capture-bottom {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  padding-top: 42px;
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  align-items: center;
+  padding: 14px 16px max(18px, env(safe-area-inset-bottom));
   background: linear-gradient(0deg, rgb(2 6 23 / 96%) 0%, transparent 100%);
+}
+
+.receipt-capture-controls {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.receipt-capture-slot {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.receipt-capture-slot--end {
+  justify-content: flex-end;
+}
+
+/* Floats above the row rather than sitting in it: anything with layout height here would shrink
+   the frame, and the frame is the crop. */
+.receipt-capture-messages {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 10px;
+  pointer-events: none;
+}
+
+.receipt-capture-messages > * {
+  pointer-events: auto;
+}
+
+/* The camera roll: last photo only, tapped to open the full set. */
+.receipt-capture-roll {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 2px solid rgb(255 255 255 / 70%);
+  border-radius: 12px;
+  background: rgb(2 6 23 / 70%);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.receipt-capture-roll img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.receipt-capture-roll--flagged {
+  border-color: #f59e0b;
+}
+
+/* Holds the shutter centred before the first photo exists. */
+.receipt-capture-roll--empty {
+  border-style: dashed;
+  border-color: rgb(255 255 255 / 30%);
+  background: rgb(2 6 23 / 40%);
+}
+
+.receipt-capture-roll-count {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+.receipt-capture-upload {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+}
+
+.receipt-camera-note {
+  max-width: min(92vw, 500px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgb(2 6 23 / 84%);
+  color: rgb(255 255 255 / 88%);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* The error state replaces the whole row, so it keeps the old pill shape rather than the round
+   shutter the record button became. */
+.receipt-camera-retry {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 20px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #1d4ed8;
+  color: #fff;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
 }
 
 .receipt-camera-icon-button {
@@ -4387,69 +4558,110 @@ body {
   white-space: nowrap;
 }
 
-.receipt-camera-store span,
-.receipt-guided-count {
-  color: rgb(255 255 255 / 76%);
-  font-size: 0.78rem;
+/* Above .continuous-receipt-capture's 1000, since this sheet is opened from inside it. Kept below
+   .more-dialog-scrim (1200) so nothing else is displaced. */
+.captured-photos-backdrop {
+  z-index: 1100;
 }
 
-.receipt-section-previews {
-  position: absolute;
-  top: 20%;
-  right: 12px;
-  z-index: 4;
-  max-height: 48%;
-  display: grid;
-  gap: 8px;
-  overflow-y: auto;
+/* The captured-photos sheet: rows of every section, opened from the camera roll. */
+.captured-photos-note {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
-.receipt-section-preview {
-  width: 76px;
-  padding: 5px;
-  border-radius: 9px;
-  background: rgb(2 6 23 / 82%);
+.captured-photos-empty {
+  margin: 0;
+  color: var(--text-muted);
 }
 
-.receipt-section-preview img {
-  width: 100%;
-  height: 86px;
-  object-fit: cover;
-  border-radius: 5px;
+.captured-photos-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.receipt-section-preview button {
-  width: 100%;
-  padding: 4px 2px;
+.captured-photos-row:last-child {
+  border-bottom: 0;
+}
+
+.captured-photos-view {
+  flex: 0 0 auto;
+  padding: 0;
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: #fff;
-  font-size: 0.65rem;
+  line-height: 0;
   cursor: pointer;
 }
 
-/* Marks which captured photo scored as hard to read, so the advisory below names a specific
-   thumbnail instead of leaving the customer to guess. Amber, not red: this is advice, and the
-   photo still uploads. */
-.receipt-section-preview--unreadable {
+.captured-photos-thumb {
+  width: 54px;
+  height: 64px;
+  display: block;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.captured-photos-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.captured-photos-flag {
+  color: #b45309;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.captured-photos-row--flagged .captured-photos-thumb {
   outline: 2px solid #f59e0b;
   outline-offset: -1px;
 }
 
-.receipt-section-preview-flag {
-  display: block;
-  padding-top: 3px;
-  color: #fbbf24;
-  font-size: 0.6rem;
-  font-weight: 700;
-  line-height: 1.1;
-  text-align: center;
+.captured-photos-retake {
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--primary);
+  cursor: pointer;
 }
 
+.captured-photos-actions {
+  padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-color);
+}
+
+.captured-photos-restart {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #fca5a5;
+  border-radius: 12px;
+  background: #fff;
+  color: #b91c1c;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Fills the frame zone instead of guessing percentages of the viewport. Its box IS the crop
+   region — guideCropRect measures this element — so it must keep a real, non-zero size. */
 .receipt-scan-guide {
-  position: absolute;
-  inset: 18% 8% 22%;
-  z-index: 2;
+  flex: 1 1 auto;
+  max-width: 420px;
+  margin: 10px auto;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -4470,21 +4682,27 @@ body {
   font-weight: 650;
 }
 
+/* Round shutter. Its wording moved to aria-label when the visible text was dropped, so the
+   accessible name is unchanged. */
 .receipt-record-button {
-  min-height: 52px;
+  width: 68px;
+  height: 68px;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  padding: 0 20px;
-  border: 2px solid #fff;
-  border-radius: 999px;
+  padding: 0;
+  border: 4px solid #fff;
+  border-radius: 50%;
   background: #1d4ed8;
   color: #fff;
-  font: inherit;
-  font-weight: 750;
   cursor: pointer;
   box-shadow: 0 8px 30px rgb(2 6 23 / 35%);
+}
+
+.receipt-record-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .receipt-record-button--stop {
@@ -4521,6 +4739,40 @@ body {
    whether a receipt is present, only whether the image is bright and detailed enough to read. */
 .receipt-camera-advisory {
   border: 1px solid #fbbf24;
+}
+
+/* These must come AFTER the capture base rules: they are single-class selectors of equal
+   specificity, so placing them earlier in the file left them silently overridden. The landscape
+   block that lived up near line 3400 had exactly that defect and never applied. */
+
+/* Short viewports, portrait or landscape. With a full controls stack the primary Upload button
+   would otherwise sit below the scroll fold, so reclaim height from what the frame hints already
+   cover: the instruction pill and the thumbnail size. */
+@media (max-height: 680px) {
+  .receipt-capture-top {
+    padding-bottom: 12px;
+  }
+
+  .receipt-capture-bottom {
+    padding-top: 10px;
+  }
+
+  .receipt-record-button {
+    width: 58px;
+    height: 58px;
+    border-width: 3px;
+  }
+
+  .receipt-capture-roll {
+    width: 42px;
+    height: 42px;
+  }
+
+  .receipt-capture-upload {
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+  }
 }
 
 .receipt-uploaded {

@@ -11,6 +11,8 @@ import { saveReceiptResumeToken } from '../app/receiptResumeStore';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
 import { guideCropRect, outputSize } from '../app/captureCrop';
 import { evaluateCanvas, qualityIssue, type FrameIssue } from '../app/frameQuality';
+import { CapturedPhotosSheet } from './CapturedPhotosSheet';
+import { ReceiptPhotoViewer } from './ReceiptPhotoViewer';
 
 interface GuidedReceiptCaptureProps {
   session: CaptureSessionResponse;
@@ -35,19 +37,19 @@ type CapturedFrame = { blob: Blob; url: string; issue: FrameIssue | null };
 const ISSUE_TEXT: Record<FrameIssue, { flag: string; one: string; many: string; advice: string }> = {
   dark: {
     flag: 'Too dark', one: 'too dark to read', many: 'look too dark to read',
-    advice: 'Move somewhere brighter and keep the receipt flat inside the guide.',
+    advice: 'Move somewhere brighter.',
   },
   bright: {
     flag: 'Too bright', one: 'too bright to read', many: 'look washed out',
-    advice: 'Move out of direct light or glare and keep the receipt flat inside the guide.',
+    advice: 'Move out of direct light or glare.',
   },
   flat: {
     flag: 'Hard to read', one: 'too blurry or flat to read', many: 'look blurry or flat',
-    advice: 'Hold steady until the camera focuses and keep the receipt flat inside the guide.',
+    advice: 'Hold steady until the camera focuses.',
   },
 };
 
-const MIXED_ADVICE = 'Retake them in even light, held flat inside the guide.';
+const MIXED_ADVICE = 'Retake them in even light.';
 
 export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   session,
@@ -68,6 +70,9 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   const [notificationState, setNotificationState] = useState<string>(() => currentReceiptNotificationAvailability());
   const [frames, setFrames] = useState<CapturedFrame[]>([]);
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [viewer, setViewer] = useState<{ url: string; sequence: number } | null>(null);
+  const galleryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -118,6 +123,14 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
       frameUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [openCamera, stopCamera]);
+
+  // This is a fixed full-screen layer, so the page underneath must not scroll behind it.
+  // ShelfScanner does the same for its camera; this screen was missing it.
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
 
   const captureFrame = useCallback(async (): Promise<{ blob: Blob; issue: FrameIssue | null } | null> => {
     const video = videoRef.current;
@@ -328,51 +341,124 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
         ? `${flagged.length} of ${frames.length} photos ${ISSUE_TEXT[distinctIssues[0]].many}. ${ISSUE_TEXT[distinctIssues[0]].advice} You can upload anyway.`
         : `${flagged.length} of ${frames.length} photos are hard to read. ${MIXED_ADVICE} You can upload anyway.`;
 
-  const instruction = targetedRecapture
-    ? session.capture_action === 'append' ? 'Capture the next section with part of the previous section visible.' : `Capture a clear replacement for section ${(session.upload_sequence ?? 0) + 1}.`
-    : frames.length === 0 ? 'Capture the whole receipt if it fits, including store, date, items, and total.' : 'Long receipt? Move down and capture the next section with visible overlap.';
+  const sectionNumber = (index: number) => (targetedRecapture ? (session.upload_sequence ?? 0) + 1 : index + 1);
+  const lastFrame = frames[frames.length - 1];
+  // Kept as the shutter's accessible name now that the button is icon-only, so the wording the
+  // rest of the app and the tests rely on is unchanged.
+  const shutterLabel = retakeIndex !== null
+    ? `Capture replacement for section ${retakeIndex + 1}`
+    : frames.length === 0 ? 'Capture receipt' : 'Add receipt section';
 
   return (
-    <section className="continuous-receipt-capture" aria-label="Guided receipt scanner">
+    // Flex column, not stacked absolute layers: the three zones are siblings, so controls can never
+    // grow over the frame the way the old percentage-inset overlays did.
+    <section className="continuous-receipt-capture" aria-label="Guided receipt scanner" data-app-fullscreen-layer>
       <video ref={videoRef} autoPlay muted playsInline aria-label="Live receipt camera" />
       <canvas ref={canvasRef} hidden />
-      <div className="receipt-capture-shade receipt-capture-shade--top">
-        <button type="button" className="receipt-camera-icon-button" onClick={() => void cancelCapture()} aria-label="Cancel receipt capture"><ArrowLeft size={20} /></button>
-        <div className="receipt-camera-store"><strong>{storeName}</strong><span>{instruction}</span></div>
+
+      <div className="receipt-capture-top">
+        <div className="receipt-capture-top-row">
+          <button type="button" className="receipt-camera-icon-button" onClick={() => void cancelCapture()} aria-label="Cancel receipt capture"><ArrowLeft size={20} /></button>
+          <div className="receipt-camera-store"><strong>{storeName}</strong></div>
+        </div>
       </div>
-      <div className="receipt-scan-guide" ref={guideRef} aria-hidden="true"><span>Keep text flat, bright, and in focus</span><span>Only what is inside this guide is saved</span></div>
-      {frames.length > 0 && <div className="receipt-section-previews" aria-label="Captured receipt sections">
-        {frames.map((frame, index) => <div key={frame.url} className={`receipt-section-preview${frame.issue ? ' receipt-section-preview--unreadable' : ''}`}>
-          <img src={frame.url} alt={`Receipt section ${index + 1}`} />
-          {frame.issue && <span className="receipt-section-preview-flag">{ISSUE_TEXT[frame.issue].flag}</span>}
-          <button type="button" onClick={() => setRetakeIndex(index)}>Retake section {targetedRecapture ? (session.upload_sequence ?? 0) + 1 : index + 1}</button>
-        </div>)}
-      </div>}
-      <div className="receipt-capture-shade receipt-capture-shade--bottom">
-        {error && <div className="receipt-camera-error" role="alert">{error}</div>}
-        {/* Advisory, not an error: upload stays available because this check cannot tell whether a
-            receipt is present, only whether the image is bright and detailed enough to read. */}
-        {qualityAdvisory && captureState === 'ready' && (
-          <div className="receipt-camera-advisory" role="status">{qualityAdvisory}</div>
+
+      {/* The guide is the crop region: guideCropRect reads this element's box, so whatever it
+          frames is what gets uploaded. It must keep a real, non-zero size. */}
+      <div className="receipt-capture-frame">
+        <div className="receipt-scan-guide" ref={guideRef} aria-hidden="true">
+          <span>Keep text flat, bright, and in focus</span>
+        </div>
+      </div>
+
+      <div className="receipt-capture-bottom">
+        {/* Absolutely positioned, so messages never add height to the control row. The row staying
+            exactly one row is what keeps the frame, and therefore the crop, a constant size. */}
+        <div className="receipt-capture-messages">
+          {error && <div className="receipt-camera-error" role="alert">{error}</div>}
+          {/* Advisory, not an error: upload stays available because this check cannot tell whether a
+              receipt is present, only whether the image is bright and detailed enough to read. */}
+          {qualityAdvisory && captureState === 'ready' && (
+            <div className="receipt-camera-advisory" role="status">{qualityAdvisory}</div>
+          )}
+          {captureState === 'requesting' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Opening camera…</div>}
+          {captureState === 'uploading' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Uploading receipt securely{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</div>}
+          {captureState === 'ready' && targetedRecapture && (session.carried_sequences?.length ?? 0) > 0 && (
+            <div className="receipt-camera-note">Other original sections will be preserved in a new evidence attempt.</div>
+          )}
+        </div>
+
+        {captureState === 'ready' && (
+          // 1fr auto 1fr: the shutter stays optically centred whether or not the side slots hold
+          // anything.
+          <div className="receipt-capture-controls">
+            <div className="receipt-capture-slot">
+              {lastFrame ? (
+                <button
+                  type="button"
+                  ref={galleryTriggerRef}
+                  className={`receipt-capture-roll${lastFrame.issue ? ' receipt-capture-roll--flagged' : ''}`}
+                  onClick={() => setGalleryOpen(true)}
+                  aria-label={`Captured sections (${frames.length})`}
+                >
+                  {/* Decorative: the button carries the name, and a second node named
+                      "Receipt section N" would collide with the sheet's own image. */}
+                  <img src={lastFrame.url} alt="" />
+                  <span className="receipt-capture-roll-count" aria-hidden="true">{frames.length}</span>
+                </button>
+              ) : (
+                <span className="receipt-capture-roll receipt-capture-roll--empty" aria-hidden="true" />
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="receipt-record-button"
+              onClick={() => void capture()}
+              disabled={frames.length >= maximumFrames && retakeIndex === null}
+              aria-label={shutterLabel}
+            >
+              <Camera size={26} aria-hidden="true" />
+            </button>
+
+            <div className="receipt-capture-slot receipt-capture-slot--end">
+              <button
+                type="button"
+                className="btn-primary receipt-capture-upload"
+                disabled={frames.length === 0}
+                onClick={() => void createDraft()}
+              >
+                Upload receipt {frames.length === 1 ? 'photo' : 'photos'}
+              </button>
+            </div>
+          </div>
         )}
-        {captureState === 'requesting' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Opening camera…</div>}
-        {captureState === 'uploading' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Uploading receipt securely{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</div>}
-        {captureState === 'ready' && <>
-          <button type="button" className="receipt-record-button" onClick={() => void capture()} disabled={frames.length >= maximumFrames && retakeIndex === null}>
-            <Camera size={24} /> {retakeIndex !== null ? `Capture replacement for section ${retakeIndex + 1}` : frames.length === 0 ? 'Capture receipt' : 'Add receipt section'}
-          </button>
-          <span className="receipt-guided-count">{frames.length} section{frames.length === 1 ? '' : 's'} captured · maximum {maximumFrames}</span>
-          {targetedRecapture && (session.carried_sequences?.length ?? 0) > 0 && <span className="receipt-guided-count">Other original sections will be preserved in a new evidence attempt.</span>}
-          {frames.length > 0 && <div className="receipt-guided-actions">
-            {!targetedRecapture && <button type="button" className="btn-secondary" onClick={clearFrames}>Restart photos</button>}
-            <button type="button" className="btn-primary" onClick={() => void createDraft()}>Upload receipt {frames.length === 1 ? 'photo' : 'photos'}</button>
-          </div>}
-        </>}
-        {captureState === 'error' && <button type="button" className="receipt-record-button" onClick={() => {
+
+        {captureState === 'error' && <button type="button" className="receipt-camera-retry" onClick={() => {
           if (evidenceUploadedRef.current) void createDraft(true);
           else void openCamera();
         }}><RotateCcw size={20} /> {evidenceUploadedRef.current ? 'Retry report setup' : 'Try camera again'}</button>}
       </div>
+
+      <CapturedPhotosSheet
+        open={galleryOpen}
+        photos={frames.map((frame, index) => ({
+          url: frame.url,
+          alt: `Receipt section ${index + 1}`,
+          retakeLabel: `Retake section ${sectionNumber(index)}`,
+          viewLabel: `View section ${sectionNumber(index)} full size`,
+          flag: frame.issue ? ISSUE_TEXT[frame.issue].flag : undefined,
+        }))}
+        triggerRef={galleryTriggerRef}
+        onDismiss={() => setGalleryOpen(false)}
+        onRetake={(index) => { setRetakeIndex(index); setGalleryOpen(false); }}
+        onView={(index) => setViewer({ url: frames[index].url, sequence: index })}
+        onRestart={targetedRecapture ? undefined : () => { clearFrames(); setGalleryOpen(false); }}
+        note={`${frames.length} of ${maximumFrames} sections captured`}
+      />
+
+      {/* Top layer via showModal(), so it clears both the camera overlay and the sheet it opens from. */}
+      <ReceiptPhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </section>
   );
 };

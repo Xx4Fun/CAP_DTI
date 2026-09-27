@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
+import { guideCropRect, outputSize } from '../app/captureCrop';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 
 const { saveResumeTokenMock, saveTrackingTokenMock } = vi.hoisted(() => ({
@@ -81,15 +82,19 @@ describe('GuidedReceiptCapture', () => {
     // Advisory only: the check measures brightness and detail, not whether a receipt is present,
     // so a false positive must never prevent an upload.
     expect(screen.getByRole('button', { name: 'Upload receipt photo' })).toBeEnabled();
-    expect(screen.getByText('Too dark')).toBeInTheDocument();
+    // The amber ring on the camera roll is the at-a-glance signal. Asserting the ring rather than
+    // the flag text matters: the text also lives in the closed sheet, where a text query would
+    // still find it and pass for the wrong reason.
+    expect(screen.getByRole('button', { name: 'Captured sections (1)' })).toHaveClass('receipt-capture-roll--flagged');
 
     evaluateCanvasMock.mockReturnValue(readable);
-    await user.click(screen.getByRole('button', { name: 'Retake section 1' }));
+    await user.click(screen.getByRole('button', { name: 'Captured sections (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'Retake section 1' }));
     await user.click(screen.getByRole('button', { name: 'Capture replacement for section 1' }));
 
     // Derived from the frames, so replacing the bad photo removes the advisory with it.
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
-    expect(screen.queryByText('Too dark')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Captured sections (1)' })).not.toHaveClass('receipt-capture-roll--flagged');
   });
 
   it('names overexposure rather than calling a washed-out photo dark', async () => {
@@ -102,7 +107,95 @@ describe('GuidedReceiptCapture', () => {
     const advisory = await screen.findByRole('status');
     expect(advisory).toHaveTextContent(/too bright to read/i);
     expect(advisory).not.toHaveTextContent(/too dark/i);
-    expect(screen.getByText('Too bright')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Captured sections (1)' })).toHaveClass('receipt-capture-roll--flagged');
+  });
+
+  // Boxes measured from the running app at a 390x844 viewport; captureCrop.test.ts uses the same
+  // numbers. jsdom performs no layout, so without these stubs getBoundingClientRect returns zeros,
+  // guideCropRect takes its "not measurable yet" fallback, and the crop is never really exercised.
+  const rect = (left: number, top: number, width: number, height: number) => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+  }) as DOMRect;
+
+  const captureWithGuide = async (guide: DOMRect) => {
+    const video = rect(0, 0, 390, 844);
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this instanceof HTMLVideoElement) return video;
+      if (this.classList.contains('receipt-scan-guide')) return guide;
+      return rect(0, 0, 0, 0);
+    });
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+    const user = userEvent.setup();
+    renderCapture();
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+    // Read rather than assume: jsdom reports object-fit as `contain` where a real browser reports
+    // the stylesheet's `cover`, which would silently change the expected crop. The cover maths is
+    // pinned explicitly in captureCrop.test.ts; what matters here is the wiring.
+    const objectFit = window.getComputedStyle(screen.getByLabelText('Live receipt camera')).objectFit;
+    return { drawImage, video, objectFit };
+  };
+
+  // The only coverage tying the rendered guide to the pixels that actually get saved — i.e. that
+  // the frame on screen is the crop region and not decoration.
+  it('saves the pixels the guide frames rather than the whole sensor', async () => {
+    const guide = rect(16, 88, 358, 646);
+    const { drawImage, video, objectFit } = await captureWithGuide(guide);
+
+    const expected = guideCropRect({
+      frame: { width: 1080, height: 1920 },
+      videoRect: video,
+      guideRect: guide,
+      objectFit,
+    });
+    const size = outputSize(expected, 2000);
+
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(),
+      expected.sx, expected.sy, expected.sw, expected.sh,
+      0, 0, size.width, size.height,
+    );
+    // A genuine crop, not the whole frame arriving via the fallback.
+    expect(expected.sw).toBeLessThan(1080);
+    expect(expected.sh).toBeLessThan(1920);
+  });
+
+  it('follows the guide when it is off centre', async () => {
+    const { drawImage, video, objectFit } = await captureWithGuide(rect(120, 88, 358, 646));
+    const sourceX = drawImage.mock.calls[0][1] as number;
+
+    const centred = guideCropRect({
+      frame: { width: 1080, height: 1920 },
+      videoRect: video,
+      guideRect: rect(16, 88, 358, 646),
+      objectFit,
+    });
+
+    // Moving the guide right must move the sampled region right too; a mapping that ignored the
+    // guide's position would return the same sx for both.
+    expect(sourceX).toBeGreaterThan(centred.sx);
+  });
+
+  it('opens a captured photo full size from the sheet', async () => {
+    // jsdom has no native dialog top layer.
+    if (!HTMLDialogElement.prototype.showModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.open = true; } });
+    if (!HTMLDialogElement.prototype.close) Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value() { this.open = false; } });
+    vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
+    vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
+
+    const user = userEvent.setup();
+    renderCapture();
+
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+    await user.click(screen.getByRole('button', { name: 'Captured sections (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'View section 1 full size' }));
+
+    // Being able to look at what was actually saved is the point: it is how a customer checks the
+    // crop matched the frame without waiting for the receipt to reach review.
+    expect(await screen.findByRole('img', { name: 'Full receipt section 1' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close photo' }));
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Full receipt section 1' })).not.toBeInTheDocument());
   });
 
   it('gives a completed recapture a way out of the success screen', async () => {
@@ -161,11 +254,21 @@ describe('GuidedReceiptCapture', () => {
     />);
 
     await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+
+    // The roll shows the count; the photos themselves live in the sheet it opens.
+    await user.click(await screen.findByRole('button', { name: 'Captured sections (1)' }));
     expect(await screen.findByRole('img', { name: 'Receipt section 1' })).toBeInTheDocument();
-    expect(screen.getByText('1 section captured · maximum 12')).toBeInTheDocument();
+    expect(screen.getByText('1 of 12 sections captured')).toBeInTheDocument();
+    // Retaking dismisses the sheet so the shutter can show its replacement label straight away.
     await user.click(screen.getByRole('button', { name: 'Retake section 1' }));
-    await user.click(screen.getByRole('button', { name: 'Capture replacement for section 1' }));
+    await user.click(await screen.findByRole('button', { name: 'Capture replacement for section 1' }));
+
+    // Still exactly one photo: the replacement replaced it rather than adding. The tray thumbnail
+    // is decorative, so the sheet row is the only node carrying this name.
+    await user.click(screen.getByRole('button', { name: 'Captured sections (1)' }));
     expect(screen.getAllByRole('img', { name: 'Receipt section 1' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Close captured sections' }));
+
     await user.click(screen.getByRole('button', { name: 'Upload receipt photo' }));
 
     expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
