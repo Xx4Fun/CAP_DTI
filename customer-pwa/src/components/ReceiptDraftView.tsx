@@ -326,30 +326,28 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     });
   };
 
-  // No heading of its own: each branch below already renders the page h1, so the control ships
-  // icon-only rather than introducing a second h1.
-  const backHeader = onBack ? (
-    <header className="receipt-draft-back-header">
-      <button type="button" className="track-report-back" aria-label="Back to My Reports" onClick={onBack}>
-        <ArrowLeft size={21} aria-hidden="true" />
-      </button>
-    </header>
+  // Icon-only: every branch below renders the page h1 next to it, so a labelled control would
+  // introduce a second heading on the same row.
+  const backButton = onBack ? (
+    <button type="button" className="track-report-back" aria-label="Back to My Reports" onClick={onBack}>
+      <ArrowLeft size={21} aria-hidden="true" />
+    </button>
   ) : null;
 
-  // The control belongs above the card, not inside it, so it reads as navigation rather than page
-  // content. Same shape as ReportDetail: a plain layout wrapper, header first, card as a sibling.
-  const withBack = (card: React.ReactNode) => (
-    <div className="receipt-draft-layout">
-      {backHeader}
-      {card}
-    </div>
+  // Back control, status icon and title share the card's first row, so the card opens on content
+  // instead of three stacked rows of chrome.
+  const pageHead = (icon: React.ReactNode, title: string) => (
+    <div className="receipt-draft-head">{backButton}{icon}<h1>{title}</h1></div>
+  );
+
+  const layout = (card: React.ReactNode) => (
+    <div className="receipt-draft-layout">{card}</div>
   );
 
   if (submitted) {
-    return withBack(
+    return layout(
       <section className="receipt-draft-page receipt-draft-success" aria-live="polite">
-        <CheckCircle2 size={42} aria-hidden="true" />
-        <h1>Report submitted to DTI</h1>
+        {pageHead(<CheckCircle2 size={36} aria-hidden="true" />, 'Report submitted to DTI')}
         <p>Your receipt and system results are available for DTI review. Submission does not establish a violation.</p>
         <strong>{submitted.report_reference}</strong>
       </section>
@@ -357,8 +355,8 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (loading) {
-    return withBack(
-      <div className="receipt-draft-loading" role="status"><LoaderCircle className="spin" size={22} /> Loading receipt status…</div>
+    return layout(
+      <div className="receipt-draft-loading" role="status">{backButton}<LoaderCircle className="spin" size={22} /> Loading receipt status…</div>
     );
   }
 
@@ -388,10 +386,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (error && !review && !processing) {
-    return withBack(
+    return layout(
       <section className="receipt-draft-page">
-        <AlertTriangle size={34} aria-hidden="true" />
-        <h1>Receipt status unavailable</h1>
+        {pageHead(<AlertTriangle size={34} aria-hidden="true" />, 'Receipt status unavailable')}
         {errorNotice}
         {resumeToken && <button type="button" className="btn-secondary" disabled={busy} onClick={() => void load(resumeToken)}><RefreshCw size={17} /> Try again</button>}
       </section>
@@ -403,10 +400,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     const failed = processing.status === 'Processing failed';
     const retryable = failed && processing.can_retry_processing !== false;
     const needsAttention = needsRecapture || failed;
-    return withBack(
+    return layout(
       <section className="receipt-draft-page">
-        {needsAttention ? <AlertTriangle size={36} aria-hidden="true" /> : <Clock3 size={36} aria-hidden="true" />}
-        <h1>{processing.status}</h1>
+        {pageHead(needsAttention ? <AlertTriangle size={36} aria-hidden="true" /> : <Clock3 size={36} aria-hidden="true" />, processing.status)}
         <p>{processing.recapture_reason?.message || processing.message || 'PRICE-Watch is preparing the receipt for your confirmation.'}</p>
         {processing.ready_for_review && (
           <button type="button" className="btn-primary" onClick={openReview}>Review detected items</button>
@@ -459,9 +455,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     ? review.manual_review_required || items.some(item => (item.uncertain_fields?.length ?? 0) > 0)
     : review.manual_review_required || review.merchant?.status !== 'matched' || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8);
 
-  return withBack(
+  return layout(
     <section className="receipt-draft-page receipt-review-page">
-      <h1>Review your receipt</h1>
+      {pageHead(null, 'Review your receipt')}
       <p>Check that every section is clear and complete.</p>
       <div className="receipt-review-store"><span>Selected store</span><strong>{review.store?.store_name || 'Unavailable'}</strong><span>{review.store?.address}</span></div>
       <section className="receipt-review-section" aria-labelledby="original-receipt-heading">

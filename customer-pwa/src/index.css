@@ -4037,17 +4037,26 @@ body {
   margin: 0;
 }
 
-.receipt-draft-back-header {
+/* Back control, status icon and title on one row inside the card. */
+.receipt-draft-head {
   display: flex;
   align-items: center;
+  gap: 12px;
+  width: 100%;
 }
 
-/* .track-report-back is absolutely positioned for the hero banner it was built for; in this flat
-   header it has to sit in normal flow. */
-.receipt-draft-back-header .track-report-back {
+/* .track-report-back is absolutely positioned for the hero banner it was built for; on this row
+   it has to sit in normal flow. */
+.receipt-draft-head .track-report-back,
+.receipt-draft-loading .track-report-back {
   position: relative;
   top: auto;
   left: auto;
+  flex: none;
+}
+
+.receipt-draft-head h1 {
+  margin: 0;
 }
 
 .receipt-draft-page,
@@ -4069,12 +4078,12 @@ body {
   gap: 13px;
 }
 
-.receipt-draft-page > svg,
-.receipt-draft-success > svg {
+.receipt-draft-head > svg {
+  flex: none;
   color: #1d4ed8;
 }
 
-.receipt-draft-success > svg {
+.receipt-draft-success .receipt-draft-head > svg {
   color: #15803d;
 }
 
@@ -4105,7 +4114,6 @@ body {
 .receipt-draft-loading {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 9px;
   min-height: 160px;
 }
