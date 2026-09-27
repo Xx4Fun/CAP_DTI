@@ -24,6 +24,12 @@ export interface PriceSheetProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   testId: string;
+  /**
+   * Extra class on the backdrop. The sheet portals to document.body at z-index 220, so a caller
+   * opening it from inside a fullscreen layer (the receipt camera sits at 1000) needs a hook to
+   * raise it above that layer, or it paints underneath and looks like nothing happened.
+   */
+  backdropClassName?: string;
 }
 
 const dismissThreshold = 96;
@@ -51,6 +57,7 @@ export function PriceSheet({
   children,
   footer,
   testId,
+  backdropClassName,
 }: PriceSheetProps): React.ReactPortal {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLElement>(null);
@@ -209,7 +216,7 @@ export function PriceSheet({
 
   return createPortal(
     <div
-      className={`price-filter-backdrop${open ? ' price-filter-backdrop--open' : ''}`}
+      className={`price-filter-backdrop${open ? ' price-filter-backdrop--open' : ''}${backdropClassName ? ` ${backdropClassName}` : ''}`}
       data-testid={testId}
       aria-hidden={!open}
       onPointerDown={(event) => {

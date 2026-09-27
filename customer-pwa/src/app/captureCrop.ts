@@ -26,6 +26,13 @@ export interface CropInput {
  * Returns the full frame when the geometry is unusable (no layout yet, zero-sized boxes), because an uncropped photo
  * is always better than a wrong crop.
  */
+/**
+ * Smallest share of each sensor axis a crop may cover. A normal guide already covers roughly 0.75
+ * of the frame's width and 0.6 of its height, so this never fires in normal use; it exists only to
+ * rescue geometry that has gone wrong.
+ */
+const MIN_CROP_FRACTION = 0.35;
+
 export function guideCropRect(input: CropInput): CropRect {
   const { frame, videoRect, guideRect } = input;
   const fullFrame: CropRect = { sx: 0, sy: 0, sw: frame.width, sh: frame.height };
@@ -54,6 +61,25 @@ export function guideCropRect(input: CropInput): CropRect {
   sy = Math.min(Math.max(0, sy), frame.height - sh);
 
   if (sw <= 0 || sh <= 0) return fullFrame;
+
+  // Last-resort net, inert for a normally sized guide. Keeping the guide usable is the layout's
+  // job; this only stops a layout bug from silently shipping an upload too small to read, because
+  // outputSize never upscales and nothing downstream restores resolution — the OCR preprocessor's
+  // 200px floor rejects it far too late, as a terminal bad capture rather than a retry.
+  const floorWidth = frame.width * MIN_CROP_FRACTION;
+  const floorHeight = frame.height * MIN_CROP_FRACTION;
+  const grow = Math.max(1, floorWidth / sw, floorHeight / sh);
+  if (grow > 1) {
+    // Grow about the centre so the framed content stays in the middle of what is saved.
+    const grownWidth = Math.min(sw * grow, frame.width);
+    const grownHeight = Math.min(sh * grow, frame.height);
+    sx -= (grownWidth - sw) / 2;
+    sy -= (grownHeight - sh) / 2;
+    sw = grownWidth;
+    sh = grownHeight;
+    sx = Math.min(Math.max(0, sx), frame.width - sw);
+    sy = Math.min(Math.max(0, sy), frame.height - sh);
+  }
 
   return { sx: Math.round(sx), sy: Math.round(sy), sw: Math.round(sw), sh: Math.round(sh) };
 }

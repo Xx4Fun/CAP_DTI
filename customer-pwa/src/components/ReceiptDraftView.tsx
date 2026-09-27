@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, ZoomIn } from 'lucide-react';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
 import { deleteReceiptResumeToken, getReceiptResumeToken } from '../app/receiptResumeStore';
 import { navigate } from '../app/routing';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
+import { ReceiptPhotoViewer } from './ReceiptPhotoViewer';
 // Reuses the back-control styling that ReportDetail already imports from this stylesheet.
 import './TrackReport.css';
 
@@ -113,8 +114,6 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   const [evidenceUrls, setEvidenceUrls] = useState<Array<{ id: number; sequence: number; url: string | null }>>([]);
   const [decodedIds, setDecodedIds] = useState<number[]>([]);
   const [viewer, setViewer] = useState<{ url: string; sequence: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const dialogRef = React.useRef<HTMLDialogElement>(null);
   const [retrySeconds, setRetrySeconds] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const cooldownUntil = React.useRef(0);
@@ -143,14 +142,6 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     const timer = window.setInterval(() => setRetrySeconds(Math.max(0, Math.ceil((cooldownUntil.current - Date.now()) / 1000))), 1000);
     return () => window.clearInterval(timer);
   }, [retrySeconds]);
-
-  useEffect(() => {
-    if (!viewer) return;
-    const trigger = document.activeElement as HTMLElement | null;
-    const dialog = dialogRef.current;
-    dialog?.showModal();
-    return () => { dialog?.close(); trigger?.focus(); };
-  }, [viewer]);
 
   const loadEvidence = useCallback(async (assets: ReceiptEvidence[], token: string, signal: AbortSignal) => {
     const cache = evidenceUrlsRef.current;
@@ -338,17 +329,25 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   // No heading of its own: each branch below already renders the page h1, so the control ships
   // icon-only rather than introducing a second h1.
   const backHeader = onBack ? (
-    <header className="track-report-heading track-report-detail-app-header receipt-draft-back-header">
+    <header className="receipt-draft-back-header">
       <button type="button" className="track-report-back" aria-label="Back to My Reports" onClick={onBack}>
         <ArrowLeft size={21} aria-hidden="true" />
       </button>
     </header>
   ) : null;
 
+  // The control belongs above the card, not inside it, so it reads as navigation rather than page
+  // content. Same shape as ReportDetail: a plain layout wrapper, header first, card as a sibling.
+  const withBack = (card: React.ReactNode) => (
+    <div className="receipt-draft-layout">
+      {backHeader}
+      {card}
+    </div>
+  );
+
   if (submitted) {
-    return (
+    return withBack(
       <section className="receipt-draft-page receipt-draft-success" aria-live="polite">
-        {backHeader}
         <CheckCircle2 size={42} aria-hidden="true" />
         <h1>Report submitted to DTI</h1>
         <p>Your receipt and system results are available for DTI review. Submission does not establish a violation.</p>
@@ -358,11 +357,8 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (loading) {
-    return (
-      <>
-        {backHeader}
-        <div className="receipt-draft-loading" role="status"><LoaderCircle className="spin" size={22} /> Loading receipt status…</div>
-      </>
+    return withBack(
+      <div className="receipt-draft-loading" role="status"><LoaderCircle className="spin" size={22} /> Loading receipt status…</div>
     );
   }
 
@@ -392,9 +388,8 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (error && !review && !processing) {
-    return (
+    return withBack(
       <section className="receipt-draft-page">
-        {backHeader}
         <AlertTriangle size={34} aria-hidden="true" />
         <h1>Receipt status unavailable</h1>
         {errorNotice}
@@ -408,9 +403,8 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     const failed = processing.status === 'Processing failed';
     const retryable = failed && processing.can_retry_processing !== false;
     const needsAttention = needsRecapture || failed;
-    return (
+    return withBack(
       <section className="receipt-draft-page">
-        {backHeader}
         {needsAttention ? <AlertTriangle size={36} aria-hidden="true" /> : <Clock3 size={36} aria-hidden="true" />}
         <h1>{processing.status}</h1>
         <p>{processing.recapture_reason?.message || processing.message || 'PRICE-Watch is preparing the receipt for your confirmation.'}</p>
@@ -465,9 +459,8 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     ? review.manual_review_required || items.some(item => (item.uncertain_fields?.length ?? 0) > 0)
     : review.manual_review_required || review.merchant?.status !== 'matched' || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8);
 
-  return (
+  return withBack(
     <section className="receipt-draft-page receipt-review-page">
-      {backHeader}
       <h1>Review your receipt</h1>
       <p>Check that every section is clear and complete.</p>
       <div className="receipt-review-store"><span>Selected store</span><strong>{review.store?.store_name || 'Unavailable'}</strong><span>{review.store?.address}</span></div>
@@ -488,7 +481,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
             <figcaption>Section {asset.sequence + 1}</figcaption>
             <div className="receipt-photo-actions">
             {asset.url && <button type="button" className="btn-secondary" aria-label={`View full size: section ${asset.sequence + 1}`}
-              onClick={() => { setZoom(1); setViewer({ url: asset.url!, sequence: asset.sequence }); }}><ZoomIn size={16} /> View full size</button>}
+              onClick={() => setViewer({ url: asset.url!, sequence: asset.sequence })}><ZoomIn size={16} /> View full size</button>}
             <button type="button" className="btn-secondary" disabled={busy} onClick={() => void startRecapture({ replace_sequence: asset.sequence })}>
               <Camera size={16} /> Retake section {asset.sequence + 1}
             </button>
@@ -557,14 +550,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       <button type="button" className="btn-primary" disabled={!confirmed || !evidenceComplete || busy} onClick={() => void submit()}>
         {submitting ? 'Submitting report…' : 'Submit report to DTI'}
       </button>
-      {viewer && <dialog ref={dialogRef} className="receipt-photo-dialog" aria-label={`Receipt section ${viewer.sequence + 1}`} onCancel={() => setViewer(null)}>
-        <div className="receipt-photo-toolbar"><strong>Section {viewer.sequence + 1}</strong>
-          <button type="button" className="btn-secondary" aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, value - 0.5))}><ZoomOut size={20} /></button>
-          <button type="button" className="btn-secondary" aria-label="Zoom in" disabled={zoom >= 4} onClick={() => setZoom(value => Math.min(4, value + 0.5))}><ZoomIn size={20} /></button>
-          <button type="button" className="btn-secondary" aria-label="Close photo" onClick={() => setViewer(null)}><X size={20} /></button>
-        </div>
-        <div className="receipt-photo-scroll"><img src={viewer.url} alt={`Full receipt section ${viewer.sequence + 1}`} style={{ width: `${zoom * 100}%`, maxWidth: 'none' }} /></div>
-      </dialog>}
+      <ReceiptPhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </section>
   );
 };
