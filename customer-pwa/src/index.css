@@ -1614,20 +1614,19 @@ body {
   transform: translate(-50%, -50%) scale(0.9);
 }
 
+/* Fills its media box so a missing photo reads as a placeholder tile rather than stray text.
+   The tint matches .progressive-product-image__placeholder, the box shown while an image loads. */
 .price-product-fallback {
   display: flex;
+  width: 100%;
+  height: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  background: #e8eef6;
   color: #8291a9;
   text-align: center;
-}
-
-.price-product-fallback--neutral span {
-  font-size: 0.56rem;
-  font-weight: 700;
-  line-height: 1.1;
 }
 
 .price-product-info {
@@ -2149,11 +2148,8 @@ body {
 
 .progressive-product-image--detail .price-product-fallback {
   min-height: 0;
+  border-radius: 10px;
   color: #71829a;
-}
-
-.progressive-product-image--detail .price-product-fallback--neutral span {
-  font-size: 0.72rem;
 }
 
 .product-detail-image-trigger {
@@ -4432,6 +4428,24 @@ body {
   cursor: pointer;
 }
 
+/* Marks which captured photo scored as hard to read, so the advisory below names a specific
+   thumbnail instead of leaving the customer to guess. Amber, not red: this is advice, and the
+   photo still uploads. */
+.receipt-section-preview--unreadable {
+  outline: 2px solid #f59e0b;
+  outline-offset: -1px;
+}
+
+.receipt-section-preview-flag {
+  display: block;
+  padding-top: 3px;
+  color: #fbbf24;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+}
+
 .receipt-scan-guide {
   position: absolute;
   inset: 18% 8% 22%;
@@ -4485,7 +4499,8 @@ body {
 }
 
 .receipt-camera-progress,
-.receipt-camera-error {
+.receipt-camera-error,
+.receipt-camera-advisory {
   max-width: min(92vw, 500px);
   display: flex;
   align-items: center;
@@ -4500,6 +4515,12 @@ body {
 
 .receipt-camera-error {
   border: 1px solid #fca5a5;
+}
+
+/* Amber rather than the error red: the photo is still uploadable and this check cannot tell
+   whether a receipt is present, only whether the image is bright and detailed enough to read. */
+.receipt-camera-advisory {
+  border: 1px solid #fbbf24;
 }
 
 .receipt-uploaded {

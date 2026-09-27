@@ -13,6 +13,9 @@ describe('MoreView Component', () => {
     localStorage.clear();
     sessionStorage.clear();
     window.location.hash = '';
+    // MoreView now rebuilds an open comparison detail from the history entry, so a leaked entry
+    // from a previous test would open a detail the test never asked for.
+    window.history.replaceState(null, '', '/');
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
@@ -39,6 +42,67 @@ describe('MoreView Component', () => {
     peso_difference: 2.50,
     percent_difference: 11.36,
   };
+
+  it('restores the open comparison from its history entry when the view remounts', async () => {
+    const user = userEvent.setup();
+    saveRecentComparison(sampleComparison);
+    const first = render(<MoreView />);
+
+    await user.click(screen.getByRole('button', { name: /View comparison for/i }));
+    expect(screen.getByRole('heading', { name: 'Comparison History', level: 1 })).toBeInTheDocument();
+    expect((window.history.state as { comparisonId?: string })?.comparisonId).toBeTruthy();
+
+    // App unmounts MoreView on a tab switch, so returning by hardware Back remounts it. The entry
+    // has to carry enough identity to rebuild the same detail.
+    first.unmount();
+    render(<MoreView />);
+    expect(screen.getByRole('heading', { name: 'Comparison History', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('Mega Sardines Red')).toBeInTheDocument();
+  });
+
+  it('shows the list when the comparison behind a history entry no longer exists', async () => {
+    const user = userEvent.setup();
+    saveRecentComparison(sampleComparison);
+    const first = render(<MoreView />);
+    await user.click(screen.getByRole('button', { name: /View comparison for/i }));
+    first.unmount();
+
+    localStorage.clear();
+    render(<MoreView />);
+
+    expect(screen.queryByRole('heading', { name: 'Comparison History', level: 1 })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'DTI Antique Provincial Office', level: 1 })).toBeInTheDocument();
+  });
+
+  it('pops the detail history entry when the visible back control closes it', async () => {
+    const user = userEvent.setup();
+    saveRecentComparison(sampleComparison);
+    render(<MoreView />);
+
+    await user.click(screen.getByRole('button', { name: /View comparison for/i }));
+    expect((window.history.state as { moreSubView?: string })?.moreSubView).toBe('history-detail');
+
+    await user.click(screen.getByRole('button', { name: /Back to History/i }));
+
+    // Left behind, this entry would make the next hardware Back move history without moving the
+    // screen, which reads as a dead back press.
+    await waitFor(() => expect((window.history.state as { moreSubView?: string })?.moreSubView).toBeUndefined());
+  });
+
+  it('restores an open legal document from history when the view remounts', async () => {
+    const user = userEvent.setup();
+    const first = render(<MoreView />);
+
+    await user.click(screen.getByRole('button', { name: 'View Terms of Use' }));
+    expect((window.history.state as { moreSubView?: string })?.moreSubView).toBe('terms');
+    expect(screen.getByRole('heading', { name: 'Terms of Use', level: 1 })).toBeInTheDocument();
+
+    // Same contract as the comparison detail: a tab switch unmounts MoreView, so the entry alone
+    // has to rebuild the screen or the returning back press looks ineffective.
+    first.unmount();
+    render(<MoreView />);
+    expect(screen.getByRole('heading', { name: 'Terms of Use', level: 1 })).toBeInTheDocument();
+  });
 
   it('renders top DTI Antique Provincial Office card with DTI logo and contact buttons', () => {
     render(<MoreView />);

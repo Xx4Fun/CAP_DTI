@@ -16,6 +16,18 @@ vi.mock('../app/receiptNotifications', () => ({
   enableReceiptNotifications: vi.fn(),
 }));
 
+// The quality verdict is mocked so the advisory can be driven directly; the scoring itself is
+// covered by src/app/frameQuality.test.ts against the same predicate the backend uses.
+const { evaluateCanvasMock } = vi.hoisted(() => ({ evaluateCanvasMock: vi.fn() }));
+vi.mock('../app/frameQuality', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../app/frameQuality')>()),
+  evaluateCanvas: evaluateCanvasMock,
+}));
+
+const readable = { score: 14, acceptable: true, brightness: 128, edgeDetail: 14 };
+const tooDark = { score: 0, acceptable: false, brightness: 9, edgeDetail: 1 };
+const tooBright = { score: 0, acceptable: false, brightness: 252, edgeDetail: 11 };
+
 const session: CaptureSessionResponse = {
   capture_session_id: 42,
   session_uuid: 'capture-42',
@@ -32,6 +44,7 @@ describe('GuidedReceiptCapture', () => {
   afterEach(() => vi.restoreAllMocks());
 
   beforeEach(() => {
+    evaluateCanvasMock.mockReset().mockReturnValue(readable);
     saveResumeTokenMock.mockReset().mockResolvedValue(undefined);
     saveTrackingTokenMock.mockReset().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'mediaDevices', {
@@ -47,6 +60,77 @@ describe('GuidedReceiptCapture', () => {
     });
     vi.spyOn(URL, 'createObjectURL').mockReturnValueOnce('blob:receipt-1').mockReturnValueOnce('blob:receipt-2');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+  });
+
+  const renderCapture = () => render(<GuidedReceiptCapture
+    session={session}
+    storeName="Receipt Test Mart"
+    submissionUuid="sub-advisory"
+    onCancel={vi.fn()}
+    onDraftCreated={vi.fn()}
+  />);
+
+  it('warns that a photo is too dark without blocking the upload, and clears it on retake', async () => {
+    evaluateCanvasMock.mockReturnValue(tooDark);
+    const user = userEvent.setup();
+    renderCapture();
+
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/too dark to read/i);
+    // Advisory only: the check measures brightness and detail, not whether a receipt is present,
+    // so a false positive must never prevent an upload.
+    expect(screen.getByRole('button', { name: 'Upload receipt photo' })).toBeEnabled();
+    expect(screen.getByText('Too dark')).toBeInTheDocument();
+
+    evaluateCanvasMock.mockReturnValue(readable);
+    await user.click(screen.getByRole('button', { name: 'Retake section 1' }));
+    await user.click(screen.getByRole('button', { name: 'Capture replacement for section 1' }));
+
+    // Derived from the frames, so replacing the bad photo removes the advisory with it.
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(screen.queryByText('Too dark')).not.toBeInTheDocument();
+  });
+
+  it('names overexposure rather than calling a washed-out photo dark', async () => {
+    evaluateCanvasMock.mockReturnValue(tooBright);
+    const user = userEvent.setup();
+    renderCapture();
+
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+
+    const advisory = await screen.findByRole('status');
+    expect(advisory).toHaveTextContent(/too bright to read/i);
+    expect(advisory).not.toHaveTextContent(/too dark/i);
+    expect(screen.getByText('Too bright')).toBeInTheDocument();
+  });
+
+  it('gives a completed recapture a way out of the success screen', async () => {
+    const onCheckStatus = vi.fn();
+    vi.spyOn(apiClient, 'post').mockImplementation(async (url) => {
+      if (String(url).includes('/assets')) return { data: { success: true } };
+      if (String(url).includes('/recapture')) return { data: { success: true, data: { status: 'Processing receipt' } } };
+      throw new Error(`Unexpected POST ${url}`);
+    });
+    const user = userEvent.setup();
+    render(<GuidedReceiptCapture
+      session={{ ...session, capture_action: 'replace', upload_sequence: 0 }}
+      storeName="Receipt Test Mart"
+      submissionUuid="sub-recapture"
+      recapture={{ reference: 'REP-RECAP', resumeToken: 'rsm_device' }}
+      onCancel={vi.fn()}
+      onDraftCreated={vi.fn()}
+      onCheckStatus={onCheckStatus}
+    />);
+
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+    await user.click(screen.getByRole('button', { name: 'Upload receipt photo' }));
+
+    expect(await screen.findByText('Receipt uploaded')).toBeInTheDocument();
+    // A recapture is given no onGoHome, so without this control the screen has no exit at all.
+    const checkStatus = screen.getByRole('button', { name: 'Check status' });
+    await user.click(checkStatus);
+    expect(onCheckStatus).toHaveBeenCalledWith('REP-RECAP');
   });
 
   it('previews, retakes, and uploads one original receipt image without video', async () => {

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
 import { deleteReceiptResumeToken, getReceiptResumeToken } from '../app/receiptResumeStore';
 import { navigate } from '../app/routing';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
+// Reuses the back-control styling that ReportDetail already imports from this stylesheet.
+import './TrackReport.css';
 
 interface ReceiptReviewItem {
   sequence: number;
@@ -94,9 +96,10 @@ interface ReceiptDraftViewProps {
   mode: 'processing' | 'review';
   onSubmitted?: (result: ReceiptConfirmationResult) => void;
   onStatus?: (status: string) => void;
+  onBack?: () => void;
 }
 
-export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, mode, onSubmitted, onStatus }) => {
+export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, mode, onSubmitted, onStatus, onBack }) => {
   const [resumeToken, setResumeToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -311,9 +314,41 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     }
   };
 
+  // Every screen branch below is reachable from My Reports, so each needs a way back. The
+  // recapture branch is deliberately excluded: GuidedReceiptCapture owns full-screen camera
+  // chrome and carries its own cancel control.
+  // Came from My Reports? Then processing and review are one destination, not two: replace the
+  // entry instead of pushing. App.tsx's returnToReportList calls history.back() when this flag is
+  // set, so pushing would leave processing as the back target and send a control labelled
+  // "Back to My Reports" to the previous receipt screen instead of the list.
+  const fromReportList = () =>
+    (history.state as { fromReportList?: unknown } | null)?.fromReportList === true;
+
+  // Always replace, whatever the origin. Processing and review are two views of one receipt, so
+  // processing must never be the back target: a fresh capture arrives here without provenance
+  // (FormalReport.tsx:1105 pushes processing with no state), and pushing review would leave
+  // processing sitting behind the list entry that the back control writes.
+  const openReview = () => {
+    navigate({ name: 'receipt-review', reference }, {
+      replace: true,
+      ...(fromReportList() ? { state: { fromReportList: true } } : {}),
+    });
+  };
+
+  // No heading of its own: each branch below already renders the page h1, so the control ships
+  // icon-only rather than introducing a second h1.
+  const backHeader = onBack ? (
+    <header className="track-report-heading track-report-detail-app-header receipt-draft-back-header">
+      <button type="button" className="track-report-back" aria-label="Back to My Reports" onClick={onBack}>
+        <ArrowLeft size={21} aria-hidden="true" />
+      </button>
+    </header>
+  ) : null;
+
   if (submitted) {
     return (
       <section className="receipt-draft-page receipt-draft-success" aria-live="polite">
+        {backHeader}
         <CheckCircle2 size={42} aria-hidden="true" />
         <h1>Report submitted to DTI</h1>
         <p>Your receipt and system results are available for DTI review. Submission does not establish a violation.</p>
@@ -323,7 +358,12 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   }
 
   if (loading) {
-    return <div className="receipt-draft-loading" role="status"><LoaderCircle className="spin" size={22} /> Loading receipt status…</div>;
+    return (
+      <>
+        {backHeader}
+        <div className="receipt-draft-loading" role="status"><LoaderCircle className="spin" size={22} /> Loading receipt status…</div>
+      </>
+    );
   }
 
   if (recaptureSession && resumeToken) {
@@ -340,7 +380,12 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         setReview(null);
         setProcessing(null);
         setLoading(true);
-        navigate({ name: 'receipt-processing', reference });
+        // Replace, and keep list provenance: the recapture camera has just been torn down, so it
+        // must not become the back target.
+        navigate({ name: 'receipt-processing', reference }, {
+          replace: true,
+          ...(fromReportList() ? { state: { fromReportList: true } } : {}),
+        });
         if (mode === 'processing') void load(resumeToken);
       }}
     />;
@@ -349,6 +394,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   if (error && !review && !processing) {
     return (
       <section className="receipt-draft-page">
+        {backHeader}
         <AlertTriangle size={34} aria-hidden="true" />
         <h1>Receipt status unavailable</h1>
         {errorNotice}
@@ -364,11 +410,12 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     const needsAttention = needsRecapture || failed;
     return (
       <section className="receipt-draft-page">
+        {backHeader}
         {needsAttention ? <AlertTriangle size={36} aria-hidden="true" /> : <Clock3 size={36} aria-hidden="true" />}
         <h1>{processing.status}</h1>
         <p>{processing.recapture_reason?.message || processing.message || 'PRICE-Watch is preparing the receipt for your confirmation.'}</p>
         {processing.ready_for_review && (
-          <button type="button" className="btn-primary" onClick={() => navigate({ name: 'receipt-review', reference })}>Review detected items</button>
+          <button type="button" className="btn-primary" onClick={openReview}>Review detected items</button>
         )}
         {needsRecapture && evidenceUrls.length > 0 && <section className="receipt-review-section" aria-labelledby="recapture-evidence-heading">
           <h2 id="recapture-evidence-heading">Original captured receipt evidence</h2>
@@ -420,6 +467,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
 
   return (
     <section className="receipt-draft-page receipt-review-page">
+      {backHeader}
       <h1>Review your receipt</h1>
       <p>Check that every section is clear and complete.</p>
       <div className="receipt-review-store"><span>Selected store</span><strong>{review.store?.store_name || 'Unavailable'}</strong><span>{review.store?.address}</span></div>
