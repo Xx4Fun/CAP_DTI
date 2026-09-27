@@ -249,6 +249,21 @@ final class AdminSrpManagementTest extends TestCase
         $this->assertSame(1, SrpBulletin::count());
     }
 
+    public function test_manual_add_does_not_recreate_a_legacy_unkeyed_commodity(): void
+    {
+        SrpBulletin::create([
+            'commodity_name' => 'Legacy Rice', 'unit' => '1kg', 'commodity_key' => null,
+            'baseline_price' => 40, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+
+        $this->postJson('/api/admin/srp', [
+            'commodity_name' => 'Legacy Rice', 'unit' => '1kg',
+            'baseline_price' => 42, 'effective_date' => '2026-09-27',
+            'source_reference' => 'DTI-SRP-2026-09',
+        ])->assertUnprocessable()->assertJsonValidationErrors('commodity_name');
+        $this->assertSame(1, SrpBulletin::count());
+    }
+
     public function test_admin_list_can_find_one_saved_id_and_returns_storage_image_url(): void
     {
         config()->set('filesystems.commodity_images_disk', 'commodity-images-test');
@@ -267,7 +282,7 @@ final class AdminSrpManagementTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->getJson('/api/admin/srp?view=current&id='.$item->id)
+        $this->getJson('/api/admin/srp?view=current&id='.$item->id.'&query=unrelated&category=Milk')
             ->assertOk()->assertJsonCount(1, 'data.data')
             ->assertJsonPath('data.data.0.id', $item->id)
             ->assertJsonPath('data.data.0.image_path', 'commodity_images/photo.webp')
@@ -300,6 +315,88 @@ final class AdminSrpManagementTest extends TestCase
         $item->refresh();
         $this->assertSame('Mega Sardines Tomato', $item->commodity_name);
         $this->assertSame(20.00, (float) $item->baseline_price);
+    }
+
+    public function test_metadata_edit_only_updates_the_selected_keyed_or_legacy_identity(): void
+    {
+        $make = fn (string $key, string $unit) => SrpBulletin::create([
+            'commodity_name' => 'Coffee', 'unit' => $unit, 'commodity_key' => $key ?: null,
+            'baseline_price' => 20, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+        $keyed = $make('coffee-100g', '100g');
+        $keyedSibling = $make('coffee-200g', '200g');
+        $legacy = $make('', '300g');
+        $legacySibling = SrpBulletin::create([
+            'commodity_name' => 'Tea', 'unit' => '300g', 'commodity_key' => null,
+            'baseline_price' => 21, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+
+        $this->putJson("/api/admin/srp/{$keyed->id}", ['commodity_name' => 'Coffee Premium', 'unit' => '100g'])->assertOk();
+        $this->assertSame('Coffee', $keyedSibling->fresh()->commodity_name);
+        $this->assertSame('Coffee', $legacy->fresh()->commodity_name);
+
+        $this->putJson("/api/admin/srp/{$legacy->id}", ['commodity_name' => 'Coffee Legacy', 'unit' => '300g'])->assertOk();
+        $this->assertSame('Tea', $legacySibling->fresh()->commodity_name);
+        $this->assertSame('Coffee', $keyedSibling->fresh()->commodity_name);
+    }
+
+    public function test_metadata_edit_rejects_an_existing_target_identity(): void
+    {
+        $make = fn (string $name, string $key) => SrpBulletin::create([
+            'commodity_name' => $name, 'unit' => '100g', 'commodity_key' => $key,
+            'baseline_price' => 20, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+        $source = $make('Source Coffee', 'source-coffee-100g');
+        $target = $make('Target Coffee', 'target-coffee-100g');
+
+        $this->putJson("/api/admin/srp/{$source->id}", ['commodity_name' => 'Target Coffee', 'unit' => '100g'])
+            ->assertUnprocessable()->assertJsonValidationErrors('commodity_name');
+        $this->assertSame('Source Coffee', $source->fresh()->commodity_name);
+        $this->assertSame('Target Coffee', $target->fresh()->commodity_name);
+    }
+
+    public function test_metadata_edit_rejects_keying_overlapping_legacy_versions(): void
+    {
+        $row = [
+            'commodity_name' => 'Legacy Coffee', 'unit' => '100g', 'commodity_key' => null,
+            'baseline_price' => 20, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ];
+        $first = SrpBulletin::create($row);
+        SrpBulletin::create($row);
+
+        $this->putJson("/api/admin/srp/{$first->id}", [
+            'commodity_name' => 'Legacy Coffee', 'unit' => '100g',
+        ])->assertUnprocessable()->assertJsonValidationErrors('commodity_name');
+        $this->assertSame(2, SrpBulletin::whereNull('commodity_key')->count());
+    }
+
+    public function test_import_preview_counts_repeated_rows_in_the_upload_as_duplicates(): void
+    {
+        $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => '2026-12-01', 'source_reference' => 'REF-2026-12'],
+            'items' => [
+                ['item_name' => 'Coffee', 'unit' => '100g', 'srp' => 25],
+                ['item_name' => 'Coffee', 'unit' => '100g', 'srp' => 26],
+            ],
+        ])->assertOk()->assertJsonPath('data.insert_count', 1)->assertJsonPath('data.duplicate_count', 1);
+    }
+
+    public function test_legacy_revision_ignores_other_unkeyed_commodities_on_the_same_date(): void
+    {
+        $legacy = SrpBulletin::create([
+            'commodity_name' => 'Coffee', 'unit' => '100g', 'commodity_key' => null,
+            'baseline_price' => 20, 'effective_date' => '2026-05-11', 'is_active' => true,
+        ]);
+        SrpBulletin::create([
+            'commodity_name' => 'Tea', 'unit' => '100g', 'commodity_key' => null,
+            'baseline_price' => 21, 'effective_date' => '2026-06-01', 'is_active' => true,
+        ]);
+
+        $this->postJson("/api/admin/srp/{$legacy->id}/revisions/preview", [
+            'commodity_name' => 'Coffee', 'unit' => '100g', 'baseline_price' => 22,
+            'effective_date' => '2026-06-01', 'source_reference' => 'DTI-SRP-2026-06',
+            'change_reason' => 'New bulletin',
+        ])->assertOk();
     }
 
     public function test_metadata_unit_change_is_blocked_once_any_revision_has_monitoring_prices(): void

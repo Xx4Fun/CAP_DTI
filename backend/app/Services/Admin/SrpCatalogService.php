@@ -33,6 +33,10 @@ class SrpCatalogService
         $search = trim((string) ($filters['query'] ?? ''));
         $category = trim((string) ($filters['category'] ?? ''));
         $id = $filters['id'] ?? null;
+        if ($id !== null) {
+            $search = '';
+            $category = '';
+        }
         $today = now('Asia/Manila')->toDateString();
 
         if ($view === 'history') {

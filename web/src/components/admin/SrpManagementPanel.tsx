@@ -1144,13 +1144,31 @@ export function SrpManagementPanel() {
         </div>
       </div>
 
-      <div role="tablist" aria-label="SRP record view" className="srp-view-tabs">
+      <div
+        role="tablist"
+        aria-label="SRP record view"
+        className="srp-view-tabs"
+        onKeyDown={(event) => {
+          const options: SrpView[] = ['current', 'scheduled', 'history']
+          const index = options.indexOf(view)
+          const next = event.key === 'ArrowRight' ? options[(index + 1) % options.length]
+            : event.key === 'ArrowLeft' ? options[(index + options.length - 1) % options.length]
+              : event.key === 'Home' ? options[0] : event.key === 'End' ? options[options.length - 1] : null
+          if (!next) return
+          event.preventDefault()
+          showView(next)
+          event.currentTarget.querySelector<HTMLElement>(`#srp-tab-${next}`)?.focus()
+        }}
+      >
         {(['current', 'scheduled', 'history'] as const).map((option) => (
           <button
             key={option}
             type="button"
             role="tab"
+            id={`srp-tab-${option}`}
+            aria-controls="srp-records-panel"
             aria-selected={view === option}
+            tabIndex={view === option ? 0 : -1}
             onClick={() => showView(option)}
           >
             {option[0].toUpperCase() + option.slice(1)}
@@ -1179,6 +1197,9 @@ export function SrpManagementPanel() {
       )}
 
       <div
+        role="tabpanel"
+        id="srp-records-panel"
+        aria-labelledby={`srp-tab-${view}`}
         className="admin-table-card"
         style={{
           background: '#ffffff',

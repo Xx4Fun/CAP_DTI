@@ -42,4 +42,24 @@ class SrpMigrationCompatibilityTest extends TestCase
         $this->expectException(QueryException::class);
         SrpBulletin::create([...$row, 'commodity_key' => 'rice-1kg']);
     }
+
+    public function test_uniqueness_migration_stops_without_changing_existing_collisions(): void
+    {
+        $migration = require database_path('migrations/2026_09_27_000001_prevent_duplicate_srp_versions.php');
+        $migration->down();
+        $row = [
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice-1kg',
+            'baseline_price' => 40, 'effective_date' => '2026-09-27', 'is_active' => true,
+        ];
+        SrpBulletin::create($row);
+        SrpBulletin::create($row);
+
+        try {
+            $migration->up();
+            $this->fail('Migration should stop before applying the index.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Review them', $exception->getMessage());
+            $this->assertSame(2, SrpBulletin::where('commodity_key', 'rice-1kg')->count());
+        }
+    }
 }

@@ -82,11 +82,16 @@ class SrpRevisionService
 
     private function ensureNoConflict(SrpBulletin $original, array $proposed): void
     {
-        $exists = SrpBulletin::query()
-            ->whereKeyNot($original->id)
-            ->where('commodity_key', $proposed['commodity_key'])
-            ->whereDate('effective_date', $proposed['effective_date'])
-            ->exists();
+        $query = SrpBulletin::query()->whereKeyNot($original->id)
+            ->whereDate('effective_date', $proposed['effective_date']);
+        if ($proposed['commodity_key'] === null) {
+            $query->whereNull('commodity_key')
+                ->where('commodity_name', $proposed['commodity_name'])
+                ->where('unit', $proposed['unit']);
+        } else {
+            $query->where('commodity_key', $proposed['commodity_key']);
+        }
+        $exists = $query->exists();
 
         if ($exists) {
             throw ValidationException::withMessages([

@@ -41,7 +41,13 @@ class SrpImportService
             ];
         })->values();
 
-        $duplicates = $rows->filter(fn ($row) => SrpBulletin::where('commodity_key', $row['commodity_key'])->whereDate('effective_date', $date)->exists())->count();
+        $seen = [];
+        $duplicates = $rows->filter(function ($row) use (&$seen, $date) {
+            $key = $row['commodity_key'];
+            if (isset($seen[$key])) return true;
+            $seen[$key] = true;
+            return SrpBulletin::where('commodity_key', $key)->whereDate('effective_date', $date)->exists();
+        })->count();
         return ['rows' => $rows->all(), 'insert_count' => $rows->count() - $duplicates, 'duplicate_count' => $duplicates, 'effective_date' => $date, 'source_reference' => $source];
     }
 

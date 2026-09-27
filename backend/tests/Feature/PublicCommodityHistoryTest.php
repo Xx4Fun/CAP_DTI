@@ -17,18 +17,14 @@ class PublicCommodityHistoryTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_it_returns_distinct_effective_versions_for_a_keyed_commodity(): void
+    public function test_it_returns_effective_versions_for_a_keyed_commodity(): void
     {
         Carbon::setTestNow('2026-08-22 10:00:00');
 
-        $olderDuplicate = $this->bulletin([
-            'baseline_price' => 22.00,
-            'effective_date' => '2026-06-01',
-        ]);
         $previous = $this->bulletin([
             'baseline_price' => 23.00,
             'effective_date' => '2026-06-01',
-            'source_reference' => 'Bulletin June corrected',
+            'source_reference' => 'Bulletin June',
         ]);
         $current = $this->bulletin([
             'baseline_price' => 25.00,
@@ -50,8 +46,7 @@ class PublicCommodityHistoryTest extends TestCase
             ->assertJsonPath('data.history.0.baseline_price', 25)
             ->assertJsonPath('data.history.0.effective_date', '2026-08-01')
             ->assertJsonPath('data.history.1.id', $previous->id)
-            ->assertJsonPath('data.history.1.baseline_price', 23)
-            ->assertJsonMissing(['id' => $olderDuplicate->id]);
+            ->assertJsonPath('data.history.1.baseline_price', 23);
     }
 
     public function test_it_falls_back_to_exact_name_and_unit_for_legacy_records(): void

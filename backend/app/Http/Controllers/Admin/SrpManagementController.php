@@ -51,7 +51,8 @@ class SrpManagementController extends Controller
         Request $request,
         AdminAuthorizationService $auth,
         AuditTrailService $audit,
-        FieldNotificationService $notifications
+        FieldNotificationService $notifications,
+        SrpCatalogService $catalog
     ) {
         $auth->requireManager($request->user());
 
@@ -67,7 +68,10 @@ class SrpManagementController extends Controller
         ]);
 
         $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
-        if (SrpBulletin::where('commodity_key', $commodityKey)->exists()) {
+        $existingIdentity = SrpBulletin::where('commodity_key', $commodityKey)->exists()
+            || SrpBulletin::whereNull('commodity_key')->get(['commodity_name', 'unit', 'commodity_key'])
+                ->contains(fn (SrpBulletin $record) => $catalog->lineageKey($record) === $commodityKey);
+        if ($existingIdentity) {
             throw ValidationException::withMessages([
                 'commodity_name' => ['This commodity and unit already exists. Use Update SRP Prices for a new version.'],
             ]);
@@ -103,7 +107,8 @@ class SrpManagementController extends Controller
         Request $request,
         SrpBulletin $srp,
         AdminAuthorizationService $auth,
-        AuditTrailService $audit
+        AuditTrailService $audit,
+        SrpCatalogService $catalog
     ) {
         $auth->requireManager($request->user());
 
@@ -119,15 +124,33 @@ class SrpManagementController extends Controller
         $targetImagePath = $data['image_path'] ?? $srp->image_path;
 
         // Sync metadata and image_path across all revisions of this commodity lineage
-        DB::transaction(function () use ($srp, $commodityKey, $data, $targetImagePath, $request, $audit) {
-            $lineage = fn () => SrpBulletin::query()
-                ->where('commodity_key', $srp->commodity_key)
-                ->orWhere('commodity_name', $srp->commodity_name);
+        DB::transaction(function () use ($srp, $commodityKey, $data, $targetImagePath, $request, $audit, $catalog) {
+            $lineage = function () use ($srp) {
+                $query = SrpBulletin::query();
+
+                return $srp->commodity_key === null
+                    ? $query->whereNull('commodity_key')->where('commodity_name', $srp->commodity_name)->where('unit', $srp->unit)
+                    : $query->where('commodity_key', $srp->commodity_key);
+            };
+
+            $lineageRows = $lineage()->lockForUpdate()->get(['id', 'unit', 'commodity_key', 'effective_date']);
+            $lineageIds = $lineageRows->pluck('id');
+            $dates = $lineageRows->map(fn (SrpBulletin $record) => $record->effective_date->toDateString());
+            $targetExists = SrpBulletin::where('commodity_key', $commodityKey)->whereNotIn('id', $lineageIds)->exists()
+                || SrpBulletin::whereNull('commodity_key')->whereNotIn('id', $lineageIds)
+                    ->get(['commodity_name', 'unit', 'commodity_key'])
+                    ->contains(fn (SrpBulletin $record) => $catalog->lineageKey($record) === $commodityKey);
+            $changesKey = $lineageRows->contains(fn (SrpBulletin $record) => $record->commodity_key !== $commodityKey);
+            if ($targetExists || ($changesKey && $dates->unique()->count() !== $dates->count())) {
+                throw ValidationException::withMessages([
+                    'commodity_name' => ['This commodity and unit already has an SRP identity or overlapping effective dates.'],
+                ]);
+            }
 
             // Monitoring items capture no unit, so rewriting the unit of a priced revision would silently
             // relabel recorded prices. The row lock serializes with item inserts via the srp_id foreign key.
             $unit = fn ($value) => strtolower(trim((string) $value));
-            $pricedWithOtherUnit = $lineage()->lockForUpdate()->get(['id', 'unit'])
+            $pricedWithOtherUnit = $lineageRows
                 ->filter(fn ($bulletin) => $unit($bulletin->unit) !== $unit($data['unit'] ?? null))
                 ->pluck('id');
             if ($pricedWithOtherUnit->isNotEmpty() && MonitoringRecordItem::whereIn('srp_id', $pricedWithOtherUnit)->exists()) {
