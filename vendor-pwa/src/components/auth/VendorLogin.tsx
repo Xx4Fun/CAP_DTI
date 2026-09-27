@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LoaderCircle, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
 import type { VendorSession } from '../../app/types';
 import { apiError, apiStatus, vendorApi } from '../../services/vendorApi';
 
@@ -11,6 +11,7 @@ interface VendorLoginProps {
 export const VendorLogin: React.FC<VendorLoginProps> = ({ notice, onSignedIn }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,111 +34,133 @@ export const VendorLogin: React.FC<VendorLoginProps> = ({ notice, onSignedIn }) 
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(145deg, #0F233D 0%, #1B365D 50%, #23456F 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px 16px',
-    }}>
-      <div style={{
-        background: '#FFFFFF',
-        borderRadius: 'var(--radius-lg)',
-        maxWidth: '460px',
-        width: '100%',
-        padding: '28px 24px',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25)',
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '22px' }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            background: '#F8FAFC',
-            borderRadius: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 12px',
-            padding: '6px',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-            border: '1px solid #E2E8F0',
-          }}>
-            <img src="/icons/dti-pwa-192x192.png" alt="DTI Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          </div>
-          <h1 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--dti-navy)' }}>
-            PRICE-Watch Vendor Portal
-          </h1>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Department of Trade & Industry • Antique Provincial Office
-          </p>
-        </div>
-
-        {notice && !error && (
-          <div role="status" style={{ background: '#EFF6FF', color: '#1E3A8A', padding: '10px 12px', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <CheckCircle2 size={16} />
-            <span>{notice}</span>
-          </div>
-        )}
-
-        {error && (
-          <div role="alert" className="portal-error">
-            <AlertCircle size={16} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="vendor-email">Business email</label>
-            <div style={{ position: 'relative' }}>
-              <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '12px' }} />
-              <input
-                id="vendor-email"
-                type="email"
-                className="form-control"
-                placeholder="store@domain.com"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                style={{ paddingLeft: '32px' }}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="vendor-password">Password</label>
-            <div style={{ position: 'relative' }}>
-              <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '12px' }} />
-              <input
-                id="vendor-password"
-                type="password"
-                className="form-control"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                style={{ paddingLeft: '32px' }}
-                required
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={submitting}
-            style={{ width: '100%', marginTop: '8px', padding: '11px 16px', fontSize: '0.92rem' }}
-          >
-            <span>{submitting ? 'Signing in…' : 'Sign in'}</span>
-            {!submitting && <ArrowRight size={16} />}
-          </button>
-        </form>
-
-        <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '12px', lineHeight: 1.4 }}>
-          Accounts are created through an invitation from DTI Antique. Use the link in your invitation email to set your password.
-        </p>
+    <main className="login-container">
+      {/* Left Column: Official Illustration Artwork (Desktop / Landscape) */}
+      <div className="login-left-column" aria-hidden="true">
+        <img
+          src="/branding/login-artwork.webp"
+          alt="DTI fair trade and consumer protection illustration"
+          className="login-artwork-img"
+        />
       </div>
-    </div>
+
+      {/* Right Column: Centered Authentication Card */}
+      <div className="login-right-column">
+        <div className="login-card">
+          <header className="login-header">
+            <img
+              src="/branding/dti-logo.svg"
+              alt="DTI Official Logo"
+              className="login-dti-logo"
+            />
+            <h1 className="login-title">
+              PRICE-<span className="login-title-highlight">Watch</span>
+            </h1>
+            <div className="login-subtitle-row" aria-label="DTI Vendor Portal">
+              <span className="login-subtitle-line" />
+              <span>— DTI Vendor Portal —</span>
+              <span className="login-subtitle-line" />
+            </div>
+          </header>
+
+          {notice && !error && (
+            <div role="status" className="login-notice-badge">
+              <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
+              <span>{notice}</span>
+            </div>
+          )}
+
+          {error && (
+            <div role="alert" className="login-error-badge">
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="login-form">
+            <div className="input-group">
+              <label htmlFor="vendor-email">Business email</label>
+              <div className="input-wrapper">
+                <Mail size={18} className="input-icon" />
+                <input
+                  id="vendor-email"
+                  type="email"
+                  autoComplete="username"
+                  className="login-input"
+                  placeholder="store@domain.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="input-group">
+              <label htmlFor="vendor-password">Password</label>
+              <div className="input-wrapper">
+                <Lock size={18} className="input-icon" />
+                <input
+                  id="vendor-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  className="login-input"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="login-password-toggle"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="login-btn"
+              disabled={submitting}
+              aria-busy={submitting}
+            >
+              {submitting ? (
+                <>
+                  <LoaderCircle
+                    size={18}
+                    className="login-button-spinner"
+                    aria-hidden="true"
+                  />
+                  <span>Signing in…</span>
+                </>
+              ) : (
+                'Sign in'
+              )}
+            </button>
+          </form>
+
+          <p className="login-invite-note">
+            Accounts are created through an invitation from DTI Antique. Use the link in your invitation email to set your password.
+          </p>
+
+          <footer className="login-footer">
+            <div className="login-footer-guarantee">
+              <ShieldCheck size={18} className="login-shield-icon" />
+              <span>Secure. Official. Committed to Fair Trade.</span>
+            </div>
+            <div className="login-footer-tagline">
+              Protecting Consumers. Supporting Businesses.
+            </div>
+            <div className="login-ph-bar" aria-hidden="true">
+              <span className="login-ph-blue" />
+              <span className="login-ph-yellow" />
+              <span className="login-ph-red" />
+            </div>
+          </footer>
+        </div>
+      </div>
+    </main>
   );
 };

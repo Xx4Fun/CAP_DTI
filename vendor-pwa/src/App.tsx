@@ -170,9 +170,9 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   const openNotices = storeNotices.filter((notice) => notice.status !== 'closed');
   const activeNotice = openNotices.find((notice) => canRespond(notice)) ?? openNotices[0] ?? null;
 
-  const logout = async () => {
-    try { await vendorApi.logout(token); } catch { /* The token is dropped locally either way; the server expires it. */ }
+  const logout = () => {
     onSignOut('You have signed out.');
+    void vendorApi.logout(token).catch(() => { /* Local sign-out must not wait for network access. */ });
   };
 
   const openDocument = async (notice: LegalNotice) => {
@@ -269,6 +269,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           if (tab !== 'rebuttals') setRespondingTo(null);
         }}
         pendingNoticeCount={openNotices.length}
+        online={online}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
         onOpenNotifications={() => setSettingsOpen(true)}
         onLogout={() => void logout()}
@@ -281,7 +282,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         </div>
       )}
 
-      <main className="vendor-content">
+      <main className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''}`}>
         {!store ? (
           <div className="v-card portal-status">
             <p><strong>No establishment is linked to this account.</strong></p>

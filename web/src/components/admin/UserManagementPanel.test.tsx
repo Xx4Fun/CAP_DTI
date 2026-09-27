@@ -52,7 +52,7 @@ describe('User Management', () => {
       store({ id: 4, store_name: 'Antique Market', vendor_user_id: 7 }),
       store({ id: 9, store_name: 'Unlinked Grocery' }),
     ])
-    vi.mocked(adminApi.inviteVendor).mockResolvedValue({ invitation_url: invitationUrl, invitation: { id: 31, email: 'owner@shop.test', expires_at: '2026-09-15T00:00:00Z' } })
+    vi.mocked(adminApi.inviteVendor).mockResolvedValue({ invitation_url: invitationUrl, delivery_status: 'queued', invitation: { id: 31, email: 'owner@shop.test', expires_at: '2026-09-15T00:00:00Z' } })
   })
 
   it('renders a paginated user table and applies role filters', async () => {
@@ -100,12 +100,30 @@ describe('User Management', () => {
     expect(screen.queryByRole('radio', { name: /Antique Market/ })).not.toBeInTheDocument()
     await user.click(option)
     await user.type(screen.getByLabelText('Vendor owner email address'), 'Owner@Shop.test')
-    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+    await user.click(screen.getByRole('button', { name: 'Create invitation' }))
 
     expect(adminApi.inviteVendor).toHaveBeenCalledWith(9, 'owner@shop.test')
-    const dialog = await screen.findByRole('dialog', { name: 'Vendor invitation sent' })
+    const dialog = await screen.findByRole('dialog', { name: 'Vendor invitation created' })
     expect(within(dialog).getByText(invitationUrl)).toBeInTheDocument()
     expect(within(dialog).getByText('owner@shop.test')).toBeInTheDocument()
+    expect(within(dialog).getByText(/email accepted by the queue; delivery is not confirmed/i)).toBeInTheDocument()
+  })
+
+  it('keeps the link available when invitation email cannot be queued', async () => {
+    vi.mocked(adminApi.inviteVendor).mockResolvedValue({ invitation_url: invitationUrl, delivery_status: 'unavailable', invitation: { id: 32, email: 'owner@shop.test', expires_at: '2026-09-15T00:00:00Z' } })
+    const user = userEvent.setup()
+    render(<UserManagementPanel vendorRegistration={() => <div>Existing vendor registration</div>} />)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await user.click(screen.getByRole('button', { name: /Vendor account/i }))
+    await user.click(await screen.findByRole('radio', { name: /Unlinked Grocery/ }))
+    await user.type(screen.getByLabelText('Vendor owner email address'), 'owner@shop.test')
+    await user.click(screen.getByRole('button', { name: 'Create invitation' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Vendor invitation created' })
+    expect(within(dialog).getByText(/email could not be queued/i)).toBeInTheDocument()
+    expect(within(dialog).getByText(invitationUrl)).toBeInTheDocument()
   })
 
   it('continues to the invitation with the store returned by registration', async () => {
@@ -122,7 +140,7 @@ describe('User Management', () => {
 
     expect(screen.getByRole('radio', { name: /Newly Registered Mart/ })).toBeChecked()
     await user.type(screen.getByLabelText('Vendor owner email address'), 'new@shop.test')
-    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+    await user.click(screen.getByRole('button', { name: 'Create invitation' }))
     expect(adminApi.inviteVendor).toHaveBeenCalledWith(42, 'new@shop.test')
   })
 
@@ -136,7 +154,7 @@ describe('User Management', () => {
     await user.click(screen.getByRole('button', { name: /Vendor account/i }))
     await user.click(await screen.findByRole('radio', { name: /Unlinked Grocery/ }))
     await user.type(screen.getByLabelText('Vendor owner email address'), 'owner@shop.test')
-    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+    await user.click(screen.getByRole('button', { name: 'Create invitation' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('already has a linked vendor account')
   })

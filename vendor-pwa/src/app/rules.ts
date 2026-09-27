@@ -76,14 +76,19 @@ export const formatDate = (value: string | null | undefined, withTime = false) =
  */
 export function analyzeReference(price: number, reference: SrpReference) {
   if (reference.status !== 'available' || reference.value === null || reference.value <= 0) {
-    return { variancePercent: null, forReview: false, reviewAbove: null, label: 'Regulatory reference unavailable' as const };
+    return { variancePercent: null, forReview: false, reviewFrom: null, label: 'Regulatory reference unavailable' as const };
   }
-  const reviewAbove = reference.type === 'emergency_ceiling' ? reference.value : Number((reference.value * 1.1).toFixed(2));
-  const forReview = reference.type === 'emergency_ceiling' ? price > reference.value : price > reference.value * 1.1;
+  const referenceCents = Math.round(reference.value * 100);
+  const priceCents = Math.round(price * 100);
+  const reviewFromCents = reference.type === 'emergency_ceiling'
+    ? referenceCents + 1
+    : Math.floor(referenceCents * 11 / 10) + 1;
+  const reviewFrom = reviewFromCents / 100;
+  const forReview = priceCents >= reviewFromCents;
   return {
     variancePercent: Number((((price - reference.value) / reference.value) * 100).toFixed(2)),
     forReview,
-    reviewAbove,
+    reviewFrom,
     label: forReview ? 'For review' as const : 'Within reference' as const,
   };
 }

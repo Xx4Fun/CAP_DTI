@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Clock, Paperclip, FileCheck, Eye } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
-import { attachmentCategoryLabel, formatDate, reasonLabel } from '../../app/rules';
+import { attachmentCategoryLabel, canRespond, formatDate, reasonLabel } from '../../app/rules';
 
 interface RebuttalHistoryProps {
   notices: LegalNotice[];
@@ -13,6 +13,7 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
   const responses = notices
     .filter((notice) => notice.response_received_at)
     .sort((a, b) => new Date(b.response_received_at ?? 0).getTime() - new Date(a.response_received_at ?? 0).getTime());
+  const hasOpenNotice = notices.some(canRespond);
 
   return (
     <div className="rebuttals-view">
@@ -21,7 +22,14 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>Submitted Responses & Explanations</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Record of explanations submitted to DTI Antique for this establishment</p>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onStartNewRebuttal}>Respond to an open notice</button>
+        {hasOpenNotice ? (
+          <button type="button" className="btn btn-primary btn-sm" onClick={onStartNewRebuttal}>Respond to an open notice</button>
+        ) : (
+          <span className="badge badge-success" style={{ padding: '6px 12px' }}>
+            <CheckCircle2 size={13} />
+            <span>No pending inquiries</span>
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>

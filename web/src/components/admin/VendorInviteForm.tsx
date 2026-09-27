@@ -2,12 +2,13 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Copy, Send } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
+import type { VendorInvitationDeliveryStatus } from '../../services/adminApi'
 
 type InviteError = { response?: { data?: { message?: string; errors?: Record<string, string[]> } } }
 
 export function VendorInviteForm({ store, onInvited, onCancel }: {
   store: { id: number; store_name: string }
-  onInvited?: (invitationUrl: string, email: string) => void
+  onInvited?: (invitationUrl: string, email: string, deliveryStatus: VendorInvitationDeliveryStatus) => void
   onCancel?: () => void
 }) {
   const [email, setEmail] = useState('')
@@ -23,10 +24,10 @@ export function VendorInviteForm({ store, onInvited, onCancel }: {
       const normalized = email.trim().toLowerCase()
       const result = await adminApi.inviteVendor(store.id, normalized)
       setLink(result.invitation_url)
-      onInvited?.(result.invitation_url, normalized)
+      onInvited?.(result.invitation_url, normalized, result.delivery_status)
     } catch (requestError) {
       const data = (requestError as InviteError).response?.data
-      setError(data?.message || data?.errors?.email?.[0] || 'The vendor invitation could not be queued.')
+      setError(data?.message || data?.errors?.email?.[0] || 'The vendor invitation could not be created.')
     } finally {
       setSending(false)
     }
@@ -45,7 +46,7 @@ export function VendorInviteForm({ store, onInvited, onCancel }: {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-        <small className="field-helper-text">The vendor receives a one-time link, valid for 24 hours, to set their own password in the Vendor Portal.</small>
+        <small className="field-helper-text">Creates a one-time link, valid for 24 hours. The system attempts to queue an email; delivery is not confirmed here.</small>
       </div>
 
       {link && (
@@ -62,7 +63,7 @@ export function VendorInviteForm({ store, onInvited, onCancel }: {
       <footer className="vendor-invite-actions">
         {onCancel && <button type="button" className="admin-button secondary" onClick={onCancel}>Cancel</button>}
         <button type="submit" className="admin-button primary" disabled={sending}>
-          <Send size={16} aria-hidden="true" />{sending ? 'Queueing invitation…' : 'Send invitation'}
+          <Send size={16} aria-hidden="true" />{sending ? 'Creating invitation…' : 'Create invitation'}
         </button>
       </footer>
     </form>

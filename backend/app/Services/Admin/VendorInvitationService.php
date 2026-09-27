@@ -10,6 +10,7 @@ use App\Models\VendorInvitation;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -55,9 +56,15 @@ class VendorInvitationService
             return $invitation;
         });
 
-        Mail::to($email)->queue(new VendorInvitationMail($url, $store->store_name));
+        $deliveryStatus = 'queued';
+        try {
+            Mail::to($email)->queue(new VendorInvitationMail($url, $store->store_name));
+        } catch (\Throwable $error) {
+            $deliveryStatus = 'unavailable';
+            Log::warning('Vendor invitation email could not be queued.', ['invitation_id' => $invitation->id, 'error_type' => $error::class]);
+        }
 
-        return ['invitation' => $invitation, 'invitation_url' => $url, 'delivery_status' => 'queued'];
+        return ['invitation' => $invitation, 'invitation_url' => $url, 'delivery_status' => $deliveryStatus];
     }
 
     /** @return array{user: User, existing_account: bool} */

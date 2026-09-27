@@ -103,11 +103,12 @@ describe('TemporalVolatility', () => {
   })
 
   it('calculates and renders direct peso and percentage variance callout for anomalies', async () => {
+    const recentDate = new Date().toISOString().slice(0, 10)
     vi.mocked(adminApi.getAnalytics).mockResolvedValueOnce({
-      labels: ['2026-08-15'],
+      labels: [recentDate],
       price_series: [54],
       srp_series: [48],
-      table_rows: [{ date: '2026-08-15', price: 54, srp: 48, source: 'Field Inspection' }],
+      table_rows: [{ date: recentDate, price: 54, srp: 48, source: 'Field Inspection' }],
       recidivism_count: 1,
     })
 

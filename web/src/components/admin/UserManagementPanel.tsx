@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
+import type { VendorInvitationDeliveryStatus } from '../../services/adminApi'
 import type { ManagedUserPage, ManagedUserRecord, ManagedUserRole, StoreRecord, VendorInvitationRecord } from '../../types/admin'
 import { adminToast } from '../../services/adminToast'
 import { StoreOnboarding } from '../StoreOnboarding'
@@ -67,7 +68,7 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
   const [deactivating, setDeactivating] = useState<ManagedUserRecord | null>(null)
   const [unlinking, setUnlinking] = useState<{ account: ManagedUserRecord; store: { id: number; store_name: string } } | null>(null)
   const [handoff, setHandoff] = useState<{ account: ManagedUserRecord; temporaryPassword: string } | null>(null)
-  const [vendorHandoff, setVendorHandoff] = useState<{ storeName: string; email: string; invitationUrl: string } | null>(null)
+  const [vendorHandoff, setVendorHandoff] = useState<{ storeName: string; email: string; invitationUrl: string; deliveryStatus: VendorInvitationDeliveryStatus } | null>(null)
   const [invitations, setInvitations] = useState<VendorInvitationRecord[]>([])
   const [invitationsError, setInvitationsError] = useState('')
 
@@ -140,8 +141,8 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
       <VendorOnboarding
         renderRegistration={vendorRegistration}
         onBack={() => changeView('list')}
-        onInvited={(store, email, invitationUrl) => {
-          setVendorHandoff({ storeName: store.store_name, email, invitationUrl })
+        onInvited={(store, email, invitationUrl, deliveryStatus) => {
+          setVendorHandoff({ storeName: store.store_name, email, invitationUrl, deliveryStatus })
           changeView('list')
         }}
       />
@@ -249,8 +250,8 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
       {role !== 'field_officer' && invitations.length > 0 && (
         <PendingInvitations
           invitations={invitations}
-          onResent={(invitation, invitationUrl) => {
-            setVendorHandoff({ storeName: invitation.store?.store_name ?? 'Establishment', email: invitation.email, invitationUrl })
+          onResent={(invitation, invitationUrl, deliveryStatus) => {
+            setVendorHandoff({ storeName: invitation.store?.store_name ?? 'Establishment', email: invitation.email, invitationUrl, deliveryStatus })
             void loadInvitations()
           }}
           onChanged={() => void loadInvitations()}
@@ -325,7 +326,7 @@ export function UserManagementPanel({ vendorRegistration }: { vendorRegistration
 function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
   renderRegistration?: VendorRegistrationRenderer
   onBack: () => void
-  onInvited: (store: StoreRecord, email: string, invitationUrl: string) => void
+  onInvited: (store: StoreRecord, email: string, invitationUrl: string, deliveryStatus: VendorInvitationDeliveryStatus) => void
 }) {
   const [registering, setRegistering] = useState(false)
   const [stores, setStores] = useState<StoreRecord[] | null>(null)
@@ -405,7 +406,7 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
             </div>
             <div className="field-officer-fields">
               {selected
-                ? <VendorInviteForm key={selected.id} store={selected} onCancel={() => setSelected(null)} onInvited={(url, email) => onInvited(selected, email, url)} />
+                ? <VendorInviteForm key={selected.id} store={selected} onCancel={() => setSelected(null)} onInvited={(url, email, deliveryStatus) => onInvited(selected, email, url, deliveryStatus)} />
                 : <p className="field-helper-text">The invitation link opens the Vendor Portal, where the vendor sets their own password.</p>}
             </div>
           </div>
@@ -417,7 +418,7 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
 
 function PendingInvitations({ invitations, onResent, onChanged }: {
   invitations: VendorInvitationRecord[]
-  onResent: (invitation: VendorInvitationRecord, invitationUrl: string) => void
+  onResent: (invitation: VendorInvitationRecord, invitationUrl: string, deliveryStatus: VendorInvitationDeliveryStatus) => void
   onChanged: () => void
 }) {
   const [busyId, setBusyId] = useState<number | null>(null)
@@ -428,9 +429,9 @@ function PendingInvitations({ invitations, onResent, onChanged }: {
     setBusyId(invitation.id)
     try {
       const result = await adminApi.inviteVendor(invitation.store.id, invitation.email)
-      onResent(invitation, result.invitation_url)
+      onResent(invitation, result.invitation_url, result.delivery_status)
     } catch (requestError) {
-      adminToast.error(errorMessage(requestError, 'The invitation could not be sent again.'), { id: `invitation-resend-${invitation.id}` })
+      adminToast.error(errorMessage(requestError, 'A new invitation could not be created.'), { id: `invitation-resend-${invitation.id}` })
       onChanged()
     } finally {
       setBusyId(null)
@@ -478,9 +479,9 @@ function PendingInvitations({ invitations, onResent, onChanged }: {
   )
 }
 
-function VendorInvitationHandoff({ storeName, email, invitationUrl, onClose }: { storeName: string; email: string; invitationUrl: string; onClose: () => void }) {
+function VendorInvitationHandoff({ storeName, email, invitationUrl, deliveryStatus, onClose }: { storeName: string; email: string; invitationUrl: string; deliveryStatus: VendorInvitationDeliveryStatus; onClose: () => void }) {
   const copy = (value: string) => void navigator.clipboard?.writeText(value)
-  return <div className="admin-modal-backdrop"><section className="admin-modal field-officer-handoff" role="dialog" aria-modal="true" aria-labelledby="vendor-invitation-handoff-title"><header><div><h2 id="vendor-invitation-handoff-title">Vendor invitation sent</h2><p>An email with this link was queued. You can also share the link directly; it works once and expires in 24 hours.</p></div><button type="button" className="admin-icon-button" aria-label="Close invitation handoff" onClick={onClose}><X size={18} /></button></header><div className="handoff-person"><Store size={20} /><span><strong>{storeName}</strong><small>{email}</small></span></div><dl><div><dt>Invitation link</dt><dd><code>{invitationUrl}</code><button type="button" aria-label="Copy vendor invitation link" onClick={() => copy(invitationUrl)}><Copy size={16} />Copy</button></dd></div>{vendorPwaUrl && <div><dt>Vendor Portal</dt><dd><span>{vendorPwaUrl}</span><button type="button" aria-label="Copy Vendor Portal link" onClick={() => copy(vendorPwaUrl)}><Copy size={16} />Copy</button></dd></div>}</dl><div className="handoff-warning"><KeyRound size={18} /><span><strong>The vendor sets their own password</strong><small>DTI never sees it. Resending cancels this link and issues a new one.</small></span></div><footer><button type="button" className="admin-button primary" onClick={onClose}>Done</button></footer></section></div>
+  return <div className="admin-modal-backdrop"><section className="admin-modal field-officer-handoff" role="dialog" aria-modal="true" aria-labelledby="vendor-invitation-handoff-title"><header><div><h2 id="vendor-invitation-handoff-title">Vendor invitation created</h2><p>{deliveryStatus === 'queued' ? 'Email accepted by the queue; delivery is not confirmed.' : 'Email could not be queued.'} Copy the link to share it securely if needed. It works once and expires in 24 hours.</p></div><button type="button" className="admin-icon-button" aria-label="Close invitation handoff" onClick={onClose}><X size={18} /></button></header><div className="handoff-person"><Store size={20} /><span><strong>{storeName}</strong><small>{email}</small></span></div><dl><div><dt>Invitation link</dt><dd><code>{invitationUrl}</code><button type="button" aria-label="Copy vendor invitation link" onClick={() => copy(invitationUrl)}><Copy size={16} />Copy</button></dd></div>{vendorPwaUrl && <div><dt>Vendor Portal</dt><dd><span>{vendorPwaUrl}</span><button type="button" aria-label="Copy Vendor Portal link" onClick={() => copy(vendorPwaUrl)}><Copy size={16} />Copy</button></dd></div>}</dl><div className="handoff-warning"><KeyRound size={18} /><span><strong>The vendor sets their own password</strong><small>DTI never sees it. Resending cancels this link and issues a new one.</small></span></div><footer><button type="button" className="admin-button primary" onClick={onClose}>Done</button></footer></section></div>
 }
 
 function AccountCount({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {

@@ -11,7 +11,7 @@ export default defineConfig({
       manifest: {
         name: 'PRICE-Watch Vendor Portal',
         short_name: 'PW Vendor',
-        description: 'DTI Price Regulation & Vendor Rebuttal Portal for Registered Establishments.',
+        description: 'DTI price references and notices for invited establishments.',
         theme_color: '#1B365D',
         background_color: '#F8FAFC',
         display: 'standalone',

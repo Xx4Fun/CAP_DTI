@@ -80,6 +80,28 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(JSON.parse(localStorage.getItem('price-watch-vendor-session') ?? '{}').token).toBe('vendor-token');
   });
 
+  it('shows sourced dashboard status without promising a fixed legal deadline or finding', async () => {
+    signedIn();
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Antique Grocery Mart' })).toBeInTheDocument();
+    expect(screen.getByText('Confirmed cases')).toBeInTheDocument();
+    expect(screen.queryByText(/48-Hour Response Window|Repeat Offenses|Clean Record|Automatic Price Freeze|Price Freeze in effect|DTI Registered/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/must maintain commodity prices within published DTI Suggested Retail Price/)).not.toBeInTheDocument();
+  });
+
+  it('signs out locally even when server token revocation is still pending', async () => {
+    signedIn();
+    api.logout.mockImplementation(() => new Promise<void>(() => {}));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Log out' }));
+    expect(screen.getByLabelText('Business email')).toBeInTheDocument();
+    expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
+    expect(api.logout).toHaveBeenCalledWith('vendor-token');
+  });
+
   it('shows the credential error without signing in', async () => {
     api.login.mockRejectedValue({ response: { status: 422, data: { message: 'The provided credentials are incorrect.' } } });
     const user = userEvent.setup();
@@ -268,6 +290,31 @@ describe('PRICE-Watch Vendor Portal', () => {
     await user.type(screen.getByLabelText('Your shelf price (₱)'), '105');
     expect(screen.getByText('Within reference')).toBeInTheDocument();
     expect(screen.queryByText(/ILLEGAL|COMPLIANT/)).not.toBeInTheDocument();
+  });
+
+  it('accepts centavo prices and withholds a result for negative or sub-centavo inputs', async () => {
+    signedIn();
+    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [srpItem(1, 'rice', 'Rice', 10.05)] });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'SRP Guide Tab' }));
+    const price = await screen.findByLabelText('Your shelf price (₱)');
+    expect(price).toHaveAttribute('step', '0.01');
+    await user.clear(price);
+    await user.type(price, '11.06');
+    expect(screen.getByText('For review')).toBeInTheDocument();
+    expect(screen.getAllByText('₱11.06').length).toBeGreaterThan(0);
+
+    await user.clear(price);
+    await user.type(price, '-1');
+    expect(screen.queryByText('Within reference')).not.toBeInTheDocument();
+    expect(screen.queryByText('For review')).not.toBeInTheDocument();
+
+    await user.clear(price);
+    await user.type(price, '11.061');
+    expect(screen.queryByText('Within reference')).not.toBeInTheDocument();
+    expect(screen.queryByText('For review')).not.toBeInTheDocument();
   });
 
   it('keeps the chosen commodity in the self-check when its SRP is revised during a refresh', async () => {

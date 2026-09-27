@@ -4,6 +4,8 @@ import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpList
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
 
+export type VendorInvitationDeliveryStatus = 'queued' | 'unavailable'
+
 export const adminApi = {
   async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
@@ -87,7 +89,7 @@ export const adminApi = {
   async updateStore(id: number, changes: Partial<StoreRecord>): Promise<StoreRecord> {
     return data(await api.patch(`/admin/stores/${id}`, changes))
   },
-  async inviteVendor(storeId: number, email: string): Promise<{ invitation_url: string; invitation: { id: number; email: string; expires_at: string } }> {
+  async inviteVendor(storeId: number, email: string): Promise<{ invitation_url: string; delivery_status: VendorInvitationDeliveryStatus; invitation: { id: number; email: string; expires_at: string } }> {
     const response = await api.post(`/admin/stores/${storeId}/invitations`, { email })
     return response.data
   },

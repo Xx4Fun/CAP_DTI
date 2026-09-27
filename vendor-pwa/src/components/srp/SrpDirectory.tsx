@@ -13,6 +13,17 @@ interface SrpDirectoryProps {
 const keyOf = (item: SrpItem) => item.commodity_key ?? `id:${item.id}`;
 const hasReference = (item: SrpItem) => item.reference.status === 'available' && item.reference.value !== null;
 
+function formatCommodityOption(item: SrpItem) {
+  let name = item.commodity_name.trim();
+  const unit = item.unit ? item.unit.trim() : '';
+  // Deduplicate consecutive identical parenthesized tokens like "(#03) (#03)"
+  name = name.replace(/(\([^)]+\))\s+\1/g, '$1');
+  if (unit && !name.toLowerCase().endsWith(`(${unit.toLowerCase()})`)) {
+    name = `${name} (${unit})`;
+  }
+  return `${name} — ${formatPeso(item.reference.value)}`;
+}
+
 export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry }) => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -49,8 +60,8 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
   // A chosen commodity that lost its reference (or left the catalog) is never swapped for another product.
   const selectionLost = selectedKey !== null && !selected;
   const shownPrice = inputPrice ?? String(selected?.reference.value ?? '');
-  const price = shownPrice.trim() === '' ? NaN : Number(shownPrice);
-  const analysis = selected && Number.isFinite(price) ? analyzeReference(price, selected.reference) : null;
+  const validPrice = /^\d+(?:\.\d{1,2})?$/.test(shownPrice) && Number.isFinite(Number(shownPrice));
+  const analysis = selected && validPrice ? analyzeReference(Number(shownPrice), selected.reference) : null;
   const isEmergency = catalog.protocol.mode === 'emergency';
 
   return (
@@ -92,13 +103,13 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                 >
                   {selectionLost && <option value="" disabled>{chosen?.commodity_name ?? 'Previously selected commodity'} — reference unavailable</option>}
                   {available.map((item) => (
-                    <option key={keyOf(item)} value={keyOf(item)}>{item.commodity_name}{item.unit ? ` (${item.unit})` : ''} — {formatPeso(item.reference.value)}</option>
+                    <option key={keyOf(item)} value={keyOf(item)}>{formatCommodityOption(item)}</option>
                   ))}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label" htmlFor="intended-shelf-price">Your shelf price (₱)</label>
-                <input id="intended-shelf-price" type="number" step="0.05" min="0" className="form-control" value={shownPrice} disabled={!selected} onChange={(event) => {
+                <input id="intended-shelf-price" type="number" step="0.01" min="0" className="form-control" value={shownPrice} disabled={!selected} onChange={(event) => {
                   // Pin the commodity being checked the moment a price is typed, so a refresh cannot silently swap in another product.
                   if (selectedKey === null && selected) setSelectedKey(keyOf(selected));
                   setInputPrice(event.target.value);
@@ -121,8 +132,8 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                 </div>
                 <div className="calc-stat-row"><span style={{ color: 'var(--text-muted)' }}>{selected.reference.label}:</span><strong>{formatPeso(selected.reference.value)}</strong></div>
                 <div className="calc-stat-row">
-                  <span style={{ color: 'var(--text-muted)' }}>{selected.reference.type === 'emergency_ceiling' ? 'Reviewed above the official ceiling:' : 'Reviewed above SRP + 10%:'}</span>
-                  <strong>{formatPeso(analysis.reviewAbove)}</strong>
+                  <span style={{ color: 'var(--text-muted)' }}>For review from:</span>
+                  <strong>{formatPeso(analysis.reviewFrom)}</strong>
                 </div>
                 <div className="calc-stat-row">
                   <span style={{ color: 'var(--text-muted)' }}>Difference from reference:</span>
@@ -130,7 +141,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                 </div>
               </div>
             ) : (
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px' }}>Enter a shelf price to compare it with the reference.</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px' }}>{shownPrice === '' ? 'Enter a shelf price to compare it with the reference.' : 'Enter a nonnegative price with up to two decimal places.'}</p>
             )}
           </>
         )}
@@ -162,13 +173,13 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                 <th>Category</th>
                 <th>Classification</th>
                 <th style={{ textAlign: 'right' }}>Reference</th>
-                <th style={{ textAlign: 'right' }}>Reviewed above</th>
+                <th style={{ textAlign: 'right' }}>For review from</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.map((item) => {
-                const reviewAbove = hasReference(item) && item.reference.value !== null
-                  ? analyzeReference(item.reference.value, item.reference).reviewAbove
+                const reviewFrom = hasReference(item) && item.reference.value !== null
+                  ? analyzeReference(item.reference.value, item.reference).reviewFrom
                   : null;
                 return (
                   <tr key={keyOf(item)}>
@@ -180,7 +191,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                       {formatPeso(item.reference.value)}
                       <div style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)' }}>{item.reference.label}</div>
                     </td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatPeso(reviewAbove)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatPeso(reviewFrom)}</td>
                   </tr>
                 );
               })}

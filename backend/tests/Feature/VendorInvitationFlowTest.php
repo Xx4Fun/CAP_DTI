@@ -30,8 +30,9 @@ class VendorInvitationFlowTest extends TestCase
     public function test_invitation_link_points_to_vendor_pwa_and_is_listed_as_pending(): void
     {
         Sanctum::actingAs($this->admin);
-        $url = $this->postJson("/api/admin/stores/{$this->store->id}/invitations", ['email' => 'Owner@Shop.test'])
-            ->assertCreated()->json('invitation_url');
+        $response = $this->postJson("/api/admin/stores/{$this->store->id}/invitations", ['email' => 'Owner@Shop.test'])
+            ->assertCreated()->assertJsonPath('delivery_status', 'queued');
+        $url = $response->json('invitation_url');
 
         $this->assertStringStartsWith('https://vendor.test/vendor-invitation?token=', $url);
         $this->getJson('/api/admin/vendor-invitations')
@@ -40,6 +41,18 @@ class VendorInvitationFlowTest extends TestCase
             ->assertJsonPath('data.0.store.store_name', 'Invite Store')
             ->assertJsonPath('data.0.inviter.name', 'Evaluator')
             ->assertJsonMissingPath('data.0.token_hash');
+    }
+
+    public function test_invitation_link_remains_available_when_email_cannot_be_queued(): void
+    {
+        Sanctum::actingAs($this->admin);
+        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('Mail queue unavailable'));
+
+        $response = $this->postJson("/api/admin/stores/{$this->store->id}/invitations", ['email' => 'owner@shop.test'])
+            ->assertCreated()->assertJsonPath('delivery_status', 'unavailable');
+
+        $this->assertStringStartsWith('https://vendor.test/vendor-invitation?token=', $response->json('invitation_url'));
+        $this->assertDatabaseHas('vendor_invitations', ['store_id' => $this->store->id, 'email' => 'owner@shop.test', 'status' => 'pending']);
     }
 
     public function test_inviting_for_an_already_linked_store_is_rejected(): void
