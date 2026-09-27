@@ -76,7 +76,7 @@ class PublicCommodityController extends Controller
     {
         $query = SrpBulletin::query()
             ->where('is_active', true)
-            ->whereDate('effective_date', '<=', now()->toDateString());
+            ->whereDate('effective_date', '<=', now('Asia/Manila')->toDateString());
 
         if (filled($commodity->commodity_key)) {
             $query->where('commodity_key', $commodity->commodity_key);

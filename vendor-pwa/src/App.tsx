@@ -269,6 +269,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           if (tab !== 'rebuttals') setRespondingTo(null);
         }}
         pendingNoticeCount={openNotices.length}
+        online={online}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
         onOpenNotifications={() => setSettingsOpen(true)}
         onLogout={() => void logout()}
@@ -281,7 +282,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         </div>
       )}
 
-      <main className="vendor-content">
+      <main className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''}`}>
         {!store ? (
           <div className="v-card portal-status">
             <p><strong>No establishment is linked to this account.</strong></p>

@@ -32,9 +32,12 @@ class SrpCatalogService
         $page = max(1, (int) ($filters['page'] ?? 1));
         $search = trim((string) ($filters['query'] ?? ''));
         $category = trim((string) ($filters['category'] ?? ''));
+        $id = $filters['id'] ?? null;
+        $today = now('Asia/Manila')->toDateString();
 
         if ($view === 'history') {
             $query = SrpBulletin::query();
+            if ($id !== null) $query->whereKey($id);
             $this->applySearch($query, $search);
             $this->applyCategory($query, $category);
 
@@ -49,7 +52,8 @@ class SrpCatalogService
         if ($view === 'scheduled') {
             $query = SrpBulletin::query()
                 ->where('is_active', true)
-                ->whereDate('effective_date', '>', now()->toDateString());
+                ->whereDate('effective_date', '>', $today);
+            if ($id !== null) $query->whereKey($id);
             $this->applySearch($query, $search);
             $this->applyCategory($query, $category);
 
@@ -61,6 +65,9 @@ class SrpCatalogService
         }
 
         $records = $this->currentRecords($search, $category);
+        if ($id !== null) {
+            $records = $records->filter(fn (SrpBulletin $record) => $record->id === (int) $id)->values();
+        }
         $items = $records->forPage($page, $perPage)->values();
 
         return new LengthAwarePaginator(
@@ -77,7 +84,7 @@ class SrpCatalogService
         $records = SrpBulletin::query()
             ->with('aliases')
             ->where('is_active', true)
-            ->whereDate('effective_date', '<=', now()->toDateString())
+            ->whereDate('effective_date', '<=', now('Asia/Manila')->toDateString())
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
             ->get()

@@ -24,8 +24,9 @@ class SrpImportService
         if (!is_array($items) || $items === []) throw ValidationException::withMessages(['items' => ['At least one SRP item is required.']]);
 
         $rows = collect($items)->map(function ($item) use ($date, $source) {
-            if (!isset($item['item_name'], $item['srp']) || !is_numeric($item['srp']) || (float) $item['srp'] < 0) {
-                throw ValidationException::withMessages(['items' => ['Every item requires a name and non-negative numeric SRP.']]);
+            if (!isset($item['item_name'], $item['srp']) || !is_numeric($item['srp']) ||
+                (float) $item['srp'] <= 0 || !preg_match('/^\d+(\.\d{1,2})?$/', (string) $item['srp'])) {
+                throw ValidationException::withMessages(['items' => ['Every item requires a name and positive SRP in centavos.']]);
             }
             $key = Str::slug(trim($item['item_name'].' '.($item['unit'] ?? '')));
             return [

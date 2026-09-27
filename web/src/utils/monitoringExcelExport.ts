@@ -27,9 +27,10 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'PRICE-Watch DTI Antique'
   workbook.created = new Date()
+  const storeColumnWidth = 18
 
   const sheet = workbook.addWorksheet('Price Monitoring Matrix', {
-    views: [{ showGridLines: true, state: 'frozen', xSplit: 5, ySplit: 8 }],
+    views: [{ showGridLines: false }],
     // Wide periods print across several pages with the commodity columns and headers repeated, never shrunk to fit.
     pageSetup: { orientation: 'landscape', paperSize: 9, printTitlesRow: '6:8', printTitlesColumn: 'A:E' },
   })
@@ -105,6 +106,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
   type StatColumn = { colIndex: number; kind: 'min' | 'max' | 'avg'; establishments: MonitoringMatrixEstablishment[] }
   const colMappings: ColumnMapping[] = []
   const statCols: StatColumn[] = []
+  let longestStoreName = 0
   const statHeaders = [
     { kind: 'min' as const, label: 'MIN', note: 'Lowest' },
     { kind: 'max' as const, label: 'MAX', note: 'Highest' },
@@ -149,11 +151,12 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
 
       // Store Columns
       stores.forEach((store) => {
+        longestStoreName = Math.max(longestStoreName, store.store_name.length)
         // Row 7: Store Name
         const storeCell = sheet.getCell(7, currentCol)
         storeCell.value = store.store_name
         storeCell.fill = storeHeaderFill
-        storeCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } }
+        storeCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
         storeCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
         storeCell.border = headerBorder
 
@@ -161,7 +164,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
         const dateCell = sheet.getCell(8, currentCol)
         dateCell.value = store.monitoring_date_formatted || store.monitoring_date
         dateCell.fill = dateHeaderFill
-        dateCell.font = { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FF1E293B' } }
+        dateCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } }
         dateCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
         dateCell.border = headerBorder
 
@@ -174,14 +177,14 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
         const labelCell = sheet.getCell(7, currentCol)
         labelCell.value = stat.label
         labelCell.fill = navyHeaderFill
-        labelCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } }
+        labelCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
         labelCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
         labelCell.border = headerBorder
 
         const noteCell = sheet.getCell(8, currentCol)
         noteCell.value = stat.note
         noteCell.fill = summaryFill
-        noteCell.font = { name: 'Calibri', size: 8.5, bold: true, color: { argb: 'FF1E293B' } }
+        noteCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } }
         noteCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
         noteCell.border = headerBorder
 
@@ -193,11 +196,11 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
 
   const lastCol = Math.max(currentCol - 1, 5)
 
-  // 2. Banner Rows (1 to 4) - merged inside the frozen commodity columns so nothing straddles the pane split
+  // 2. Banner Rows (1 to 4)
   const bannerRows = [
     { text: 'DEPARTMENT OF TRADE AND INDUSTRY — REGION VI (WESTERN VISAYAS)', font: { size: 12, bold: true, color: { argb: 'FF1B365D' } } },
     { text: 'PROVINCIAL OFFICE OF ANTIQUE — CONSUMER PROTECTION DIVISION', font: { size: 10, bold: true, color: { argb: 'FF475569' } } },
-    { text: 'WEEKLY COMMODITY PRICE MONITORING MATRIX (R.A. 7581 / PRICE ACT)', font: { size: 11, bold: true, color: { argb: 'FF0F172A' } } },
+    { text: 'WEEKLY COMMODITY PRICE MONITORING MATRIX (R.A. 7581 / PRICE ACT)', font: { size: 14, bold: true, color: { argb: 'FF0F172A' } } },
     {
       text: `Target Pilot Area: San Jose de Buenavista, Antique | Monitored Period: ${periodLabel} | Generated: ${new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}`,
       font: { size: 9, italic: true, color: { argb: 'FF64748B' } },
@@ -213,11 +216,11 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
 
   // 3. Static Commodity Columns A-E (Rows 6 to 8 vertically merged)
   const staticHeaders = [
-    { col: 1, label: 'COMMODITY NAME', align: 'left' as const, width: 30 },
+    { col: 1, label: 'COMMODITY NAME', align: 'left' as const, width: 40 },
     { col: 2, label: 'UNIT', align: 'center' as const, width: 8 },
-    { col: 3, label: 'CATEGORY', align: 'left' as const, width: 16 },
-    { col: 4, label: 'CLASSIFICATION', align: 'center' as const, width: 12 },
-    { col: 5, label: 'SRP (₱)', align: 'right' as const, width: 10 },
+    { col: 3, label: 'CATEGORY', align: 'left' as const, width: 34 },
+    { col: 4, label: 'CLASSIFICATION', align: 'center' as const, width: 20 },
+    { col: 5, label: 'SRP (₱)', align: 'center' as const, width: 12 },
   ]
 
   staticHeaders.forEach((h) => {
@@ -228,7 +231,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     }
     const topCell = sheet.getCell(6, h.col)
     topCell.value = h.label
-    topCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } }
+    topCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
     topCell.alignment = { vertical: 'middle', horizontal: h.align, wrapText: true }
     sheet.getColumn(h.col).width = h.width
   })
@@ -252,7 +255,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     // Col A: Commodity Name
     const nameCell = sheet.getCell(currentRow, 1)
     nameCell.value = cleanCommodityName(comm.commodity_name, comm.unit)
-    nameCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF0F172A' } }
+    nameCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F172A' } }
     nameCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
     nameCell.border = thinBorder
     if (rowFill) nameCell.fill = rowFill
@@ -260,7 +263,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     // Col B: Unit
     const unitCell = sheet.getCell(currentRow, 2)
     unitCell.value = comm.unit || '—'
-    unitCell.font = { name: 'Calibri', size: 9 }
+    unitCell.font = { name: 'Calibri', size: 10 }
     unitCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
     unitCell.border = thinBorder
     if (rowFill) unitCell.fill = rowFill
@@ -268,7 +271,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     // Col C: Category
     const catCell = sheet.getCell(currentRow, 3)
     catCell.value = comm.category || 'General'
-    catCell.font = { name: 'Calibri', size: 9, color: { argb: 'FF334155' } }
+    catCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF334155' } }
     catCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
     catCell.border = thinBorder
     if (rowFill) catCell.fill = rowFill
@@ -276,7 +279,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     // Col D: Classification
     const classCell = sheet.getCell(currentRow, 4)
     classCell.value = comm.regulatory_classification
-    classCell.font = { name: 'Calibri', size: 9, color: { argb: 'FF334155' } }
+    classCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF334155' } }
     classCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
     classCell.border = thinBorder
     if (rowFill) classCell.fill = rowFill
@@ -285,8 +288,8 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     const srpCell = sheet.getCell(currentRow, 5)
     srpCell.value = comm.srp
     srpCell.numFmt = '#,##0.00'
-    srpCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF0F172A' } }
-    srpCell.alignment = { vertical: 'middle', horizontal: 'right' }
+    srpCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F172A' } }
+    srpCell.alignment = { vertical: 'middle', horizontal: 'center' }
     srpCell.border = dividerRightBorder
     if (rowFill) srpCell.fill = rowFill
 
@@ -305,16 +308,16 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
 
         if (recorded.is_anomaly) {
           priceCell.fill = anomalyFill
-          priceCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFB45309' } }
+          priceCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFB45309' } }
           storeAnomalyCounts[map.colIndex] = (storeAnomalyCounts[map.colIndex] || 0) + 1
         } else {
-          priceCell.font = { name: 'Calibri', size: 9.5, color: { argb: 'FF0F172A' } }
+          priceCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } }
           if (rowFill) priceCell.fill = rowFill
         }
       } else {
         priceCell.value = '—'
         priceCell.alignment = { vertical: 'middle', horizontal: 'center' }
-        priceCell.font = { name: 'Calibri', size: 9, color: { argb: 'FF94A3B8' } }
+        priceCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF94A3B8' } }
         if (rowFill) priceCell.fill = rowFill
       }
     })
@@ -332,11 +335,11 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
       if (stats) {
         statCell.value = stats[stat.kind]
         statCell.numFmt = '#,##0.00'
-        statCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF0F172A' } }
+        statCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F172A' } }
         statCell.alignment = { vertical: 'middle', horizontal: 'right' }
       } else {
         statCell.value = '—'
-        statCell.font = { name: 'Calibri', size: 9, color: { argb: 'FF94A3B8' } }
+        statCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF94A3B8' } }
         statCell.alignment = { vertical: 'middle', horizontal: 'center' }
       }
     })
@@ -349,7 +352,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
   sheet.mergeCells(currentRow, 1, currentRow, 5)
   const sumLabel1 = sheet.getCell(currentRow, 1)
   sumLabel1.value = 'TOTAL MONITORED ITEMS'
-  sumLabel1.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } }
+  sumLabel1.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
   sumLabel1.fill = navyHeaderFill
   sumLabel1.alignment = { vertical: 'middle', horizontal: 'right' }
   for (let c = 1; c <= 5; c++) {
@@ -362,7 +365,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     const sumCell = sheet.getCell(currentRow, map.colIndex)
     const count = storeMonitoredCounts[map.colIndex] || 0
     sumCell.value = `${count} items`
-    sumCell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF1E293B' } }
+    sumCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } }
     sumCell.alignment = { vertical: 'middle', horizontal: 'center' }
     sumCell.fill = summaryFill
     sumCell.border = thinBorder
@@ -379,7 +382,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
   sheet.mergeCells(currentRow, 1, currentRow, 5)
   const sumLabel2 = sheet.getCell(currentRow, 1)
   sumLabel2.value = 'PRICE ANOMALIES FLAGGED (>10% SRP)'
-  sumLabel2.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FFFFFFFF' } }
+  sumLabel2.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
   sumLabel2.fill = weekHeaderFill
   sumLabel2.alignment = { vertical: 'middle', horizontal: 'right' }
   for (let c = 1; c <= 5; c++) {
@@ -394,7 +397,7 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
     anomCell.value = count > 0 ? `${count} flagged` : '0'
     anomCell.font = {
       name: 'Calibri',
-      size: 9,
+      size: 10,
       bold: true,
       color: { argb: count > 0 ? 'FFB45309' : 'FF1E293B' },
     }
@@ -413,19 +416,16 @@ export function buildMonitoringMatrixWorkbook(data: MonitoringMatrixData, period
   // 6. Row Heights and Column Widths
   sheet.getRow(1).height = 30
   sheet.getRow(2).height = 18
-  sheet.getRow(3).height = 20
+  sheet.getRow(3).height = 28
   sheet.getRow(4).height = 30
   sheet.getRow(5).height = 10
   sheet.getRow(6).height = 26
-  sheet.getRow(7).height = 40
+  // ponytail: Character widths approximate Excel wrapping; measure text only if a real store name clips.
+  sheet.getRow(7).height = Math.max(48, Math.ceil(longestStoreName / storeColumnWidth) * 16)
   sheet.getRow(8).height = 28
 
-  for (let r = 9; r < currentRow - 2; r++) {
-    sheet.getRow(r).height = 21
-  }
-
   for (let c = 6; c <= lastCol; c++) {
-    sheet.getColumn(c).width = 14
+    sheet.getColumn(c).width = storeColumnWidth
   }
 
   return workbook

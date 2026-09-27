@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { StoreMap } from './StoreMap'
@@ -28,6 +28,7 @@ vi.mock('../../services/adminApi', () => ({
         is_verified: true,
         is_public: true,
         recidivism_index: 0,
+        image_path: '/stores/robinsons.webp',
       },
       {
         id: 2,
@@ -52,6 +53,17 @@ vi.mock('../../services/adminApi', () => ({
         is_verified: true,
         is_public: false,
         recidivism_index: 2,
+      },
+      {
+        id: 4,
+        store_name: 'Dormant Store',
+        address: 'San Jose',
+        latitude: 10.746,
+        longitude: 121.943,
+        is_active: false,
+        is_verified: true,
+        is_public: false,
+        recidivism_index: 0,
       },
     ]),
     updateStore: vi.fn().mockImplementation((id, data) => Promise.resolve({ id, ...data })),
@@ -129,16 +141,40 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     expect(screen.getByText('Geographical Pin Locator')).toBeInTheDocument()
   })
 
-  it('renders StoreManager with status filters and CartoDB GIS Store Monitoring Canvas', async () => {
+  it('keeps inactive stores under All and removes GIS invitation controls', async () => {
     render(<StoreManager />)
 
     expect(await screen.findByText('Store Monitoring')).toBeInTheDocument()
     expect(screen.getByText(/CartoDB GIS Monitor/i)).toBeInTheDocument()
-    expect(screen.getByText('All (3)')).toBeInTheDocument()
+    expect(screen.getByText('All (4)')).toBeInTheDocument()
     expect(screen.getByText('No findings (1)')).toBeInTheDocument()
     expect(screen.getByText('Pending (1)')).toBeInTheDocument()
-    expect(screen.getByText('Inactive (0)')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Inactive \(/i })).not.toBeInTheDocument()
     expect(screen.getByText('Findings (1)')).toBeInTheDocument()
+    expect(screen.getByText('Dormant Store')).toBeInTheDocument()
+    expect(screen.getByText('Account Inactive')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Invite$/i })).not.toBeInTheDocument()
+  })
+
+  it('uses establishment photos and anchors GIS pins at their tips', () => {
+    const stores: StoreRecord[] = [
+      { id: 1, store_name: 'Photo Store', address: 'San Jose', latitude: 10.7424, longitude: 121.9406, is_active: true, is_verified: true, is_public: true, image_path: '/stores/robinsons.webp' },
+      { id: 2, store_name: 'No Photo Store', address: 'San Jose', latitude: 10.745, longitude: 121.942, is_active: false, is_verified: true, is_public: false, image_path: '/stores/missing.webp' },
+      { id: 3, store_name: 'Pending Store', address: 'San Jose', latitude: 10.747, longitude: 121.944, is_active: true, is_verified: false, is_public: false },
+    ]
+    const { container } = render(<StoreMap stores={stores} selectedStoreId={1} />)
+    const pins = container.querySelectorAll('.store-photo-pin-container')
+    expect(pins).toHaveLength(3)
+    expect(pins[0]).toHaveClass('status-green', 'selected')
+    expect(pins[1]).toHaveClass('status-red')
+    expect(pins[2]).toHaveClass('status-yellow')
+    expect((pins[0] as HTMLElement).style.marginTop).toBe('-52px')
+    expect((pins[0] as HTMLElement).style.marginLeft).toBe('-21px')
+    const photos = container.querySelectorAll<HTMLImageElement>('.store-photo-pin-image')
+    expect(photos[0].getAttribute('src')).toBe('/stores/robinsons.webp')
+    fireEvent.error(photos[1])
+    expect(photos[1].getAttribute('src')).toBe('/stores/store.webp')
+    expect(photos[2].getAttribute('src')).toBe('/stores/store.webp')
   })
 
   it('renders redesigned StoreOnboarding with light map, synchronized coordinates, and creates establishment', async () => {

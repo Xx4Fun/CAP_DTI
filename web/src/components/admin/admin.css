@@ -4898,6 +4898,41 @@
   color: #991b1b;
 }
 
+.admin-feedback.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.admin-feedback.success button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.srp-view-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.srp-view-tabs button {
+  padding: 0.65rem 1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #475569;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.srp-view-tabs button[aria-selected='true'] {
+  border-bottom-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
 .admin-modal-backdrop {
   position: fixed;
   z-index: 9999;
@@ -5944,6 +5979,17 @@
   padding: 4px;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+.store-photo-pin-container { background: transparent; border: 0; }
+.store-photo-pin-container.status-green { --pin-color: #10b981; }
+.store-photo-pin-container.status-yellow { --pin-color: #f59e0b; }
+.store-photo-pin-container.status-red { --pin-color: #ef4444; }
+.store-photo-pin { position: relative; width: 42px; height: 52px; filter: drop-shadow(0 3px 3px rgba(15, 23, 42, .3)); }
+.store-photo-pin::before { content: ''; position: absolute; inset: 0 auto auto 0; box-sizing: border-box; width: 42px; height: 42px; border: 3px solid #fff; border-radius: 50%; background: var(--pin-color); }
+.store-photo-pin::after { content: ''; position: absolute; top: 35px; left: 11px; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 17px solid var(--pin-color); }
+.leaflet-container .leaflet-marker-pane .store-photo-pin-image { position: absolute; z-index: 1; top: 6px; left: 6px; width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #f8fafc; }
+.store-photo-pin-container:focus { outline: none; }
+.store-photo-pin-container:is(.selected, :focus-visible) .store-photo-pin::before { box-shadow: 0 0 0 3px #1e3a8a; }
 
 .leaflet-store-popup h4 {
   margin: 0 0 4px;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, LogOut, Store as StoreIcon, Home, FileText, Send, BookOpen, Megaphone } from 'lucide-react';
+import { Bell, LogOut, Store as StoreIcon, Home, FileText, Send, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
 import type { ActiveTab, VendorStore } from '../../app/types';
 
 interface VendorNavbarProps {
@@ -9,6 +9,7 @@ interface VendorNavbarProps {
   activeTab?: ActiveTab;
   onTabChange?: (tab: ActiveTab) => void;
   pendingNoticeCount?: number;
+  online?: boolean;
   onSelectStore: (storeId: number) => void;
   onOpenNotifications: () => void;
   onLogout: () => void;
@@ -21,6 +22,7 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
   activeTab = 'overview',
   onTabChange,
   pendingNoticeCount = 0,
+  online = true,
   onSelectStore,
   onOpenNotifications,
   onLogout,
@@ -96,6 +98,15 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
         )}
 
         <div className="vendor-header-actions">
+          <span
+            className={`vendor-header-status ${online ? 'online' : 'offline'}`}
+            aria-label={online ? 'Online · Connected' : 'Offline'}
+            title={online ? 'Connected to DTI network' : 'Offline view'}
+          >
+            {online ? <Wifi size={13} /> : <WifiOff size={13} />}
+            <span>{online ? 'Online' : 'Offline'}</span>
+          </span>
+
           {stores.length > 1 ? (
             <select
               className="header-store-select"
@@ -133,6 +144,12 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             <LogOut size={18} />
           </button>
         </div>
+      </div>
+
+      <div className="ph-flag-bar" aria-hidden="true">
+        <span className="ph-flag-blue" />
+        <span className="ph-flag-yellow" />
+        <span className="ph-flag-red" />
       </div>
     </header>
   );

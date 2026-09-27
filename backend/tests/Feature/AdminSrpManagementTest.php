@@ -205,6 +205,75 @@ final class AdminSrpManagementTest extends TestCase
         ]);
     }
 
+    public function test_manila_effective_date_controls_current_scheduled_and_public_history(): void
+    {
+        Carbon::setTestNow('2026-09-26 18:30:00'); // September 27 in Manila.
+
+        try {
+            $current = SrpBulletin::create([
+                'commodity_name' => 'Manila Rice', 'commodity_key' => 'manila-rice-1kg',
+                'unit' => '1kg', 'baseline_price' => 51, 'effective_date' => '2026-09-27',
+                'is_active' => true,
+            ]);
+            SrpBulletin::create([
+                'commodity_name' => 'Tomorrow Rice', 'commodity_key' => 'tomorrow-rice-1kg',
+                'unit' => '1kg', 'baseline_price' => 52, 'effective_date' => '2026-09-28',
+                'is_active' => true,
+            ]);
+
+            $this->getJson('/api/admin/srp?view=current')
+                ->assertOk()->assertJsonCount(1, 'data.data')
+                ->assertJsonPath('data.data.0.id', $current->id);
+            $this->getJson('/api/admin/srp?view=scheduled')
+                ->assertOk()->assertJsonCount(1, 'data.data')
+                ->assertJsonPath('data.data.0.commodity_name', 'Tomorrow Rice');
+            $this->getJson('/api/public/commodities/'.$current->id.'/history')
+                ->assertOk()->assertJsonCount(1, 'data.history');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_manual_add_rejects_existing_identity_and_zero_price(): void
+    {
+        $payload = [
+            'commodity_name' => 'Instant Mami Beef', 'unit' => '55g',
+            'baseline_price' => 9.50, 'effective_date' => '2026-09-27',
+            'source_reference' => 'DTI-SRP-MANUAL-02',
+        ];
+        $this->postJson('/api/admin/srp', $payload)->assertCreated();
+        $this->postJson('/api/admin/srp', [...$payload, 'effective_date' => '2026-10-01'])
+            ->assertUnprocessable()->assertJsonValidationErrors('commodity_name');
+        $this->postJson('/api/admin/srp', [...$payload, 'commodity_name' => 'Other Mami', 'baseline_price' => 0])
+            ->assertUnprocessable()->assertJsonValidationErrors('baseline_price');
+        $this->assertSame(1, SrpBulletin::count());
+    }
+
+    public function test_admin_list_can_find_one_saved_id_and_returns_storage_image_url(): void
+    {
+        config()->set('filesystems.commodity_images_disk', 'commodity-images-test');
+        config()->set('filesystems.disks.commodity-images-test', [
+            'driver' => 'local', 'root' => storage_path('framework/testing/disks/commodity-images-test'),
+            'url' => 'https://assets.example.test', 'visibility' => 'public', 'throw' => true,
+        ]);
+        $item = SrpBulletin::create([
+            'commodity_name' => 'Photo Rice', 'commodity_key' => 'photo-rice-1kg',
+            'unit' => '1kg', 'baseline_price' => 55, 'effective_date' => now()->subDay()->toDateString(),
+            'image_path' => 'commodity_images/photo.webp', 'is_active' => true,
+        ]);
+        SrpBulletin::create([
+            'commodity_name' => 'Photo Rice Extra', 'commodity_key' => 'photo-rice-extra-1kg',
+            'unit' => '1kg', 'baseline_price' => 56, 'effective_date' => now()->subDay()->toDateString(),
+            'is_active' => true,
+        ]);
+
+        $this->getJson('/api/admin/srp?view=current&id='.$item->id)
+            ->assertOk()->assertJsonCount(1, 'data.data')
+            ->assertJsonPath('data.data.0.id', $item->id)
+            ->assertJsonPath('data.data.0.image_path', 'commodity_images/photo.webp')
+            ->assertJsonPath('data.data.0.image_url', 'https://assets.example.test/commodity_images/photo.webp');
+    }
+
     public function test_admin_can_update_srp_metadata_without_creating_new_version(): void
     {
         $item = SrpBulletin::create([
@@ -336,6 +405,54 @@ final class AdminSrpManagementTest extends TestCase
             ->assertJsonPath('data.updated_count', 2);
 
         $this->assertSame(4, SrpBulletin::count());
+    }
+
+    public function test_batch_rejects_historical_repeated_and_zero_price_items(): void
+    {
+        $older = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice-1kg', 'unit' => '1kg',
+            'baseline_price' => 40, 'effective_date' => '2026-01-01', 'is_active' => true,
+        ]);
+        $current = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice-1kg', 'unit' => '1kg',
+            'baseline_price' => 42, 'effective_date' => '2026-05-01', 'is_active' => true,
+        ]);
+        $base = [
+            'effective_date' => '2026-12-01', 'source_reference' => 'REF-2026-12',
+            'change_reason' => 'Updated bulletin',
+        ];
+
+        $this->postJson('/api/admin/srp/batch-revisions', [
+            ...$base, 'updates' => [['id' => $older->id, 'baseline_price' => 45]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('updates');
+        $this->postJson('/api/admin/srp/batch-revisions', [
+            ...$base, 'updates' => [
+                ['id' => $current->id, 'baseline_price' => 45],
+                ['id' => $current->id, 'baseline_price' => 46],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('updates');
+        $this->postJson('/api/admin/srp/batch-revisions', [
+            ...$base, 'updates' => [['id' => $current->id, 'baseline_price' => 0]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('updates.0.baseline_price');
+        $this->assertSame(2, SrpBulletin::count());
+    }
+
+    public function test_import_and_revision_preview_reject_zero_price(): void
+    {
+        $item = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice-1kg', 'unit' => '1kg',
+            'baseline_price' => 40, 'effective_date' => '2026-01-01', 'is_active' => true,
+        ]);
+        $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => '2026-12-01', 'source_reference' => 'REF-2026-12'],
+            'items' => [['item_name' => 'Other Rice', 'unit' => '1kg', 'srp' => 0]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items');
+        $this->postJson('/api/admin/srp/'.$item->id.'/revisions/preview', [
+            'commodity_name' => 'Rice', 'unit' => '1kg', 'baseline_price' => 0,
+            'effective_date' => '2026-12-01', 'source_reference' => 'REF-2026-12',
+            'change_reason' => 'Updated bulletin',
+        ])->assertUnprocessable()->assertJsonValidationErrors('baseline_price');
+        $this->assertSame(1, SrpBulletin::count());
     }
 
     public function test_admin_uploads_commodity_image_to_the_configured_disk_and_returns_its_url(): void

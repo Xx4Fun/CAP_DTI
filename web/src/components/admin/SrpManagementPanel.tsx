@@ -66,6 +66,8 @@ function normalizePage(value: SrpPage | SrpRecord[]): SrpPage {
 function resolveCommodityImageUrl(imagePath?: string | null): string | null {
   if (!imagePath || typeof imagePath !== 'string') return null
 
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath
+
   const commodityMatch = imagePath.match(/commodity_images\/([^/?#]+)/)
   if (commodityMatch) {
     return `/storage/commodity_images/${commodityMatch[1]}`
@@ -83,31 +85,36 @@ function resolveCommodityImageUrl(imagePath?: string | null): string | null {
     return `/${imagePath}`
   }
 
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath
-  }
-
   return null
 }
 
 function CommodityThumbnail({
   imagePath,
+  imageUrl,
   altText,
 }: {
   imagePath?: string | null
+  imageUrl?: string | null
   altText: string
 }) {
-  const [imgError, setImgError] = useState(false)
-  const resolvedUrl = useMemo(() => resolveCommodityImageUrl(imagePath), [imagePath])
+  const [failedPrimary, setFailedPrimary] = useState<string | null>(null)
+  const [failedLegacy, setFailedLegacy] = useState<string | null>(null)
+  const legacyUrl = useMemo(() => resolveCommodityImageUrl(imagePath), [imagePath])
+  const resolvedUrl = imageUrl && failedPrimary !== imageUrl
+    ? imageUrl
+    : legacyUrl && failedLegacy !== legacyUrl ? legacyUrl : null
 
   return (
     <div className="srp-commodity-thumb">
-      {resolvedUrl && !imgError ? (
+      {resolvedUrl ? (
         <img
           src={resolvedUrl}
           alt={altText}
           loading="lazy"
-          onError={() => setImgError(true)}
+          onError={() => {
+            if (resolvedUrl === imageUrl && failedPrimary !== imageUrl) setFailedPrimary(imageUrl ?? null)
+            else setFailedLegacy(resolvedUrl)
+          }}
         />
       ) : (
         <div className="srp-commodity-thumb-fallback" aria-hidden="true">
@@ -213,7 +220,7 @@ function CreateSrpModal({
   categories,
 }: {
   onClose: () => void
-  onCreated: () => Promise<void>
+  onCreated: (record: ManagedSrpRecord) => void
   categories: string[]
 }) {
   const [commodityName, setCommodityName] = useState('')
@@ -237,7 +244,7 @@ function CreateSrpModal({
         const uploadRes = await adminApi.uploadCommodityImage(imageFile)
         imagePath = uploadRes.image_path
       }
-      await adminApi.createSrpItem({
+      const created = await adminApi.createSrpItem({
         commodity_name: commodityName,
         unit: unit || undefined,
         category: category || undefined,
@@ -247,7 +254,7 @@ function CreateSrpModal({
         source_reference: sourceReference,
         image_path: imagePath,
       })
-      await onCreated()
+      onCreated(created)
       onClose()
     } catch (requestError) {
       setError(requestMessage(requestError))
@@ -318,7 +325,7 @@ function CreateSrpModal({
             <input
               id="create-price"
               type="number"
-              min="0"
+              min="0.01"
               step="0.01"
               value={baselinePrice}
               onChange={(e) => setBaselinePrice(e.target.value)}
@@ -509,7 +516,7 @@ function BatchUpdateSrpModal({
   onUpdated,
 }: {
   onClose: () => void
-  onUpdated: () => Promise<void>
+  onUpdated: (effectiveDate: string, count: number) => void
 }) {
   const [step, setStep] = useState<1 | 2>(1)
   const [effectiveDate, setEffectiveDate] = useState('')
@@ -530,8 +537,13 @@ function BatchUpdateSrpModal({
     setLoadingItems(true)
     setError('')
     try {
-      const pageResult = normalizePage(await adminApi.getSrp({ per_page: 1000 }))
-      setItems(pageResult.records)
+      const first = normalizePage(await adminApi.getSrp({ view: 'current', per_page: 1000, page: 1 }))
+      const allItems = [...first.records]
+      for (let pageNumber = 2; pageNumber <= first.pagination.last_page; pageNumber++) {
+        const next = normalizePage(await adminApi.getSrp({ view: 'current', per_page: 1000, page: pageNumber }))
+        allItems.push(...next.records)
+      }
+      setItems(Array.from(new Map(allItems.map((item) => [item.id, item])).values()))
     } catch (err) {
       setError(requestMessage(err))
     } finally {
@@ -557,7 +569,7 @@ function BatchUpdateSrpModal({
     const updates: Array<{ id: number; baseline_price: number }> = []
     Object.entries(priceEdits).forEach(([idStr, val]) => {
       const numVal = parseFloat(val)
-      if (!isNaN(numVal) && numVal >= 0) {
+      if (!isNaN(numVal) && numVal > 0) {
         updates.push({ id: Number(idStr), baseline_price: numVal })
       }
     })
@@ -572,13 +584,13 @@ function BatchUpdateSrpModal({
     setBusy(true)
     setError('')
     try {
-      await adminApi.batchUpdateSrpPrices({
+      const result = await adminApi.batchUpdateSrpPrices({
         effective_date: effectiveDate,
         source_reference: sourceReference,
         change_reason: changeReason,
         updates: changedUpdates,
       })
-      await onUpdated()
+      onUpdated(effectiveDate, result.updated_count)
       onClose()
     } catch (requestError) {
       setError(requestMessage(requestError))
@@ -754,7 +766,7 @@ function BatchUpdateSrpModal({
                         <td style={{ padding: '0.6rem 0.85rem' }}>
                           <input
                             type="number"
-                            min="0"
+                            min="0.01"
                             step="0.01"
                             placeholder={Number(item.baseline_price).toFixed(2)}
                             value={priceEdits[item.id] ?? ''}
@@ -831,11 +843,20 @@ const MASTER_DTI_CATEGORIES = [
   'Toilet Soap',
 ]
 
+function manilaToday(): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).map((part) => [part.type, part.value]))
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
 export function SrpManagementPanel() {
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
-  const [view] = useState<SrpView>('current')
+  const [view, setView] = useState<SrpView>('current')
   const [category, setCategory] = useState('')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [success, setSuccess] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(10)
   const [records, setRecords] = useState<ManagedSrpRecord[]>([])
@@ -849,11 +870,14 @@ export function SrpManagementPanel() {
   const [batchOpen, setBatchOpen] = useState(false)
 
   const [pageInput, setPageInput] = useState('1')
+  const latestRequest = useRef(0)
 
   const loadRecords = useCallback(async () => {
+    const requestId = ++latestRequest.current
     setLoading(true)
     setError('')
     const filters: SrpListFilters = {
+      ...(selectedId === null ? {} : { id: selectedId }),
       query: deferredQuery,
       view,
       category,
@@ -862,16 +886,18 @@ export function SrpManagementPanel() {
     }
     try {
       const result = normalizePage(await adminApi.getSrp(filters))
+      if (requestId !== latestRequest.current) return
       setRecords(result.records)
       setPagination(result.pagination)
       setCapabilities(result.capabilities ?? defaultCapabilities)
     } catch (requestError) {
+      if (requestId !== latestRequest.current) return
       setRecords([])
       setError(requestMessage(requestError))
     } finally {
-      setLoading(false)
+      if (requestId === latestRequest.current) setLoading(false)
     }
-  }, [category, deferredQuery, page, perPage, view])
+  }, [category, deferredQuery, page, perPage, selectedId, view])
 
   useEffect(() => {
     void loadRecords()
@@ -879,7 +905,7 @@ export function SrpManagementPanel() {
 
   useEffect(() => {
     setPage(1)
-  }, [deferredQuery, view, category, perPage])
+  }, [deferredQuery, view, category, perPage, selectedId])
 
   useEffect(() => {
     setPageInput(String(pagination.current_page))
@@ -898,8 +924,35 @@ export function SrpManagementPanel() {
   const resetFilters = () => {
     setQuery('')
     setCategory('')
+    setSelectedId(null)
+    setSuccess('')
     setPage(1)
     setPerPage(10)
+  }
+
+  const showView = (next: SrpView) => {
+    setView(next)
+    setSelectedId(null)
+    setSuccess('')
+    setPage(1)
+  }
+
+  const handleCreated = (record: ManagedSrpRecord) => {
+    setView(record.effective_date.slice(0, 10) > manilaToday() ? 'scheduled' : 'current')
+    setQuery('')
+    setCategory('')
+    setPage(1)
+    setSelectedId(record.id)
+    setSuccess(`${record.commodity_name} was saved with an effective date of ${record.effective_date.slice(0, 10)}.`)
+  }
+
+  const handleBatchUpdated = (effectiveDate: string, count: number) => {
+    setView(effectiveDate > manilaToday() ? 'scheduled' : 'current')
+    setQuery('')
+    setCategory('')
+    setPage(1)
+    setSelectedId(null)
+    setSuccess(`${count} SRP ${count === 1 ? 'revision was' : 'revisions were'} saved for ${effectiveDate}.`)
   }
 
   const categories = useMemo(() => {
@@ -959,7 +1012,11 @@ export function SrpManagementPanel() {
               aria-label="Search SRP bulletins"
               placeholder="Search commodity name or category..."
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setSelectedId(null)
+                setSuccess('')
+              }}
               style={{
                 width: '100%',
                 padding: '0.65rem 0.85rem 0.65rem 2.6rem',
@@ -976,7 +1033,11 @@ export function SrpManagementPanel() {
           <select
             aria-label="Filter SRP category"
             value={category}
-            onChange={(event) => setCategory(event.target.value)}
+            onChange={(event) => {
+              setCategory(event.target.value)
+              setSelectedId(null)
+              setSuccess('')
+            }}
             style={{
               padding: '0.65rem 0.85rem',
               borderRadius: '8px',
@@ -1082,6 +1143,26 @@ export function SrpManagementPanel() {
           </span>
         </div>
       </div>
+
+      <div role="tablist" aria-label="SRP record view" className="srp-view-tabs">
+        {(['current', 'scheduled', 'history'] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="tab"
+            aria-selected={view === option}
+            onClick={() => showView(option)}
+          >
+            {option[0].toUpperCase() + option.slice(1)}
+          </button>
+        ))}
+      </div>
+      {success && (
+        <div className="admin-feedback success" role="status">
+          <span>{success}</span>
+          {selectedId !== null && <button type="button" onClick={() => { setSelectedId(null); setSuccess('') }}>Show all</button>}
+        </div>
+      )}
 
       {!capabilities.can_publish && !loading && (
         <p className="admin-feedback warning" role="status">
@@ -1202,10 +1283,10 @@ export function SrpManagementPanel() {
                     >
                       <FileJson size={32} style={{ color: '#94a3b8' }} aria-hidden="true" />
                       <strong style={{ fontSize: '1rem', color: '#0f172a' }}>
-                        No SRP records found
+                        No {view} SRP records found
                       </strong>
                       <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                        Adjust search query or category filter.
+                        {view === 'current' ? 'Check Scheduled or History, or adjust the filters.' : 'Adjust the filters or choose another view.'}
                       </span>
                     </div>
                   </td>
@@ -1222,7 +1303,7 @@ export function SrpManagementPanel() {
                         const parsed = formatCommodityDisplay(record.commodity_name, record.category || '', record.unit || '')
                         return (
                           <div className="srp-commodity-cell">
-                            <CommodityThumbnail imagePath={record.image_path} altText={parsed.title} />
+                            <CommodityThumbnail imagePath={record.image_path} imageUrl={record.image_url} altText={parsed.title} />
                             <div className="srp-commodity-details">
                               <strong>{parsed.title}</strong>
                               <small>{parsed.unit || 'Unit not specified'}</small>
@@ -1469,7 +1550,7 @@ export function SrpManagementPanel() {
       {createOpen && (
         <CreateSrpModal
           onClose={() => setCreateOpen(false)}
-          onCreated={loadRecords}
+          onCreated={handleCreated}
           categories={categories}
         />
       )}
@@ -1484,7 +1565,7 @@ export function SrpManagementPanel() {
       )}
 
       {batchOpen && (
-        <BatchUpdateSrpModal onClose={() => setBatchOpen(false)} onUpdated={loadRecords} />
+        <BatchUpdateSrpModal onClose={() => setBatchOpen(false)} onUpdated={handleBatchUpdated} />
       )}
     </section>
   )

@@ -29,6 +29,7 @@ export interface StoreRecord {
   is_public: boolean
   recidivism_index?: number
   vendor_user_id?: number | null
+  image_path?: string | null
 }
 
 export type ManagedUserRole = 'field_officer' | 'vendor'

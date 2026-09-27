@@ -13,6 +13,17 @@ interface SrpDirectoryProps {
 const keyOf = (item: SrpItem) => item.commodity_key ?? `id:${item.id}`;
 const hasReference = (item: SrpItem) => item.reference.status === 'available' && item.reference.value !== null;
 
+function formatCommodityOption(item: SrpItem) {
+  let name = item.commodity_name.trim();
+  const unit = item.unit ? item.unit.trim() : '';
+  // Deduplicate consecutive identical parenthesized tokens like "(#03) (#03)"
+  name = name.replace(/(\([^)]+\))\s+\1/g, '$1');
+  if (unit && !name.toLowerCase().endsWith(`(${unit.toLowerCase()})`)) {
+    name = `${name} (${unit})`;
+  }
+  return `${name} — ${formatPeso(item.reference.value)}`;
+}
+
 export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry }) => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -92,7 +103,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                 >
                   {selectionLost && <option value="" disabled>{chosen?.commodity_name ?? 'Previously selected commodity'} — reference unavailable</option>}
                   {available.map((item) => (
-                    <option key={keyOf(item)} value={keyOf(item)}>{item.commodity_name}{item.unit ? ` (${item.unit})` : ''} — {formatPeso(item.reference.value)}</option>
+                    <option key={keyOf(item)} value={keyOf(item)}>{formatCommodityOption(item)}</option>
                   ))}
                 </select>
               </div>

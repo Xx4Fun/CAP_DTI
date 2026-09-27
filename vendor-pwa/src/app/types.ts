@@ -21,6 +21,7 @@ export interface VendorStore {
   last_inspected_at: string | null;
   compliance_status: ComplianceStatus;
   open_notice_count: number;
+  image_path?: string | null;
 }
 
 export interface EmergencyInfo {

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -72,6 +72,89 @@ describe('SRP management workspace', () => {
     expect(screen.getByLabelText('Commodity Name')).toBeInTheDocument()
     expect(screen.getByLabelText('SRP Baseline (₱)')).toBeInTheDocument()
     expect(screen.getByLabelText('Authoritative Source Reference')).toBeInTheDocument()
+  })
+
+  it('shows a future saved item in Scheduled even when another category was selected', async () => {
+    const created = {
+      ...page.records[0], id: 99, commodity_name: 'New Coffee', category: 'Coffee',
+      commodity_key: 'new-coffee-100g', effective_date: '2099-01-01',
+    }
+    vi.mocked(adminApi.createSrpItem).mockResolvedValue(created)
+    vi.mocked(adminApi.getSrp).mockImplementation(async (filters) => filters?.id === 99
+      ? { ...page, records: [created], pagination: { ...page.pagination, total: 1, last_page: 1 } }
+      : page)
+    const user = userEvent.setup()
+    render(<SrpManagementPanel />)
+    await screen.findByText('Premium Rice')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter SRP category' }), 'Rice')
+    await user.click(screen.getByRole('button', { name: 'Add SRP Item' }))
+    await user.type(screen.getByLabelText('Commodity Name'), 'New Coffee')
+    await user.type(screen.getByLabelText('Unit / Weight'), '100g')
+    await user.selectOptions(screen.getByLabelText('Category'), 'Coffee')
+    await user.type(screen.getByLabelText('SRP Baseline (₱)'), '25')
+    await user.type(screen.getByLabelText('Effective Date'), '2099-01-01')
+    await user.type(screen.getByLabelText('Authoritative Source Reference'), 'DTI-TEST')
+    await user.click(screen.getByRole('button', { name: 'Add Item' }))
+
+    expect(await screen.findByText('New Coffee')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Scheduled' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('status')).toHaveTextContent('New Coffee')
+    expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({ view: 'scheduled', id: 99, page: 1, category: '' }))
+  })
+
+  it('offers Current, Scheduled, and History views', async () => {
+    const user = userEvent.setup()
+    render(<SrpManagementPanel />)
+    await screen.findByText('Premium Rice')
+    await user.click(screen.getByRole('tab', { name: 'Scheduled' }))
+    await waitFor(() => expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({ view: 'scheduled' })))
+    await user.click(screen.getByRole('tab', { name: 'History' }))
+    await waitFor(() => expect(adminApi.getSrp).toHaveBeenCalledWith(expect.objectContaining({ view: 'history' })))
+  })
+
+  it('ignores a stale list response after the category changes', async () => {
+    let resolveFirst!: (value: typeof page) => void
+    vi.mocked(adminApi.getSrp)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({ ...page, records: [{ ...page.records[0], commodity_name: 'Fresh Coffee', category: 'Coffee' }] })
+    const user = userEvent.setup()
+    render(<SrpManagementPanel />)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter SRP category' }), 'Coffee')
+    expect(await screen.findByText('Fresh Coffee')).toBeInTheDocument()
+    await act(async () => { resolveFirst(page) })
+    expect(screen.queryByText('Premium Rice')).not.toBeInTheDocument()
+  })
+
+  it('uses the configured image URL and falls back to a bundled legacy image', async () => {
+    vi.mocked(adminApi.getSrp).mockResolvedValue({
+      ...page, records: [{ ...page.records[0], image_path: 'commodity_images/rice.webp', image_url: 'https://assets.example.test/rice.webp' }],
+    })
+    render(<SrpManagementPanel />)
+    const image = await screen.findByRole('img', { name: 'Premium Rice' })
+    expect(image).toHaveAttribute('src', 'https://assets.example.test/rice.webp')
+    fireEvent.error(image)
+    expect(await screen.findByRole('img', { name: 'Premium Rice' })).toHaveAttribute('src', '/storage/commodity_images/rice.webp')
+  })
+
+  it('loads every current page in the batch editor', async () => {
+    vi.mocked(adminApi.getSrp).mockImplementation(async (filters) => {
+      if (filters?.per_page === 1000 && filters.page === 1) return { ...page, pagination: { ...page.pagination, last_page: 2 } }
+      if (filters?.per_page === 1000 && filters.page === 2) return {
+        ...page, records: [{ ...page.records[0], id: 8, commodity_name: 'Fresh Coffee', category: 'Coffee' }],
+        pagination: { ...page.pagination, current_page: 2, last_page: 2 },
+      }
+      return page
+    })
+    const user = userEvent.setup()
+    render(<SrpManagementPanel />)
+    await screen.findByText('Premium Rice')
+    await user.click(screen.getByRole('button', { name: 'Update SRP Prices' }))
+    await user.type(screen.getByLabelText('Unified Effective Date'), '2099-01-01')
+    await user.type(screen.getByLabelText('Authoritative Source Reference'), 'DTI-TEST')
+    await user.type(screen.getByLabelText('Change Reason / Bulletin Note'), 'Updated reference')
+    await user.click(screen.getByRole('button', { name: 'Next: Edit Prices →' }))
+    expect(await screen.findByText('Fresh Coffee')).toBeInTheDocument()
+    expect(adminApi.getSrp).toHaveBeenCalledWith({ view: 'current', per_page: 1000, page: 2 })
   })
 
   it('opens the edit metadata modal and updates item details', async () => {

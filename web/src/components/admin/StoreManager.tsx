@@ -4,9 +4,8 @@ import type { StoreRecord } from '../../types/admin'
 import { StoreMap } from './StoreMap'
 import { getStoreStatusInfo } from './storeMapUtils'
 import { StoreDetailOverlay } from './StoreDetailOverlay'
-import { VendorInviteForm } from './VendorInviteForm'
 
-type StatusFilter = 'all' | 'no-findings' | 'pending' | 'inactive' | 'findings'
+type StatusFilter = 'all' | 'no-findings' | 'pending' | 'findings'
 
 export const StoreManager: React.FC = () => {
   const [stores, setStores] = useState<StoreRecord[]>([])
@@ -16,7 +15,6 @@ export const StoreManager: React.FC = () => {
   const [detailStore, setDetailStore] = useState<StoreRecord | null>(null)
   const [centerTrigger, setCenterTrigger] = useState<{ storeId: number; timestamp: number } | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [inviteStore, setInviteStore] = useState<StoreRecord | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -60,7 +58,6 @@ export const StoreManager: React.FC = () => {
     all: stores.length,
     noFindings: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && s.is_verified).length,
     pending: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && !s.is_verified).length,
-    inactive: stores.filter((s) => (s.recidivism_index || 0) === 0 && !s.is_active).length,
     findings: stores.filter((s) => (s.recidivism_index || 0) > 0).length,
   }
 
@@ -75,7 +72,6 @@ export const StoreManager: React.FC = () => {
     const recidivism = s.recidivism_index || 0
     if (statusFilter === 'no-findings') return recidivism === 0 && s.is_active && s.is_verified
     if (statusFilter === 'pending') return recidivism === 0 && s.is_active && !s.is_verified
-    if (statusFilter === 'inactive') return recidivism === 0 && !s.is_active
     if (statusFilter === 'findings') return recidivism > 0
 
     return true
@@ -203,9 +199,6 @@ export const StoreManager: React.FC = () => {
               store={detailStore}
               onClose={() => setDetailStore(null)}
               onCenterMap={() => handleCenterStore(detailStore.id)}
-              onInviteVendor={(store) => {
-                setInviteStore(store)
-              }}
             />
           ) : isSidebarOpen ? (
             /* Standard Store List & Search View */
@@ -276,12 +269,14 @@ export const StoreManager: React.FC = () => {
                 </div>
 
                 {/* Status Filter Chips */}
-                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'nowrap', overflowX: 'auto' }}>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
                     style={{
-                      padding: '0.3rem 0.65rem',
+                      padding: '0.3rem 0.5rem',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       borderRadius: '6px',
                       border: statusFilter === 'all' ? '1px solid #1e3a8a' : '1px solid #e2e8f0',
                       background: statusFilter === 'all' ? '#eff6ff' : '#ffffff',
@@ -297,7 +292,9 @@ export const StoreManager: React.FC = () => {
                     type="button"
                     onClick={() => setStatusFilter('no-findings')}
                     style={{
-                      padding: '0.3rem 0.65rem',
+                      padding: '0.3rem 0.5rem',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       borderRadius: '6px',
                       border: statusFilter === 'no-findings' ? '1px solid #059669' : '1px solid #e2e8f0',
                       background: statusFilter === 'no-findings' ? '#ecfdf5' : '#ffffff',
@@ -313,7 +310,9 @@ export const StoreManager: React.FC = () => {
                     type="button"
                     onClick={() => setStatusFilter('pending')}
                     style={{
-                      padding: '0.3rem 0.65rem',
+                      padding: '0.3rem 0.5rem',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       borderRadius: '6px',
                       border: statusFilter === 'pending' ? '1px solid #d97706' : '1px solid #e2e8f0',
                       background: statusFilter === 'pending' ? '#fffbeb' : '#ffffff',
@@ -327,25 +326,11 @@ export const StoreManager: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('inactive')}
-                    style={{
-                      padding: '0.3rem 0.65rem',
-                      borderRadius: '6px',
-                      border: statusFilter === 'inactive' ? '1px solid #64748b' : '1px solid #e2e8f0',
-                      background: statusFilter === 'inactive' ? '#f1f5f9' : '#ffffff',
-                      color: statusFilter === 'inactive' ? '#334155' : '#64748b',
-                      fontSize: '0.76rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Inactive ({counts.inactive})
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setStatusFilter('findings')}
                     style={{
-                      padding: '0.3rem 0.65rem',
+                      padding: '0.3rem 0.5rem',
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       borderRadius: '6px',
                       border: statusFilter === 'findings' ? '1px solid #dc2626' : '1px solid #e2e8f0',
                       background: statusFilter === 'findings' ? '#fef2f2' : '#ffffff',
@@ -457,30 +442,6 @@ export const StoreManager: React.FC = () => {
                         >
                           <i className="fa-solid fa-circle-info" aria-hidden="true" /> Open Info
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setInviteStore(store)
-                          }}
-                          style={{
-                            padding: '0.35rem 0.6rem',
-                            borderRadius: '6px',
-                            border: '1px solid #cbd5e1',
-                            background: '#ffffff',
-                            color: '#475569',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.3rem',
-                          }}
-                        >
-                          <i className="fa-solid fa-envelope" aria-hidden="true" /> Invite
-                        </button>
                       </div>
                     </div>
                   )
@@ -500,59 +461,6 @@ export const StoreManager: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Vendor Invitation Modal */}
-      {inviteStore && (
-        <div
-          className="admin-modal-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setInviteStore(null)
-            }
-          }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '12px',
-              border: '1px solid #e2e8f0',
-              padding: '1.5rem',
-              width: '100%',
-              maxWidth: '480px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <i className="fa-solid fa-envelope" style={{ color: '#1e3a8a', fontSize: '1.1rem' }} aria-hidden="true" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
-                  Invite Vendor: {inviteStore.store_name}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInviteStore(null)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.1rem', cursor: 'pointer', padding: '0.2rem' }}
-                aria-label="Close modal"
-              >
-                <i className="fa-solid fa-xmark" aria-hidden="true" />
-              </button>
-            </div>
-
-            <VendorInviteForm store={inviteStore} onCancel={() => setInviteStore(null)} />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

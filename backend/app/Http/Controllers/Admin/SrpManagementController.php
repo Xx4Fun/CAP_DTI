@@ -10,6 +10,7 @@ use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\Admin\SrpRevisionService;
+use App\Services\CommodityImageStorage;
 use App\Services\FieldNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,19 +20,29 @@ use Illuminate\Validation\ValidationException;
 
 class SrpManagementController extends Controller
 {
-    public function index(Request $request, AdminAuthorizationService $auth, SrpCatalogService $catalog)
+    public function index(Request $request, AdminAuthorizationService $auth, SrpCatalogService $catalog, CommodityImageStorage $images)
     {
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'query' => 'sometimes|nullable|string|max:255',
             'view' => ['sometimes', Rule::in(['current', 'scheduled', 'history'])],
             'category' => 'sometimes|nullable|string|max:255',
+            'id' => 'sometimes|integer|min:1',
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:1000',
         ]);
 
+        $page = $catalog->paginate($filters);
+        $page->getCollection()->each(function (SrpBulletin $record) use ($images) {
+            $path = $record->image_path;
+            $record->setAttribute('image_url', !$path ? null : (
+                str_starts_with($path, 'http://') || str_starts_with($path, 'https://')
+                    ? $path : $images->url($path)
+            ));
+        });
+
         return response()->json([
-            'data' => $catalog->paginate($filters),
+            'data' => $page,
             'capabilities' => $catalog->capabilities(),
         ]);
     }
@@ -49,13 +60,18 @@ class SrpManagementController extends Controller
             'unit' => 'nullable|string|max:255',
             'category' => 'nullable|string|max:255',
             'regulatory_classification' => 'nullable|string|max:255',
-            'baseline_price' => 'required|numeric|min:0',
+            'baseline_price' => 'required|numeric|gt:0|decimal:0,2',
             'effective_date' => 'required|date',
             'source_reference' => 'required|string|max:255',
             'image_path' => 'nullable|string|max:255',
         ]);
 
         $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
+        if (SrpBulletin::where('commodity_key', $commodityKey)->exists()) {
+            throw ValidationException::withMessages([
+                'commodity_name' => ['This commodity and unit already exists. Use Update SRP Prices for a new version.'],
+            ]);
+        }
 
         $bulletin = DB::transaction(function () use ($commodityKey, $data, $request, $audit, $notifications) {
             $bulletin = SrpBulletin::create([
@@ -143,7 +159,8 @@ class SrpManagementController extends Controller
         AdminAuthorizationService $auth,
         SrpRevisionService $revisionService,
         SensitiveActionGuard $guard,
-        AuditTrailService $audit
+        AuditTrailService $audit,
+        SrpCatalogService $catalog
     ) {
         $auth->requireManager($request->user());
         $guard->requireRecentReauthentication($request);
@@ -154,13 +171,25 @@ class SrpManagementController extends Controller
             'change_reason' => 'required|string|max:2000',
             'updates' => 'required|array|min:1',
             'updates.*.id' => 'required|integer|exists:srp_bulletins,id',
-            'updates.*.baseline_price' => 'required|numeric|min:0',
+            'updates.*.baseline_price' => 'required|numeric|gt:0|decimal:0,2',
         ]);
 
         $created = [];
-        DB::transaction(function () use ($data, $request, $revisionService, $audit, &$created) {
+        DB::transaction(function () use ($data, $request, $revisionService, $audit, $catalog, &$created) {
+            $current = $catalog->currentRecords()->keyBy('id');
+            $ids = collect($data['updates'])->pluck('id');
+            if ($ids->unique()->count() !== $ids->count() || $ids->contains(fn ($id) => !$current->has($id))) {
+                throw ValidationException::withMessages([
+                    'updates' => ['Select each currently effective commodity once. Refresh the list and try again.'],
+                ]);
+            }
             foreach ($data['updates'] as $update) {
                 $original = SrpBulletin::findOrFail($update['id']);
+                if ($data['effective_date'] <= $original->effective_date->toDateString()) {
+                    throw ValidationException::withMessages([
+                        'effective_date' => ['The revision date must be after the current SRP effective date.'],
+                    ]);
+                }
 
                 $imagePath = $original->image_path;
                 if (!$imagePath) {
@@ -242,7 +271,7 @@ class SrpManagementController extends Controller
             'category' => 'nullable|string|max:255',
             'unit' => 'nullable|string|max:255',
             'regulatory_classification' => 'nullable|string|max:255',
-            'baseline_price' => 'required|numeric|min:0',
+            'baseline_price' => 'required|numeric|gt:0|decimal:0,2',
             'effective_date' => 'required|date|after:'.$srp->effective_date->toDateString(),
             'source_reference' => 'required|string|max:255',
             'change_reason' => 'required|string|max:2000',

@@ -56,15 +56,44 @@ describe('buildMonitoringMatrixWorkbook', () => {
     expect(value('K13')).toBe('1 flagged')
   })
 
-  it('keeps the banner inside the frozen columns and prints without shrinking', () => {
+  it('keeps the banner and repeated print headers without frozen panes', () => {
     expect(sheet.getCell('E1').master.address).toBe('A1')
     expect(sheet.getCell('F1').master.address).toBe('F1')
-    expect(sheet.views[0]).toMatchObject({ state: 'frozen', xSplit: 5, ySplit: 8 })
+    expect(sheet.views[0]).toMatchObject({ showGridLines: false })
+    expect(sheet.views[0]).not.toHaveProperty('state', 'frozen')
+    expect(sheet.views[0]).not.toHaveProperty('xSplit')
+    expect(sheet.views[0]).not.toHaveProperty('ySplit')
     expect(sheet.pageSetup).toMatchObject({ orientation: 'landscape', printTitlesRow: '6:8', printTitlesColumn: 'A:E' })
     expect(sheet.pageSetup.fitToPage).toBeFalsy()
     expect(value('F8')).toBe('Sep 01, 2026')
     expect(sheet.getCell('O9').border.right?.style).toBe('medium')
     expect(sheet.getCell('L9').border.right?.style).toBe('thin')
+  })
+
+  it('fits long labels and centers the SRP column', () => {
+    expect([1, 2, 3, 4, 5, 6].map((col) => sheet.getColumn(col).width)).toEqual([40, 8, 34, 20, 12, 18])
+    expect(sheet.getRow(7).height).toBe(48)
+    expect(sheet.getRow(9).height).toBeUndefined()
+    expect(sheet.getCell('A9').alignment.wrapText).toBe(true)
+    expect(sheet.getCell('C9').alignment.wrapText).toBe(true)
+    expect(sheet.getCell('D9').alignment.wrapText).toBe(true)
+    expect(sheet.getCell('E6').alignment.horizontal).toBe('center')
+    expect(sheet.getCell('E9').alignment.horizontal).toBe('center')
+    expect(sheet.getCell('F9').alignment.horizontal).toBe('right')
+    expect(sheet.getCell('A3').font.size).toBe(14)
+    expect(sheet.getCell('A9').font.size).toBe(10)
+  })
+
+  it('gives longer store names more header height', () => {
+    const longName = 'Sample Retail Chain Branch With Several Extra Words And A Very Long Location Description'
+    const longStoreData: MonitoringMatrixData = {
+      ...data,
+      weeks: [{ ...data.weeks[0], establishments: [store(1, longName, {})] }],
+    }
+    const longStoreSheet = buildMonitoringMatrixWorkbook(longStoreData, 'Last 4 Weeks').worksheets[0]
+
+    expect(longStoreSheet.getRow(7).height).toBeGreaterThan(48)
+    expect(longStoreSheet.getCell('F7').alignment.wrapText).toBe(true)
   })
 })
 
