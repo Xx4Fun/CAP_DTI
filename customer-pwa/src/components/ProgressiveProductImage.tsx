@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { Package } from 'lucide-react';
 
 export interface ProgressiveProductImageProps {
   imageUrl: string | null | undefined;
@@ -24,10 +24,13 @@ const detailImageStyle: React.CSSProperties = {
   objectFit: 'contain',
 };
 
-const ProductImageFallback: React.FC = () => (
+// A filled tile with a product glyph reads as a deliberate placeholder; the previous small icon
+// plus a 0.56rem caption read as stray text in a 94px column. The label stays in the DOM for
+// assistive technology instead of being shown at an unreadable size.
+const ProductImageFallback: React.FC<{ variant: 'card' | 'detail' }> = ({ variant }) => (
   <span className="price-product-fallback price-product-fallback--neutral">
-    <ImageOff size={24} aria-hidden="true" />
-    <span>No image</span>
+    <Package size={variant === 'detail' ? 44 : 28} aria-hidden="true" />
+    <span className="visually-hidden">No image</span>
   </span>
 );
 
@@ -90,7 +93,7 @@ export const ProgressiveProductImage: React.FC<ProgressiveProductImageProps> = (
       aria-hidden={decorative ? 'true' : undefined}
     >
       {unavailable ? (
-        <ProductImageFallback />
+        <ProductImageFallback variant={variant} />
       ) : (
         <>
           <span

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
@@ -31,6 +31,110 @@ describe('ReceiptDraftView', () => {
     if (!HTMLDialogElement.prototype.close) Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value() { this.open = false; } });
     vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
     vi.spyOn(HTMLDialogElement.prototype, 'close').mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
+  });
+
+  const needsRecaptureProcessing = (reference: string, evidence: unknown[] = []) => ({
+    data: { success: true, data: {
+      report_reference: reference, status: 'Needs recapture', processing_status: 'needs_recapture',
+      message: 'Some sections could not be read.', ready_for_review: false, can_recapture: true,
+      attempt_number: 1, store: { id: 77, store_name: 'Receipt Test Mart' },
+      recapture_reason: { code: 'TEXT_UNREADABLE', message: 'Some sections could not be read.' },
+      evidence,
+    } },
+  });
+
+  it('offers an icon back control on the needs-recapture screen that returns to My Reports', async () => {
+    history.replaceState(null, '', '/reports/REP-BACK/processing');
+    const onBack = vi.fn();
+    vi.spyOn(apiClient, 'get').mockResolvedValue(needsRecaptureProcessing('REP-BACK'));
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-BACK" mode="processing" onBack={onBack} />);
+
+    // Wait for the processing branch before querying: the loading branch also renders the control,
+    // and the node is replaced when the branch changes.
+    expect(await screen.findByText('Needs recapture')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back to My Reports' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the back control when no handler is supplied', async () => {
+    history.replaceState(null, '', '/reports/REP-NOBACK/processing');
+    vi.spyOn(apiClient, 'get').mockResolvedValue(needsRecaptureProcessing('REP-NOBACK'));
+    render(<ReceiptDraftView reference="REP-NOBACK" mode="processing" />);
+
+    expect(await screen.findByText('Needs recapture')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Back to My Reports' })).not.toBeInTheDocument();
+  });
+
+  it('hides the back control while the recapture camera owns the screen', async () => {
+    history.replaceState(null, '', '/reports/REP-CAM/processing');
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+    });
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).includes('/evidence-assets/')) return { data: new Blob(['receipt'], { type: 'image/jpeg' }) };
+      return needsRecaptureProcessing('REP-CAM', [{ id: 8, sequence: 0, mime_type: 'image/jpeg', size_bytes: 7 }]);
+    });
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { success: true, data: {
+      capture_session_id: 43, session_uuid: 'capture-43', capture_token: 'ct_sec_recapture',
+      expires_at: '2026-08-16T02:00:00Z', store_id: 77, capture_mode: 'guided_photos_v1',
+      max_file_size: 2 * 1024 * 1024, accepted_types: ['image/jpeg'],
+      capture_action: 'replace', upload_sequence: 0,
+      limits: { max_frame_bytes: 2 * 1024 * 1024, min_frames: 1, max_frames: 12 },
+    } } });
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-CAM" mode="processing" onBack={vi.fn()} />);
+
+    expect(await screen.findByText('Needs recapture')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to My Reports' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /Retake section 1/i }));
+
+    await waitFor(() => expect(screen.getByLabelText('Guided receipt scanner')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Back to My Reports' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel receipt capture' })).toBeInTheDocument();
+  });
+
+  it('reaches My Reports in one back step after moving from processing to review', async () => {
+    // Mirror how App enters this screen from the list: a pushed entry carrying provenance.
+    history.replaceState(null, '', '/reports/track');
+    history.pushState({ fromReportList: true }, '', '/reports/REP-FLOW/processing');
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
+      report_reference: 'REP-FLOW', status: 'Processing receipt', processing_status: 'processing',
+      message: 'Ready for your confirmation.', ready_for_review: true, can_recapture: false,
+      attempt_number: 1, store: null, recapture_reason: null, evidence: [],
+    } } });
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-FLOW" mode="processing" onBack={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Review detected items' }));
+    expect(location.pathname).toBe('/reports/REP-FLOW/review');
+
+    // The review entry must have replaced processing. If it were pushed, App's returnToReportList
+    // would call history.back() and land on processing, so a control labelled "Back to My Reports"
+    // would return to the previous receipt screen instead of the list.
+    act(() => history.back());
+    await waitFor(() => expect(location.pathname).toBe('/reports/track'));
+  });
+
+  it('does not leave processing behind review for a fresh capture with no list provenance', async () => {
+    // FormalReport.tsx:1105 opens processing with no state, so this path carries no provenance.
+    history.replaceState(null, '', '/report');
+    history.pushState(null, '', '/reports/REP-NEW/processing');
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
+      report_reference: 'REP-NEW', status: 'Processing receipt', processing_status: 'processing',
+      message: 'Ready for your confirmation.', ready_for_review: true, can_recapture: false,
+      attempt_number: 1, store: null, recapture_reason: null, evidence: [],
+    } } });
+    const user = userEvent.setup();
+    render(<ReceiptDraftView reference="REP-NEW" mode="processing" onBack={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Review detected items' }));
+    expect(location.pathname).toBe('/reports/REP-NEW/review');
+
+    // Review replaced processing, so back leaves the receipt entirely instead of reopening it.
+    act(() => history.back());
+    await waitFor(() => expect(location.pathname).toBe('/report'));
   });
 
   it('explains that refresh only checks status and retry reruns OCR on the same evidence', async () => {

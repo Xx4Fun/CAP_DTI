@@ -43,6 +43,26 @@ import {
 } from '../data/termsAndConditions';
 import { LegalDocDetail } from './LegalDocDetail';
 
+/**
+ * Read the open comparison back out of the current history entry. Module scope so both the
+ * useState initializer and the popstate handler share it. Returns null when no detail entry is
+ * active or when the referenced comparison has since been deleted or cleared, either of which
+ * should show the list rather than a blank detail.
+ */
+function comparisonFromHistory(): StoredComparison | null {
+  if (typeof window === 'undefined') return null;
+  const state = window.history.state as { moreSubView?: string; comparisonId?: string } | null;
+  if (state?.moreSubView !== 'history-detail' || !state.comparisonId) return null;
+  return getRecentComparisons().find((item) => item.id === state.comparisonId) ?? null;
+}
+
+/** Same restore contract as comparisons: a legal-doc entry must rebuild its screen on remount. */
+function legalDocFromHistory(): 'terms' | 'privacy' | null {
+  if (typeof window === 'undefined') return null;
+  const sub = (window.history.state as { moreSubView?: string } | null)?.moreSubView;
+  return sub === 'terms' || sub === 'privacy' ? sub : null;
+}
+
 export function formatComparisonDate(isoString: string): string {
   try {
     const d = new Date(isoString);
@@ -86,8 +106,15 @@ export const MoreView: React.FC<MoreViewProps> = ({
 }) => {
   const [activeAccordion, setActiveAccordion] = useState<string | null>(null);
   const [comparisons, setComparisons] = useState<StoredComparison[]>(getRecentComparisons);
-  const [selectedComparison, setSelectedComparison] = useState<StoredComparison | null>(null);
-  const [selectedLegalDoc, setSelectedLegalDoc] = useState<'terms' | 'privacy' | null>(null);
+  // Resolved from history on mount, not just on popstate: App unmounts MoreView on a tab switch,
+  // so returning by hardware back remounts it and the detail has to be recoverable from the entry
+  // alone. A record that has since been deleted resolves to null, which shows the list.
+  const [selectedComparison, setSelectedComparison] = useState<StoredComparison | null>(
+    () => comparisonFromHistory(),
+  );
+  const [selectedLegalDoc, setSelectedLegalDoc] = useState<'terms' | 'privacy' | null>(
+    () => legalDocFromHistory(),
+  );
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [highlightRights, setHighlightRights] = useState(false);
 
@@ -121,13 +148,30 @@ export const MoreView: React.FC<MoreViewProps> = ({
     };
   }, []);
 
+  // A detail entry whose comparison has since been deleted would render the list here, and the
+  // next Back would render the list again from the original entry: a dead press. Drop the entry
+  // rather than leaving it in the stack. The resulting popstate finds no moreSubView and settles.
+  const dropStaleDetailEntry = () => {
+    const sub = (window.history.state as { moreSubView?: string } | null)?.moreSubView;
+    if (sub !== 'history-detail' || comparisonFromHistory() !== null) return false;
+    window.history.back();
+    return true;
+  };
+
+  useEffect(() => {
+    dropStaleDetailEntry();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const handlePopState = () => {
-      setSelectedComparison(null);
-      setSelectedLegalDoc(null);
+      if (dropStaleDetailEntry()) return;
+      setSelectedComparison(comparisonFromHistory());
+      setSelectedLegalDoc(legalDocFromHistory());
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -181,12 +225,19 @@ export const MoreView: React.FC<MoreViewProps> = ({
   };
 
   const handleSelectComparison = (item: StoredComparison) => {
-    window.history.pushState({ moreSubView: 'history-detail' }, '');
+    // The id is what makes the entry restorable: without it a later back press knows a detail was
+    // open but not which comparison it held.
+    window.history.pushState({ moreSubView: 'history-detail', comparisonId: item.id }, '');
     setSelectedComparison(item);
   };
 
   const handleBackFromDetail = () => {
     setSelectedComparison(null);
+    // Pop the entry this detail pushed, matching handleBackFromLegal. Without this the entry is
+    // orphaned and the next hardware back moves history without changing the screen.
+    if (typeof window !== 'undefined' && window.history.state?.moreSubView) {
+      window.history.back();
+    }
   };
 
   const handleSelectLegalDoc = (type: 'terms' | 'privacy') => {
