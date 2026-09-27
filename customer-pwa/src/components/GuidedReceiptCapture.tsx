@@ -10,6 +10,7 @@ import { enableReceiptNotifications, currentReceiptNotificationAvailability } fr
 import { saveReceiptResumeToken } from '../app/receiptResumeStore';
 import { saveReportTrackingToken } from '../app/reportTrackingStore';
 import { guideCropRect, outputSize } from '../app/captureCrop';
+import { evaluateCanvas, qualityIssue, type FrameIssue } from '../app/frameQuality';
 
 interface GuidedReceiptCaptureProps {
   session: CaptureSessionResponse;
@@ -24,7 +25,29 @@ interface GuidedReceiptCaptureProps {
 }
 
 type CaptureState = 'requesting' | 'ready' | 'uploading' | 'uploaded' | 'error';
-type CapturedFrame = { blob: Blob; url: string };
+// `issue` records which quality term failed at capture time, or null when the frame is fine or
+// could not be measured. Advisory only: a flagged frame still uploads, because the check measures
+// brightness and detail, not whether a receipt is present.
+type CapturedFrame = { blob: Blob; url: string; issue: FrameIssue | null };
+
+// Guidance is per issue: telling someone whose photo is overexposed to retake it "bright" would
+// contradict the very thing that was measured.
+const ISSUE_TEXT: Record<FrameIssue, { flag: string; one: string; many: string; advice: string }> = {
+  dark: {
+    flag: 'Too dark', one: 'too dark to read', many: 'look too dark to read',
+    advice: 'Move somewhere brighter and keep the receipt flat inside the guide.',
+  },
+  bright: {
+    flag: 'Too bright', one: 'too bright to read', many: 'look washed out',
+    advice: 'Move out of direct light or glare and keep the receipt flat inside the guide.',
+  },
+  flat: {
+    flag: 'Hard to read', one: 'too blurry or flat to read', many: 'look blurry or flat',
+    advice: 'Hold steady until the camera focuses and keep the receipt flat inside the guide.',
+  },
+};
+
+const MIXED_ADVICE = 'Retake them in even light, held flat inside the guide.';
 
 export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   session,
@@ -33,6 +56,7 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   vapidPublicKey = '',
   onCancel,
   onDraftCreated,
+  onCheckStatus,
   onGoHome,
   recapture,
 }) => {
@@ -95,7 +119,7 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     };
   }, [openCamera, stopCamera]);
 
-  const captureFrame = useCallback(async (): Promise<Blob | null> => {
+  const captureFrame = useCallback(async (): Promise<{ blob: Blob; issue: FrameIssue | null } | null> => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return null;
@@ -114,21 +138,27 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     const context = canvas.getContext('2d');
     if (!context) return null;
     context.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
+    // Score the drawn crop once, before encoding: the ladder below re-encodes but never repaints.
+    // No verdict means the measurement could not be taken, which is treated as fine rather than
+    // warning about something that was never checked.
+    const quality = evaluateCanvas(canvas);
+    const issue = quality ? qualityIssue(quality) : null;
     const maximumBytes = session.limits?.max_frame_bytes ?? 2 * 1024 * 1024;
     let result: Blob | null = null;
-    for (const quality of [0.86, 0.72, 0.58]) {
-      result = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
-      if (!result || result.size <= maximumBytes) return result;
+    for (const encodeQuality of [0.86, 0.72, 0.58]) {
+      result = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', encodeQuality));
+      if (!result || result.size <= maximumBytes) return result ? { blob: result, issue } : null;
     }
-    return result;
+    return result ? { blob: result, issue } : null;
   }, [session.limits?.max_frame_bytes]);
 
   const capture = async () => {
-    const blob = await captureFrame();
-    if (!blob) {
+    const captured = await captureFrame();
+    if (!captured) {
       setError('Hold the receipt in the guide and wait for the camera to focus.');
       return;
     }
+    const { blob, issue } = captured;
     if (blob.size > (session.limits?.max_frame_bytes ?? 2 * 1024 * 1024)) {
       setError('This photo is too large to upload. Keep the receipt inside the guide with less surrounding background and try again.');
       return;
@@ -136,11 +166,11 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     const url = URL.createObjectURL(blob);
     frameUrlsRef.current.push(url);
     setFrames((current) => {
-      if (retakeIndex === null && current.length < maximumFrames) return [...current, { blob, url }];
+      if (retakeIndex === null && current.length < maximumFrames) return [...current, { blob, url, issue }];
       const index = retakeIndex ?? 0;
       const previous = current[index];
       if (previous) URL.revokeObjectURL(previous.url);
-      return current.map((frame, frameIndex) => frameIndex === index ? { blob, url } : frame);
+      return current.map((frame, frameIndex) => frameIndex === index ? { blob, url, issue } : frame);
     });
     setRetakeIndex(null);
     setError('');
@@ -271,11 +301,32 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
               <Bell size={18} /> Notify when ready
             </button>
           )}
+          {/* Recapture only. A fresh capture exits via Go Home, which the caller supplies and the
+              existing contract asserts. A recapture is given onCheckStatus and no onGoHome, so
+              without this the customer is stranded on the confirmation with no way out. */}
+          {recapture && onCheckStatus && (
+            <button type="button" className="btn-primary" onClick={() => onCheckStatus(draft.report_reference)}>
+              Check status
+            </button>
+          )}
           {onGoHome && <button type="button" className="btn-secondary" onClick={onGoHome}>Go Home</button>}
         </div>
       </section>
     );
   }
+
+  // Derived, never stored: retaking or restarting replaces the frames, so the advisory cannot
+  // outlive the photo that caused it. Wording names what was measured (brightness and detail) and
+  // never claims a receipt was or was not detected, which this check cannot tell.
+  const flagged = frames.filter((frame) => frame.issue !== null);
+  const distinctIssues = [...new Set(flagged.map((frame) => frame.issue as FrameIssue))];
+  const qualityAdvisory = flagged.length === 0
+    ? ''
+    : flagged.length === 1 && frames.length === 1
+      ? `That photo looks ${ISSUE_TEXT[distinctIssues[0]].one}. ${ISSUE_TEXT[distinctIssues[0]].advice} You can upload anyway.`
+      : distinctIssues.length === 1
+        ? `${flagged.length} of ${frames.length} photos ${ISSUE_TEXT[distinctIssues[0]].many}. ${ISSUE_TEXT[distinctIssues[0]].advice} You can upload anyway.`
+        : `${flagged.length} of ${frames.length} photos are hard to read. ${MIXED_ADVICE} You can upload anyway.`;
 
   const instruction = targetedRecapture
     ? session.capture_action === 'append' ? 'Capture the next section with part of the previous section visible.' : `Capture a clear replacement for section ${(session.upload_sequence ?? 0) + 1}.`
@@ -291,13 +342,19 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
       </div>
       <div className="receipt-scan-guide" ref={guideRef} aria-hidden="true"><span>Keep text flat, bright, and in focus</span><span>Only what is inside this guide is saved</span></div>
       {frames.length > 0 && <div className="receipt-section-previews" aria-label="Captured receipt sections">
-        {frames.map((frame, index) => <div key={frame.url} className="receipt-section-preview">
+        {frames.map((frame, index) => <div key={frame.url} className={`receipt-section-preview${frame.issue ? ' receipt-section-preview--unreadable' : ''}`}>
           <img src={frame.url} alt={`Receipt section ${index + 1}`} />
+          {frame.issue && <span className="receipt-section-preview-flag">{ISSUE_TEXT[frame.issue].flag}</span>}
           <button type="button" onClick={() => setRetakeIndex(index)}>Retake section {targetedRecapture ? (session.upload_sequence ?? 0) + 1 : index + 1}</button>
         </div>)}
       </div>}
       <div className="receipt-capture-shade receipt-capture-shade--bottom">
         {error && <div className="receipt-camera-error" role="alert">{error}</div>}
+        {/* Advisory, not an error: upload stays available because this check cannot tell whether a
+            receipt is present, only whether the image is bright and detailed enough to read. */}
+        {qualityAdvisory && captureState === 'ready' && (
+          <div className="receipt-camera-advisory" role="status">{qualityAdvisory}</div>
+        )}
         {captureState === 'requesting' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Opening camera…</div>}
         {captureState === 'uploading' && <div className="receipt-camera-progress"><LoaderCircle className="spin" size={20} /> Uploading receipt securely{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</div>}
         {captureState === 'ready' && <>

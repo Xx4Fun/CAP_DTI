@@ -482,6 +482,7 @@ export const App: React.FC = () => {
             key={`${route.name}:${route.reference}`}
             reference={route.reference}
             mode={route.name === 'receipt-review' ? 'review' : 'processing'}
+            onBack={returnToReportList}
             onStatus={(status) => updateRecentReportStatus(route.reference, status)}
             onSubmitted={(result) => updateRecentReportStatus(result.report_reference, result.status, result.submitted_at)}
           />

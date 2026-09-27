@@ -12,8 +12,17 @@ import App from './App';
 import { shouldShowServiceStartStatus } from './app/pageLoading';
 import { getReportTrackingToken, saveReportTrackingToken } from './app/reportTrackingStore';
 
-const { ensureApiReadyMock } = vi.hoisted(() => ({
+const { ensureApiReadyMock, getResumeTokenMock } = vi.hoisted(() => ({
   ensureApiReadyMock: vi.fn<() => Promise<void>>(),
+  getResumeTokenMock: vi.fn<(reference: string) => Promise<string | null>>(),
+}));
+
+// Defaults to null, matching the real store in jsdom, so only the test that needs a resumable
+// receipt sees a token.
+vi.mock('./app/receiptResumeStore', () => ({
+  getReceiptResumeToken: getResumeTokenMock,
+  saveReceiptResumeToken: vi.fn().mockResolvedValue(undefined),
+  deleteReceiptResumeToken: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./api/readiness', () => ({
@@ -38,6 +47,7 @@ describe('legacy App shell routing and status', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     ensureApiReadyMock.mockReset();
     ensureApiReadyMock.mockResolvedValue(undefined);
+    getResumeTokenMock.mockReset().mockResolvedValue(null);
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -257,6 +267,47 @@ describe('legacy App shell routing and status', () => {
     expect(location.pathname).toBe('/reports/track/REP-20260822-OPEN');
     expect(await screen.findByRole('heading', { name: 'Report unavailable on this device' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/tracking token/i)).not.toBeInTheDocument();
+  });
+
+  it('sends the on-screen back control from review straight to My Reports', async () => {
+    localStorage.setItem('price-watch-recent-reports', JSON.stringify([
+      {
+        reportReference: 'REP-PROCESSING',
+        storeName: 'Processing Store',
+        status: 'Processing receipt',
+        submittedAt: '2026-08-22T04:00:00Z',
+      },
+    ]));
+    history.replaceState(null, '', '/reports/track');
+    getResumeTokenMock.mockResolvedValue('rsm_device');
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).includes('/processing')) {
+        return { data: { success: true, data: {
+          report_reference: 'REP-PROCESSING', status: 'Processing receipt',
+          processing_status: 'processing', message: 'Ready for your confirmation.',
+          ready_for_review: true, can_recapture: false, attempt_number: 1,
+          store: null, recapture_reason: null, evidence: [],
+        } } };
+      }
+      throw new Error('unavailable');
+    });
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /open report REP-PROCESSING/i }));
+    expect(location.pathname).toBe('/reports/REP-PROCESSING/processing');
+
+    await user.click(await screen.findByRole('button', { name: 'Review detected items' }));
+    expect(location.pathname).toBe('/reports/REP-PROCESSING/review');
+
+    // The control says "Back to My Reports", so the very next screen must be the list. Asserting
+    // the immediate destination is the point: an earlier revision landed on processing instead.
+    // returnToReportList reaches the list via history.back(), so arriving here also proves review
+    // replaced the processing entry rather than stacking on top of it.
+    await user.click(screen.getByRole('button', { name: 'Back to My Reports' }));
+    await waitFor(() => expect(location.pathname).toBe('/reports/track'));
+    expect(await screen.findByRole('button', { name: /open report REP-PROCESSING/i })).toBeInTheDocument();
   });
 
   it('opens list reports by status and restores the list scroll position on Back', async () => {
