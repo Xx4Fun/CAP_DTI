@@ -1,17 +1,19 @@
 import React from 'react';
-import { Home, FileText, Send, BookOpen, Megaphone } from 'lucide-react';
+import { Home, FileText, MessageSquare, Send, BookOpen, Megaphone } from 'lucide-react';
 import type { ActiveTab } from '../../app/types';
 
 interface VendorBottomNavProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
   pendingNoticeCount: number;
+  unreadMessageCount?: number;
 }
 
 export const VendorBottomNav: React.FC<VendorBottomNavProps> = ({
   activeTab,
   onTabChange,
   pendingNoticeCount,
+  unreadMessageCount = 0,
 }) => {
   return (
     <nav className="vendor-bottom-nav" aria-label="Main Navigation">
@@ -35,6 +37,19 @@ export const VendorBottomNav: React.FC<VendorBottomNavProps> = ({
         <span>Notices</span>
         {pendingNoticeCount > 0 && (
           <span className="nav-pill-count">{pendingNoticeCount}</span>
+        )}
+      </button>
+
+      <button
+        type="button"
+        aria-label="Messages Tab"
+        className={`nav-tab-btn ${activeTab === 'messages' ? 'active' : ''}`}
+        onClick={() => onTabChange('messages')}
+      >
+        <MessageSquare size={20} />
+        <span>Messages</span>
+        {unreadMessageCount > 0 && (
+          <span className="nav-pill-count">{unreadMessageCount}</span>
         )}
       </button>
 

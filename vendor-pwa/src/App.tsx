@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, RotateCw, WifiOff } from 'lucide-react';
 import type { ActiveTab, Advisory, LegalNotice, NotificationSettings, ResponseDraft, SrpCatalog, VendorOverview, VendorSession } from './app/types';
-import { canRespond } from './app/rules';
+import { canRespond, isFinished } from './app/rules';
 import { clearSession, loadSession, saveSession } from './app/session';
 import { apiError, isSessionInvalid, vendorApi } from './services/vendorApi';
 import { VendorNavbar } from './components/layout/VendorNavbar';
@@ -17,6 +17,7 @@ import { VendorLogin } from './components/auth/VendorLogin';
 import { InvitationAccept } from './components/auth/InvitationAccept';
 import { NotificationSettingsModal } from './components/settings/NotificationSettingsModal';
 import { PwaUpdatePrompt } from './components/common/PwaUpdatePrompt';
+import { MessagesView } from './components/messages/MessagesView';
 
 const invitationTokenFromUrl = () => window.location.pathname === '/vendor-invitation'
   ? new URLSearchParams(window.location.search).get('token')
@@ -141,6 +142,13 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   }, [token, onSignOut]);
 
   useEffect(() => { void loadCore(); }, [loadCore]);
+  // New DTI messages and notices surface on every tab, not only Messages (which polls its own thread).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine && activeTab !== 'messages') void loadCore();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, loadCore]);
   // Revalidate on every tab entry; the last loaded data stays visible while the refresh runs.
   useEffect(() => { if (activeTab === 'srp') void loadSrp(); }, [activeTab, loadSrp]);
   useEffect(() => { if (activeTab === 'advisories') void loadAdvisories(); }, [activeTab, loadAdvisories]);
@@ -167,8 +175,10 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
 
   const store = overview?.stores.find((candidate) => candidate.id === storeId) ?? null;
   const storeNotices = useMemo(() => notices.filter((notice) => notice.store_id === storeId), [notices, storeId]);
-  const openNotices = storeNotices.filter((notice) => notice.status !== 'closed');
+  const openNotices = storeNotices.filter((notice) => !isFinished(notice));
   const activeNotice = openNotices.find((notice) => canRespond(notice)) ?? openNotices[0] ?? null;
+  // The tab badge counts every linked store, so a message to another store is not missed.
+  const unreadMessages = overview?.stores.reduce((total, item) => total + (item.unread_messages ?? 0), 0) ?? 0;
 
   const logout = () => {
     onSignOut('You have signed out.');
@@ -182,6 +192,8 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
       const url = URL.createObjectURL(await vendorApi.document(token, notice.id));
       if (opened) opened.location.href = url; else window.location.assign(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      // For portal delivery, the first open records receipt and starts the deadline; show it right away.
+      void loadCore();
     } catch (error) {
       opened?.close();
       if (isSessionInvalid(error)) onSignOut('Your session ended. Sign in again to continue.');
@@ -217,6 +229,9 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
       guard(error);
     }
   };
+
+  const endSession = useCallback(() => onSignOut('Your session ended. Sign in again to continue.'), [onSignOut]);
+  const refreshAfterRead = useCallback(() => { void loadCore(); }, [loadCore]);
 
   const startResponse = (notice: LegalNotice) => {
     setRespondingTo(notice);
@@ -269,6 +284,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           if (tab !== 'rebuttals') setRespondingTo(null);
         }}
         pendingNoticeCount={openNotices.length}
+        unreadMessageCount={unreadMessages}
         online={online}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
         onOpenNotifications={() => setSettingsOpen(true)}
@@ -331,6 +347,13 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
               />
             ))}
 
+            {activeTab === 'messages' && (
+              <MessagesView token={token} storeId={store.id} onSessionInvalid={endSession} onRead={refreshAfterRead} onViewNotice={(id) => {
+                setSelectedNoticeId(id);
+                if (!notices.some((notice) => notice.id === id)) void loadCore();
+              }} />
+            )}
+
             {activeTab === 'srp' && <SrpDirectory catalog={srp} error={srpError} onRetry={() => void loadSrp()} />}
 
             {activeTab === 'advisories' && (
@@ -351,6 +374,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           if (tab !== 'rebuttals') setRespondingTo(null);
         }}
         pendingNoticeCount={openNotices.length}
+        unreadMessageCount={unreadMessages}
       />
     </div>
   );

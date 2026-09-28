@@ -16,6 +16,11 @@ export const ATTACHMENT_CATEGORIES: Array<{ id: AttachmentCategory; label: strin
   { id: 'OTHER', label: 'Other document' },
 ];
 
+// Chat attachments (StoreMessage::ATTACHMENT_MIMES); separate from the formal-response limits below.
+export const CHAT_ATTACHMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+export const CHAT_MAX_BYTES = 5 * 1024 * 1024;
+export const CHAT_MAX_BODY = 2000;
+
 // Mirrors the backend response validation (LegalNoticeController::response).
 export const MAX_ATTACHMENTS = 5;
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
@@ -25,7 +30,11 @@ export const MIN_RESPONSE_LENGTH = 20;
 export const reasonLabel = (id: string | null) => REASON_CATEGORIES.find((reason) => reason.id === id)?.label ?? id ?? 'Not recorded';
 export const attachmentCategoryLabel = (id: string | null) => ATTACHMENT_CATEGORIES.find((category) => category.id === id)?.label ?? 'Document';
 
+/** Closed or withdrawn: nothing further is expected from the vendor. */
+export const isFinished = (notice: Pick<LegalNotice, 'status'>) => notice.status === 'closed' || notice.status === 'cancelled';
+
 export function noticeStatusLabel(notice: LegalNotice): string {
+  if (notice.status === 'cancelled') return 'Withdrawn by DTI';
   if (notice.status === 'closed') return 'Closed';
   if (notice.status === 'response_received') return 'Under review';
   if (!['received', 'refused'].includes(notice.delivery_state)) return 'Awaiting delivery record';

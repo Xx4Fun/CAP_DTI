@@ -190,7 +190,7 @@ class VendorPortalTest extends TestCase
 
     private function notice(Store $store, string $type, string $status): LegalNotice
     {
-        return LegalNotice::create(['store_id' => $store->id, 'notice_type' => $type, 'status' => $status, 'issued_at' => now(), 'delivery_state' => 'received']);
+        return LegalNotice::create(['store_id' => $store->id, 'vendor_user_id' => $store->vendor_user_id, 'deadline_rules' => LegalNoticeTest::DEADLINE_RULES, 'notice_type' => $type, 'status' => $status, 'issued_at' => now(), 'delivery_state' => 'received']);
     }
 
     private function monitoringRecord(Store $store, string $finalizedAt): MonitoringRecord

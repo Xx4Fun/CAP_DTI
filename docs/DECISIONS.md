@@ -8,6 +8,26 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-09-28 — Store Communications and the LOI/SCO issuance policy
+
+- **Legal policy approved (supersedes the 2026-08-29 "drafts only" state).** The project owner approved the values printed on the DTI forms:
+  - LOI: 3 working days from receipt.
+  - SCO: 48 hours from receipt.
+  - Control numbers: `{type}-{year}-{id}`.
+  - Reasons and legal bases: exact-value lists in `backend/config/legal_policy.php`.
+  - Signatory names are set per type by a Super Admin in DTI Admin › Settings › Legal Signatories. `LEGAL_LOI_SIGNATORY_NAME` / `LEGAL_SCO_SIGNATORY_NAME` are only fallbacks. Each notice type can be issued once its own name is set.
+  - **E-signature (owner-approved 2026-09-28).** A Super Admin may upload a PNG/JPEG signature image per type. It is kept on the private disk, and every upload, replacement, or removal needs a fresh password check and is audited. The image is stamped only when the issuing evaluator explicitly ticks "Apply e-signature" for that notice. `signatory_snapshot` records the name, the position, whether the image was applied, and the image's SHA-256. Issued PDFs embed the image bytes, so a later replacement never changes an issued notice. DTI legal acceptance of image signatures on LOIs/SCOs is the owner's responsibility.
+  - The stated reason must match the evidence: SRP items give "Prices above SRP" and price-ceiling items give "Prices above price ceiling". One notice covers one kind of reference.
+  - The holiday list is best-effort and must be checked against each year's proclamation. The 3-working-day LOI becomes unavailable from 2027-12-23 unless the calendar is extended.
+- **Issuance flow.** An LOI or SCO still starts only from an accepted monitoring visit with flagged items. Escalating to an SCO goes through `POST /admin/legal-notices/{id}/escalate`, which closes the LOI and drafts the SCO in one transaction. `store()` no longer accepts `preceding_notice_id`. An unanswered LOI can be escalated only after its deadline, and only while its vendor is still linked and active.
+- **Audience and frozen rules.** At issue, a notice records its vendor (`legal_notices.vendor_user_id`) and its deadline rules (`deadline_rules`). Vendors see only notices addressed to them, so a re-linked store never exposes a previous vendor's notices or responses. Notices issued before this change have neither field. They stay out of the portal and are handled offline.
+- **Portal receipt.** For portal delivery, the vendor's first authenticated PDF open records `received` and starts the deadline; it is audited as `via: portal_open`. A recorded receipt or refusal cannot be overwritten. Unlinking or deactivating a vendor is refused while one of their notices is open.
+- **Calendar and withdrawals.** A working-day deadline is never computed past the known holiday calendar. Portal receipt is then not recorded, and admin delivery answers `CALENDAR_REVIEW_REQUIRED` until the calendar is extended. Holidays proclaimed after issue are added to a notice's frozen dates (holidays are facts, not policy). A cancelled issued notice stays visible to its vendor as "Withdrawn by DTI" and cannot be answered.
+- **Manual delivery and offline responses.** A hand-copy delivery is recorded with its actual receipt time, bounded by the issue time and now. Because the printed forms tell vendors to reply by email, DTI can record an emailed or paper reply after delivery is recorded (`POST /admin/legal-notices/{id}/offline-response`). The received email or scan is required and kept as an `offline_response` attachment, and the reply is audited with its channel (`response_channel`). It counts as answered, and the vendor sees it labelled as recorded by DTI. Printed field lengths are capped to what fits the forms (`LegalNoticeController::FORM_LIMITS`).
+- **Store Communications.** There is one conversation per store (`store_messages`). Each message records the vendor it was exchanged with. Messages are text plus one private attachment (PDF/JPEG/PNG/WebP, 5 MB). Both apps poll every 10 seconds; there is no websocket. Chat is informal and never issues documents or starts deadlines.
+- **Official documents.** dompdf cannot draw the forms' inline SVG, so issued PDFs were previously loose text. The official pages are now the blank forms rendered once to `backend/resources/notices/*.png`, with values positioned over them in points. The SCO's complaint wording is filled from the inspection, and "RA XXXX" is replaced by the selected legal bases.
+- Evidence: `docs/plans/store-communications/PLAN.md` and `PLAN-REVIEW-LOG.md` (six Codex rounds; built from the final revision without independent approval, by explicit owner override), `backend/tests/Feature/StoreCommunicationsTest.php`, `LegalNoticeLifecycleTest.php`.
+
 ## 2026-09-14 — Vendor Portal PWA and vendor account management
 
 - Vendors use the separate `vendor-pwa/` app. The DTI Admin web portal no longer serves vendors: `/api/login` answers `VENDOR_PWA_REQUIRED`, and old `/vendor-invitation` links forward to the PWA.

@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Mail\VendorInvitationMail;
 use App\Models\AuditEvent;
+use App\Models\LegalNotice;
 use App\Models\Store;
 use App\Models\User;
 use App\Models\VendorInvitation;
@@ -138,6 +139,11 @@ class VendorInvitationService
         return DB::transaction(function () use ($store, $request) {
             $locked = Store::whereKey($store->id)->lockForUpdate()->firstOrFail();
             $previousVendorId = $locked->vendor_user_id;
+            // An open notice addressed to this vendor must be closed or cancelled first; otherwise its respondent
+            // would lose the portal response path while the deadline keeps running.
+            if ($previousVendorId && LegalNotice::where('store_id', $locked->id)->where('vendor_user_id', $previousVendorId)->whereIn('status', ['issued', 'response_received'])->exists()) {
+                throw new HttpResponseException(response()->json(['status' => 'OPEN_NOTICES_BLOCK_UNLINK', 'message' => 'Close or cancel the open legal notices issued to this vendor before unlinking.'], 409));
+            }
             VendorInvitation::where('store_id', $locked->id)->where('status', 'pending')->lockForUpdate()->get()
                 ->each(function (VendorInvitation $invitation) use ($request) {
                     $invitation->update(['status' => 'cancelled', 'cancelled_at' => now()]);

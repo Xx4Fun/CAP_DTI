@@ -13,6 +13,8 @@ use App\Http\Controllers\Admin\SrpManagementController;
 use App\Http\Controllers\Admin\StoreAdminController;
 use App\Http\Controllers\Admin\TemporalAnalyticsController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\LegalSignatoryController;
+use App\Http\Controllers\Admin\StoreConversationController;
 use App\Http\Controllers\Admin\VendorInvitationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalamityController;
@@ -28,6 +30,7 @@ use App\Http\Controllers\ReceiptEvidenceController;
 use App\Http\Controllers\ReceiptReportController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\Vendor\VendorAuthController;
+use App\Http\Controllers\Vendor\VendorMessageController;
 use App\Http\Controllers\Vendor\VendorPortalController;
 use Illuminate\Support\Facades\Route;
 
@@ -96,6 +99,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/notices/{id}', [LegalNoticeController::class, 'show']);
         Route::get('/notices/{id}/document', [LegalNoticeController::class, 'document']);
         Route::post('/notices/{id}/response', [LegalNoticeController::class, 'response']);
+        Route::get('/conversations/{store}', [VendorMessageController::class, 'show']);
+        Route::post('/conversations/{store}/messages', [VendorMessageController::class, 'send'])->middleware('throttle:30,1');
+        Route::get('/conversations/{store}/messages/{message}/attachment', [VendorMessageController::class, 'attachment']);
     });
     Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {
         Route::get('/session', [AdminSessionController::class, 'show']);
@@ -163,6 +169,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/legal-notices/{legalNotice}/document', [AdminLegalNoticeController::class, 'document']);
         Route::post('/legal-notices/{legalNotice}/close', [AdminLegalNoticeController::class, 'close']);
         Route::post('/legal-notices/{legalNotice}/cancel', [AdminLegalNoticeController::class, 'cancel']);
+        Route::post('/legal-notices/{legalNotice}/escalate', [AdminLegalNoticeController::class, 'escalate']);
+        Route::post('/legal-notices/{legalNotice}/offline-response', [AdminLegalNoticeController::class, 'offlineResponse']);
+        Route::get('/legal-signatories', [LegalSignatoryController::class, 'index']);
+        Route::put('/legal-signatories/{type}', [LegalSignatoryController::class, 'update']);
+        Route::get('/legal-signatories/{type}/signature', [LegalSignatoryController::class, 'signature']);
+        Route::post('/legal-signatories/{type}/signature', [LegalSignatoryController::class, 'uploadSignature']);
+        Route::delete('/legal-signatories/{type}/signature', [LegalSignatoryController::class, 'removeSignature']);
+        Route::get('/conversations', [StoreConversationController::class, 'index']);
+        Route::get('/conversations/{store}', [StoreConversationController::class, 'show']);
+        Route::post('/conversations/{store}/messages', [StoreConversationController::class, 'send'])->middleware('throttle:30,1');
+        Route::get('/conversations/{store}/messages/{message}/attachment', [StoreConversationController::class, 'attachment']);
 
         Route::get('/settings', [AdminSettingsController::class, 'index']);
         Route::put('/settings/profile', [AdminSettingsController::class, 'updateProfile']);

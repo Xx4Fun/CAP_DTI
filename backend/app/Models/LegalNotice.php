@@ -20,12 +20,13 @@ class LegalNotice extends Model
         'pdf_disk', 'pdf_file_path', 'pdf_sha256', 'status', 'issued_at', 'intended_delivery_method',
         'delivery_state', 'delivery_details', 'delivered_at', 'due_date_timestamp', 'response_text',
         'response_reason_category', 'response_certified_at', 'response_received_at', 'closed_at', 'cancelled_at',
+        'vendor_user_id', 'deadline_rules', 'response_channel', 'signatory_snapshot',
     ];
 
     protected $hidden = ['pdf_disk', 'pdf_file_path'];
 
     protected $casts = [
-        'source_snapshot' => 'array', 'draft_payload' => 'array', 'delivery_details' => 'array',
+        'source_snapshot' => 'array', 'draft_payload' => 'array', 'delivery_details' => 'array', 'deadline_rules' => 'array', 'signatory_snapshot' => 'array',
         'issued_at' => 'datetime', 'delivered_at' => 'datetime', 'due_date_timestamp' => 'datetime',
         'response_received_at' => 'datetime', 'response_certified_at' => 'datetime', 'closed_at' => 'datetime', 'cancelled_at' => 'datetime',
     ];
@@ -40,4 +41,13 @@ class LegalNotice extends Model
     public function preparer(): BelongsTo { return $this->belongsTo(User::class, 'prepared_by'); }
     public function issuer(): BelongsTo { return $this->belongsTo(User::class, 'issued_by'); }
     public function attachments(): HasMany { return $this->hasMany(LegalNoticeAttachment::class); }
+    public function audience(): BelongsTo { return $this->belongsTo(User::class, 'vendor_user_id'); }
+
+    /** Only non-legacy notices issued to this exact vendor, and still on a store linked to them, reach the portal. */
+    public function scopeVisibleToVendor($query, User $vendor)
+    {
+        return $query->where('legal_notices.vendor_user_id', $vendor->id)->whereNotNull('deadline_rules')
+            ->whereIn('store_id', Store::query()->where('vendor_user_id', $vendor->id)->select('id'))
+            ->whereIn('status', ['issued', 'response_received', 'closed', 'cancelled'])->whereNotNull('issued_at');
+    }
 }

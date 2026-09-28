@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Key, RefreshCw, Save, ShieldCheck, User } from 'lucide-react'
+import { Key, PenLine, RefreshCw, Save, ShieldCheck, User } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
 import type { AdminUser } from '../../types/admin'
+import { LegalSignatoriesSettings } from './LegalSignatoriesSettings'
 
 interface SettingsPanelProps {
   user: AdminUser
@@ -18,6 +19,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
   const [profileError, setProfileError] = useState<string | null>(null)
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
   const [profileSaving, setProfileSaving] = useState(false)
+  const [tab, setTab] = useState<'profile' | 'signatories'>('profile')
 
   useEffect(() => {
     setName(user.name || '')
@@ -82,16 +84,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
     <div className="admin-panel-container">
       <div className="settings-workspace">
         <nav className="settings-tabs-sidebar" aria-label="Settings Categories">
-          <div className="settings-tab-btn active" aria-current="page">
+          <button type="button" className={`settings-tab-btn ${tab === 'profile' ? 'active' : ''}`} aria-current={tab === 'profile' ? 'page' : undefined} onClick={() => setTab('profile')}>
             <User size={18} aria-hidden="true" />
             <div className="settings-tab-labels">
               <span className="settings-tab-title">My Profile &amp; Security</span>
               <span className="settings-tab-sub">Credentials &amp; Password</span>
             </div>
-          </div>
+          </button>
+          <button type="button" className={`settings-tab-btn ${tab === 'signatories' ? 'active' : ''}`} aria-current={tab === 'signatories' ? 'page' : undefined} onClick={() => setTab('signatories')}>
+            <PenLine size={18} aria-hidden="true" />
+            <div className="settings-tab-labels">
+              <span className="settings-tab-title">Legal Signatories</span>
+              <span className="settings-tab-sub">LOI &amp; SCO signatory and e-signature</span>
+            </div>
+          </button>
         </nav>
 
         <main className="settings-content-card">
+          {tab === 'signatories' ? <LegalSignatoriesSettings canEdit={user.role === 'super_admin'} /> : <>
           <form onSubmit={handleProfileSubmit} className="settings-form-section">
             <div className="settings-section-header">
               <h3>My Profile &amp; Security</h3>
@@ -153,6 +163,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
               <p>Notifications, display density, inactivity timeout, GIS defaults, and regulatory thresholds are unavailable until they are connected to runtime behavior.</p>
             </div>
           </section>
+          </>}
         </main>
       </div>
     </div>

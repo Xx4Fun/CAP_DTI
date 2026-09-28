@@ -91,6 +91,11 @@ class Store extends Model
         return $this->belongsTo(User::class, 'vendor_user_id');
     }
 
+    public function messages(): HasMany
+    {
+        return $this->hasMany(StoreMessage::class);
+    }
+
     public function citizenTips(): HasMany
     {
         return $this->hasMany(CitizenTip::class);

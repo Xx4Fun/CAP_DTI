@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Advisory, LegalNotice, NotificationSettings, ResponseDraft, SrpCatalog, VendorOverview, VendorSession, VendorUser } from '../app/types';
+import type { Advisory, Conversation, LegalNotice, StoreMessage, NotificationSettings, ResponseDraft, SrpCatalog, VendorOverview, VendorSession, VendorUser } from '../app/types';
 
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
@@ -39,6 +39,18 @@ export const vendorApi = {
     });
     // Uploads over slow mobile connections need more than the default timeout.
     return (await client.post(`/vendor/notices/${noticeId}/response`, body, { ...auth(token), timeout: 120_000 })).data.notice;
+  },
+  async conversation(token: string, storeId: number, beforeId?: number): Promise<Conversation> {
+    return (await client.get(`/vendor/conversations/${storeId}`, { ...auth(token), params: beforeId ? { before_id: beforeId } : {} })).data.data;
+  },
+  async sendMessage(token: string, storeId: number, payload: { body?: string; attachment?: File }): Promise<StoreMessage> {
+    const body = new FormData();
+    if (payload.body) body.append('body', payload.body);
+    if (payload.attachment) body.append('attachment', payload.attachment);
+    return (await client.post(`/vendor/conversations/${storeId}/messages`, body, { ...auth(token), timeout: 120_000 })).data.data;
+  },
+  async messageAttachment(token: string, storeId: number, messageId: number): Promise<Blob> {
+    return (await client.get(`/vendor/conversations/${storeId}/messages/${messageId}/attachment`, { ...auth(token), responseType: 'blob' })).data;
   },
   async srp(token: string): Promise<SrpCatalog> {
     return (await client.get('/vendor/srp', auth(token))).data.data;

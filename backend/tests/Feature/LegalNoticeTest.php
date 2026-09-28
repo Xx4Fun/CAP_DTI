@@ -19,6 +19,11 @@ class LegalNoticeTest extends TestCase
 {
     use RefreshDatabase;
 
+    public const DEADLINE_RULES = [
+        'policy_version' => 'test', 'response_period' => ['unit' => 'hours', 'value' => 48], 'deadline_anchor' => 'received',
+        'timezone' => 'Asia/Manila', 'working_weekdays' => [1, 2, 3, 4, 5], 'non_working_dates' => [],
+    ];
+
     private User $dtiUser;
     private User $vendorUser;
     private Store $store;
@@ -299,7 +304,8 @@ class LegalNoticeTest extends TestCase
     private function notice(array $overrides = []): LegalNotice
     {
         return LegalNotice::create(array_merge([
-            'store_id' => $this->store->id, 'notice_type' => 'LOI', 'control_number' => 'PM-2026-LOI-000001', 'status' => 'issued',
+            'store_id' => $this->store->id, 'vendor_user_id' => $this->vendorUser->id, 'deadline_rules' => self::DEADLINE_RULES,
+            'notice_type' => 'LOI', 'control_number' => 'PM-2026-LOI-000001', 'status' => 'issued',
             'issued_at' => now()->subDay(), 'delivery_state' => 'received', 'delivered_at' => now()->subHour(), 'due_date_timestamp' => now()->addDay(),
             'source_snapshot' => [
                 'monitoring_date' => '2026-09-10T02:00:00+00:00',
