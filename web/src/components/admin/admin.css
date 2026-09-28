@@ -6441,7 +6441,8 @@
 /* ==========================================================================
    Store Communications: per-store conversation with the linked vendor
    ========================================================================== */
-.comms-workspace{display:grid;grid-template-columns:320px minmax(0,1fr);gap:1rem;height:calc(100vh - var(--admin-shell-header-height) - 9rem);min-height:520px;color:var(--admin-text)}
+/* Fills the rest of .admin-panel (a full-height flex column) instead of guessing a height from the viewport. */
+.comms-workspace{flex:1 1 auto;display:grid;grid-template-columns:320px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:1rem;min-height:520px;color:var(--admin-text)}
 .comms-list,.comms-thread{display:flex;flex-direction:column;min-height:0;border:1px solid var(--admin-border);border-radius:14px;background:var(--admin-surface)}
 .comms-list{padding:.75rem;gap:.6rem}.comms-list ul{list-style:none;margin:0;padding:0;overflow-y:auto;display:grid;gap:.3rem;align-content:start}
 .comms-search{display:flex;align-items:center;gap:.5rem;padding:0 .7rem;border:1px solid #cbd5e1;border-radius:9px;color:var(--admin-muted)}
@@ -6482,9 +6483,9 @@
 .comms-file-chip{display:inline-flex;align-items:center;gap:.35rem;justify-self:start;padding:.25rem .5rem;border-radius:999px;background:#e2e8f0;font-size:.76rem}.comms-file-chip button{display:grid;place-items:center;border:0;background:transparent;cursor:pointer}
 .comms-hint{margin:0;color:var(--admin-muted);font-size:.72rem}.comms-hint.locked{padding:.8rem 1rem;border-top:1px solid var(--admin-border)}
 @media(max-width:900px){
-  .comms-workspace{grid-template-columns:1fr;height:auto;min-height:0}
+  .comms-workspace{grid-template-columns:1fr;min-height:480px}
   .comms-workspace.has-selection .comms-list{display:none}.comms-workspace:not(.has-selection) .comms-thread{display:none}
-  .comms-thread{height:calc(100vh - var(--admin-shell-header-height) - 7rem);min-height:480px}.comms-back{display:grid;place-items:center}
+  .comms-back{display:grid;place-items:center}
   .comms-bubble{max-width:88%}.comms-records li{flex-direction:column;align-items:flex-start}
   .comms-thread-header{flex-wrap:wrap}.comms-thread-actions{width:100%}.comms-thread-actions .admin-button{width:100%;justify-content:center}
   .comms-workspace,.comms-thread,.comms-list{min-width:0;max-width:100%}
