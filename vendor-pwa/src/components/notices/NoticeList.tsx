@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Eye, Send, Search } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
-import { canRespond, formatDate, formatPeso, noticeStatusLabel, toNumber } from '../../app/rules';
+import { canRespond, formatDate, formatPeso, isFinished, noticeStatusLabel, toNumber } from '../../app/rules';
 import { CountdownBadge } from '../common/CountdownBadge';
 
 interface NoticeListProps {
@@ -15,8 +15,8 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
   const [search, setSearch] = useState('');
 
   const filtered = notices.filter((notice) => {
-    if (filter === 'ACTIVE' && notice.status === 'closed') return false;
-    if (filter === 'RESOLVED' && notice.status !== 'closed') return false;
+    if (filter === 'ACTIVE' && isFinished(notice)) return false;
+    if (filter === 'RESOLVED' && !isFinished(notice)) return false;
     const query = search.trim().toLowerCase();
     if (!query) return true;
     return (notice.control_number ?? '').toLowerCase().includes(query)
@@ -71,7 +71,7 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
         ) : (
           filtered.map((notice) => {
             const isSco = notice.notice_type === 'SCO';
-            const isClosed = notice.status === 'closed';
+            const isClosed = isFinished(notice);
 
             return (
               <article key={notice.id} className="v-card" aria-label={`Notice ${notice.control_number ?? notice.id}`} style={{ borderLeft: `4px solid ${isClosed ? 'var(--success-color)' : isSco ? 'var(--danger-color)' : '#F59E0B'}` }}>

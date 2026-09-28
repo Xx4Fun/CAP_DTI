@@ -90,7 +90,7 @@ const panels: Record<ModuleId, { title: string; description: string; component: 
   field_monitoring: { title: 'Field Monitoring', description: 'Review accepted officer visits and their validation evidence.', component: FieldMonitoringPanel },
   establishments_access: { title: 'User Management', description: 'Manage vendor and DTI Field Monitoring accounts, credentials, and access status.', component: EstablishmentsAccessPanel },
   gis_monitoring: { title: 'GIS Monitoring', description: 'Map registered establishments, compliance findings, and vendor access.', component: StoreMonitoringPanel },
-  communications: { title: 'Store Communications', description: 'Review the current availability of DTI-to-store communication workflows.', component: CommunicationsPanel },
+  communications: { title: 'Store Communications', description: 'Message linked vendors and follow each store’s LOI/SCO notices in one thread.', component: CommunicationsPanel },
   price_regulation: { title: 'Price Regulation', description: 'Preview and append dated SRP versions. Existing versions remain unchanged.', component: SrpManagementPanel },
   legal_actions: { title: 'Legal Actions', description: 'Prepare regulatory notices under the currently configured policy safeguards.', component: LegalDraftPanel },
   emergency_protocol: { title: 'Emergency Protocol', description: 'Record declarations and authoritative Price Freeze or APC sources.', component: EmergencyPanel },

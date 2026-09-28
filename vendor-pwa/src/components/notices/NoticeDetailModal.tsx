@@ -71,7 +71,9 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
               <p><strong>Address:</strong> {notice.store?.address ?? 'Not recorded'}</p>
               <p><strong>Issued:</strong> {formatDate(notice.issued_at, true)}</p>
               <p><strong>Delivery:</strong> {notice.delivery_state === 'not_recorded' ? 'Not yet recorded' : `${notice.delivery_state} ${notice.delivered_at ? `on ${formatDate(notice.delivered_at, true)}` : ''}`}</p>
-              <p><strong>Response deadline:</strong> {notice.due_date_timestamp ? formatDate(notice.due_date_timestamp, true) : 'Starts after DTI records delivery'}</p>
+              <p><strong>Response deadline:</strong> {notice.due_date_timestamp ? formatDate(notice.due_date_timestamp, true) : notice.intended_delivery_method === 'portal' ? 'Starts when you open the official document' : 'Starts after DTI records delivery'}</p>
+              {notice.reason && <p><strong>Reason:</strong> {notice.reason}</p>}
+              {notice.legal_bases && notice.legal_bases.length > 0 && <p><strong>Legal basis:</strong> {notice.legal_bases.join('; ')}</p>}
             </div>
 
             <p style={{ marginBottom: '14px' }}>
@@ -114,8 +116,8 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
 
             {notice.response_received_at && (
               <div style={{ background: '#F1F5F9', padding: '12px', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--dti-navy)' }}>
-                <p><strong>Your response</strong> • submitted {formatDate(notice.response_received_at, true)}</p>
-                <p style={{ fontSize: '0.8rem', marginTop: '4px' }}>Reason: {reasonLabel(notice.response_reason_category)}</p>
+                <p><strong>{notice.response_channel === 'email' || notice.response_channel === 'paper' ? `Your ${notice.response_channel} reply, as recorded by DTI` : 'Your response'}</strong> • received {formatDate(notice.response_received_at, true)}</p>
+                {notice.response_reason_category && <p style={{ fontSize: '0.8rem', marginTop: '4px' }}>Reason: {reasonLabel(notice.response_reason_category)}</p>}
                 {notice.response_text && <p style={{ fontSize: '0.82rem', marginTop: '6px', whiteSpace: 'pre-wrap' }}>{notice.response_text}</p>}
                 {notice.attachments.length > 0 && (
                   <p style={{ fontSize: '0.76rem', marginTop: '6px', color: 'var(--text-muted)' }}>
@@ -131,6 +133,9 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
         </div>
 
         <div className="modal-footer">
+          {notice.status === 'issued' && notice.intended_delivery_method === 'portal' && ['not_recorded', 'failed'].includes(notice.delivery_state) && (
+            <p className="notice-receipt-warning">Opening the official document records that you received this notice and starts your response period.</p>
+          )}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void openDocument()} disabled={opening}>
             <Download size={15} />
             <span>{opening ? 'Opening…' : 'Open official document (PDF)'}</span>

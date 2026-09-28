@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, LogOut, Store as StoreIcon, Home, FileText, Send, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
+import { Bell, LogOut, Store as StoreIcon, Home, FileText, MessageSquare, Send, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
 import type { ActiveTab, VendorStore } from '../../app/types';
 
 interface VendorNavbarProps {
@@ -9,6 +9,7 @@ interface VendorNavbarProps {
   activeTab?: ActiveTab;
   onTabChange?: (tab: ActiveTab) => void;
   pendingNoticeCount?: number;
+  unreadMessageCount?: number;
   online?: boolean;
   onSelectStore: (storeId: number) => void;
   onOpenNotifications: () => void;
@@ -22,6 +23,7 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
   activeTab = 'overview',
   onTabChange,
   pendingNoticeCount = 0,
+  unreadMessageCount = 0,
   online = true,
   onSelectStore,
   onOpenNotifications,
@@ -65,6 +67,18 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
               <span>Notices</span>
               {pendingNoticeCount > 0 && (
                 <span className="desktop-nav-badge">{pendingNoticeCount}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`desktop-nav-link ${activeTab === 'messages' ? 'active' : ''}`}
+              onClick={() => onTabChange('messages')}
+            >
+              <MessageSquare size={16} />
+              <span>Messages</span>
+              {unreadMessageCount > 0 && (
+                <span className="desktop-nav-badge">{unreadMessageCount}</span>
               )}
             </button>
 

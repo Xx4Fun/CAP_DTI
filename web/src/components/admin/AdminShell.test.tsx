@@ -11,6 +11,7 @@ vi.mock('../../services/adminApi', () => ({
     getReports: vi.fn().mockResolvedValue([]),
     getEmergencies: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
+    getConversations: vi.fn().mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 }),
     getManagedUsers: vi.fn().mockResolvedValue({
       records: [],
       pagination: { current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null },
@@ -109,7 +110,7 @@ describe('AdminShell', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Consumer Reports' })).toBeInTheDocument()
   })
 
-  it('shows truthful unavailable states for modules without backend support', async () => {
+  it('opens the store conversation workspace from the sidebar', async () => {
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
@@ -117,8 +118,9 @@ describe('AdminShell', () => {
     expect(await screen.findByRole('table', { name: 'Managed user accounts' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Store Communications' }))
-    expect(screen.getByText(/Two-way store conversations are not connected yet/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Send message|Approve document|Reject document/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('complementary', { name: 'Store conversations' })).toBeInTheDocument()
+    expect(await screen.findByText(/Stores appear here once a vendor account is linked/i)).toBeInTheDocument()
+    expect(screen.queryByText(/not connected yet/i)).not.toBeInTheDocument()
   })
 
   it('toggles sidebar collapse state without breaking navigation', async () => {

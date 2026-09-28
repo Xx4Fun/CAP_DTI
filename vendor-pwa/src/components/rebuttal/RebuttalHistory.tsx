@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Clock, Paperclip, FileCheck, Eye } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
-import { attachmentCategoryLabel, canRespond, formatDate, reasonLabel } from '../../app/rules';
+import { attachmentCategoryLabel, canRespond, formatDate, isFinished, reasonLabel } from '../../app/rules';
 
 interface RebuttalHistoryProps {
   notices: LegalNotice[];
@@ -47,7 +47,7 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
                   <strong style={{ fontSize: '0.95rem', color: 'var(--dti-navy)' }}>{notice.control_number ?? `Notice #${notice.id}`}</strong>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>Submitted {formatDate(notice.response_received_at, true)}</div>
                 </div>
-                {notice.status === 'closed' ? (
+                {isFinished(notice) ? (
                   <span className="badge badge-success"><CheckCircle2 size={13} /><span>Notice closed</span></span>
                 ) : (
                   <span className="badge badge-warning"><Clock size={13} /><span>Under DTI review</span></span>

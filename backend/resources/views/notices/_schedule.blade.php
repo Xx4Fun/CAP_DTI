@@ -1,6 +1,6 @@
 @if($draft ?? false)<div class="legal-draft-watermark">DRAFT — NOT AN OFFICIAL NOTICE</div>@endif
 <section class="legal-schedule">
-  <h1>Monitoring Schedule</h1>
+  <h1>{{ $annexLabel ?? 'Monitoring Schedule' }}</h1>
   <p>Monitoring record: {{ data_get($notice->source_snapshot, 'monitoring_record_number') ?: 'Not recorded' }}</p>
   <table><thead><tr><th>Product</th><th>Observed price</th><th>Captured reference</th><th>Reference</th></tr></thead><tbody>
   @foreach(data_get($notice->source_snapshot, 'items', []) as $item)
@@ -11,5 +11,5 @@
 </section>
 <style>
 .legal-draft-watermark{position:fixed;z-index:20;left:12%;top:42%;transform:rotate(-28deg);font:700 34pt Arial;color:rgba(180,0,0,.18);border:4px solid rgba(180,0,0,.18);padding:12px;pointer-events:none}
-.legal-schedule{page-break-before:always;box-sizing:border-box;width:210mm;min-height:297mm;padding:18mm;background:#fff;color:#111;font:10pt Arial}.legal-schedule h1{font-size:18pt}.legal-schedule table{width:100%;border-collapse:collapse}.legal-schedule th,.legal-schedule td{border:1px solid #555;padding:7px;text-align:left;vertical-align:top}
+.legal-schedule{page-break-before:always;padding:18mm;background:#fff;color:#111;font-family:'DejaVu Sans',Arial,sans-serif;font-size:9.5pt}.legal-schedule h1{font-size:18pt}.legal-schedule table{width:100%;border-collapse:collapse}.legal-schedule th,.legal-schedule td{border:1px solid #555;padding:7px;text-align:left;vertical-align:top}
 </style>

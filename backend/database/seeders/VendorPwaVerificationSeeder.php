@@ -61,6 +61,11 @@ class VendorPwaVerificationSeeder extends Seeder
 
         $notice = LegalNotice::create([
             'store_id' => $store->id, 'monitoring_record_id' => $record->id, 'notice_type' => 'LOI', 'prepared_by' => $officer->id,
+            // Audience and frozen deadline rules, as issue() records them; without these the notice counts as legacy and stays offline.
+            'vendor_user_id' => $vendor->id, 'deadline_rules' => [
+                'policy_version' => 'e2e-fixture', 'response_period' => ['unit' => 'working_days', 'value' => 3], 'deadline_anchor' => 'received',
+                'timezone' => 'Asia/Manila', 'working_weekdays' => [1, 2, 3, 4, 5], 'non_working_dates' => [],
+            ],
             'control_number' => 'E2E-LOI-'.now()->format('YmdHis'), 'status' => 'issued', 'issued_at' => now()->subHour(),
             'intended_delivery_method' => 'hand_copy', 'delivery_state' => 'received', 'delivered_at' => now()->subMinutes(30),
             'due_date_timestamp' => now()->addDays(3),

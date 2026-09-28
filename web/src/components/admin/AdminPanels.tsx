@@ -6,6 +6,7 @@ import type { AdminUser } from '../../types/admin'
 const StoreManager = lazy(() => import('./StoreManager').then((module) => ({ default: module.StoreManager })))
 const StoreOnboarding = lazy(() => import('../StoreOnboarding').then((module) => ({ default: module.StoreOnboarding })))
 const CitizenTipReview = lazy(() => import('./CitizenTipReview').then((module) => ({ default: module.CitizenTipReview })))
+const StoreCommunications = lazy(() => import('./StoreCommunications').then((module) => ({ default: module.StoreCommunications })))
 const LegalNoticeManager = lazy(() => import('./LegalNoticeManager').then((module) => ({ default: module.LegalNoticeManager })))
 const EmergencyToggle = lazy(() => import('./EmergencyToggle').then((module) => ({ default: module.EmergencyToggle })))
 const LazySrpManagementPanel = lazy(() => import('./SrpManagementPanel').then((module) => ({ default: module.SrpManagementPanel })))
@@ -21,7 +22,7 @@ export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (u
 
 import type { ModuleId } from './AdminShell'
 
-import { ArrowRight, Activity, MessageSquare } from 'lucide-react'
+import { ArrowRight, Activity } from 'lucide-react'
 
 function formatSubjectType(type?: string): string {
   if (!type) return 'System Record'
@@ -339,20 +340,7 @@ export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleI
 }
 
 export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => void }) {
-  return (
-    <section className="admin-availability-panel admin-availability-panel-centered" aria-labelledby="communications-availability-title">
-      <MessageSquare size={28} aria-hidden="true" />
-      <div className="admin-availability-copy">
-        <h2 id="communications-availability-title">Two-way store conversations are not connected yet</h2>
-        <p>
-          The current system has no conversation threads, document-review inbox, messaging API, or approved legal-notice dispatch workflow.
-        </p>
-      </div>
-      <button type="button" className="admin-button secondary" onClick={() => props.onNavigate?.('legal_actions')}>
-        Open Legal Actions <ArrowRight size={16} aria-hidden="true" />
-      </button>
-    </section>
-  )
+  return <Suspense fallback={<PanelLoader />}><StoreCommunications onNavigate={props.onNavigate} /></Suspense>
 }
 
 export function SrpManagementPanel() {

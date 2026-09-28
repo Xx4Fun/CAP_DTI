@@ -58,6 +58,7 @@ class LegalActionsWorkflowTest extends TestCase
     public function test_policy_unavailable_issue_is_atomic_and_legacy_dispatch_is_removed(): void
     {
         [$manager, , $record, $items] = $this->evidence();
+        config(['legal_policy.approved' => false]);
         $notice = LegalNotice::create([
             'store_id' => $record->store_id,
             'monitoring_record_id' => $record->id,

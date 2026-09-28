@@ -499,17 +499,90 @@ export interface LegalNoticeRecord {
   intended_delivery_method?: 'portal' | 'email_and_hand_copy' | 'hand_copy' | null
   internal_justification?: string | null
   source_snapshot: { monitoring_record_number?: string; monitoring_date?: string; store?: { store_name?: string; address?: string }; items: Array<Record<string, unknown>> }
-  draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[] }
+  draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[]; linked_vendor_user_id?: number | null }
   store?: { id: number; store_name: string; address: string }
   preparer?: { id: number; name: string } | null
   attachments?: Array<{ id: number; kind: string; category?: string | null; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
   readiness: Record<string, boolean>
-  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null }
+  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[] }
   overdue?: boolean
+  preceding_notice_id?: number | null
+  vendor_user_id?: number | null
+  /** Draft whose store's vendor link changed since it was prepared; the recipient must be confirmed before issue. */
+  recipient_review_required?: boolean
+  /** Issued before deadline rules were recorded; handled offline only. */
+  legacy?: boolean
+  can_escalate?: boolean
   response_text?: string | null
   response_reason_category?: string | null
   response_certified_at?: string | null
   response_received_at?: string | null
+  response_channel?: 'portal' | 'email' | 'paper' | null
+  /** Who signs this notice type now, and whether an e-signature image is available to apply. */
+  signatory?: { name: string | null; office: string | null; has_signature: boolean }
+  /** Frozen at issue: who signed and whether the e-signature was stamped. */
+  signatory_snapshot?: { name: string | null; office: string | null; signature_applied: boolean; signature_sha256: string | null } | null
+  /** Issue response only: whether the vendor email notification was queued. */
+  notification?: 'queued' | 'failed' | 'not_applicable'
+}
+
+export interface LegalSignatoryRecord {
+  name: string | null
+  office: string | null
+  source: 'settings' | 'environment'
+  has_signature: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+export interface StoreMessageRecord {
+  id: number
+  sender_side: 'dti' | 'vendor'
+  sender_name?: string | null
+  vendor_user_id: number
+  /** The vendor this message was exchanged with (admin view only). */
+  vendor_name?: string | null
+  body: string | null
+  read_at: string | null
+  created_at: string
+  attachment: { name: string; mime: string; size: number } | null
+}
+
+export interface ConversationSummary {
+  id: number
+  store_name: string
+  address: string
+  linked: boolean
+  vendor: { id: number; name: string; email: string; is_active: boolean } | null
+  unread_count: number
+  open_notice_count: number
+  last_message: { sender_side: 'dti' | 'vendor'; created_at: string; preview: string | null } | null
+}
+
+export interface ConversationNotice {
+  id: number
+  notice_type: 'LOI' | 'SCO'
+  control_number: string | null
+  status: LegalNoticeState
+  delivery_state: LegalNoticeRecord['delivery_state']
+  intended_delivery_method?: LegalNoticeRecord['intended_delivery_method']
+  preceding_notice_id: number | null
+  created_at: string
+  issued_at: string | null
+  delivered_at: string | null
+  due_date_timestamp: string | null
+  response_received_at: string | null
+  closed_at: string | null
+  cancelled_at: string | null
+}
+
+export interface ConversationThread {
+  store: Pick<ConversationSummary, 'id' | 'store_name' | 'address' | 'linked' | 'vendor'>
+  messages: StoreMessageRecord[]
+  /** Older messages exist before the first one returned. */
+  has_more: boolean
+  notices: ConversationNotice[]
+  eligible_records: Array<{ id: number; client_uuid: string; finalized_at: string | null; eligible_item_count: number }>
 }
 
 export interface VendorInvitationRecord {

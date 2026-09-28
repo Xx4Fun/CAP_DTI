@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\LegalNotice;
 use App\Models\User;
 use App\Models\FieldOfflineLease;
 use App\Services\Admin\AdminAuthorizationService;
@@ -101,6 +102,12 @@ class UserManagementController extends Controller
             User::whereKey($managedUser->id)->lockForUpdate()->firstOrFail();
             $managedUser->refresh();
             $wasActive = (bool) $managedUser->is_active;
+            // Checked under the account lock that issue() also takes, so a notice cannot be issued to an account
+            // being deactivated, and an open response period is never cut off.
+            if ($wasActive && array_key_exists('is_active', $data) && ! $data['is_active']
+                && LegalNotice::where('vendor_user_id', $managedUser->id)->whereIn('status', ['issued', 'response_received'])->exists()) {
+                abort(response()->json(['status' => 'OPEN_NOTICES_BLOCK_DEACTIVATION', 'message' => 'Close or cancel the open legal notices issued to this vendor before deactivating the account.'], 409));
+            }
             $managedUser->fill($data)->save();
             if ($wasActive && ! $managedUser->is_active) {
                 $managedUser->tokens()->delete();

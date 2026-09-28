@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -212,8 +212,8 @@ export const adminApi = {
     const response = await api.post(`/admin/legal-notices/${id}/preview`, {}, { responseType: 'text' })
     return response.data
   },
-  async issueLegalNotice(id: number): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/issue`, { confirmed: true }))
+  async issueLegalNotice(id: number, applySignature = false): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/issue`, { confirmed: true, apply_signature: applySignature }))
   },
   async recordLegalDelivery(id: number, payload: { state: 'received' | 'refused' | 'failed'; recorded_at: string; details?: Record<string, unknown> }): Promise<LegalNoticeRecord> {
     return data(await api.post(`/admin/legal-notices/${id}/delivery`, payload))
@@ -223,6 +223,45 @@ export const adminApi = {
   },
   async closeLegalNotice(id: number): Promise<LegalNoticeRecord> {
     return data(await api.post(`/admin/legal-notices/${id}/close`))
+  },
+  async recordOfflineResponse(id: number, payload: { channel: 'email' | 'paper'; received_at: string; response_text: string; evidence: File }): Promise<LegalNoticeRecord> {
+    const body = new FormData()
+    body.append('channel', payload.channel); body.append('received_at', payload.received_at); body.append('response_text', payload.response_text); body.append('evidence', payload.evidence)
+    return data(await api.post(`/admin/legal-notices/${id}/offline-response`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  async escalateLegalNotice(id: number): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/escalate`))
+  },
+  async getLegalSignatories(): Promise<Record<'LOI' | 'SCO', LegalSignatoryRecord>> {
+    return data(await api.get('/admin/legal-signatories'))
+  },
+  async updateLegalSignatory(type: 'LOI' | 'SCO', payload: { name: string; office: string }): Promise<LegalSignatoryRecord> {
+    return data(await api.put(`/admin/legal-signatories/${type}`, payload))
+  },
+  async uploadLegalSignature(type: 'LOI' | 'SCO', file: File): Promise<LegalSignatoryRecord> {
+    const body = new FormData(); body.append('signature', file)
+    return data(await api.post(`/admin/legal-signatories/${type}/signature`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  async removeLegalSignature(type: 'LOI' | 'SCO'): Promise<LegalSignatoryRecord> {
+    return data(await api.delete(`/admin/legal-signatories/${type}/signature`))
+  },
+  async getLegalSignatureImage(type: 'LOI' | 'SCO'): Promise<Blob> {
+    return (await api.get(`/admin/legal-signatories/${type}/signature`, { responseType: 'blob' })).data
+  },
+  async getConversations(params: { search?: string; page?: number } = {}): Promise<{ data: ConversationSummary[]; current_page: number; last_page: number; total: number }> {
+    return data(await api.get('/admin/conversations', { params }))
+  },
+  async getConversation(storeId: number, beforeId?: number): Promise<ConversationThread> {
+    return data(await api.get(`/admin/conversations/${storeId}`, { params: beforeId ? { before_id: beforeId } : {} }))
+  },
+  async sendStoreMessage(storeId: number, payload: { body?: string; attachment?: File }): Promise<StoreMessageRecord> {
+    const body = new FormData()
+    if (payload.body) body.append('body', payload.body)
+    if (payload.attachment) body.append('attachment', payload.attachment)
+    return data(await api.post(`/admin/conversations/${storeId}/messages`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  },
+  async getMessageAttachment(storeId: number, messageId: number): Promise<Blob> {
+    return (await api.get(`/admin/conversations/${storeId}/messages/${messageId}/attachment`, { responseType: 'blob' })).data
   },
   async cancelLegalNotice(id: number): Promise<LegalNoticeRecord> {
     return data(await api.post(`/admin/legal-notices/${id}/cancel`))

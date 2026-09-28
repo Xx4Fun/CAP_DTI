@@ -7,6 +7,7 @@ use App\Models\LegalNotice;
 use App\Models\RegulatoryEmergency;
 use App\Models\SrpBulletin;
 use App\Models\Store;
+use App\Models\StoreMessage;
 use App\Services\FieldReferenceResolver;
 use App\Support\MonitoringPeriod;
 use Illuminate\Http\Request;
@@ -25,19 +26,22 @@ class VendorPortalController extends Controller
     {
         $user = $this->vendorUser($request);
         $stores = Store::query()->where('vendor_user_id', $user->id)->with('latestMonitoringRecord')->orderBy('store_name')->get();
-        $open = LegalNotice::query()->whereIn('store_id', $stores->pluck('id'))
+        $open = LegalNotice::query()->visibleToVendor($user)
             ->whereIn('status', ['issued', 'response_received'])->get(['store_id', 'notice_type'])->groupBy('store_id');
+        $unread = StoreMessage::query()->where('vendor_user_id', $user->id)->where('sender_side', 'dti')->whereNull('read_at')
+            ->whereIn('store_id', $stores->pluck('id'))->selectRaw('store_id, count(*) as total')->groupBy('store_id')->pluck('total', 'store_id');
         $emergency = MonitoringPeriod::effectiveEmergency(now('Asia/Manila'));
 
         return response()->json(['data' => [
             'user' => $user->only(['id', 'name', 'email']),
-            'stores' => $stores->map(function (Store $store) use ($open) {
+            'stores' => $stores->map(function (Store $store) use ($open, $unread) {
                 $types = collect($open->get($store->id, []))->pluck('notice_type');
                 return [
                     ...$store->only(['id', 'store_name', 'address', 'dti_sec_number', 'recidivism_index']),
                     'last_inspected_at' => $store->latestMonitoringRecord?->finalized_at?->toIso8601String(),
                     'compliance_status' => $types->contains('SCO') ? 'SHOW_CAUSE_ISSUED' : ($types->contains('LOI') ? 'UNDER_INQUIRY' : 'IN_GOOD_STANDING'),
                     'open_notice_count' => $types->count(),
+                    'unread_messages' => (int) ($unread[$store->id] ?? 0),
                 ];
             })->values(),
             'emergency' => $emergency ? [

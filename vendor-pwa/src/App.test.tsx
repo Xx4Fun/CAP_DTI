@@ -18,6 +18,7 @@ vi.mock('./services/vendorApi', async (importOriginal) => {
     vendorApi: {
       login: vi.fn(), logout: vi.fn(), changePassword: vi.fn(), overview: vi.fn(), notices: vi.fn(), document: vi.fn(),
       respond: vi.fn(), srp: vi.fn(), advisories: vi.fn(), preferences: vi.fn(), savePreferences: vi.fn(), acceptInvitation: vi.fn(),
+      conversation: vi.fn(), sendMessage: vi.fn(), messageAttachment: vi.fn(),
     },
   };
 });
@@ -438,5 +439,82 @@ describe('PRICE-Watch Vendor Portal', () => {
 
     await user.upload(screen.getByLabelText('Attach supporting documents'), new File(['x'], 'notes.txt', { type: '' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('notes.txt is not accepted');
+  });
+
+  it('shows a portal notice as received right after the official PDF is opened', async () => {
+    signedIn();
+    api.notices.mockResolvedValueOnce([notice({ intended_delivery_method: 'portal', delivery_state: 'not_recorded', delivered_at: null, due_date_timestamp: null })])
+      .mockResolvedValue([notice({ intended_delivery_method: 'portal', delivery_state: 'received', due_date_timestamp: '2026-10-01T01:00:00Z' })]);
+    api.document.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    vi.spyOn(window, 'open').mockReturnValue({ location: { href: '' }, close: vi.fn() } as unknown as Window);
+    URL.createObjectURL = vi.fn(() => 'blob:notice');
+    URL.revokeObjectURL = vi.fn();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'View Notice' }));
+    const dialog = screen.getByRole('dialog', { name: 'Letter of Inquiry' });
+    expect(within(dialog).getByText(/Opening the official document records that you received this notice/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Open official document (PDF)' }));
+    // The open modal reads the refreshed record: receipt recorded, deadline shown, warning gone.
+    await waitFor(() => expect(within(dialog).queryByText(/Opening the official document records/)).not.toBeInTheDocument());
+    expect(within(dialog).queryByText('Starts when you open the official document')).not.toBeInTheDocument();
+  });
+
+  it('exchanges messages with DTI and opens a notice from the thread', async () => {
+    signedIn();
+    api.overview.mockResolvedValue({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 1 }] });
+    api.conversation.mockResolvedValue({
+      store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' },
+      messages: [{ id: 3, sender_side: 'dti', sender_name: 'DTI', body: 'Please send your supplier invoice.', read_at: null, created_at: '2026-09-28T01:00:00Z', attachment: null }],
+      has_more: false,
+      notices: [{ id: 11, notice_type: 'LOI', control_number: 'PM-2026-LOI-000011', status: 'issued', delivery_state: 'received', issued_at: '2026-09-11T02:00:00Z', due_date_timestamp: future(), response_received_at: null, closed_at: null }],
+    });
+    api.sendMessage.mockResolvedValue({ id: 4, sender_side: 'vendor', sender_name: 'Maria Clara', body: 'Attached today.', read_at: null, created_at: '2026-09-28T02:00:00Z', attachment: null });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const tab = await screen.findByRole('button', { name: 'Messages Tab' });
+    expect(within(tab).getByText('1')).toBeInTheDocument();
+    await user.click(tab);
+    expect(await screen.findByText('Please send your supplier invoice.')).toBeInTheDocument();
+    expect(api.conversation).toHaveBeenCalledWith('vendor-token', 1);
+
+    await user.type(screen.getByLabelText('Message'), 'Attached today.');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 1, { body: 'Attached today.', attachment: undefined });
+    expect(await screen.findByText('Attached today.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Letter of Inquiry PM-2026-LOI-000011/ }));
+    expect(screen.getByRole('dialog', { name: 'Letter of Inquiry' })).toBeInTheDocument();
+  });
+
+  it('opens a notice card for a notice issued after the portal last loaded its notices', async () => {
+    signedIn();
+    api.notices.mockResolvedValueOnce([]).mockResolvedValue([notice({ id: 12, control_number: 'LOI-2026-000012' })]);
+    api.conversation.mockResolvedValue({
+      store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' }, messages: [], has_more: false,
+      notices: [{ id: 12, notice_type: 'LOI', control_number: 'LOI-2026-000012', status: 'issued', delivery_state: 'received', issued_at: '2026-09-28T02:00:00Z', due_date_timestamp: future(), response_received_at: null, closed_at: null }],
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+    await user.click(await screen.findByRole('button', { name: /Letter of Inquiry LOI-2026-000012/ }));
+    expect(await screen.findByRole('dialog', { name: 'Letter of Inquiry' })).toBeInTheDocument();
+  });
+
+  it('badges Messages for unread DTI messages on any linked store and labels withdrawn notices', async () => {
+    signedIn();
+    const second = { ...overview.stores[0], id: 2, store_name: 'Second Branch', unread_messages: 2 };
+    api.overview.mockResolvedValue({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 0 }, second] });
+    api.notices.mockResolvedValue([notice({ status: 'cancelled' })]);
+    const user = userEvent.setup();
+    render(<App />);
+
+    const tab = await screen.findByRole('button', { name: 'Messages Tab' });
+    expect(within(tab).getByText('2')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Notices Tab' }));
+    expect(await screen.findByText('Withdrawn by DTI')).toBeInTheDocument();
   });
 });

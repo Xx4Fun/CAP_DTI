@@ -46,7 +46,7 @@ class AdminDraftImmutabilityTest extends TestCase
     {
         $notice = $this->notice('draft');
 
-        $this->patchJson("/api/admin/legal-notices/{$notice->id}", ['reason' => 'Updated in draft'])->assertOk();
+        $this->patchJson("/api/admin/legal-notices/{$notice->id}", ['reason' => 'Prices above price ceiling'])->assertOk();
         $added = $this->post("/api/admin/legal-notices/{$notice->id}/attachments", ['file' => UploadedFile::fake()->create('support.pdf', 10, 'application/pdf')], ['Accept' => 'application/json'])
             ->assertCreated()->json('data');
         $this->assertSame(LegalNotice::DOCUMENT_DISK, $added['disk'] ?? LegalNotice::DOCUMENT_DISK);
@@ -54,7 +54,7 @@ class AdminDraftImmutabilityTest extends TestCase
 
         $this->deleteJson("/api/admin/legal-notices/{$notice->id}/attachments/{$added['id']}")->assertNoContent();
 
-        $this->assertSame('Updated in draft', $notice->fresh()->draft_payload['reason']);
+        $this->assertSame('Prices above price ceiling', $notice->fresh()->draft_payload['reason']);
         $this->assertSame(0, LegalNoticeAttachment::count());
         $this->assertSame([], Storage::disk(LegalNotice::DOCUMENT_DISK)->allFiles());
     }

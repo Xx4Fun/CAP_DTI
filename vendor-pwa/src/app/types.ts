@@ -21,6 +21,7 @@ export interface VendorStore {
   last_inspected_at: string | null;
   compliance_status: ComplianceStatus;
   open_notice_count: number;
+  unread_messages?: number;
   image_path?: string | null;
 }
 
@@ -37,7 +38,7 @@ export interface VendorOverview {
   emergency: EmergencyInfo | null;
 }
 
-export type NoticeStatus = 'issued' | 'response_received' | 'closed';
+export type NoticeStatus = 'issued' | 'response_received' | 'closed' | 'cancelled';
 export type DeliveryState = 'not_recorded' | 'received' | 'refused' | 'failed';
 
 export interface FlaggedItem {
@@ -68,16 +69,23 @@ export interface LegalNotice {
   notice_type: 'LOI' | 'SCO';
   status: NoticeStatus;
   issued_at: string | null;
+  intended_delivery_method?: 'portal' | 'email_and_hand_copy' | 'hand_copy' | null;
   delivery_state: DeliveryState;
   delivered_at: string | null;
   due_date_timestamp: string | null;
   response_text: string | null;
   response_reason_category: ReasonCategory | null;
+  /** portal: the vendor's sworn wizard response; email/paper: a reply DTI recorded from the vendor's email or letter. */
+  response_channel?: 'portal' | 'email' | 'paper' | null;
   response_certified_at: string | null;
   response_received_at: string | null;
   closed_at: string | null;
+  cancelled_at?: string | null;
   store: { id: number; store_name: string; address: string } | null;
   monitoring_date: string | null;
+  /** DTI's stated reason and legal bases for the notice. */
+  reason?: string | null;
+  legal_bases?: string[];
   flagged_items: FlaggedItem[];
   attachments: NoticeAttachment[];
 }
@@ -142,4 +150,36 @@ export interface NotificationSettings {
   alert_srp_bulletin: boolean;
 }
 
-export type ActiveTab = 'overview' | 'notices' | 'rebuttals' | 'srp' | 'advisories';
+export type ActiveTab = 'overview' | 'notices' | 'messages' | 'rebuttals' | 'srp' | 'advisories';
+
+export interface StoreMessage {
+  id: number;
+  sender_side: 'dti' | 'vendor';
+  sender_name: string | null;
+  body: string | null;
+  read_at: string | null;
+  created_at: string;
+  attachment: { name: string; mime: string; size: number } | null;
+}
+
+export interface ConversationNotice {
+  id: number;
+  notice_type: 'LOI' | 'SCO';
+  control_number: string | null;
+  status: NoticeStatus;
+  delivery_state: DeliveryState;
+  issued_at: string | null;
+  delivered_at?: string | null;
+  due_date_timestamp: string | null;
+  response_received_at: string | null;
+  closed_at: string | null;
+  cancelled_at?: string | null;
+}
+
+export interface Conversation {
+  store: { id: number; store_name: string; address: string };
+  messages: StoreMessage[];
+  /** Older messages exist before the first one returned. */
+  has_more: boolean;
+  notices: ConversationNotice[];
+}
