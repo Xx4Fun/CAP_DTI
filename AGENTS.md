@@ -17,7 +17,7 @@ Do not load every file under `docs/`, `docs/superpowers/`, or `docs/audits/` by 
 - `web/`: React/Vite DTI Admin portal.
 - `customer-pwa/`: React/Vite public consumer PWA.
 - `field-officer-pwa/`: React/Vite field monitoring PWA.
-- `mobile/`: legacy Flutter client; confirm current scope before changing it.
+- `mobile/`: removed 2026-09-28 (legacy Flutter client, deprecated). Recover from git history (`git log --diff-filter=D -- mobile`); backend legacy sync routes still exist.
 
 Update the compact vault notes only when a task changes their stated facts. Keep them as indexes and decision records, not chat transcripts.
 
@@ -53,7 +53,7 @@ production domains are `customer-pwa-six.vercel.app` and `dti-admin-1.vercel.app
 
 ## External Services & AI Design References
 
-- **Genspark AI API Token**: `gsk-eyJjb2dlbl9pZCI6IjJlZjZiNDZkLTQzNmEtNDcwNS1iN2IwLTAxODk2NDRkNmQ5MyIsImtleV9pZCI6IjczNzNlMzc0LTg2ZmItNDg4NC05ZjI5LTNjMDNlNDE3NzJkZSIsImN0aW1lIjoxNzg4NjA1OTc5LCJjbGF1ZGVfYmlnX21vZGVsIjpudWxsLCJjbGF1ZGVfbWlkZGxlX21vZGVsIjpudWxsLCJjbGF1ZGVfc21hbGxfbW9kZWwiOm51bGx9fNa83OtQlRjlz1DxxBIXb2kv5GZGwYlNZeK0XnbZmtwg`
+- **Genspark AI API Token**: read `GENSPARK_API_KEY` from `.env` at the repo root. Never paste the key into this file.
 - **Purpose**: UI/UX references, design inspiration, templates, and styling patterns across PRICE-Watch applications (`customer-pwa`, `field-officer-pwa`, and `web`).
 
  

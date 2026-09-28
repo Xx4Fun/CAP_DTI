@@ -22,7 +22,7 @@ This page records boundaries for interpreting project status. Keep task-specific
 - `web/`: DTI Admin portal.
 - `customer-pwa/`: public consumer PWA.
 - `field-officer-pwa/`: field monitoring PWA.
-- `mobile/`: legacy Flutter client; scope must be reconfirmed before changes.
+- `mobile/`: legacy Flutter client removed from the repo 2026-09-28; recover from git history if needed.
 
 ## Evidence handling
 

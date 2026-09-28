@@ -34,7 +34,7 @@ The product joins the same authoritative SRP history, registered establishments,
 - Both signatures and a captured GPS fix are mandatory before finalization.
 - Finalized local visits are immutable and must synchronize idempotently.
 - Signatures and location evidence are private, authenticated, and audited.
-- The Flutter field client is frozen and deprecated; its legacy sync routes remain compatible in this release.
+- The Flutter field client is deprecated and was removed from the repo on 2026-09-28; its legacy sync routes remain compatible in this release.
 
 ## Brand Commitments
 

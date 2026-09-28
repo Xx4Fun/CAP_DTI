@@ -54,8 +54,8 @@ tags:
 
 ## Flutter client
 
-- Path: `mobile/`
-- Status: described as frozen and deprecated in `../PRODUCT.md`; verify current user direction before editing.
+- Path: `mobile/` (removed 2026-09-28; recover with `git log --diff-filter=D -- mobile`)
+- Status: deprecated per `../PRODUCT.md`; backend legacy sync routes remain.
 
 ## Documentation routing
 
