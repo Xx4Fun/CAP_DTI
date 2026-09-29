@@ -57,3 +57,11 @@ production domains are `customer-pwa-six.vercel.app` and `dti-admin-1.vercel.app
 - **Purpose**: UI/UX references, design inspiration, templates, and styling patterns across PRICE-Watch applications (`customer-pwa`, `field-officer-pwa`, and `web`).
 
  
+## Claudex / Codex CLI runs
+
+Codex's `read-only` sandbox does not stop MCP or plugin side effects. Before any claudex-loop Codex
+call (plan review, build, inspect), back up `~/.codex/config.toml` outside the repo and record its
+SHA256. Then set `enabled = false` on every `[mcp_servers.*]` table and on the write/outbound
+plugins (`gmail`, `sentry`, `vercel`, `build-web-apps`, `browser`, `chrome`, `computer-use`,
+`unified-computer-use`, `codex-app-tools`). When the Codex call finishes or fails, restore the backup
+byte-for-byte and check that the SHA256 matches. Never leave them disabled between runs.
