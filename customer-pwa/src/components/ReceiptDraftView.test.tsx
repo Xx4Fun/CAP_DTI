@@ -414,6 +414,28 @@ describe('ReceiptDraftView', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['a matched merchant', { merchant: { status: 'matched', display_name: 'TEST SHOP' } }, 'Matches selected store'],
+    ['a confidently read different merchant', { extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG', uncertain: false } }, 'Wrong store?'],
+    ['an uncertain merchant read', { extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG', uncertain: true } }, 'Store not confirmed'],
+    ['a deleted selected store', { store: null, extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG' } }, 'Store not confirmed'],
+    ['an OCR mismatch without a merchant name', { merchant: { status: 'mismatch', display_name: null } }, 'Store not confirmed'],
+    ['no merchant text', {}, 'Store not confirmed'],
+  ])('labels the store check for %s without blocking submission', async (_case, overrides, label) => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['photo']) }
+      : { data: { data: reviewData({ evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }], ...overrides }) } });
+    render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    const helper = screen.queryByText(/Receipt shows .* but you selected/);
+    if (label === 'Wrong store?') expect(helper).toHaveTextContent('Receipt shows MERCURY DRUG, but you selected Test shop. You can still submit — DTI will check.');
+    else expect(helper).not.toBeInTheDocument();
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    await userEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeEnabled();
+  });
+
   it('clears acknowledgement when refreshing a changed evidence attempt', async () => {
     let attempt = 1;
     vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')

@@ -37,7 +37,7 @@ interface ReceiptReviewData {
   store: { id: number; store_name: string; address: string } | null;
   items: ReceiptReviewItem[];
   continuity: { status: string; continuity_score?: number; reasons?: string[] } | null;
-  merchant: { status: string; observed?: string[]; display_name?: string | null } | null;
+  merchant: { status: string; observed?: string[]; display_name?: string | null; uncertain?: boolean } | null;
   detected_total: number | null;
   receipt_number?: string | null;
   subtotal?: string | null;
@@ -69,6 +69,16 @@ const RECONCILIATION_MESSAGES: Record<string, string> = {
 };
 
 const UncertainBadge: React.FC<{ label?: string }> = ({ label = 'Uncertain' }) => <span className="receipt-uncertain-badge">{label}</span>;
+
+/** Only a confidently read merchant name that differs from the selected store counts as a wrong store. */
+const isWrongStore = (review: ReceiptReviewData) => review.merchant?.status === 'mismatch' && Boolean(review.merchant.display_name)
+  && review.merchant.uncertain !== true && Boolean(review.store?.store_name);
+
+const StoreCheck: React.FC<{ review: ReceiptReviewData }> = ({ review }) => {
+  if (review.merchant?.status === 'matched') return <span className="receipt-uncertain-badge receipt-store-check--ok">Matches selected store</span>;
+  if (isWrongStore(review)) return <UncertainBadge label="Wrong store?" />;
+  return <span className="receipt-uncertain-badge receipt-store-check--neutral">Store not confirmed</span>;
+};
 
 interface ReceiptProcessingData {
   report_reference: string;
@@ -494,11 +504,14 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       <section className="receipt-review-section" aria-labelledby="system-extraction-heading">
         <h2 id="system-extraction-heading">Details read from your receipt</h2>
         <dl className="receipt-summary">
-          <div><dt>Merchant</dt><dd>{review.merchant?.display_name || 'Not detected'}{review.merchant?.display_name && review.merchant.status !== 'matched' && <span> — Uncertain</span>}</dd></div>
+          <div><dt>Merchant</dt><dd>{review.merchant?.display_name || 'Not detected'} <StoreCheck review={review} /></dd></div>
           <div><dt>Date</dt><dd>{review.transaction_date || 'Not detected'}</dd></div>
           {structured && <div><dt>Receipt no.</dt><dd>{review.receipt_number || 'Not detected'}</dd></div>}
           {!structured && <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <span> — Uncertain</span>}</dd></div>}
         </dl>
+        {isWrongStore(review) && <p className="receipt-field-warning">
+          Receipt shows {review.merchant?.display_name}, but you selected {review.store?.store_name}. You can still submit — DTI will check.
+        </p>}
       <div className="receipt-review-items">
         {items.map((item, index) => {
           const lineTotal = peso(item.line_total ?? item.observed_price);
