@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, FileText, MessageSquare, Paperclip, Send, X } from 'lucide-react';
+import { AlertTriangle, FileText, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
 import type { Conversation, ConversationNotice, StoreMessage } from '../../app/types';
 import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, formatDate } from '../../app/rules';
 import { apiError, isSessionInvalid, vendorApi } from '../../services/vendorApi';
@@ -91,8 +91,8 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     setError(''); setFile(candidate);
   };
 
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const send = async (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
     if (sending || (!draft.trim() && !file)) return;
     setSending(true); setError('');
     try {
@@ -122,11 +122,25 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
 
   return (
     <section className="v-card vendor-messages" aria-label="Messages with DTI Antique">
-      <header className="vendor-messages-header">
-        <MessageSquare size={18} aria-hidden="true" />
-        <div>
-          <h2>Messages with DTI Antique</h2>
-          <p>Ask questions about a notice or send supporting photos. Your formal explanation to a notice is still submitted through Rebuttals.</p>
+      <header className="vendor-messenger-header" aria-label="Conversation with DTI Antique">
+        <div className="vendor-messenger-avatar-wrap">
+          <img
+            src="/branding/dti-logo.svg"
+            alt="DTI Antique Official Seal"
+            className="vendor-messenger-avatar-img"
+          />
+          <span className="vendor-messenger-status-dot" aria-hidden="true" title="Online" />
+        </div>
+        <div className="vendor-messenger-header-info">
+          <div className="vendor-messenger-name-row">
+            <h2 className="vendor-messenger-title">DTI Antique Provincial Office</h2>
+            <span className="vendor-messenger-verified-badge" title="Verified DTI Official">
+              <ShieldCheck size={15} aria-hidden="true" />
+            </span>
+          </div>
+          <p className="vendor-messenger-subtitle">
+            DTI Price Evaluator · <span className="vendor-messenger-online-text">Active now</span>
+          </p>
         </div>
       </header>
 
@@ -184,7 +198,19 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
           </label>
           <label className="vendor-messages-input">
             <span className="sr-only">Message</span>
-            <textarea rows={2} maxLength={CHAT_MAX_BODY} placeholder="Write a message to DTI Antique" value={draft} onChange={(event) => setDraft(event.target.value)} />
+            <textarea
+              rows={1}
+              maxLength={CHAT_MAX_BODY}
+              placeholder="Write a message to DTI Antique"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  void send(event);
+                }
+              }}
+            />
           </label>
           <button type="submit" className="btn btn-primary" aria-label={sending ? 'Sending' : 'Send'} disabled={sending || (!draft.trim() && !file)}>
             <Send size={16} aria-hidden="true" /><span>{sending ? 'Sending…' : 'Send'}</span>

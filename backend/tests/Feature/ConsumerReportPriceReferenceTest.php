@@ -334,6 +334,56 @@ class ConsumerReportPriceReferenceTest extends TestCase
         $response->assertJsonPath('meta.filter_counts.all', 4);
     }
 
+    public function test_the_queue_narrows_to_one_establishment(): void
+    {
+        $other = Store::create([
+            'dti_sec_number' => 'SEC-REF-002', 'store_name' => 'Gaisano Grand Mall', 'owner_name' => 'Other Owner',
+            'latitude' => 10.74, 'longitude' => 121.94, 'address' => 'San Jose, Antique',
+        ]);
+        $mine = $this->report(['status' => 'Submitted']);
+        $this->report(['status' => 'Submitted', 'store_id' => $other->id]);
+        $this->report(['status' => 'Closed', 'store_id' => $other->id]);
+
+        $response = $this->getJson("/api/admin/reports?filter=all&store_id={$this->store->id}")->assertOk();
+
+        $this->assertSame([$mine->id], $response->json('data.*.id'));
+        // Counts describe the establishment in view, so a tab never promises rows the list cannot show.
+        $response->assertJsonPath('meta.filter_counts.all', 1);
+        $response->assertJsonPath('meta.filter_counts.to_review', 1);
+        $response->assertJsonPath('meta.filter_counts.rejected', 0);
+    }
+
+    public function test_the_date_range_uses_the_receipt_date_the_table_shows(): void
+    {
+        // Receipt date read from the receipt: inside the range although it was submitted much later.
+        $fromReceipt = $this->report([
+            'status' => 'Submitted', 'raw_ocr_json' => ['transaction_date' => '2026-08-10'], 'submitted_at' => '2026-09-20 09:00:00',
+        ]);
+        // No receipt date, so the submission date stands in for it, exactly as observed_at does.
+        $fromSubmission = $this->report(['status' => 'Submitted', 'raw_ocr_json' => [], 'submitted_at' => '2026-08-12 09:00:00']);
+        // Submitted inside the range, but the receipt itself predates it.
+        $this->report(['status' => 'Submitted', 'raw_ocr_json' => ['transaction_date' => '2026-07-01'], 'submitted_at' => '2026-08-11 09:00:00']);
+        $this->report(['status' => 'Closed', 'raw_ocr_json' => ['transaction_date' => '2026-09-01']]);
+
+        $response = $this->getJson('/api/admin/reports?filter=all&date_from=2026-08-09&date_to=2026-08-12')->assertOk();
+
+        $ids = $response->json('data.*.id');
+        sort($ids);
+        $this->assertSame([$fromReceipt->id, $fromSubmission->id], $ids);
+        $response->assertJsonPath('meta.filter_counts.all', 2);
+        $response->assertJsonPath('meta.filter_counts.rejected', 0);
+
+        // Either bound alone is a valid range.
+        $this->getJson('/api/admin/reports?filter=all&date_to=2026-07-15')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/admin/reports?filter=all&date_from=2026-08-30')->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_a_reversed_date_range_is_rejected(): void
+    {
+        $this->getJson('/api/admin/reports?date_from=2026-08-12&date_to=2026-08-09')
+            ->assertStatus(422)->assertJsonValidationErrors('date_to');
+    }
+
     public function test_a_status_outside_the_filter_map_stays_reachable_instead_of_failing(): void
     {
         // consumer_reports.status is an unconstrained string, and cancelling a referral restores a

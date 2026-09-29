@@ -154,7 +154,11 @@ export const adminApi = {
   async getReports(): Promise<ConsumerReportRecord[]> {
     return data(await api.get('/admin/reports'))
   },
-  async getReportPage(params: { page: number; per_page: number; filter?: ConsumerReportFilter }): Promise<{
+  async getReportPage(params: {
+    page: number; per_page: number; filter?: ConsumerReportFilter
+    /** Scope applied to the rows and to filter_counts; dates are receipt dates (YYYY-MM-DD). */
+    store_id?: number; date_from?: string; date_to?: string
+  }): Promise<{
     data: ConsumerReportRecord[]
     meta: {
       current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null

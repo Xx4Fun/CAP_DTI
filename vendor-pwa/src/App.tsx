@@ -5,6 +5,7 @@ import { canRespond, isFinished } from './app/rules';
 import { clearSession, loadSession, saveSession } from './app/session';
 import { apiError, isSessionInvalid, vendorApi } from './services/vendorApi';
 import { VendorNavbar } from './components/layout/VendorNavbar';
+import { VendorSidebar } from './components/layout/VendorSidebar';
 import { VendorBottomNav } from './components/layout/VendorBottomNav';
 import { ComplianceScorecard } from './components/dashboard/ComplianceScorecard';
 import { NoticeList } from './components/notices/NoticeList';
@@ -240,18 +241,40 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
 
   if (!overview) {
     return (
-      <div className="vendor-app">
+      <div className="vendor-app vendor-loading-screen">
         <div className="v-card portal-status" role={loadError ? 'alert' : 'status'}>
           {loadError ? (
-            <>
-              <AlertCircle size={32} color="var(--danger-color)" style={{ margin: '0 auto 10px' }} />
-              <p>{loadError}</p>
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '14px' }}>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => void loadCore()}><RotateCw size={14} /><span>Retry</span></button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void logout()}>Sign out</button>
+            <div className="portal-error-card-content">
+              <div className="portal-error-icon-badge">
+                <AlertCircle size={32} color="var(--danger-color)" />
               </div>
-            </>
-          ) : 'Loading your establishment…'}
+              <h2 className="portal-status-title">Unable to Load Establishment</h2>
+              <p className="portal-status-text">{loadError}</p>
+              <div className="portal-status-actions">
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => void loadCore()}>
+                  <RotateCw size={14} />
+                  <span>Retry</span>
+                </button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void logout()}>
+                  Sign out
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="portal-loading-body">
+              <div className="portal-loading-seal-wrap">
+                <img src="/branding/dti-logo.svg" alt="DTI Official Seal" className="portal-loading-logo" />
+                <div className="portal-loading-spinner-ring" aria-hidden="true" />
+              </div>
+              <h2 className="portal-loading-title">Loading your establishment…</h2>
+              <p className="portal-loading-desc">
+                Synchronizing store profile, compliance records, and active regulatory notices.
+              </p>
+              <div className="portal-loading-bar-wrap" aria-hidden="true">
+                <div className="portal-loading-bar-fill" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -259,25 +282,9 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
 
   return (
     <div className="vendor-app">
-      {!online && (
-        <div className="offline-banner" role="status">
-          <WifiOff size={15} />
-          <span>You are offline. Showing the last loaded information; responses need a connection.</span>
-        </div>
-      )}
-
-      {loadError && (
-        <div className="offline-banner" role="alert">
-          <AlertCircle size={15} />
-          <span>{loadError} Showing the last loaded information.</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadCore()}>Retry</button>
-        </div>
-      )}
-
-      <VendorNavbar
+      <VendorSidebar
         stores={overview.stores}
         activeStoreId={storeId}
-        hasPendingNotices={openNotices.length > 0}
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
@@ -286,82 +293,123 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         pendingNoticeCount={openNotices.length}
         unreadMessageCount={unreadMessages}
         online={online}
+        hasPendingNotices={openNotices.length > 0}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
         onOpenNotifications={() => setSettingsOpen(true)}
         onLogout={() => void logout()}
       />
 
-      {toast && (
-        <div role="status" className="vendor-toast">
-          <CheckCircle2 size={16} color="#4ADE80" />
-          <span>{toast}</span>
-        </div>
-      )}
-
-      <main className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''}`}>
-        {!store ? (
-          <div className="v-card portal-status">
-            <p><strong>No establishment is linked to this account.</strong></p>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>Ask DTI Antique to send an invitation for your establishment.</p>
+      <div className="vendor-main-wrapper">
+        {!online && (
+          <div className="offline-banner" role="status">
+            <WifiOff size={15} />
+            <span>You are offline. Showing the last loaded information; responses need a connection.</span>
           </div>
-        ) : (
-          <>
-            {activeTab === 'overview' && (
-              <ComplianceScorecard
-                store={store}
-                emergency={overview.emergency}
-                activeNoticeCount={openNotices.length}
-                onNavigateTab={setActiveTab}
-                activeNotice={activeNotice}
-                onViewNotice={setSelectedNotice}
-                onRespondNotice={startResponse}
-              />
-            )}
-
-            {activeTab === 'notices' && (
-              <NoticeList notices={storeNotices} onViewNotice={setSelectedNotice} onRespondNotice={startResponse} />
-            )}
-
-            {activeTab === 'rebuttals' && (respondingToId !== null && !respondingTo ? (
-              <div className="v-card portal-status" role="alert">
-                <p><strong>This notice is no longer available to this account.</strong></p>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>It may have been withdrawn or your establishment link changed. Contact DTI Antique if you still need to respond.</p>
-                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: '12px' }} onClick={() => setRespondingTo(null)}>Return</button>
-              </div>
-            ) : respondingTo ? (
-              <RebuttalWizard
-                key={respondingTo.id}
-                notice={respondingTo}
-                onCancel={() => setRespondingTo(null)}
-                onSubmit={(draft) => submitResponse(respondingTo, draft)}
-              />
-            ) : (
-              <RebuttalHistory
-                notices={storeNotices}
-                onViewNotice={setSelectedNotice}
-                onStartNewRebuttal={() => {
-                  const next = storeNotices.find((notice) => canRespond(notice));
-                  if (next) startResponse(next);
-                  else showToast('No notice is currently open for a response.');
-                }}
-              />
-            ))}
-
-            {activeTab === 'messages' && (
-              <MessagesView token={token} storeId={store.id} onSessionInvalid={endSession} onRead={refreshAfterRead} onViewNotice={(id) => {
-                setSelectedNoticeId(id);
-                if (!notices.some((notice) => notice.id === id)) void loadCore();
-              }} />
-            )}
-
-            {activeTab === 'srp' && <SrpDirectory catalog={srp} error={srpError} onRetry={() => void loadSrp()} />}
-
-            {activeTab === 'advisories' && (
-              <AdvisoriesView advisories={advisories} emergency={overview.emergency} error={advisoriesError} onRetry={() => void loadAdvisories()} />
-            )}
-          </>
         )}
-      </main>
+
+        {loadError && (
+          <div className="offline-banner" role="alert">
+            <AlertCircle size={15} />
+            <span>{loadError} Showing the last loaded information.</span>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void loadCore()}>Retry</button>
+          </div>
+        )}
+
+        <VendorNavbar
+          stores={overview.stores}
+          activeStoreId={storeId}
+          hasPendingNotices={openNotices.length > 0}
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            if (tab !== 'rebuttals') setRespondingTo(null);
+          }}
+          pendingNoticeCount={openNotices.length}
+          unreadMessageCount={unreadMessages}
+          online={online}
+          onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
+          onOpenNotifications={() => setSettingsOpen(true)}
+          onLogout={() => void logout()}
+        />
+
+        {toast && (
+          <div role="status" className="vendor-toast">
+            <CheckCircle2 size={16} color="#4ADE80" />
+            <span>{toast}</span>
+          </div>
+        )}
+
+        <main className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''} ${activeTab === 'messages' ? 'vendor-content--messages' : ''}`}>
+          {!store ? (
+            <div className="v-card portal-status">
+              <p><strong>No establishment is linked to this account.</strong></p>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>Ask DTI Antique to send an invitation for your establishment.</p>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'overview' && (
+                <ComplianceScorecard
+                  store={store}
+                  emergency={overview.emergency}
+                  activeNoticeCount={openNotices.length}
+                  onNavigateTab={setActiveTab}
+                  activeNotice={activeNotice}
+                  onViewNotice={setSelectedNotice}
+                  onRespondNotice={startResponse}
+                />
+              )}
+
+              {activeTab === 'notices' && (
+                <NoticeList
+                  notices={storeNotices}
+                  onViewNotice={setSelectedNotice}
+                  onRespondNotice={startResponse}
+                  onNavigateRebuttals={() => setActiveTab('rebuttals')}
+                />
+              )}
+
+              {activeTab === 'rebuttals' && (respondingToId !== null && !respondingTo ? (
+                <div className="v-card portal-status" role="alert">
+                  <p><strong>This notice is no longer available to this account.</strong></p>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>It may have been withdrawn or your establishment link changed. Contact DTI Antique if you still need to respond.</p>
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: '12px' }} onClick={() => setRespondingTo(null)}>Return</button>
+                </div>
+              ) : respondingTo ? (
+                <RebuttalWizard
+                  key={respondingTo.id}
+                  notice={respondingTo}
+                  onCancel={() => setRespondingTo(null)}
+                  onSubmit={(draft) => submitResponse(respondingTo, draft)}
+                />
+              ) : (
+                <RebuttalHistory
+                  notices={storeNotices}
+                  onViewNotice={setSelectedNotice}
+                  onStartNewRebuttal={() => {
+                    const next = storeNotices.find((notice) => canRespond(notice));
+                    if (next) startResponse(next);
+                    else showToast('No notice is currently open for a response.');
+                  }}
+                  onBackToNotices={() => setActiveTab('notices')}
+                />
+              ))}
+
+              {activeTab === 'messages' && (
+                <MessagesView token={token} storeId={store.id} onSessionInvalid={endSession} onRead={refreshAfterRead} onViewNotice={(id) => {
+                  setSelectedNoticeId(id);
+                  if (!notices.some((notice) => notice.id === id)) void loadCore();
+                }} />
+              )}
+
+              {activeTab === 'srp' && <SrpDirectory catalog={srp} error={srpError} onRetry={() => void loadSrp()} />}
+
+              {activeTab === 'advisories' && (
+                <AdvisoriesView advisories={advisories} emergency={overview.emergency} error={advisoriesError} onRetry={() => void loadAdvisories()} />
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
       <NoticeDetailModal notice={selectedNotice} onClose={() => setSelectedNotice(null)} onStartRebuttal={startResponse} onOpenDocument={openDocument} />
 

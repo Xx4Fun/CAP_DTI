@@ -348,8 +348,18 @@ export const StoreManager: React.FC = () => {
               {/* Scrollable Store Cards List */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {loading && (
-                  <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
-                    Loading establishments...
+                  <div className="store-sidebar-skeleton-list" aria-label="Loading establishments" role="status">
+                    <span className="sr-only">Loading establishments...</span>
+                    {Array.from({ length: 4 }, (_, idx) => (
+                      <div key={idx} className="store-card-skeleton" aria-hidden="true">
+                        <div className="store-skeleton-header">
+                          <div className="admin-skeleton-block" style={{ height: '16px', width: '60%', borderRadius: '4px' }} />
+                          <div className="admin-skeleton-block" style={{ height: '18px', width: '25%', borderRadius: '999px' }} />
+                        </div>
+                        <div className="admin-skeleton-block" style={{ height: '13px', width: '85%', borderRadius: '4px', marginTop: '6px' }} />
+                        <div className="admin-skeleton-block" style={{ height: '12px', width: '40%', borderRadius: '4px', marginTop: '6px' }} />
+                      </div>
+                    ))}
                   </div>
                 )}
 

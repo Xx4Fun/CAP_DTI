@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, FileText, MessageSquare, Send, BookOpen, Megaphone } from 'lucide-react';
+import { Home, FileText, MessageSquare, BookOpen, Megaphone } from 'lucide-react';
 import type { ActiveTab } from '../../app/types';
 
 interface VendorBottomNavProps {
@@ -15,6 +15,9 @@ export const VendorBottomNav: React.FC<VendorBottomNavProps> = ({
   pendingNoticeCount,
   unreadMessageCount = 0,
 }) => {
+  // Option A: Notices and Rebuttals are unified under the Notices tab on mobile
+  const isNoticesActive = activeTab === 'notices' || activeTab === 'rebuttals';
+
   return (
     <nav className="vendor-bottom-nav" aria-label="Main Navigation">
       <button
@@ -30,7 +33,7 @@ export const VendorBottomNav: React.FC<VendorBottomNavProps> = ({
       <button
         type="button"
         aria-label="Notices Tab"
-        className={`nav-tab-btn ${activeTab === 'notices' ? 'active' : ''}`}
+        className={`nav-tab-btn ${isNoticesActive ? 'active' : ''}`}
         onClick={() => onTabChange('notices')}
       >
         <FileText size={20} />
@@ -51,16 +54,6 @@ export const VendorBottomNav: React.FC<VendorBottomNavProps> = ({
         {unreadMessageCount > 0 && (
           <span className="nav-pill-count">{unreadMessageCount}</span>
         )}
-      </button>
-
-      <button
-        type="button"
-        aria-label="Rebuttals Tab"
-        className={`nav-tab-btn ${activeTab === 'rebuttals' ? 'active' : ''}`}
-        onClick={() => onTabChange('rebuttals')}
-      >
-        <Send size={20} />
-        <span>Rebuttals</span>
       </button>
 
       <button
