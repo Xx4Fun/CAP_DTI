@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  CheckCircle2,
+  Circle,
   AlertCircle,
+  ArrowLeft,
   Download,
-  FileText,
   Lock,
   Maximize2,
   RefreshCw,
@@ -16,9 +18,10 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
+import type { ConsumerReportFilter, ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
 import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
+import { ItemReferenceVerdict } from './ItemReferenceVerdict'
 
 type ItemDecision = {
   item_id: number
@@ -41,7 +44,8 @@ export const CitizenTipReview: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [reportPage, setReportPage] = useState({ current_page: 1, last_page: 1, per_page: 20, total: 0, from: null as number | null, to: null as number | null })
-  const [filter, setFilter] = useState<'all' | 'pending' | 'validated' | 'dismissed'>('all')
+  const [filter, setFilter] = useState<ConsumerReportFilter>('to_review')
+  const [filterCounts, setFilterCounts] = useState<Partial<Record<ConsumerReportFilter, number>>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [decisionIntent, setDecisionIntent] = useState<'verify' | 'close'>('verify')
   const [verificationChosen, setVerificationChosen] = useState(false)
@@ -59,29 +63,44 @@ export const CitizenTipReview: React.FC = () => {
   const [itemDecisions, setItemDecisions] = useState<Record<number, ItemDecision>>({})
   /** Identifies the newest evidence fetch, so a slower earlier one cannot replace it. */
   const evidenceRequestRef = useRef(0)
+  /**
+   * The decision values as they stood when the report was opened. `correct` must be sent only when
+   * the evaluator actually changed an extracted value, and live state cannot answer that: it is
+   * seeded from extraction, so comparing against it would call every report a correction.
+   */
+  const decisionBaselineRef = useRef<Record<number, ItemDecision> | null>(null)
+
+  /**
+   * URL state, mirroring FieldMonitoringRecords: opening a report is a navigation, so browser Back
+   * must return to the list with the filter intact rather than leaving the admin module entirely.
+   */
+  const updateUrl = useCallback((changes: Record<string, string | number | null>) => {
+    const url = new URL(window.location.href)
+    Object.entries(changes).forEach(([key, value]) => value === null || value === ''
+      ? url.searchParams.delete(key)
+      : url.searchParams.set(key, String(value)))
+    window.history.pushState({ consumerReports: true }, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [])
 
   useEffect(() => {
     setLoading(true)
     setError('')
-    const pagedLoader = (adminApi as any).getReportPage
-    const request = typeof pagedLoader === 'function'
-      ? pagedLoader.call(adminApi, { page: reportPage.current_page, per_page: reportPage.per_page })
-      : adminApi.getReports().then((data) => ({ data, meta: {
-          current_page: reportPage.current_page,
-          last_page: 1,
-          per_page: reportPage.per_page,
-          total: data.length,
-          from: data.length ? 1 : null,
-          to: data.length || null,
-        } }))
-    void request.then((response: { data: ConsumerReportRecord[]; meta: typeof reportPage }) => {
-      setReports(response.data)
-      setReportPage(response.meta)
-    }).catch(() => {
-      setReports([])
-      setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
-    }).finally(() => setLoading(false))
-  }, [reportPage.current_page, reportPage.per_page])
+    // Filtering is server-side: the pills describe the whole queue, not the 20 rows that happen to
+    // be loaded, and the buckets are stored statuses rather than guesses at the status text.
+    //
+    // No `typeof adminApi.getReportPage === 'function'` guard here. It can only be false against a
+    // partial test mock, and its synthetic meta omitted `from`/`to`, which broke the typecheck. The
+    // mock supplies getReportPage via mockReportPage(), so production code needs no fallback.
+    void adminApi.getReportPage({ page: reportPage.current_page, per_page: reportPage.per_page, filter })
+      .then((response) => {
+        setReports(response.data)
+        setReportPage(response.meta)
+        if (response.meta.filter_counts) setFilterCounts(response.meta.filter_counts)
+      }).catch(() => {
+        setReports([])
+        setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
+      }).finally(() => setLoading(false))
+  }, [reportPage.current_page, reportPage.per_page, filter])
 
   useEffect(() => {
     if (!verificationChosen) return
@@ -98,6 +117,46 @@ export const CitizenTipReview: React.FC = () => {
     }
   }, [evidenceUrl])
 
+  /**
+   * Browser Back returns to the list with the filter it was left on. Scroll position is restored
+   * too: FieldMonitoringRecords does not, which drops the evaluator at the top of a long list
+   * after every report.
+   */
+  const listScrollRef = useRef(0)
+  useEffect(() => {
+    const restore = () => {
+      const params = new URLSearchParams(window.location.search)
+      const reportId = Number(params.get('report'))
+      const nextFilter = params.get('report_filter') as ConsumerReportFilter | null
+      if (nextFilter) setFilter(nextFilter)
+      if (reportId > 0) {
+        const match = reports.find((report) => report.id === reportId)
+        if (match) selectReport(match)
+      } else {
+        setSelected(null)
+        window.requestAnimationFrame(() => document.querySelector('.admin-panel')?.scrollTo({ top: listScrollRef.current }))
+      }
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+    // selectReport is stable for the lifetime of a render pass and reads the report it is given.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports])
+
+  /** Opening a report is a navigation: it replaces the list, so it pushes history. */
+  const openReport = (report: ConsumerReportRecord) => {
+    listScrollRef.current = document.querySelector('.admin-panel')?.scrollTop ?? 0
+    selectReport(report)
+    updateUrl({ report: report.id, report_filter: filter })
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.consumer-report-detail h2')?.focus())
+  }
+
+  const backToList = () => {
+    setSelected(null)
+    setError('')
+    updateUrl({ report: null })
+  }
+
   const selectReport = (report: ConsumerReportRecord) => {
     // Any evidence fetch still in flight belongs to the previous report and must never paint into this one.
     const request = ++evidenceRequestRef.current
@@ -113,14 +172,25 @@ export const CitizenTipReview: React.FC = () => {
     setDecisionIntent(report.status.toLowerCase().includes('dismiss') ? 'close' : 'verify')
     setVerificationChosen(false)
     setFieldOfficerId('')
-    setItemDecisions(Object.fromEntries((report.items ?? []).map((item) => [item.id, {
-      item_id: item.id,
-      commodity_key: item.commodity_key || '',
-      commodity_name: item.commodity_name || item.item_name || '',
-      receipt_price: suggestedUnitPrice(item) ?? '',
-      observed_at: report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-      regulatory_finding: String(item.evaluator_decision_json?.regulatory_finding || ''),
-    }])))
+    const observedAt = report.observed_at
+      // The purchase date decides which SRP revision applies. Submission can be weeks later, and
+      // using it silently judged older receipts against a bulletin that did not exist yet.
+      || (report.submitted_at ? report.submitted_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
+    const seeded = Object.fromEntries((report.items ?? []).map((item) => {
+      // A previously recorded decision is the baseline when one exists; otherwise the extraction is.
+      const saved = item.evaluator_decision_json as Partial<ItemDecision> | null | undefined
+      return [item.id, {
+        item_id: item.id,
+        commodity_key: String(saved?.commodity_key ?? item.commodity_key ?? ''),
+        commodity_name: String(saved?.commodity_name ?? item.commodity_name ?? item.item_name ?? ''),
+        receipt_price: typeof saved?.receipt_price === 'number' ? saved.receipt_price : (suggestedUnitPrice(item) ?? ''),
+        observed_at: String(saved?.observed_at ?? observedAt),
+        regulatory_finding: String(saved?.regulatory_finding ?? ''),
+      } satisfies ItemDecision]
+    }))
+    setItemDecisions(seeded)
+    // Snapshot for the correct-vs-validate decision; see decisionBaselineRef.
+    decisionBaselineRef.current = JSON.parse(JSON.stringify(seeded))
 
     if (evidenceUrl) {
       URL.revokeObjectURL(evidenceUrl)
@@ -266,18 +336,12 @@ export const CitizenTipReview: React.FC = () => {
     }
   }
 
-  const getStatusBadgeStyle = (status: string) => {
+  /** Names the status tone; admin.css owns the colours. */
+  const getStatusTone = (status: string) => {
     const s = status.toLowerCase()
-    if (s.includes('validate') || s.includes('violation') || s.includes('loi') || s.includes('field')) {
-      return { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }
-    }
-    if (s.includes('pending') || s.includes('under') || s.includes('submit')) {
-      return { background: '#fffbeb', color: '#b45309', border: '1px solid #fed7aa' }
-    }
-    if (s.includes('dismiss') || s.includes('no_violation') || s.includes('reject') || s.includes('close')) {
-      return { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }
-    }
-    return { background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }
+    if (s.includes('validate') || s.includes('violation') || s.includes('loi') || s.includes('field')) return 'accent'
+    if (s.includes('pending') || s.includes('under') || s.includes('submit')) return 'warn'
+    return 'muted'
   }
 
   const getReadableStatus = (status: string) => {
@@ -288,41 +352,27 @@ export const CitizenTipReview: React.FC = () => {
     return 'Submitted'
   }
 
-  const pendingCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('pending') || s.includes('under')
-  }).length
-
-  const validatedCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('validate') || s.includes('violation') || s.includes('loi')
-  }).length
-
-  const dismissedCount = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    return s.includes('dismiss') || s.includes('no_violation') || s.includes('reject')
-  }).length
-
+  /**
+   * Search still narrows the loaded page. Status filtering moved to the server, so the counts on
+   * the pills come from meta.filter_counts and describe the whole queue.
+   */
   const filteredReports = reports.filter((r) => {
-    const s = r.status.toLowerCase()
-    const matchesFilter =
-      filter === 'all'
-        ? true
-        : filter === 'pending'
-          ? s.includes('pending') || s.includes('under')
-          : filter === 'validated'
-            ? s.includes('validate') || s.includes('violation') || s.includes('loi')
-            : s.includes('dismiss') || s.includes('no_violation') || s.includes('reject')
-
-    if (!matchesFilter) return false
     if (!searchTerm.trim()) return true
-
     const query = searchTerm.toLowerCase()
-    const refMatch = r.report_reference.toLowerCase().includes(query)
-    const storeMatch = (r.store_name || '').toLowerCase().includes(query)
-    const rawMatch = JSON.stringify(r.raw_ocr_json || '').toLowerCase().includes(query)
-    return refMatch || storeMatch || rawMatch
+    return r.report_reference.toLowerCase().includes(query)
+      || (r.store_name || '').toLowerCase().includes(query)
+      || JSON.stringify(r.raw_ocr_json || '').toLowerCase().includes(query)
   })
+
+  /** Workflow states, in the order an evaluator meets them. */
+  const FILTERS: Array<{ id: ConsumerReportFilter; label: string; tone: 'accent' | 'warn' | 'muted' }> = [
+    { id: 'to_review', label: 'To review', tone: 'warn' },
+    { id: 'with_officer', label: 'With field officer', tone: 'accent' },
+    { id: 'violations', label: 'Violations', tone: 'accent' },
+    { id: 'no_violation', label: 'No violation', tone: 'muted' },
+    { id: 'rejected', label: 'Rejected', tone: 'muted' },
+    { id: 'all', label: 'All', tone: 'muted' },
+  ]
 
   const parseOcrItems = (rawJson: Record<string, unknown> | null) => {
     if (!rawJson) return []
@@ -332,11 +382,87 @@ export const CitizenTipReview: React.FC = () => {
 
   const ocrItems = parseOcrItems(selected?.raw_ocr_json ?? null)
   const hasItemReview = (selected?.items?.length ?? 0) > 0
+
+  /** The suggestion an evaluator picked, matched by the commodity key the option submitted. */
+  const candidateFor = (item: ConsumerReportItemRecord, commodityKey: string) =>
+    (item.reference?.match_candidates ?? []).find((candidate) => candidate.commodity_key === commodityKey)
+
+  /**
+   * Report-level roll-up of the per-item references the server resolved. Items with no applicable
+   * reference are counted separately and never folded into "within reference", so an unmatched line
+   * can never read as compliant.
+   */
+  const comparisonSummary = (selected?.items ?? []).reduce(
+    (totals, item) => {
+      const above = item.reference?.is_above_reference
+      if (above === true) {
+        totals.above += 1
+        totals.compared += 1
+        totals.excess += item.reference?.peso_difference ?? 0
+      } else if (above === false) {
+        totals.within += 1
+        totals.compared += 1
+      } else {
+        totals.unresolved += 1
+      }
+      totals.total += 1
+      return totals
+    },
+    { above: 0, within: 0, unresolved: 0, compared: 0, total: 0, excess: 0 },
+  )
   const itemReviewComplete = hasItemReview && selected!.items!.every((item) => {
     const decision = itemDecisions[item.id]
     return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
       && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
   })
+
+  /** Per-item completeness, so progress and the blocking reason share one definition. */
+  const isItemDecided = (itemId: number) => {
+    const decision = itemDecisions[itemId]
+    return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
+      && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
+  }
+
+  const decidedItemCount = (selected?.items ?? []).filter((item) => isItemDecided(item.id)).length
+
+  /**
+   * Why the submit is blocked, in words. Previously the button was simply dimmed, which on a
+   * 12-item receipt left the evaluator hunting for the row that was still missing a field.
+   */
+  const blockingReason = (() => {
+    if (!reason) return 'Add a decision reason'
+    const pending = (selected?.items ?? []).filter((item) => !isItemDecided(item.id))
+    if (pending.length === 0) return ''
+    const first = pending[0]
+    const missing = (() => {
+      const decision = itemDecisions[first.id]
+      if (!decision?.commodity_key) return 'commodity'
+      if (typeof decision.receipt_price !== 'number') return 'unit price'
+      return 'finding'
+    })()
+    return pending.length === 1
+      ? `${first.item_name || `Item ${first.sequence + 1}`} still needs a ${missing}`
+      : `${pending.length} items incomplete — next: ${first.item_name || `Item ${first.sequence + 1}`} needs a ${missing}`
+  })()
+
+  /**
+   * Whether this submission edits values the system extracted, which decides `correct` vs
+   * `validate` and therefore which audit event is recorded. Compared against a snapshot taken
+   * when the report was selected, not against live state — live state is seeded from extraction,
+   * so comparing with it would mark untouched reports as corrected.
+   */
+  const isCorrection = (() => {
+    const baseline = decisionBaselineRef.current
+    if (!baseline) return false
+    return Object.entries(itemDecisions).some(([itemId, decision]) => {
+      const original = baseline[Number(itemId)]
+      if (!original) return true
+      return original.commodity_key !== decision.commodity_key
+        || original.commodity_name !== decision.commodity_name
+        || original.receipt_price !== decision.receipt_price
+        || original.observed_at !== decision.observed_at
+    })
+  })()
 
   const showEvidenceAsset = async (asset: ReceiptEvidenceAssetRecord) => {
     if (!selected) return
@@ -380,236 +506,127 @@ export const CitizenTipReview: React.FC = () => {
   const detectedMerchant = typeof merchantResult?.display_name === 'string' ? merchantResult.display_name : null
 
   return (
-    <div className="citizen-tip-review-workspace" style={{ display: 'grid', gap: '1.25rem', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
-      {/* PAGE HEADER: DTI Regulatory Clean Header */}
-      <div
-        className="review-header-bar"
-        style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '12px',
-          padding: '1.15rem 1.5rem',
-          display: 'grid',
-          gap: '1rem',
-          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-              <h2
-                aria-label="Consumer Reports — Formal Receipt OCR Review Queue"
-                style={{ margin: 0, fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}
-              >
-                Consumer Reports
-              </h2>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
-                Normal Market Protocol
-              </span>
+    <div className="citizen-tip-review-workspace consumer-report-panel">
+      {!selected && (
+        <div className="review-header-bar consumer-report-card consumer-report-header">
+          <div className="consumer-report-header-row">
+            <div>
+              <div className="consumer-report-title">
+                <h2 aria-label="Consumer Reports — Formal Receipt OCR Review Queue">Consumer Reports</h2>
+                <span className="consumer-report-protocol">
+                  <span className="consumer-report-protocol-dot" />
+                  Select a report to see the applicable protocol
+                </span>
+              </div>
+              <p className="consumer-report-subtitle">
+                Review submitted consumer price concerns and determine the next action.
+              </p>
             </div>
-            <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-              Review submitted consumer price concerns and determine the next action.
-            </p>
-          </div>
 
-          {/* Unified Status Filter Row */}
-          <div className="status-filter-pills" style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className={`filter-pill ${filter === 'all' ? 'active' : ''}`}
-              onClick={() => setFilter('all')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'all' ? '1.5px solid #1d4ed8' : '1px solid #e2e8f0',
-                background: filter === 'all' ? '#eff6ff' : '#ffffff',
-                color: filter === 'all' ? '#1d4ed8' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Reports on this page ({reports.length})
-            </button>
-
-            <button
-              type="button"
-              className={`filter-pill ${filter === 'pending' ? 'active' : ''}`}
-              onClick={() => setFilter('pending')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'pending' ? '1.5px solid #d97706' : '1px solid #e2e8f0',
-                background: filter === 'pending' ? '#fffbeb' : '#ffffff',
-                color: filter === 'pending' ? '#b45309' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Pending Review ({pendingCount})
-            </button>
-
-            <button
-              type="button"
-              aria-label={`Field Verification / Validated / LOI Issued (${validatedCount})`}
-              className={`filter-pill ${filter === 'validated' ? 'active' : ''}`}
-              onClick={() => setFilter('validated')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'validated' ? '1.5px solid #1d4ed8' : '1px solid #e2e8f0',
-                background: filter === 'validated' ? '#eff6ff' : '#ffffff',
-                color: filter === 'validated' ? '#1d4ed8' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Field Verification ({validatedCount})
-            </button>
-
-            <button
-              type="button"
-              aria-label={`Closed / Dismissed (${dismissedCount})`}
-              className={`filter-pill ${filter === 'dismissed' ? 'active' : ''}`}
-              onClick={() => setFilter('dismissed')}
-              style={{
-                padding: '0.4rem 0.85rem',
-                borderRadius: '8px',
-                border: filter === 'dismissed' ? '1.5px solid #64748b' : '1px solid #e2e8f0',
-                background: filter === 'dismissed' ? '#f1f5f9' : '#ffffff',
-                color: filter === 'dismissed' ? '#334155' : '#475569',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              Closed ({dismissedCount})
-            </button>
+            {/* One pill per bucket. */}
+            <div className="status-filter-pills consumer-report-filters">
+              {FILTERS.map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
+                  onClick={() => { setFilter(pill.id); setReportPage((current) => ({ ...current, current_page: 1 })) }}
+                >
+                  {pill.label}
+                  {filterCounts[pill.id] === undefined ? '' : ` (${filterCounts[pill.id]})`}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 3-COLUMN WORKSPACE: LEFT (Queue) -> CENTER (Evidence) -> RIGHT (Finding & Decision) */}
-      <div
-        className="admin-split"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '300px minmax(320px, 1fr) minmax(340px, 1.15fr)',
-          gap: '1.25rem',
-          alignItems: 'start',
-        }}
-      >
-        {/* =========================================================================
-            LEFT COLUMN: Report Queue Inbox
-            ========================================================================= */}
-        <div
-          className="admin-card"
-          style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '12px',
-            padding: '1rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <FileText size={16} color="#1d4ed8" /> Consumer Reports
-            </h3>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
-              {filteredReports.length}
-            </span>
-          </div>
-
-          {/* Compact Search Input */}
-          <div style={{ position: 'relative', width: '100%' }}>
-            <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-            <input
-              type="text"
-              placeholder="Search reference, store..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.45rem 0.65rem 0.45rem 2rem',
-                border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-                fontSize: '0.82rem',
-                outline: 'none',
-                background: '#f8fafc',
-                boxSizing: 'border-box',
-              }}
-            />
+      {/* LIST OR DETAIL, never both. One report at full width gets the whole panel. */}
+      {!selected ? (
+        <section className="admin-table-card consumer-report-list" aria-label="Consumer reports">
+          <div className="consumer-report-list-head">
+            <div className="admin-search-field consumer-report-search">
+              <Search size={14} />
+              <input
+                type="text"
+                placeholder="Search reference, store..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
           </div>
 
           {loading && (
-            <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
-              <RefreshCw size={16} className="spin-icon" style={{ margin: '0 auto 0.4rem', color: '#1d4ed8' }} />
+            <div className="consumer-report-queue-empty">
+              <RefreshCw size={16} className="spin-icon" />
               Loading reports...
             </div>
           )}
 
           {!loading && filteredReports.length === 0 && (
-            <div style={{ padding: '2rem 0.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.82rem', background: '#f8fafc', borderRadius: '8px' }}>
-              <Shield size={20} style={{ margin: '0 auto 0.35rem', color: '#94a3b8' }} />
-              <div style={{ fontWeight: 600, color: '#334155' }}>No reports</div>
+            <div className="consumer-report-queue-empty has-surface">
+              <Shield size={20} />
+              <div className="consumer-report-queue-empty-title">No reports in this view</div>
             </div>
           )}
 
-          {/* Compact Inbox List */}
-          <div className="admin-list" style={{ display: 'grid', gap: '0.5rem', maxHeight: '640px', overflowY: 'auto', paddingRight: '0.15rem' }}>
-            {filteredReports.map((report) => {
-              const isSelected = selected?.id === report.id
-              const badgeStyle = getStatusBadgeStyle(report.status)
-              const readableStatus = getReadableStatus(report.status)
+          {!loading && filteredReports.length > 0 && (
+            <div className="admin-table-wrap">
+              <table className="admin-data-table consumer-report-table">
+                <caption className="sr-only">Consumer reports awaiting or completed review</caption>
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Store</th>
+                    <th>Receipt date</th>
+                    <th className="is-numeric">Items</th>
+                    <th className="is-numeric">Above SRP</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReports.map((report) => {
+                    const above = report.above_reference_count ?? 0
+                    return (
+                      <tr
+                        key={report.id}
+                        className="consumer-report-table-row"
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open ${report.report_reference}`}
+                        onClick={() => openReport(report)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openReport(report)
+                          }
+                        }}
+                      >
+                        <td data-label="Reference"><strong>{report.report_reference}</strong></td>
+                        <td data-label="Store">{report.store_name || 'Store unmapped'}</td>
+                        <td data-label="Receipt date">
+                          {report.observed_at
+                            || (report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable')}
+                        </td>
+                        <td data-label="Items" className="is-numeric">{report.items?.length ?? 0}</td>
+                        <td data-label="Above SRP" className="is-numeric">
+                          {above > 0
+                            ? <span className="consumer-report-above-badge">{above}</span>
+                            : <span className="consumer-report-table-muted">0</span>}
+                        </td>
+                        <td data-label="Status">
+                          <span className={`consumer-report-status tone-${getStatusTone(report.status)}`}>
+                            {getReadableStatus(report.status)}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-              return (
-                <button
-                  key={report.id}
-                  onClick={() => selectReport(report)}
-                  style={{
-                    display: 'grid',
-                    textAlign: 'left',
-                    gap: '0.25rem',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    background: isSelected ? '#eff6ff' : '#ffffff',
-                    border: isSelected ? '2px solid #1d4ed8' : '1px solid #e2e8f0',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: isSelected ? '0 2px 8px rgba(29, 78, 216, 0.08)' : 'none',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ color: isSelected ? '#1d4ed8' : '#0f172a', fontSize: '0.84rem', fontWeight: 800 }}>
-                      {report.report_reference}
-                    </strong>
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.12rem 0.45rem', borderRadius: '4px', ...badgeStyle }}>
-                      {readableStatus}
-                    </span>
-                  </div>
-
-                  <div style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {report.store_name || 'Store unmapped'}
-                  </div>
-
-                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    {report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
           <nav className="admin-pagination" aria-label="Consumer report pagination">
             <span>Showing {reportPage.from ?? 0}–{reportPage.to ?? 0} of {reportPage.total}</span>
             <div>
@@ -618,228 +635,113 @@ export const CitizenTipReview: React.FC = () => {
               <button type="button" disabled={reportPage.current_page >= reportPage.last_page || loading} onClick={() => setReportPage((current) => ({ ...current, current_page: current.current_page + 1 }))}>Next</button>
             </div>
           </nav>
-        </div>
+        </section>
+      ) : (
+        <div className="consumer-report-detail">
+          <header className="consumer-report-card consumer-report-detail-header">
+            <div className="consumer-report-detail-header-left">
+              <button
+                type="button"
+                className="admin-button secondary consumer-report-back-btn"
+                onClick={backToList}
+                aria-label="Back to reports"
+              >
+                <ArrowLeft size={15} aria-hidden="true" />
+                <span>Back to reports</span>
+              </button>
 
-        {/* =========================================================================
-            CENTER & RIGHT COLUMNS: Detail Workspace
-            ========================================================================= */}
-        {selected ? (
-          <>
+              <span className="consumer-report-header-divider" aria-hidden="true" />
+
+              <h2 tabIndex={-1} className="consumer-report-detail-title">
+                {selected.store_name || 'Store unmapped'}
+              </h2>
+            </div>
+
+            <div className="consumer-report-detail-header-right">
+              {selected.protocol?.mode === 'emergency' && (
+                <span className="consumer-report-protocol is-emergency">
+                  <span className="consumer-report-protocol-dot" />
+                  Price Freeze Protocol{selected.protocol?.reference ? ` · ${selected.protocol.reference}` : ''}
+                </span>
+              )}
+              <span className="consumer-report-detail-meta-pill">
+                <strong>Ref:</strong> {selected.report_reference}
+              </span>
+              {selected.submitted_at && (
+                <span className="consumer-report-detail-meta-pill">
+                  <strong>Submitted:</strong> {new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              )}
+              <span className={`consumer-report-status tone-${getStatusTone(selected.status)}`}>
+                {getReadableStatus(selected.status)}
+              </span>
+            </div>
+          </header>
+
+          {/* The evidence-beside-items split is unchanged from the two-pane layout; it simply
+              has the whole panel now instead of what the queue column left over. */}
+          <div className="consumer-report-workspace"><div className="consumer-report-panes">
             {/* =========================================================================
-                CENTER COLUMN: Receipt Evidence & Extracted Details
+                EVIDENCE: sticky, so the receipt stays on screen while the item list
+                beside it scrolls.
                 ========================================================================= */}
-            <section
-              className="evidence-column-container"
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.25rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1rem',
-                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-              }}
-            >
-              {/* Context Header */}
-              <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                      Original captured receipt evidence
-                    </h3>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1e293b', marginTop: '0.15rem' }}>
-                      {selected.store_name || 'Store unavailable'}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-                    {selected.report_reference}
-                  </span>
-                </div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.2rem' }}>
-                  Submitted {selected.submitted_at ? new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable'}
-                </div>
-              </div>
-
-              {/* Multi-Asset Selector Bar (if present) */}
+            <section className="evidence-column-container consumer-report-evidence consumer-report-card consumer-report-evidence-card">
               {evidenceManifest && (
-                <div style={{ display: 'grid', gap: '0.4rem', background: '#f8fafc', padding: '0.6rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                <div className="consumer-report-assets">
+                  <div className="consumer-report-assets-head">
+                    <span className="consumer-report-assets-title">Captured Sections</span>
+                    <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
+                  </div>
+                  <div className="consumer-report-asset-list">
                     {evidenceManifest.assets.map((asset) => (
                       <button
                         key={asset.id}
                         type="button"
+                        className={`consumer-report-asset${selectedAsset?.id === asset.id ? ' is-selected' : ''}`}
                         aria-label={`${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
                         onClick={() => void showEvidenceAsset(asset)}
-                        style={{
-                          padding: '0.3rem 0.65rem',
-                          borderRadius: '6px',
-                          border: selectedAsset?.id === asset.id ? '1.5px solid #1d4ed8' : '1px solid #cbd5e1',
-                          background: selectedAsset?.id === asset.id ? '#eff6ff' : '#ffffff',
-                          color: selectedAsset?.id === asset.id ? '#1d4ed8' : '#334155',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
                       >
-                        {asset.kind === 'source_frame' ? `Original section ${asset.sequence + 1}` : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
-                        {asset.attempt_number ? ` · attempt ${asset.attempt_number}${asset.is_current ? ' (current)' : ''}` : ''}
+                        {asset.kind === 'source_frame'
+                          ? `Section ${asset.sequence + 1}`
+                          : asset.kind === 'stitched_preview'
+                            ? 'Stitched preview'
+                            : `${asset.kind.replaceAll('_', ' ')} ${asset.sequence + 1}`}
+                        {asset.attempt_number && (!asset.is_current || asset.attempt_number > 1) ? ` (Att. ${asset.attempt_number})` : ''}
                       </button>
                     ))}
                   </div>
-                  <EvidenceSectionNav assets={evidenceManifest.assets} selected={selectedAsset} busy={evidenceLoading} onSelect={(asset) => void showEvidenceAsset(asset)} />
-                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                    Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
-                  </span>
+                  <div className="consumer-report-asset-meta-row">
+                    <span className="consumer-report-asset-meta consumer-report-meta-chip">
+                      Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {/* Compact Toolbar */}
-              <div
-                className="image-controls-toolbar"
-                style={{
-                  display: 'flex',
-                  gap: '0.35rem',
-                  alignItems: 'center',
-                  background: '#f8fafc',
-                  padding: '0.35rem 0.5rem',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <button
-                  type="button"
-                  title="Zoom Out"
-                  aria-label="Zoom Out"
-                  onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+              {/* Five near-identical buttons; only Full Screen differs in tone and placement. */}
+              <div className="image-controls-toolbar consumer-report-toolbar">
+                <button type="button" title="Zoom Out" aria-label="Zoom Out" onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}>
                   <ZoomOut size={13} /> Zoom Out
                 </button>
-
-                <button
-                  type="button"
-                  title="Zoom In"
-                  aria-label="Zoom In"
-                  onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Zoom In" aria-label="Zoom In" onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}>
                   <ZoomIn size={13} /> Zoom In
                 </button>
-
-                <button
-                  type="button"
-                  title="Rotate"
-                  aria-label="Rotate"
-                  onClick={() => setRotation((r) => (r + 90) % 360)}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Rotate" aria-label="Rotate" onClick={() => setRotation((r) => (r + 90) % 360)}>
                   <RotateCw size={13} /> Rotate
                 </button>
-
-                <button
-                  type="button"
-                  title="Reset"
-                  aria-label="Reset"
-                  onClick={() => {
-                    setZoom(1)
-                    setRotation(0)
-                  }}
-                  style={{
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '4px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 600,
-                  }}
-                >
+                <button type="button" title="Reset" aria-label="Reset" onClick={() => { setZoom(1); setRotation(0) }}>
                   <RefreshCw size={13} /> Reset
                 </button>
-
-                <button
-                  type="button"
-                  title="Full Size"
-                  aria-label="Full Size"
-                  onClick={() => setIsFullScreen(true)}
-                  style={{
-                    padding: '0.25rem 0.55rem',
-                    borderRadius: '4px',
-                    border: '1px solid #bfdbfe',
-                    background: '#eff6ff',
-                    color: '#1d4ed8',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.2rem',
-                    fontWeight: 700,
-                    marginLeft: 'auto',
-                  }}
-                >
+                <button type="button" title="Full Size" aria-label="Full Size" className="is-primary" onClick={() => setIsFullScreen(true)}>
                   <Maximize2 size={13} /> Full Screen
                 </button>
               </div>
 
               {/* Receipt Viewport Canvas */}
-              <div
-                className="evidence-viewport"
-                style={{
-                  minHeight: '280px',
-                  background: '#0f172a',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  position: 'relative',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid #334155',
-                }}
-              >
+              <div className="evidence-viewport consumer-report-viewport">
                 {evidenceLoading ? (
-                  <div style={{ color: '#94a3b8', fontSize: '0.82rem', textAlign: 'center' }}>
-                    <RefreshCw size={20} className="spin-icon" style={{ margin: '0 auto 0.4rem', color: '#38bdf8' }} />
+                  <div className="consumer-report-viewport-status">
+                    <RefreshCw size={20} className="spin-icon" />
                     Loading receipt image...
                   </div>
                 ) : evidenceUrl && selectedAsset?.mime_type.startsWith('video/') ? (
@@ -847,42 +749,34 @@ export const CitizenTipReview: React.FC = () => {
                     src={evidenceUrl}
                     controls
                     aria-label={`Evidence video for ${selected.report_reference}`}
-                    style={{ maxHeight: '100%', maxWidth: '100%' }}
                   />
                 ) : evidenceUrl ? (
                   <img
                     src={evidenceUrl}
                     alt={`Evidence receipt for ${selected.report_reference}`}
-                    style={{
-                      maxHeight: '100%',
-                      maxWidth: '100%',
-                      objectFit: 'contain',
-                      transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                      transition: 'transform 0.2s ease',
-                    }}
+                    /* Zoom and rotation are live user state, so they stay inline: a stylesheet
+                       cannot express a value that changes on every click. */
+                    style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
                   />
-                ) : <div style={{ color: '#cbd5e1', padding: '1.25rem', display: 'grid', justifyItems: 'center', gap: '0.5rem', textAlign: 'center' }}>
-                  <Lock size={26} />
-                  <strong>Receipt evidence unavailable</strong>
-                  <span style={{ fontSize: '0.76rem' }}>No stored original can be displayed for this report.</span>
-                </div>}
+                ) : (
+                  <div className="consumer-report-viewport-empty">
+                    <Lock size={26} />
+                    <strong>Receipt evidence unavailable</strong>
+                    <span>No stored original can be displayed for this report.</span>
+                  </div>
+                )}
               </div>
 
-              {/* Extracted Receipt Details Section */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
-                <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
-                  Raw OCR and system-extracted information
-                </h4>
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem', display: 'grid', gap: '0.4rem', fontSize: '0.8rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Merchant OCR:</span>
-                    <strong style={{ color: '#0f172a' }}>{detectedMerchant || 'Not detected'}</strong>
+              <div className="consumer-report-detected">
+                <h4>Raw OCR and system-extracted information</h4>
+                <div className="consumer-report-detected-group">
+                  <div className="consumer-report-detected-row">
+                    <span>Merchant OCR:</span>
+                    <strong>{detectedMerchant || 'Not detected'}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Transaction Date:</span>
-                    <strong style={{ color: '#0f172a' }}>
-                      {detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}
-                    </strong>
+                  <div className="consumer-report-detected-row">
+                    <span>Transaction Date:</span>
+                    <strong>{detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}</strong>
                   </div>
                 </div>
 
@@ -891,6 +785,7 @@ export const CitizenTipReview: React.FC = () => {
                 {selected.evidence_available && (
                   <button
                     type="button"
+                    className="admin-button secondary consumer-report-download"
                     onClick={async () => {
                       const blob = selectedAsset
                         ? await adminApi.getReportEvidenceAsset(selected.id, selectedAsset.id)
@@ -902,21 +797,6 @@ export const CitizenTipReview: React.FC = () => {
                       link.click()
                       URL.revokeObjectURL(url)
                     }}
-                    style={{
-                      width: '100%',
-                      padding: '0.5rem 0.85rem',
-                      borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
-                      background: '#ffffff',
-                      color: '#475569',
-                      fontWeight: 600,
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.35rem',
-                    }}
                   >
                     <Download size={14} /> Download private receipt evidence
                   </button>
@@ -927,74 +807,106 @@ export const CitizenTipReview: React.FC = () => {
             {/* =========================================================================
                 RIGHT COLUMN: System Finding & DTI Review
                 ========================================================================= */}
-            <section
-              className="ocr-breakdown-column-container"
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.25rem',
-                display: 'grid',
-                gap: '1.25rem',
-                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-              }}
-            >
-              {/* SYSTEM FINDING SECTION */}
-              <div style={{ display: 'grid', gap: '0.65rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    System extraction status
-                  </h3>
-                  <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '4px', background: '#fffbeb', color: '#b45309', border: '1px solid #fed7aa' }}>
-                    OCR FLAG — REVIEW
-                  </span>
+            <section className="ocr-breakdown-column-container consumer-report-card consumer-report-findings">
+              <div className="consumer-report-findings-block">
+                <div className="consumer-report-findings-head">
+                  <h3>System extraction status</h3>
+                  <span className="consumer-report-ocr-flag">OCR FLAG — REVIEW</span>
                 </div>
 
-                {/* Detected Comparison Card */}
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem', display: 'grid', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#b45309', fontWeight: 700, fontSize: '0.84rem' }}>
-                    <AlertCircle size={16} />
-                    <span>{priceDifference !== null ? 'Automated price comparison available' : 'No automated price comparison available'}</span>
+                {/* An item report is summarised from the per-item references resolved by the
+                    server; the single-price tiles are the legacy path, which has one price and
+                    no items. */}
+                {hasItemReview ? (
+                  <div className="consumer-report-comparison">
+                    <div className={`consumer-report-comparison-head${comparisonSummary.compared > 0 ? '' : ' is-blocked'}`}>
+                      <AlertCircle size={16} />
+                      <span>
+                        {comparisonSummary.compared > 0
+                          ? `Compared ${comparisonSummary.compared} of ${comparisonSummary.total} item(s) against the applicable reference`
+                          : 'No item could be compared — match a commodity to each line below'}
+                      </span>
+                    </div>
+
+                    <div className="consumer-report-tiles">
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Items above reference</div>
+                        <div className={`consumer-report-tile-value${comparisonSummary.above > 0 ? ' is-danger' : ''}`}>
+                          {comparisonSummary.above}
+                        </div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Items within reference</div>
+                        <div className="consumer-report-tile-value is-success">{comparisonSummary.within}</div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Total excess</div>
+                        <div className={`consumer-report-tile-value${comparisonSummary.excess > 0 ? ' is-danger' : ''}`}>
+                          {comparisonSummary.above > 0 ? `+₱${comparisonSummary.excess.toFixed(2)}` : '₱0.00'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {comparisonSummary.unresolved > 0 && (
+                      <p className="consumer-report-comparison-caution">
+                        {comparisonSummary.unresolved} item(s) have no applicable reference and are not counted above.
+                      </p>
+                    )}
+
+                    <p className="consumer-report-comparison-note">
+                      System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
+                    </p>
                   </div>
+                ) : (
+                  <div className="consumer-report-comparison">
+                    <div className="consumer-report-comparison-head is-blocked">
+                      <AlertCircle size={16} />
+                      <span>{priceDifference !== null ? 'Automated price comparison available' : 'No automated price comparison available'}</span>
+                    </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', textAlign: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Receipt Price</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0f172a' }}>
-                        {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Unavailable'}
+                    <div className="consumer-report-tiles">
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Receipt Price</div>
+                        <div className="consumer-report-tile-value">
+                          {rawReceiptPrice !== null ? `₱${rawReceiptPrice.toFixed(2)}` : 'Unavailable'}
+                        </div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Applicable SRP</div>
+                        <div className="consumer-report-tile-value is-success">
+                          {rawSrpPrice !== null ? `₱${rawSrpPrice.toFixed(2)}` : 'Unavailable'}
+                        </div>
+                      </div>
+
+                      <div className="consumer-report-tile">
+                        <div className="consumer-report-tile-label">Difference</div>
+                        <div className="consumer-report-tile-value is-danger">
+                          {priceDifference !== null ? `${priceDifference > 0 ? '+' : ''}₱${priceDifference.toFixed(2)}` : 'Unavailable'}
+                        </div>
                       </div>
                     </div>
 
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Applicable SRP</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
-                        {rawSrpPrice !== null ? `₱${rawSrpPrice.toFixed(2)}` : 'Unavailable'}
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#ffffff', padding: '0.4rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Difference</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#dc2626' }}>
-                        {priceDifference !== null ? `${priceDifference > 0 ? '+' : ''}₱${priceDifference.toFixed(2)}` : 'Unavailable'}
-                      </div>
-                    </div>
+                    <p className="consumer-report-comparison-note">
+                      System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
+                    </p>
                   </div>
+                )}
 
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b', lineHeight: 1.4 }}>
-                    System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
-                  </p>
-                </div>
-
-                {/* Structured OCR line items, including uncertain and legacy values. */}
-                {structuredOcrItems.length > 0 && (
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
-                    <table style={{ width: '100%', fontSize: '0.76rem', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                {/* Legacy reports only. When the report has persisted items, the same rows already
+                    appear twice — read-only under "System extraction" and editable under
+                    "Item-by-item findings" — so a third copy here only cost the evaluator a re-read. */}
+                {!hasItemReview && structuredOcrItems.length > 0 && (
+                  <div className="consumer-report-legacy-items">
+                    <table>
+                      <thead>
                         <tr>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Item</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'left', color: '#475569', fontWeight: 700 }}>Quantity</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>Price</th>
-                          <th style={{ padding: '0.4rem 0.55rem', textAlign: 'right', color: '#475569', fontWeight: 700 }}>OCR confidence</th>
+                          <th>Item</th>
+                          <th>Quantity</th>
+                          <th className="is-numeric">Price</th>
+                          <th className="is-numeric">OCR confidence</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1002,11 +914,11 @@ export const CitizenTipReview: React.FC = () => {
                           const confidence = Number(item.ocr_confidence)
                           const measuredConfidence = item.ocr_confidence !== null && item.ocr_confidence !== undefined && Number.isFinite(confidence) && confidence !== 0.8
                           return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '0.4rem 0.55rem', fontWeight: 600, color: '#0f172a' }}>{String(item.name || item.product || 'Item label not detected')}</td>
-                              <td style={{ padding: '0.4rem 0.55rem' }}>{item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : 'Quantity unavailable'}</td>
-                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right', fontWeight: 700 }}>{item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Price unavailable'}</td>
-                              <td style={{ padding: '0.4rem 0.55rem', textAlign: 'right' }}>{measuredConfidence ? `${Math.round(confidence * 100)}% measured` : 'Confidence unavailable'}</td>
+                            <tr key={idx}>
+                              <td className="is-name">{String(item.name || item.product || 'Item label not detected')}</td>
+                              <td>{item.quantity !== undefined && item.quantity !== null ? String(item.quantity) : 'Quantity unavailable'}</td>
+                              <td className="is-numeric">{item.price !== undefined && item.price !== null ? `₱${String(item.price)}` : 'Price unavailable'}</td>
+                              <td className="is-numeric">{measuredConfidence ? `${Math.round(confidence * 100)}% measured` : 'Confidence unavailable'}</td>
                             </tr>
                           )
                         })}
@@ -1017,74 +929,112 @@ export const CitizenTipReview: React.FC = () => {
               </div>
 
               {/* DTI DECISION & REVIEW SECTION */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'grid', gap: '0.85rem' }}>
+              <div className="consumer-report-decision">
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>
-                    DTI evaluator findings and decision
-                  </h3>
-                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                    What should happen to this report?
-                  </p>
+                  <h3 className="consumer-report-decision-title">DTI evaluator findings and decision</h3>
+                  <p className="consumer-report-decision-lede">What should happen to this report?</p>
                 </div>
 
                 {/* Structured Multi-Item Forms (when applicable) */}
                 {hasItemReview && (
-                  <div style={{ display: 'grid', gap: '0.65rem' }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>Item-by-item findings</div>
+                  <div className="consumer-report-item-list">
+                    <div className="consumer-report-item-list-title">Item-by-item findings</div>
                     {selected.items!.map((item) => {
                       const decision = itemDecisions[item.id]
+                      const decided = isItemDecided(item.id)
                       return (
-                        <fieldset key={item.id} style={{ display: 'grid', gap: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.65rem', background: '#f8fafc' }}>
-                          <legend style={{ padding: '0 0.35rem', fontWeight: 800, fontSize: '0.8rem', color: '#0f172a' }}>
-                            {item.item_name || `Item ${item.sequence + 1}`}
-                            {' · '}
+                        <fieldset key={item.id} className={`consumer-report-item${decided ? ' is-decided' : ''}`}>
+                          {/* Identity, then the verdict, then the fields that settle it. These read
+                              as one unit now; previously the three inputs stacked under a legend as
+                              four unrelated controls with nothing tying them together. */}
+                          <div className="consumer-report-item-head">
+                            <strong>{item.item_name || `Item ${item.sequence + 1}`}</strong>
+                            <span className={`consumer-report-item-state${decided ? ' done' : ''}`}>
+                              {decided ? <CheckCircle2 size={13} aria-hidden="true" /> : <Circle size={13} aria-hidden="true" />}
+                              {decided ? 'Decided' : 'Needs a decision'}
+                            </span>
+                          </div>
+                          <div className="consumer-report-item-meta">
                             {toPrice(item.line_total ?? item.observed_price) !== null
                               ? `line total ₱${toPrice(item.line_total ?? item.observed_price)!.toFixed(2)}`
                               : 'line total not available'}
                             {toPrice(item.quantity) !== null ? ` · qty ${toPrice(item.quantity)}` : ''}
-                          </legend>
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Receipt unit price (₱)
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              required
-                              aria-label={`Receipt unit price for ${item.item_name || item.id}`}
-                              value={decision?.receipt_price ?? ''}
-                              onChange={(event) => setItemDecisions((current) => ({
-                                ...current,
-                                [item.id]: { ...current[item.id], receipt_price: event.target.value === '' ? '' : Number(event.target.value) },
-                              }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
-                            />
-                            {suggestedUnitPrice(item) === null && (
-                              <small style={{ color: '#b45309', fontWeight: 600 }}>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
-                            )}
-                          </label>
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Commodity key
-                            <input
-                              aria-label={`Commodity key for ${item.item_name || item.id}`}
-                              value={decision?.commodity_key || ''}
-                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], commodity_key: event.target.value } }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.5rem', background: '#ffffff', fontSize: '0.8rem' }}
-                            />
-                          </label>
-                          <label style={{ display: 'grid', gap: '0.2rem', fontSize: '0.76rem', fontWeight: 600, color: '#334155' }}>
-                            Finding
-                            <select
-                              aria-label={`Finding for ${item.item_name || item.id}`}
-                              value={decision?.regulatory_finding || ''}
-                              onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
-                              style={{ minHeight: '34px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#fff', padding: '0.35rem 0.5rem', fontSize: '0.8rem' }}
-                            >
-                              <option value="">Select a finding</option>
-                              <option value="confirmed_violation">Confirmed violation</option>
-                              <option value="no_violation">No violation</option>
-                              <option value="insufficient_evidence">Insufficient evidence</option>
-                            </select>
-                          </label>
+                            {toPrice(item.ocr_confidence) !== null && toPrice(item.ocr_confidence) !== 0.8
+                              ? ` · OCR ${Math.round(toPrice(item.ocr_confidence)! * 100)}%`
+                              : ''}
+                          </div>
+                          <ItemReferenceVerdict reference={item.reference} />
+                          <div className="consumer-report-item-fields">
+                            <label>
+                              Receipt unit price (₱)
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                required
+                                aria-label={`Receipt unit price for ${item.item_name || item.id}`}
+                                value={decision?.receipt_price ?? ''}
+                                onChange={(event) => setItemDecisions((current) => ({
+                                  ...current,
+                                  [item.id]: { ...current[item.id], receipt_price: event.target.value === '' ? '' : Number(event.target.value) },
+                                }))}
+                              />
+                              {suggestedUnitPrice(item) === null && (
+                                <small>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
+                              )}
+                            </label>
+                            <label>
+                              Commodity key
+                              {/* Pre-filled from the automatic match when one was confident. The list
+                                  offers the ranked alternatives so a wrong or missing match is corrected
+                                  by choosing, not by recalling an exact key from memory. */}
+                              <input
+                                list={`commodity-options-${item.id}`}
+                                aria-label={`Commodity key for ${item.item_name || item.id}`}
+                                value={decision?.commodity_key || ''}
+                                onChange={(event) => setItemDecisions((current) => ({
+                                  ...current,
+                                  [item.id]: {
+                                    ...current[item.id],
+                                    commodity_key: event.target.value,
+                                    // Choosing a suggestion must carry its name across too. Updating only
+                                    // the key would store a canonical key beside the unmatched OCR name.
+                                    commodity_name: candidateFor(item, event.target.value)?.commodity_name
+                                      ?? current[item.id]?.commodity_name
+                                      ?? '',
+                                  },
+                                }))}
+                              />
+                              <datalist id={`commodity-options-${item.id}`}>
+                                {/* The value is the commodity KEY, because the server resolves the
+                                    regulatory reference by exact key. Offering the display name here
+                                    made every chosen suggestion fail to resolve. Keyless bulletins
+                                    cannot resolve at all, so they are not offered. */}
+                                {(item.reference?.match_candidates ?? [])
+                                  .filter((candidate) => Boolean(candidate.commodity_key))
+                                  .map((candidate) => (
+                                    <option key={candidate.id} value={candidate.commodity_key as string}>
+                                      {candidate.commodity_name}
+                                      {candidate.package_size ? ` · ${candidate.package_size}` : ''}
+                                      {` · match ${candidate.match_score}`}
+                                    </option>
+                                  ))}
+                              </datalist>
+                            </label>
+                            <label>
+                              Finding
+                              <select
+                                aria-label={`Finding for ${item.item_name || item.id}`}
+                                value={decision?.regulatory_finding || ''}
+                                onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
+                              >
+                                <option value="">Select a finding</option>
+                                <option value="confirmed_violation">Confirmed violation</option>
+                                <option value="no_violation">No violation</option>
+                                <option value="insufficient_evidence">Insufficient evidence</option>
+                              </select>
+                            </label>
+                          </div>
                         </fieldset>
                       )
                     })}
@@ -1093,17 +1043,51 @@ export const CitizenTipReview: React.FC = () => {
 
                 {/* Decision Intent & Regulatory Finding Controls */}
                 {selected.verification_request && (
-                  <section aria-label="Field verification request" style={{ display: 'grid', gap: '0.45rem', padding: '0.75rem', border: '1px solid #bfdbfe', borderRadius: '8px', background: '#eff6ff' }}>
+                  <section aria-label="Field verification request" className="consumer-report-referral is-active">
                     <strong>Field verification request</strong>
                     <small>{selected.status}</small>
                     <span>{selected.verification_request.status.charAt(0).toUpperCase() + selected.verification_request.status.slice(1)}</span>
-                    <p style={{ margin: 0 }}>{selected.verification_request.reason}</p>
+                    <p>{selected.verification_request.reason}</p>
                     {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
                   </section>
                 )}
-                {!hasItemReview ? (
-                  <div style={{ display: 'grid', gap: '0.75rem' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                {/* Referral is available for BOTH report shapes. It used to live only in the
+                    legacy branch below, so on an item report — the normal case — the officer
+                    selector never rendered and a referral could not be made at all. */}
+                {!selected.verification_request && (
+                  <section aria-label="Refer for field verification" className="consumer-report-referral">
+                    <label className="consumer-report-referral-toggle">
+                      <input
+                        type="checkbox"
+                        checked={verificationChosen}
+                        onChange={(event) => {
+                          setVerificationChosen(event.target.checked)
+                          setDecisionIntent(event.target.checked ? 'verify' : 'close')
+                          if (!event.target.checked) setFieldOfficerId('')
+                        }}
+                      />
+                      <Send size={14} aria-hidden="true" /> Refer this report for field verification
+                    </label>
+                    {verificationChosen && (
+                      <label className="consumer-report-field">
+                        Field Officer
+                        <select
+                          aria-label="Field Officer"
+                          required
+                          value={fieldOfficerId}
+                          onChange={(event) => setFieldOfficerId(event.target.value)}
+                        >
+                          <option value="">Select active officer</option>
+                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </section>
+                )}
+
+                {!hasItemReview && (
+                  <div className="consumer-report-legacy-decision">
+                    <div className="consumer-report-intents">
                       {!selected.verification_request && <button
                         type="button"
                         onClick={() => {
@@ -1111,23 +1095,12 @@ export const CitizenTipReview: React.FC = () => {
                           setFinding('confirmed_violation')
                           setVerificationChosen(true)
                         }}
-                        style={{
-                          padding: '0.65rem 0.75rem',
-                          borderRadius: '8px',
-                          border: decisionIntent === 'verify' ? '2px solid #1d4ed8' : '1px solid #cbd5e1',
-                          background: decisionIntent === 'verify' ? '#eff6ff' : '#ffffff',
-                          color: decisionIntent === 'verify' ? '#1d4ed8' : '#475569',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className={`consumer-report-intent tone-accent${decisionIntent === 'verify' ? ' is-selected' : ''}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div className="consumer-report-intent-title">
                           <Send size={14} /> Require Field Verification
                         </div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 500, color: '#64748b', marginTop: '0.15rem' }}>
+                        <div className="consumer-report-intent-note">
                           Mark the report for a separate field-verification workflow
                         </div>
                       </button>}
@@ -1138,30 +1111,19 @@ export const CitizenTipReview: React.FC = () => {
                           setDecisionIntent('close')
                           setFinding('no_violation')
                         }}
-                        style={{
-                          padding: '0.65rem 0.75rem',
-                          borderRadius: '8px',
-                          border: decisionIntent === 'close' ? '2px solid #475569' : '1px solid #cbd5e1',
-                          background: decisionIntent === 'close' ? '#f1f5f9' : '#ffffff',
-                          color: decisionIntent === 'close' ? '#0f172a' : '#475569',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s ease',
-                        }}
+                        className={`consumer-report-intent tone-muted${decisionIntent === 'close' ? ' is-selected' : ''}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <div className="consumer-report-intent-title">
                           <ShieldCheck size={14} /> Close Report
                         </div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 500, color: '#64748b', marginTop: '0.15rem' }}>
+                        <div className="consumer-report-intent-note">
                           No regulatory action required
                         </div>
                       </button>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '0.35rem' }}>
-                      <label htmlFor="regulatory-finding-select" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                    <div className="consumer-report-field-group">
+                      <label htmlFor="regulatory-finding-select" className="consumer-report-field-label">
                         Regulatory finding
                       </label>
                       <select
@@ -1175,7 +1137,7 @@ export const CitizenTipReview: React.FC = () => {
                           if (val === 'confirmed_violation') setDecisionIntent('verify')
                           else if (val === 'no_violation' || val === 'insufficient_evidence') setDecisionIntent('close')
                         }}
-                        style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff', color: '#0f172a', fontSize: '0.82rem' }}
+                        className="consumer-report-control"
                       >
                         <option value="">Select a finding / reason</option>
                         <option value="confirmed_violation">Confirmed price violation (Require Field Verification)</option>
@@ -1186,14 +1148,10 @@ export const CitizenTipReview: React.FC = () => {
                       </select>
                     </div>
 
-                    <div style={{ display: 'grid', gap: '0.35rem' }}>
-                      {verificationChosen && <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>Field Officer
-                        <select aria-label="Field Officer" required value={fieldOfficerId} onChange={(event) => setFieldOfficerId(event.target.value)} style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#ffffff' }}>
-                          <option value="">Select active officer</option>
-                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
-                        </select>
-                      </label>}
-                      <label htmlFor="decision-reason-text" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
+                    <div className="consumer-report-field-group">
+                      {/* The officer selector now lives in the shared referral section above, so
+                          both report shapes reach it. */}
+                      <label htmlFor="decision-reason-text" className="consumer-report-field-label">
                         {decisionIntent === 'verify' ? 'Verification reason' : 'Closure reason'}
                       </label>
                       <textarea
@@ -1203,213 +1161,124 @@ export const CitizenTipReview: React.FC = () => {
                         value={reason}
                         onChange={(event) => setReason(event.target.value)}
                         placeholder={decisionIntent === 'verify' ? 'Required reasoning for the field-verification decision...' : 'Required explanation for closing this report...'}
-                        style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                        className="consumer-report-control"
                       />
                     </div>
                   </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: '0.35rem' }}>
-                    <label htmlFor="decision-reason-text-multi" style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155' }}>
-                      Decision reason / Verification Note
-                    </label>
-                    <textarea
-                      id="decision-reason-text-multi"
-                      aria-label="Decision reason"
-                      rows={2}
-                      value={reason}
-                      onChange={(event) => setReason(event.target.value)}
-                      placeholder="State regulatory reasoning or instructions for this continuous capture..."
-                      style={{ width: '100%', padding: '0.55rem 0.65rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
-                    />
-                  </div>
                 )}
+                {/* DECISION CONSOLE - sticky, unifying progress, note input, and actions */}
+                <div className="consumer-report-decision-bar">
+                  {error && (
+                    <p className="admin-feedback error" role="alert">{error}</p>
+                  )}
 
-                {error && (
-                  <div className="error-badge" role="alert" style={{ background: '#fef2f2', borderLeft: '4px solid #dc2626', color: '#b91c1c', padding: '0.6rem 0.75rem', borderRadius: '0 6px 6px 0', fontSize: '0.8rem', fontWeight: 600 }}>
-                    {error}
+                  {hasItemReview && (
+                    <div className="consumer-report-progress">
+                      <span>{decidedItemCount} of {selected.items!.length} items decided</span>
+                      {!itemReviewComplete && (
+                        <span className="is-blocked">{blockingReason}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {hasItemReview && (
+                    <div className="consumer-report-field-group consumer-report-decision-note-group">
+                      <label htmlFor="decision-reason-text-multi" className="consumer-report-field-label">
+                        Decision reason / Verification Note
+                      </label>
+                      <textarea
+                        id="decision-reason-text-multi"
+                        aria-label="Decision reason"
+                        rows={2}
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
+                        placeholder="State regulatory reasoning or instructions for this continuous capture..."
+                        className="consumer-report-control consumer-report-decision-textarea"
+                      />
+                    </div>
+                  )}
+
+                  <div className="consumer-report-actions">
+                    <button
+                      type="button"
+                      className="admin-button primary"
+                      disabled={decisionSaving || !reason || !verificationChosen || !fieldOfficerId}
+                      title={verificationChosen ? undefined : 'Tick "Refer this report for field verification" above to enable'}
+                      onClick={() => void requestVerification()}
+                    >
+                      <Send size={15} aria-hidden="true" /> Refer for field verification
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button primary"
+                      disabled={decisionSaving || !reason || verificationChosen || (hasItemReview ? !itemReviewComplete : !finding)}
+                      onClick={() => void decide(isCorrection ? 'correct' : 'validate')}
+                    >
+                      {decisionSaving ? 'Saving decision...' : 'Record finding'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button secondary"
+                      disabled={decisionSaving || !reason || verificationChosen}
+                      title="Resolves the report without recording any regulatory finding"
+                      onClick={() => void decide('dismiss')}
+                    >
+                      Resolve without a finding
+                    </button>
+
+                    <button
+                      type="button"
+                      className="admin-button danger"
+                      disabled={decisionSaving || !reason || verificationChosen}
+                      title="Closes the report without recording any regulatory finding"
+                      onClick={() => void decide('reject')}
+                    >
+                      <XCircle size={15} aria-hidden="true" /> Reject report
+                    </button>
                   </div>
-                )}
-
-                {/* Primary Action Buttons */}
-                <div className="admin-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', borderTop: '1px solid #f1f5f9', paddingTop: '0.85rem' }}>
-                  <button
-                    type="button"
-                    aria-label="Mark for Field Verification — Validate findings"
-                    disabled={decisionSaving || !reason || (verificationChosen && !fieldOfficerId) || (hasItemReview ? !itemReviewComplete : !finding)}
-                    onClick={() => void (verificationChosen ? requestVerification() : decide('validate'))}
-                    style={{
-                      flex: 1,
-                      padding: '0.65rem 1.15rem',
-                      borderRadius: '8px',
-                      background: '#1d4ed8',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 'not-allowed' : 'pointer',
-                      opacity: !reason || (hasItemReview ? !itemReviewComplete : !finding) ? 0.5 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem',
-                    }}
-                  >
-                    <Send size={15} /> {decisionSaving ? 'Saving decision...' : 'Mark for Field Verification'}
-                  </button>
-
-                  <button
-                    type="button"
-                    aria-label="Close Report — Dismiss Report"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('dismiss')}
-                    style={{
-                      flex: 1,
-                      padding: '0.65rem 1.15rem',
-                      borderRadius: '8px',
-                      background: '#dc2626',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '0.86rem',
-                      cursor: !reason ? 'not-allowed' : 'pointer',
-                      opacity: !reason ? 0.5 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem',
-                    }}
-                  >
-                    <XCircle size={15} /> Close Report
-                  </button>
-
-                  {/* Secondary Compatibility Buttons */}
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('correct')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Correct
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('validate')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Validate
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={decisionSaving || !reason}
-                    onClick={() => void decide('reject')}
-                    style={{
-                      padding: '0.55rem 0.85rem',
-                      borderRadius: '6px',
-                      background: '#f8fafc',
-                      color: '#475569',
-                      border: '1px solid #cbd5e1',
-                      fontWeight: 600,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reject
-                  </button>
                 </div>
 
                 {/* Collapsible Technical & Audit Data Accordion */}
-                <details style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
-                  <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#475569' }}>
-                    Audit Data & Technical Traceability
-                  </summary>
-                  <div style={{ marginTop: '0.65rem', display: 'grid', gap: '0.5rem' }}>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#1d4ed8', background: '#eff6ff', padding: '0.35rem 0.5rem', borderRadius: '4px' }}>
+                {/* Reference material, not working surface. Each payload used to sit in its own
+                    90-140px scrollport, so a collapsed accordion still contained three nested
+                    scroll areas. */}
+                <details className="consumer-report-technical">
+                  <summary>Technical detail &amp; audit traceability</summary>
+                  <div className="consumer-report-technical-body">
+                    <div className="consumer-report-provenance">
                       Formal receipt | Consumer report | Human validation required
                     </div>
 
                     <div>
-                      <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                      <h4 className="consumer-report-technical-title">
                         Raw OCR payload
                       </h4>
-                      <pre
-                        className="admin-code"
-                        style={{
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '6px',
-                          padding: '0.5rem',
-                          color: '#0f172a',
-                          fontFamily: 'monospace',
-                          fontSize: '0.72rem',
-                          maxHeight: '90px',
-                          overflow: 'auto',
-                          margin: 0,
-                        }}
-                      >
-                        {JSON.stringify(selected.raw_ocr_json, null, 2)}
-                      </pre>
+                      <pre className="admin-code">{JSON.stringify(selected.raw_ocr_json, null, 2)}</pre>
                     </div>
 
                     {evidenceManifest?.processing_result && (
                       <div>
-                        <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                        <h4 className="consumer-report-technical-title">
                           OCR processing diagnostics
                         </h4>
-                        <pre className="admin-code" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.5rem', color: '#0f172a', fontFamily: 'monospace', fontSize: '0.72rem', maxHeight: '140px', overflow: 'auto', margin: 0 }}>
-                          {JSON.stringify(evidenceManifest.processing_result, null, 2)}
-                        </pre>
+                        <pre className="admin-code">{JSON.stringify(evidenceManifest.processing_result, null, 2)}</pre>
                       </div>
                     )}
 
                     {selected.evaluator_confirmed_json && (
                       <div>
-                        <h4 style={{ margin: '0 0 0.25rem', fontSize: '0.76rem', color: '#475569', fontWeight: 700 }}>
+                        <h4 className="consumer-report-technical-title">
                           DTI evaluator findings
                         </h4>
-                        <pre
-                          className="admin-code"
-                          style={{
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '6px',
-                            padding: '0.5rem',
-                            color: '#0f172a',
-                            fontFamily: 'monospace',
-                            fontSize: '0.72rem',
-                            maxHeight: '90px',
-                            overflow: 'auto',
-                            margin: 0,
-                          }}
-                        >
-                          {JSON.stringify(selected.evaluator_confirmed_json, null, 2)}
-                        </pre>
+                        <pre className="admin-code">{JSON.stringify(selected.evaluator_confirmed_json, null, 2)}</pre>
                       </div>
                     )}
 
                     {!hasItemReview && (
                       <div>
-                        <label htmlFor="eval-confirmed-json" style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, color: '#475569', marginBottom: '0.2rem' }}>
+                        <label htmlFor="eval-confirmed-json" className="consumer-report-json-label">
                           Evaluator-confirmed JSON
                         </label>
                         <textarea
@@ -1417,7 +1286,7 @@ export const CitizenTipReview: React.FC = () => {
                           rows={2}
                           value={correctedText}
                           onChange={(event) => setCorrectedText(event.target.value)}
-                          style={{ width: '100%', padding: '0.4rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.72rem', boxSizing: 'border-box' }}
+                          className="consumer-report-json-input"
                         />
                       </div>
                     )}
@@ -1425,84 +1294,29 @@ export const CitizenTipReview: React.FC = () => {
                 </details>
               </div>
             </section>
-          </>
-        ) : (
-          <div
-            style={{
-              gridColumn: '2 / -1',
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '12px',
-              padding: '4rem 2rem',
-              textAlign: 'center',
-              color: '#64748b',
-              boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
-            }}
-          >
-            <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.75rem', color: '#1d4ed8' }}>
-              <FileText size={24} />
-            </div>
-            <h3 style={{ margin: '0 0 0.35rem', color: '#0f172a', fontWeight: 800, fontSize: '1.1rem' }}>
-              No Report Selected
-            </h3>
-            <p style={{ margin: 0, fontSize: '0.86rem', maxWidth: '380px', marginInline: 'auto' }}>
-              Select a consumer report from the left inbox queue to review the receipt evidence and determine the DTI regulatory action.
-            </p>
-          </div>
-        )}
-      </div>
+          </div></div>
+        </div>
+      )}
 
-      {/* Full Screen Image Modal */}
       {isFullScreen && selected && (
-        <div
-          className="fullscreen-image-modal"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(15, 23, 42, 0.94)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '1.5rem',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', color: '#ffffff' }}>
-            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
-              <Shield size={18} color="#38bdf8" /> Receipt Evidence: {selected.report_reference} ({selected.store_name})
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsFullScreen(false)}
-              style={{
-                padding: '0.45rem 1rem',
-                borderRadius: '6px',
-                background: '#dc2626',
-                color: '#ffffff',
-                border: 'none',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
+        <div className="fullscreen-image-modal consumer-report-fullscreen">
+          <div className="consumer-report-fullscreen-head">
+            <h3><Shield size={18} /> Receipt Evidence: {selected.report_reference} ({selected.store_name})</h3>
+            <button type="button" className="admin-button danger" onClick={() => setIsFullScreen(false)}>
               Close Full View
             </button>
           </div>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
+          <div className="consumer-report-fullscreen-body">
             {evidenceUrl ? (
               <img
                 src={evidenceUrl}
                 alt="Full size evidence"
-                style={{
-                  maxHeight: '90vh',
-                  maxWidth: '90vw',
-                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                  transition: 'transform 0.2s ease',
-                  borderRadius: '6px',
-                }}
+                /* Live user state; see the inline viewport transform above. */
+                style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
               />
             ) : (
-              <div style={{ color: '#ffffff', fontSize: '1.1rem', textAlign: 'center' }}>
-                <Lock size={28} style={{ margin: '0 auto 0.5rem', color: '#94a3b8' }} />
+              <div className="consumer-report-fullscreen-locked">
+                <Lock size={28} />
                 Private Receipt Evidence Locked in Vault
               </div>
             )}

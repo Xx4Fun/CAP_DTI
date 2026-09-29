@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { StoreDetailOverlay } from './StoreDetailOverlay'
@@ -29,12 +29,18 @@ describe('StoreDetailOverlay regulatory integrity', () => {
           is_verified: true,
           is_public: true,
           recidivism_index: 1,
+          image_path: '/stores/robinsons.webp',
         }}
         onClose={vi.fn()}
         onCenterMap={vi.fn()}
-        onInviteVendor={vi.fn()}
       />,
     )
+
+    const hero = screen.getByRole('img', { name: /Verified Market establishment/i }) as HTMLImageElement
+    expect(hero.getAttribute('src')).toBe('/stores/robinsons.webp')
+    fireEvent.error(hero)
+    expect(hero.getAttribute('src')).toBe('/stores/store.webp')
+    expect(screen.queryByRole('button', { name: /Invite Vendor/i })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Legal Audit/i }))
     expect(screen.getByText(/No authoritative legal action records are available/i)).toBeInTheDocument()

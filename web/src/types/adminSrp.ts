@@ -1,6 +1,7 @@
 import type { SrpRecord } from './admin'
 
 export interface ManagedSrpRecord extends SrpRecord {
+  image_url?: string | null
   category?: string | null
   regulatory_classification?: string | null
   commodity_key?: string | null
@@ -10,6 +11,7 @@ export interface ManagedSrpRecord extends SrpRecord {
 export type SrpView = 'current' | 'scheduled' | 'history'
 
 export interface SrpListFilters {
+  id?: number
   query?: string
   view?: SrpView
   category?: string

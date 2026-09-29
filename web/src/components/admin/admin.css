@@ -4898,6 +4898,41 @@
   color: #991b1b;
 }
 
+.admin-feedback.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.admin-feedback.success button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.srp-view-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.srp-view-tabs button {
+  padding: 0.65rem 1rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #475569;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.srp-view-tabs button[aria-selected='true'] {
+  border-bottom-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
 .admin-modal-backdrop {
   position: fixed;
   z-index: 9999;
@@ -5945,6 +5980,17 @@
   font-family: system-ui, -apple-system, sans-serif;
 }
 
+.store-photo-pin-container { background: transparent; border: 0; }
+.store-photo-pin-container.status-green { --pin-color: #10b981; }
+.store-photo-pin-container.status-yellow { --pin-color: #f59e0b; }
+.store-photo-pin-container.status-red { --pin-color: #ef4444; }
+.store-photo-pin { position: relative; width: 42px; height: 52px; filter: drop-shadow(0 3px 3px rgba(15, 23, 42, .3)); }
+.store-photo-pin::before { content: ''; position: absolute; inset: 0 auto auto 0; box-sizing: border-box; width: 42px; height: 42px; border: 3px solid #fff; border-radius: 50%; background: var(--pin-color); }
+.store-photo-pin::after { content: ''; position: absolute; top: 35px; left: 11px; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 17px solid var(--pin-color); }
+.leaflet-container .leaflet-marker-pane .store-photo-pin-image { position: absolute; z-index: 1; top: 6px; left: 6px; width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #f8fafc; }
+.store-photo-pin-container:focus { outline: none; }
+.store-photo-pin-container:is(.selected, :focus-visible) .store-photo-pin::before { box-shadow: 0 0 0 3px #1e3a8a; }
+
 .leaflet-store-popup h4 {
   margin: 0 0 4px;
   color: #0f172a;
@@ -6500,3 +6546,1482 @@
 .legal-signatory-source{padding:.2rem .55rem;border-radius:999px;background:#ecfdf5;color:#047857;font-size:.7rem;font-weight:800;white-space:nowrap}.legal-signatory-source.missing{background:#fef3c7;color:#92400e}
 .legal-signatory-image{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem}.legal-signatory-preview{display:grid;place-items:center;width:240px;height:90px;padding:.4rem;border:1px dashed #cbd5e1;border-radius:9px;background:#fff;color:#64748b;font-size:.74rem;text-align:center}.legal-signatory-preview img{max-width:100%;max-height:100%;object-fit:contain}
 .legal-signatory-image-actions{display:flex;gap:.5rem;flex-wrap:wrap}.legal-signatory-upload{position:relative;cursor:pointer}.legal-signatory-upload input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}.legal-signatory-upload:focus-within{outline:3px solid rgba(37,99,235,.3);outline-offset:2px}
+
+/* ==========================================================================
+   Consumer Reports review workspace
+
+   The evaluator's task is a two-pane comparison: the receipt image on one side,
+   the line being decided on the other. The previous three-column layout put a
+   column boundary through the middle of that comparison, and sized itself with
+   an inline grid-template-columns that overrode the app's breakpoint, so it
+   never reflowed at any width.
+
+   Sizing is driven by CONTENT width, not viewport width: the 290px sidebar
+   means a 1024px viewport leaves this panel roughly 690px, so a viewport
+   breakpoint describes the wrong thing. Two separate containers are required
+   because one cannot answer for both nesting levels — just above 900px of
+   panel width the workspace is only ~580px, which is already past its own
+   collapse point.
+   ========================================================================== */
+
+.consumer-report-panel {
+  container-type: inline-size;
+  container-name: consumer-report-panel;
+  display: grid;
+  gap: 1.25rem;
+}
+
+
+ /* The container and the grid must be SEPARATE elements: an element is not styled by
+    its own container query, so putting grid-template-columns on the container itself
+    meant the collapse rule silently did nothing while descendant rules still fired. */
+.consumer-report-workspace {
+  container-type: inline-size;
+  container-name: consumer-report-workspace;
+  min-width: 0;
+}
+
+.consumer-report-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.consumer-report-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Independent scrolling for dual columns: left evidence and right findings */
+.consumer-report-evidence {
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  min-width: 0;
+}
+
+/* Always reachable: the decision used to sit below every item, so a 12-item
+   receipt buried it ~3000px down. */
+.consumer-report-decision-bar {
+  position: static;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-surface);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  margin-top: 1rem;
+}
+
+.consumer-report-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--admin-muted);
+}
+
+.consumer-report-progress .is-blocked {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+.consumer-report-decision-note-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.consumer-report-decision-textarea {
+  min-height: 52px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.82rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.consumer-report-decision-textarea:focus {
+  border-color: var(--admin-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.consumer-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.consumer-report-actions .admin-button {
+  flex: 1 1 12rem;
+  justify-content: center;
+  min-height: 40px;
+}
+
+@container consumer-report-workspace (max-width: 620px) {
+  .consumer-report-panes {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked, a sticky evidence pane would pin above the items it is meant to
+     sit beside, so it reverts to flowing with the content. */
+  .consumer-report-evidence {
+    position: static;
+  }
+}
+
+/* The outer Queue | Workspace split is retired: the list and the detail are separate
+   views now, so only the workspace needs a container query. The panel container remains
+   declared because the workspace is measured inside it. */
+
+/* Fallback where container queries are unavailable. Viewport-based, so it is
+   deliberately conservative: it only has to avoid a broken layout, not
+   reproduce the container behaviour exactly. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1280px) {
+    .consumer-report-panes {
+      grid-template-columns: 1fr;
+    }
+
+    .consumer-report-evidence {
+      position: static;
+    }
+  }
+}
+
+/* A pinned bar on a short screen steals list space and can cover the last
+   item's own controls. */
+@media (max-height: 820px) {
+  .consumer-report-decision-bar {
+    position: static;
+    box-shadow: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Consumer Reports: visual hierarchy
+
+   Every region used to be the same white card with the same 1px border at the
+   same elevation, so evidence, the price comparison, the decision form and the
+   audit accordion all read as equally important and nothing drew the eye to
+   where the evaluator acts. Three levels now: the panel canvas, raised working
+   cards, and the accented decision bar.
+   -------------------------------------------------------------------------- */
+
+.consumer-report-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* The decision bar is where the evaluator acts, so it sits above the cards. */
+.consumer-report-decision-bar {
+  border-color: #c7d7f5;
+}
+
+.consumer-report-decision-bar::before {
+  content: "";
+  display: block;
+  height: 3px;
+  margin: -1.15rem -1.25rem 0.35rem;
+  border-radius: 12px 12px 0 0;
+  background: var(--admin-accent);
+}
+
+/* One item = one visual unit: identity, the verdict, then the fields that
+   decide it. Previously the three inputs read as unrelated controls stacked
+   under a legend. */
+.consumer-report-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid var(--admin-border);
+  border-left: 3px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-item.is-decided {
+  border-left-color: var(--admin-success);
+  background: var(--admin-surface);
+}
+
+.consumer-report-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.consumer-report-item-head strong {
+  color: var(--admin-text);
+  font-weight: 800;
+}
+
+.consumer-report-item-meta {
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Mirrors the checklist state LegalNoticeManager uses for its issuance steps. */
+.consumer-report-item-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--admin-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.consumer-report-item-state.done {
+  color: var(--admin-success);
+}
+
+.consumer-report-item-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.consumer-report-item-fields label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #334155;
+  min-width: 0;
+}
+
+.consumer-report-item-fields input,
+.consumer-report-item-fields select {
+  min-height: 34px;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  font-size: 0.8rem;
+}
+
+.consumer-report-item-fields small {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+/* Technical payloads are reference material, not working surface: collapsed by
+   default, and no longer each in their own little scrollport. */
+.consumer-report-technical {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: var(--admin-muted);
+  font-size: 0.78rem;
+}
+
+.consumer-report-technical > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #475569;
+}
+
+/* .admin-code already supplies the surface, border and its own 20rem cap - the house
+   pattern for code blocks. Only the long-key wrapping is specific to these payloads. */
+.consumer-report-technical pre {
+  margin: 0;
+  font-size: 0.72rem;
+  word-break: break-word;
+}
+
+/* Per-item price verdict. Three outcomes that must stay visually distinct: an item with no
+   resolvable reference must never read like a compliant one. */
+.consumer-report-verdict {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 0.74rem;
+}
+
+.consumer-report-verdict.is-unresolved {
+  border-color: #cbd5e1;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-verdict.is-above {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.consumer-report-verdict.is-within {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.consumer-report-verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 800;
+}
+
+.consumer-report-verdict.is-unresolved .consumer-report-verdict-head { color: #475569; }
+.consumer-report-verdict.is-above .consumer-report-verdict-head { color: var(--admin-danger); }
+.consumer-report-verdict.is-within .consumer-report-verdict-head { color: var(--admin-success); }
+
+.consumer-report-verdict-delta { font-weight: 700; }
+
+.consumer-report-verdict-note { color: var(--admin-muted); }
+
+.consumer-report-verdict-detail {
+  display: grid;
+  gap: 0.15rem;
+  color: #475569;
+}
+
+.consumer-report-verdict-source {
+  font-weight: 600;
+  color: #475569;
+}
+
+/* An emergency ceiling and an ordinary SRP are different legal instruments. */
+.consumer-report-verdict-source.is-emergency { color: var(--admin-warning); }
+
+.consumer-report-verdict-warning {
+  color: var(--admin-warning);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Receipt extraction panel (read-only evidence of what the OCR saw)
+   -------------------------------------------------------------------------- */
+
+.receipt-extraction {
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.receipt-extraction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.receipt-extraction-head h4 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.receipt-extraction-group {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.receipt-extraction-field {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.receipt-extraction-field > span { color: var(--admin-muted); }
+.receipt-extraction-field > strong { color: var(--admin-text); text-align: right; }
+
+.receipt-extraction-tablewrap { overflow-x: auto; }
+
+.receipt-extraction-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.receipt-extraction-table th,
+.receipt-extraction-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+  text-align: left;
+}
+
+.receipt-extraction-table th { color: var(--admin-muted); }
+.receipt-extraction-itemname { font-weight: 700; color: var(--admin-text); }
+
+.receipt-extraction-raw {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.68rem;
+  color: var(--admin-muted);
+}
+
+.receipt-extraction-rejected > summary {
+  cursor: pointer;
+  color: #475569;
+}
+
+.receipt-extraction-reconciliation { display: grid; gap: 0.3rem; }
+.receipt-extraction-reconciliation strong { color: var(--admin-text); margin-right: 0.35rem; }
+.receipt-extraction-sum { color: var(--admin-muted); }
+.receipt-extraction-caution { color: #92400e; }
+
+.receipt-extraction-warnings {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+  color: #92400e;
+}
+
+/* Tone badges: one class per meaning, so a caller names the meaning not the colour. */
+.receipt-badge {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.receipt-badge.tone-ok { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.receipt-badge.tone-bad { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.receipt-badge.tone-warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.receipt-badge.tone-muted { background: #f1f5f9; color: #475569; border-color: var(--admin-border); }
+.receipt-badge.tone-info { background: var(--admin-accent-soft); color: var(--admin-accent); border-color: #bfdbfe; }
+
+.admin-shell .evidence-section-nav,
+.evidence-section-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  color: #475569;
+}
+
+.admin-shell .evidence-section-nav button,
+.evidence-section-nav button {
+  min-height: auto;
+  padding: 0.16rem 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: var(--admin-surface);
+  color: #334155;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.admin-shell .evidence-section-nav button:hover:not(:disabled),
+.evidence-section-nav button:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.admin-shell .evidence-section-nav button:disabled,
+.evidence-section-nav button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.evidence-section-nav strong {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.evidence-section-nav-attempt {
+  font-size: 0.68rem;
+  color: var(--admin-muted);
+}
+
+.receipt-extraction-flags { margin-top: 0.15rem; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports header
+   -------------------------------------------------------------------------- */
+
+.consumer-report-panel { font-family: 'Plus Jakarta Sans', sans-serif; }
+
+.consumer-report-header {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem 1.5rem;
+}
+
+.consumer-report-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.consumer-report-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.consumer-report-title h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--admin-text);
+  letter-spacing: -0.02em;
+}
+
+.consumer-report-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--admin-muted);
+}
+
+.consumer-report-protocol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #a7f3d0;
+  border-radius: 20px;
+  background: #ecfdf5;
+  color: var(--admin-success);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.consumer-report-protocol-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.consumer-report-protocol.is-emergency {
+  border-color: #fed7aa;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.consumer-report-protocol.is-emergency .consumer-report-protocol-dot { background: #f59e0b; }
+
+.consumer-report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.consumer-report-filters .filter-pill {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface);
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.consumer-report-filters .filter-pill.active { border-width: 1.5px; }
+.consumer-report-filters .filter-pill.tone-accent.active { border-color: var(--admin-accent); background: var(--admin-accent-soft); color: var(--admin-accent); }
+.consumer-report-filters .filter-pill.tone-warn.active { border-color: #d97706; background: #fffbeb; color: #b45309; }
+.consumer-report-filters .filter-pill.tone-muted.active { border-color: #64748b; background: #f1f5f9; color: #334155; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports list
+   -------------------------------------------------------------------------- */
+
+.consumer-report-list { display: grid; }
+
+.consumer-report-list-head {
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.consumer-report-table-row { cursor: pointer; }
+
+.consumer-report-table-row:hover,
+.consumer-report-table-row:focus-visible {
+  background: var(--admin-accent-soft);
+  outline: none;
+}
+
+.consumer-report-table .is-numeric { text-align: right; }
+.consumer-report-table-muted { color: var(--admin-muted); }
+
+/* One report at full panel width with viewport height bounds for split-pane scrolling */
+.consumer-report-detail {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 6.25rem);
+  max-height: calc(100vh - 6.25rem);
+  gap: 0.85rem;
+  overflow: hidden;
+}
+
+/* Single-row sticky detail header */
+.consumer-report-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  flex-shrink: 0;
+}
+
+.consumer-report-detail-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.consumer-report-header-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--admin-border, #e2e8f0);
+  flex-shrink: 0;
+}
+
+.consumer-report-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.consumer-report-detail-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--admin-text);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.consumer-report-detail-title:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 4px;
+}
+
+.consumer-report-detail-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.consumer-report-detail-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--admin-muted);
+}
+
+.consumer-report-detail-meta-pill strong {
+  color: #475569;
+  font-weight: 600;
+}
+
+.consumer-report-protocol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.consumer-report-protocol.is-emergency {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.consumer-report-protocol-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  display: inline-block;
+}
+
+.consumer-report-protocol.is-emergency .consumer-report-protocol-dot {
+  background: #dc2626;
+}
+
+.consumer-report-detail-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.consumer-report-detail-bar h2 {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  color: var(--admin-text);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.consumer-report-detail-bar h2:focus-visible { outline: 2px solid var(--admin-focus); outline-offset: 4px; }
+.consumer-report-detail-bar h2 span { color: var(--admin-muted); font-size: 0.85rem; font-weight: 600; }
+
+.consumer-report-search { position: relative; width: 100%; }
+
+.consumer-report-search svg {
+  position: absolute;
+  top: 50%;
+  left: 0.65rem;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.consumer-report-search input {
+  width: 100%;
+  padding: 0.45rem 0.65rem 0.45rem 2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface-subtle);
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.consumer-report-status {
+  padding: 0.12rem 0.45rem;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.consumer-report-status.tone-accent { background: var(--admin-accent-soft); color: var(--admin-accent); border-color: #bfdbfe; }
+.consumer-report-status.tone-warn { background: #fffbeb; color: #b45309; border-color: #fed7aa; }
+.consumer-report-status.tone-muted { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+
+/* Scoped so it outranks any ancestor rule that colours bare spans - `.admin-list span` did
+   exactly that in the old queue column and silently turned this badge muted. */
+.consumer-report-table .consumer-report-above-badge,
+.consumer-report-above-badge {
+  padding: 0.05rem 0.3rem;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: var(--admin-danger);
+  font-size: 0.66rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   Consumer Reports evidence pane
+   -------------------------------------------------------------------------- */
+
+.consumer-report-evidence-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.consumer-report-evidence-head {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.consumer-report-evidence-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.consumer-report-evidence-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-evidence-store {
+  margin-top: 0.15rem;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.consumer-report-evidence-submitted {
+  margin-top: 0.2rem;
+  color: var(--admin-muted);
+  font-size: 0.74rem;
+}
+
+.consumer-report-reference {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 4px;
+  background: var(--admin-surface-subtle);
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+}
+
+.consumer-report-assets {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-assets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.consumer-report-assets-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.consumer-report-asset-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-shell button.consumer-report-asset,
+.consumer-report-asset-list .consumer-report-asset,
+.consumer-report-asset {
+  min-height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.22rem 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: all 0.15s ease;
+}
+
+.admin-shell button.consumer-report-asset:hover,
+.consumer-report-asset-list .consumer-report-asset:hover,
+.consumer-report-asset:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.admin-shell button.consumer-report-asset.is-selected,
+.consumer-report-asset-list .consumer-report-asset.is-selected,
+.consumer-report-asset.is-selected {
+  border: 1.5px solid var(--admin-accent);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+}
+
+.consumer-report-asset-meta-row {
+  margin-top: 0.15rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--admin-border);
+}
+
+.consumer-report-meta-chip {
+  display: inline-block;
+  color: var(--admin-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.consumer-report-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: var(--admin-surface);
+  color: #334155;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* Full Screen is the one emphasised action, pushed to the end of the bar. */
+.consumer-report-toolbar button.is-primary {
+  margin-left: auto;
+  padding: 0.25rem 0.55rem;
+  border-color: #bfdbfe;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+  font-weight: 700;
+}
+
+.consumer-report-viewport {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: var(--admin-text);
+}
+
+.consumer-report-viewport img,
+.consumer-report-viewport video {
+  max-height: 100%;
+  max-width: 100%;
+}
+
+.consumer-report-viewport img {
+  object-fit: contain;
+  transition: transform 0.2s ease;
+}
+
+.consumer-report-viewport-status {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.consumer-report-viewport-status .spin-icon {
+  display: block;
+  margin: 0 auto 0.4rem;
+  color: var(--admin-focus);
+}
+
+.consumer-report-viewport-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.consumer-report-viewport-empty span { font-size: 0.76rem; }
+
+.consumer-report-detected {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.consumer-report-detected h4 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-detected-group {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+  font-size: 0.8rem;
+}
+
+.consumer-report-detected-row { display: flex; justify-content: space-between; }
+.consumer-report-detected-row > span { color: var(--admin-muted); }
+.consumer-report-detected-row > strong { color: var(--admin-text); }
+
+.consumer-report-download { width: 100%; justify-content: center; gap: 0.35rem; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports findings pane
+   -------------------------------------------------------------------------- */
+
+
+/* A scrolling flex column shrinks its own children by default, so content taller than the pane
+   was compressed to fit and overflow-y never engaged - measured: a 2200px child rendered at
+   729px, scrollHeight equal to clientHeight, no scrollbar. Children must keep their natural
+   height for the pane to scroll at all. */
+.consumer-report-evidence > *,
+.consumer-report-findings > * {
+  flex-shrink: 0;
+}
+
+.consumer-report-findings {
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  box-sizing: border-box;
+}
+
+.consumer-report-evidence::-webkit-scrollbar,
+.consumer-report-findings::-webkit-scrollbar {
+  width: 6px;
+}
+
+.consumer-report-evidence::-webkit-scrollbar-thumb,
+.consumer-report-findings::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.consumer-report-evidence::-webkit-scrollbar-track,
+.consumer-report-findings::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.consumer-report-findings-block { display: grid; gap: 0.65rem; }
+
+.consumer-report-findings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.consumer-report-findings-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-ocr-flag {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid #fed7aa;
+  border-radius: 4px;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.consumer-report-comparison {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-comparison-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--admin-text);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.consumer-report-comparison-head.is-blocked { color: #b45309; }
+
+.consumer-report-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--admin-border);
+  text-align: center;
+}
+
+.consumer-report-tile {
+  padding: 0.4rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  background: var(--admin-surface);
+}
+
+.consumer-report-tile-label {
+  color: var(--admin-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.consumer-report-tile-value {
+  color: var(--admin-text);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.consumer-report-tile-value.is-danger { color: #dc2626; }
+.consumer-report-tile-value.is-success { color: #059669; }
+
+.consumer-report-comparison-caution {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.consumer-report-comparison-note {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.consumer-report-legacy-items {
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+}
+
+.consumer-report-legacy-items table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.consumer-report-legacy-items thead {
+  border-bottom: 1px solid var(--admin-border);
+  background: var(--admin-surface-subtle);
+}
+
+.consumer-report-legacy-items th,
+.consumer-report-legacy-items td { padding: 0.4rem 0.55rem; text-align: left; }
+.consumer-report-legacy-items th { color: #475569; font-weight: 700; }
+.consumer-report-legacy-items tbody tr { border-bottom: 1px solid #f1f5f9; }
+.consumer-report-legacy-items td.is-name { color: var(--admin-text); font-weight: 600; }
+.consumer-report-legacy-items .is-numeric { text-align: right; }
+.consumer-report-legacy-items td.is-numeric { font-weight: 700; }
+.consumer-report-legacy-items td.is-numeric:last-child { font-weight: 400; }
+
+/* --------------------------------------------------------------------------
+   Consumer Reports decision controls
+   -------------------------------------------------------------------------- */
+
+.consumer-report-decision {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 1rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.consumer-report-decision-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.consumer-report-decision-lede {
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  color: var(--admin-muted);
+}
+
+.consumer-report-item-list {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.consumer-report-item-list-title {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.consumer-report-referral {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+  margin-top: 0.5rem;
+}
+
+.consumer-report-referral.is-active {
+  border-color: #bfdbfe;
+  background: var(--admin-accent-soft);
+}
+
+.consumer-report-referral p { margin: 0; }
+
+.consumer-report-referral-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.consumer-report-referral-toggle input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--admin-accent);
+  cursor: pointer;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.consumer-report-field,
+.consumer-report-field-label {
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.consumer-report-field-group { display: grid; gap: 0.35rem; }
+
+/* One control style for every select and textarea in this pane. */
+.consumer-report-control {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.consumer-report-field select { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid #cbd5e1; border-radius: 6px; background: var(--admin-surface); }
+
+.consumer-report-legacy-decision { display: grid; gap: 0.75rem; }
+
+.consumer-report-intents {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.consumer-report-intent {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: var(--admin-surface);
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.consumer-report-intent.is-selected { border-width: 2px; }
+.consumer-report-intent.tone-accent.is-selected { border-color: var(--admin-accent); background: var(--admin-accent-soft); color: var(--admin-accent); }
+.consumer-report-intent.tone-muted.is-selected { border-color: #475569; background: #f1f5f9; color: var(--admin-text); }
+
+.consumer-report-intent-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.consumer-report-intent-note {
+  margin-top: 0.15rem;
+  color: var(--admin-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.consumer-report-technical-body { margin-top: 0.65rem; display: grid; gap: 0.5rem; }
+
+.consumer-report-provenance {
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+  font-family: monospace;
+  font-size: 0.72rem;
+}
+
+.consumer-report-technical-title {
+  margin: 0 0 0.25rem;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.consumer-report-json-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.consumer-report-json-input {
+  width: 100%;
+  padding: 0.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.72rem;
+  box-sizing: border-box;
+}
+
+.consumer-report-empty {
+  padding: 4rem 2rem;
+  color: var(--admin-muted);
+  text-align: center;
+}
+
+.consumer-report-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 0.75rem;
+  border-radius: 10px;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+}
+
+.consumer-report-empty h3 {
+  margin: 0 0 0.35rem;
+  color: var(--admin-text);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.consumer-report-empty p {
+  margin: 0;
+  max-width: 380px;
+  margin-inline: auto;
+  font-size: 0.86rem;
+}
+
+.consumer-report-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+}
+
+.consumer-report-fullscreen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+.consumer-report-fullscreen-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.consumer-report-fullscreen-head h3 svg { color: var(--admin-focus); }
+
+.consumer-report-fullscreen-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.consumer-report-fullscreen-body img {
+  max-height: 90vh;
+  max-width: 90vw;
+  border-radius: 6px;
+  transition: transform 0.2s ease;
+}
+
+.consumer-report-fullscreen-locked {
+  color: #fff;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.consumer-report-fullscreen-locked svg { display: block; margin: 0 auto 0.5rem; color: #94a3b8; }

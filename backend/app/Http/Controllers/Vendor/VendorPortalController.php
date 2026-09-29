@@ -37,7 +37,7 @@ class VendorPortalController extends Controller
             'stores' => $stores->map(function (Store $store) use ($open, $unread) {
                 $types = collect($open->get($store->id, []))->pluck('notice_type');
                 return [
-                    ...$store->only(['id', 'store_name', 'address', 'dti_sec_number', 'recidivism_index']),
+                    ...$store->only(['id', 'store_name', 'address', 'dti_sec_number', 'recidivism_index', 'image_path']),
                     'last_inspected_at' => $store->latestMonitoringRecord?->finalized_at?->toIso8601String(),
                     'compliance_status' => $types->contains('SCO') ? 'SHOW_CAUSE_ISSUED' : ($types->contains('LOI') ? 'UNDER_INQUIRY' : 'IN_GOOD_STANDING'),
                     'open_notice_count' => $types->count(),

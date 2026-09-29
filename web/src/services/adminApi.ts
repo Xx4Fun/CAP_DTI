@@ -1,5 +1,5 @@
 import api from './api'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -154,9 +154,14 @@ export const adminApi = {
   async getReports(): Promise<ConsumerReportRecord[]> {
     return data(await api.get('/admin/reports'))
   },
-  async getReportPage(params: { page: number; per_page: number }): Promise<{
+  async getReportPage(params: { page: number; per_page: number; filter?: ConsumerReportFilter }): Promise<{
     data: ConsumerReportRecord[]
-    meta: { current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null }
+    meta: {
+      current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null
+      filter?: ConsumerReportFilter
+      /** Queue-wide totals, so a pill shows how much work exists rather than how much is on this page. */
+      filter_counts?: Record<ConsumerReportFilter, number>
+    }
   }> {
     const response = await api.get('/admin/reports', { params })
     return response.data

@@ -24,8 +24,9 @@ class SrpImportService
         if (!is_array($items) || $items === []) throw ValidationException::withMessages(['items' => ['At least one SRP item is required.']]);
 
         $rows = collect($items)->map(function ($item) use ($date, $source) {
-            if (!isset($item['item_name'], $item['srp']) || !is_numeric($item['srp']) || (float) $item['srp'] < 0) {
-                throw ValidationException::withMessages(['items' => ['Every item requires a name and non-negative numeric SRP.']]);
+            if (!isset($item['item_name'], $item['srp']) || !is_numeric($item['srp']) ||
+                (float) $item['srp'] <= 0 || !preg_match('/^\d+(\.\d{1,2})?$/', (string) $item['srp'])) {
+                throw ValidationException::withMessages(['items' => ['Every item requires a name and positive SRP in centavos.']]);
             }
             $key = Str::slug(trim($item['item_name'].' '.($item['unit'] ?? '')));
             return [
@@ -40,7 +41,13 @@ class SrpImportService
             ];
         })->values();
 
-        $duplicates = $rows->filter(fn ($row) => SrpBulletin::where('commodity_key', $row['commodity_key'])->whereDate('effective_date', $date)->exists())->count();
+        $seen = [];
+        $duplicates = $rows->filter(function ($row) use (&$seen, $date) {
+            $key = $row['commodity_key'];
+            if (isset($seen[$key])) return true;
+            $seen[$key] = true;
+            return SrpBulletin::where('commodity_key', $key)->whereDate('effective_date', $date)->exists();
+        })->count();
         return ['rows' => $rows->all(), 'insert_count' => $rows->count() - $duplicates, 'duplicate_count' => $duplicates, 'effective_date' => $date, 'source_reference' => $source];
     }
 

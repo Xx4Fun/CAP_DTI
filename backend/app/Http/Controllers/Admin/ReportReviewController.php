@@ -13,50 +13,123 @@ use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\ReportReviewService;
 use App\Services\FieldNotificationService;
+use App\Services\FieldReferenceResolver;
+use App\Services\Receipt\ReceiptPriceComparison;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class ReportReviewController extends Controller
 {
-    public function index(Request $request, AdminAuthorizationService $auth)
+    public function __construct(private readonly FieldReferenceResolver $references)
+    {
+    }
+
+    /**
+     * Where a report sits in the evaluator's workflow, as stored statuses.
+     *
+     * The panel previously guessed buckets from substrings of the status text, which matched only
+     * two of the six statuses the system actually writes — "Submitted" (the default for every new
+     * report) and "Referred for field verification" (written by this very controller) fell into no
+     * bucket at all, leaving two filter pills permanently empty.
+     */
+    private const FILTERS = [
+        'to_review' => ['Submitted', 'Under initial evaluation'],
+        'with_officer' => ['Referred for field verification'],
+        // Written only when an item decision is confirmed_violation.
+        'violations' => ['Under regulatory review'],
+        // Covers both a recorded no-violation finding and a report resolved without one; the two
+        // are distinguishable only by the presence of regulatory_findings rows.
+        'no_violation' => ['Resolved'],
+        'rejected' => ['Closed'],
+    ];
+
+    public function index(Request $request, AdminAuthorizationService $auth, ReceiptPriceComparison $comparison)
     {
         $auth->requireManager($request->user());
         $filters = $request->validate([
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:50',
+            'filter' => ['sometimes', 'string', Rule::in(array_merge(['all'], array_keys(self::FILTERS)))],
         ]);
-        $paginator = ConsumerReport::with(['store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'verificationRequest'])
-            ->whereNotIn('status', ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'])
-            ->latest()->paginate($filters['per_page'] ?? 20);
-        $reports = $paginator->getCollection()->map(fn ($report) => [
-            'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
-            'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
-            'raw_ocr_json' => $report->raw_ocr_json,
-            'evaluator_confirmed_json' => $report->evaluator_confirmed_json,
-            'verification_request' => $report->verificationRequest ? [
-                'id' => $report->verificationRequest->id,
-                'status' => $report->verificationRequest->status,
-                'reason' => $report->verificationRequest->reason,
-                'store_id' => $report->verificationRequest->store_id,
-                'claimed_by' => $report->verificationRequest->claimed_by,
-                'requested_at' => $report->verificationRequest->requested_at,
-                'claimed_at' => $report->verificationRequest->claimed_at,
-                'completed_at' => $report->verificationRequest->completed_at,
-                'cancelled_at' => $report->verificationRequest->cancelled_at,
-            ] : null,
-            'evidence_available' => ($report->image_vault_path && Storage::disk('local')->exists($report->image_vault_path))
-                || (bool) $report->evidenceBundle?->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path))
-                || $report->evidenceAttempts->flatMap->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path)),
-            'evidence_summary' => $report->evidenceBundle ? [
-                'capture_mode' => $report->evidenceBundle->capture_mode,
-                'processing_status' => $report->evidenceBundle->processing_status,
-                'asset_count' => $report->evidenceBundle->assets->count(),
-                'continuity' => data_get($report->evidenceBundle->processing_result_json, 'continuity.status'),
-                'merchant' => data_get($report->evidenceBundle->processing_result_json, 'merchant.status'),
-            ] : null,
-            'items' => $report->items->map(fn ($item) => [
+        $filter = $filters['filter'] ?? 'all';
+
+        $query = $this->reviewQuery();
+        if (isset(self::FILTERS[$filter])) {
+            $query->whereIn('status', self::FILTERS[$filter]);
+        }
+
+        $paginator = $query->latest()->paginate($filters['per_page'] ?? 20);
+        $reports = $paginator->getCollection()->map(fn ($report) => $this->reportRow($report, $comparison));
+        return response()->json([
+            'data' => $reports,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+                'filter' => $filter,
+                // Queue-wide, so a pill shows how much work exists rather than how much of it
+                // happens to be on the page being viewed.
+                'filter_counts' => $this->filterCounts(),
+            ],
+        ]);
+    }
+
+    /**
+     * How many reports sit in each workflow state across the whole queue.
+     *
+     * A status outside the map is a bug, but it must not fail the request: consumer_reports.status
+     * is an unconstrained string and cancelling a referral restores a value captured in immutable
+     * context_json. Unrecognised rows stay reachable under "all" and are logged instead.
+     */
+    private function filterCounts(): array
+    {
+        $byStatus = $this->reviewQuery()->getQuery()
+            ->select('status')->selectRaw('count(*) as aggregate')
+            ->groupBy('status')->pluck('aggregate', 'status');
+
+        $counts = ['all' => (int) $byStatus->sum()];
+        foreach (self::FILTERS as $name => $statuses) {
+            $counts[$name] = (int) collect($statuses)->sum(fn ($status) => $byStatus[$status] ?? 0);
+        }
+
+        $unmapped = $byStatus->keys()->diff(collect(self::FILTERS)->flatten());
+        if ($unmapped->isNotEmpty()) {
+            Log::warning('Consumer report statuses outside the workflow filter map.', ['statuses' => $unmapped->values()->all()]);
+        }
+
+        return $counts;
+    }
+
+    /** Relations every review payload needs, loaded once so a row never triggers per-item queries. */
+    private function reviewQuery()
+    {
+        return ConsumerReport::with([
+            'store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'activeVerificationRequest', 'latestVerificationRequest',
+        ])->whereNotIn('status', ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed']);
+    }
+
+    /**
+     * The single shape every consumer-report response uses.
+     *
+     * Decisions previously returned the raw Eloquent model, which carried none of the fields built
+     * here — so saving a decision blanked the store name and the evidence viewer in the panel, and
+     * leaked the consumer's tracking token hashes. Routing every report-scoped response through this
+     * allow-list fixes both.
+     */
+    private function reportRow(ConsumerReport $report, ReceiptPriceComparison $comparison): array
+    {
+        $request = $report->relationLoaded('activeVerificationRequest')
+            ? ($report->activeVerificationRequest ?? $report->latestVerificationRequest)
+            : $report->latestVerificationRequest;
+        $observedAt = $this->observedAtFor($report);
+        $items = $report->items->map(function ($item) use ($comparison, $observedAt) {
+            return [
                 'id' => $item->id,
                 'sequence' => $item->sequence,
                 'raw_text' => $item->raw_text,
@@ -74,19 +147,73 @@ class ReportReviewController extends Controller
                 'commodity_key' => $item->srp?->commodity_key,
                 'commodity_name' => $item->srp?->commodity_name ?? $item->item_name,
                 'evaluator_decision_json' => $item->evaluator_decision_json,
-            ])->values(),
-        ]);
-        return response()->json([
-            'data' => $reports,
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'from' => $paginator->firstItem(),
-                'to' => $paginator->lastItem(),
-            ],
-        ]);
+                // The applicable reference and the price comparison against it, per item.
+                'reference' => $comparison->forItem($item, $observedAt),
+            ];
+        })->values();
+
+        return [
+            'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
+            'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
+            'raw_ocr_json' => $report->raw_ocr_json,
+            'evaluator_confirmed_json' => $report->evaluator_confirmed_json,
+            // The purchase date governs which reference applies; the submission date does not.
+            'observed_at' => $observedAt,
+            'protocol' => $this->references->protocolAt($observedAt),
+            'above_reference_count' => $items->filter(fn ($item) => ($item['reference']['is_above_reference'] ?? null) === true)->count(),
+            'verification_request' => $request ? [
+                'id' => $request->id,
+                'status' => $request->status,
+                'reason' => $request->reason,
+                'store_id' => $request->store_id,
+                'claimed_by' => $request->claimed_by,
+                'requested_at' => $request->requested_at,
+                'claimed_at' => $request->claimed_at,
+                'completed_at' => $request->completed_at,
+                'cancelled_at' => $request->cancelled_at,
+            ] : null,
+            'evidence_available' => ($report->image_vault_path && Storage::disk('local')->exists($report->image_vault_path))
+                || (bool) $report->evidenceBundle?->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path))
+                || $report->evidenceAttempts->flatMap->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path)),
+            'evidence_summary' => $report->evidenceBundle ? [
+                'capture_mode' => $report->evidenceBundle->capture_mode,
+                'processing_status' => $report->evidenceBundle->processing_status,
+                'asset_count' => $report->evidenceBundle->assets->count(),
+                'continuity' => data_get($report->evidenceBundle->processing_result_json, 'continuity.status'),
+                'merchant' => data_get($report->evidenceBundle->processing_result_json, 'merchant.status'),
+            ] : null,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * The date the receipt records, falling back to submission only when extraction found none.
+     * A receipt bought before an SRP revision but submitted after it must resolve to the older one.
+     */
+    private function observedAtFor(ConsumerReport $report): ?string
+    {
+        $detected = data_get($report->raw_ocr_json, 'transaction_date');
+
+        if (is_string($detected) && trim($detected) !== '') {
+            try {
+                return \Illuminate\Support\Carbon::parse($detected)->toDateString();
+            } catch (\Throwable) {
+                // An unparseable extracted date is no better than none; fall through.
+            }
+        }
+
+        return ($report->submitted_at ?? $report->created_at)?->toDateString();
+    }
+
+    /** One report in the shared shape, reloaded so a freshly written decision reads back complete. */
+    private function freshRow(ConsumerReport $report, ReceiptPriceComparison $comparison): array
+    {
+        return $this->reportRow(
+            ConsumerReport::with([
+                'store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'activeVerificationRequest', 'latestVerificationRequest',
+            ])->findOrFail($report->id),
+            $comparison,
+        );
     }
 
     public function requestVerification(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, AuditTrailService $audit, FieldNotificationService $notifications)
@@ -196,10 +323,22 @@ class ReportReviewController extends Controller
 
         return response()->json(['data' => $verificationRequest->fresh()]);
     }
-    public function decision(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, ReportReviewService $service)
+    /** States a report may be decided from. Anything else is still being captured or extracted. */
+    private const DECIDABLE_STATUSES = [
+        'Submitted', 'Under initial evaluation', 'Under regulatory review', 'Resolved', 'Closed',
+    ];
+
+    public function decision(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, ReportReviewService $service, ReceiptPriceComparison $comparison)
     {
         $auth->requireManager($request->user());
-        abort_if($report->verificationRequest()->whereIn('status', ['open', 'claimed'])->exists(), 409, 'An open field verification request must be resolved first.');
+        // The queue hides in-progress reports, but that is a filter, not a guard: without this an
+        // evaluator reaching the route directly could decide a report the consumer has not confirmed.
+        abort_unless(
+            in_array($report->status, self::DECIDABLE_STATUSES, true),
+            422,
+            'This report is still being processed and cannot be decided yet.',
+        );
+        abort_if($report->activeVerificationRequest()->exists(), 409, 'An open field verification request must be resolved first.');
         $data = $request->validate([
             'action' => 'required|in:validate,correct,reject,dismiss',
             'reason' => 'required|string',
@@ -220,14 +359,16 @@ class ReportReviewController extends Controller
             $decisionItemIds = collect($data['item_decisions'])->pluck('item_id')->unique()->sort()->values()->all();
             abort_unless($decisionItemIds === $reportItemIds, 422, 'A decision is required for every item in this report.');
 
-            return response()->json(['data' => $service->decideItems(
+            $service->decideItems(
                 $report,
                 $data['action'],
                 $data['item_decisions'],
                 $data['reason'],
                 $request->user(),
                 $request,
-            )]);
+            );
+
+            return response()->json(['data' => $this->freshRow($report, $comparison)]);
         }
         if (in_array($data['action'], ['validate', 'correct'], true)) {
             $data['corrected'] = validator($data['corrected'] ?? [], [
@@ -239,7 +380,9 @@ class ReportReviewController extends Controller
                 'store_name' => 'nullable|string|max:255',
             ])->validate();
         }
-        return response()->json(['data' => $service->decide($report, $data['action'], $data['corrected'] ?? [], $data['reason'], $request->user(), $request)]);
+        $service->decide($report, $data['action'], $data['corrected'] ?? [], $data['reason'], $request->user(), $request);
+
+        return response()->json(['data' => $this->freshRow($report, $comparison)]);
     }
     public function evidence(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, AuditTrailService $audit)
     {

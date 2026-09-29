@@ -43,6 +43,9 @@ class ConsumerReport extends Model
         'consumer_confirmed_at' => 'datetime',
     ];
 
+    /** The consumer's tracking secrets must never reach an API response, admin-facing or otherwise. */
+    protected $hidden = ['tracking_token_hash', 'resume_token_hash'];
+
     public function store()
     {
         return $this->belongsTo(Store::class);
@@ -78,8 +81,28 @@ class ConsumerReport extends Model
         return $this->belongsToMany(WebPushSubscription::class, 'consumer_report_push_subscriptions')->withTimestamps();
     }
 
+    /**
+     * A report can be referred more than once over its lifetime, so referrals are history.
+     * Callers that mean "the one blocking a decision" want activeVerificationRequest().
+     */
+    public function verificationRequests()
+    {
+        return $this->hasMany(FieldVerificationRequest::class)->orderByDesc('requested_at')->orderByDesc('id');
+    }
+
+    public function activeVerificationRequest()
+    {
+        return $this->hasOne(FieldVerificationRequest::class)->whereIn('status', ['open', 'claimed']);
+    }
+
+    public function latestVerificationRequest()
+    {
+        return $this->hasOne(FieldVerificationRequest::class)->latestOfMany();
+    }
+
+    /** @deprecated Retained so existing callers keep working; prefer the explicit relations above. */
     public function verificationRequest()
     {
-        return $this->hasOne(FieldVerificationRequest::class);
+        return $this->latestVerificationRequest();
     }
 }

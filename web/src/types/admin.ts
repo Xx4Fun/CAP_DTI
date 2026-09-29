@@ -29,6 +29,7 @@ export interface StoreRecord {
   is_public: boolean
   recidivism_index?: number
   vendor_user_id?: number | null
+  image_path?: string | null
 }
 
 export type ManagedUserRole = 'field_officer' | 'vendor'
@@ -298,6 +299,12 @@ export interface FieldVerificationRequestActionRecord {
   cancelled_at: string | null
 }
 
+/**
+ * Where a report sits in the evaluator's workflow. These replace the old substring buckets, which
+ * matched only two of the six statuses the system writes and left two pills permanently empty.
+ */
+export type ConsumerReportFilter = 'all' | 'to_review' | 'with_officer' | 'violations' | 'no_violation' | 'rejected'
+
 export interface ConsumerReportRecord {
   id: number
   report_reference: string
@@ -315,6 +322,10 @@ export interface ConsumerReportRecord {
     merchant?: string | null
   } | null
   items?: ConsumerReportItemRecord[]
+  /** The receipt's own transaction date, which governs which reference applies. */
+  observed_at?: string | null
+  protocol?: { mode: 'standard' | 'emergency'; reference?: string | null }
+  above_reference_count?: number
   verification_request?: {
     id: number
     status: 'open' | 'claimed' | 'completed' | 'cancelled'
@@ -346,6 +357,43 @@ export interface ConsumerReportItemRecord {
   commodity_key?: string | null
   commodity_name?: string | null
   evaluator_decision_json?: Record<string, unknown> | null
+  reference?: ItemPriceReference
+}
+
+/**
+ * The regulatory reference that applied to one receipt line on the purchase date, and the arithmetic
+ * comparison against it. `is_above_reference` is a computed fact, not a finding: a DTI evaluator
+ * still decides whether a violation occurred.
+ */
+export interface ItemPriceReference {
+  status: 'available' | 'unavailable'
+  type?: 'standard_srp' | 'emergency_ceiling' | null
+  label?: string | null
+  value?: number | null
+  source?: string | null
+  effective_date?: string | null
+  version?: string | null
+  commodity_key?: string | null
+  commodity_name?: string | null
+  receipt_unit_price?: number | null
+  peso_difference?: number | null
+  percent_difference?: number | null
+  /** null when either side is unknown — never a false "within reference". */
+  is_above_reference?: boolean | null
+  auto_matched?: boolean
+  /**
+   * Ranked alternatives when the automatic match was not confident.
+   * `commodity_key` is nullable because `srp_bulletins.commodity_key` is: a keyless candidate
+   * cannot resolve a regulatory reference, so the selector must not offer it as choosable.
+   */
+  match_candidates?: Array<{
+    id: number
+    commodity_key: string | null
+    commodity_name: string
+    package_size?: string
+    match_score: number
+    match_level?: string
+  }>
 }
 
 export interface ReceiptEvidenceAssetRecord {

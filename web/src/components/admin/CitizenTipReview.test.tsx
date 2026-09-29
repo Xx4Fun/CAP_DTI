@@ -11,6 +11,7 @@ const reopenFieldVerification = vi.hoisted(() => vi.fn())
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getReports: vi.fn(),
+    getReportPage: vi.fn(),
     decideReport: vi.fn(),
     requestFieldVerification,
     getManagedUsers: vi.fn(),
@@ -23,6 +24,19 @@ vi.mock('../../services/adminApi', () => ({
 }))
 
 describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
+  /** The panel loads a filtered page, so a test states its rows and gets the envelope around them. */
+  const mockReportPage = (rows: unknown[]) => {
+    vi.mocked(adminApi.getReportPage).mockResolvedValue({
+      data: rows as never,
+      meta: {
+        current_page: 1, last_page: 1, per_page: 20, total: rows.length,
+        from: rows.length ? 1 : null, to: rows.length || null,
+        filter: 'all',
+        filter_counts: { all: rows.length, to_review: rows.length, with_officer: 0, violations: 0, no_violation: 0, rejected: 0 },
+      },
+    })
+  }
+
   const mockReports = [
     {
       id: 101,
@@ -61,7 +75,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(adminApi.getReports).mockResolvedValue(mockReports)
+    mockReportPage(mockReports)
     vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
     vi.mocked(adminApi.getReportEvidence).mockResolvedValue(new Blob(['fake-image-bytes'], { type: 'image/jpeg' }))
     vi.mocked(adminApi.decideReport).mockResolvedValue({
@@ -79,32 +93,47 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     }
   })
 
-  it('renders status filter pills and filters consumer reports queue', async () => {
+  it('lists reports in workflow filters and shows queue-wide counts', async () => {
     render(<CitizenTipReview />)
 
-    // Verify workspace title and status filter pills
     expect(await screen.findByRole('heading', { name: /Formal Receipt OCR Review Queue/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Reports on this page/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Pending Review \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Closed \/ Dismissed \(/i })).toBeInTheDocument()
 
-    // Default renders all reports in left list
+    // Workflow states, replacing buckets that matched only two of the six statuses the system
+    // writes and left two pills permanently empty.
+    expect(screen.getByRole('button', { name: /To review/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /With field officer/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Violations/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /No violation/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Rejected/i })).toBeInTheDocument()
+
     expect(screen.getByText('RPT-2026-001')).toBeInTheDocument()
     expect(screen.getByText('RPT-2026-002')).toBeInTheDocument()
     expect(screen.getByText('RPT-2026-003')).toBeInTheDocument()
 
-    // Filter by Pending Review
+    // Filtering is the server's job now, so choosing a pill re-queries rather than slicing rows.
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /Pending Review \(/i }))
-    expect(screen.getByText('RPT-2026-001')).toBeInTheDocument()
-    expect(screen.queryByText('RPT-2026-002')).not.toBeInTheDocument()
-    expect(screen.queryByText('RPT-2026-003')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Violations/i }))
+    expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'violations' }))
+  })
 
-    // Filter by Validated / LOI Issued
-    await user.click(screen.getByRole('button', { name: /Field Verification \/ Validated \/ LOI Issued \(/i }))
-    expect(screen.queryByText('RPT-2026-001')).not.toBeInTheDocument()
+  it('opens a report at full width and returns to the list', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    // The list is the whole view: no report detail until one is chosen.
+    expect(await screen.findByText('RPT-2026-001')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record finding/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('RPT-2026-001'))
+
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeInTheDocument()
+    // The other reports are gone: one report occupies the panel.
+    expect(screen.queryByText('RPT-2026-002')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Back to reports/i }))
+
     expect(screen.getByText('RPT-2026-002')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record finding/i })).not.toBeInTheDocument()
   })
 
   it('renders dual-column inspection workspace with image controls for evidence', async () => {
@@ -114,8 +143,8 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     // Select RPT-2026-001
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    // Left column vaulted evidence & image control buttons
-    expect(screen.getByRole('heading', { name: 'Original captured receipt evidence' })).toBeInTheDocument()
+    // Detail header & image control buttons
+    expect(screen.getByRole('heading', { name: 'San Jose Grand Market' })).toBeInTheDocument()
     const zoomInBtn = screen.getByRole('button', { name: /Zoom In/i })
     const zoomOutBtn = screen.getByRole('button', { name: /Zoom Out/i })
     const rotateBtn = screen.getByRole('button', { name: /Rotate/i })
@@ -140,9 +169,31 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getAllByText(/Super Extra Rice 1kg/i).length).toBeGreaterThan(0)
     expect(screen.getByText('OCR FLAG — REVIEW')).toBeInTheDocument()
 
-    // DTI Evaluator Single-Click Action Buttons
-    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Dismiss Report/i })).toBeInTheDocument()
+    // Four decision controls, each named for what it writes. Closure labels deliberately do not
+    // claim a determination: dismiss and reject record no finding at all.
+    expect(screen.getByRole('button', { name: /Refer for field verification/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Resolve without a finding/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Reject report/i })).toBeInTheDocument()
+    // The duplicate "Validate" pill and the primary mislabelled "Mark for Field Verification"
+    // while sending `validate` are both gone.
+    expect(screen.queryByRole('button', { name: /^Validate$/i })).not.toBeInTheDocument()
+  })
+
+  it('maps each decision control to its own backend action', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+    await user.selectOptions(screen.getByRole('combobox', { name: /Regulatory finding/i }), 'no_violation')
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Checked against the bulletin.')
+
+    // dismiss -> Resolved, reject -> Closed; the backend treats these differently and neither
+    // records a finding, so they must stay distinct controls.
+    await user.click(screen.getByRole('button', { name: /Resolve without a finding/i }))
+    expect(adminApi.decideReport).toHaveBeenLastCalledWith(101, expect.objectContaining({ action: 'dismiss' }))
+
+    await user.click(screen.getByRole('button', { name: /Reject report/i }))
+    expect(adminApi.decideReport).toHaveBeenLastCalledWith(101, expect.objectContaining({ action: 'reject' }))
   })
 
   it('shows an honest missing-evidence state without fabricating a receipt', async () => {
@@ -169,7 +220,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Overpriced shelf item detected.')
 
     // Click single-click Validate & Issue LOI
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(
       101,
@@ -200,7 +251,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(screen.getByRole('button', { name: /Require Field Verification/i }))
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the shelf price in person.')
-    await user.click(screen.getByRole('button', { name: /Mark for Field Verification/i }))
+    await user.click(screen.getByRole('button', { name: /Refer for field verification/i }))
 
     expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.', field_officer_id: 9 })
     expect(adminApi.decideReport).not.toHaveBeenCalled()
@@ -209,7 +260,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('shows the existing request and cancels it instead of offering a duplicate', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       status: 'Referred for field verification',
       verification_request: {
@@ -281,7 +332,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         },
       ],
     }
-    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    mockReportPage([receiptReport])
     vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
       capture_mode: 'continuous_video_v1',
       processing_status: 'confirmed',
@@ -316,7 +367,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.selectOptions(findings[0], 'confirmed_violation')
     await user.selectOptions(findings[1], 'no_violation')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Reviewed each confirmed receipt line.')
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(101, {
       action: 'validate',
@@ -337,7 +388,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         { id: 602, sequence: 1, item_name: 'COBRA 350ML', quantity: '3', observed_price: '81.00', line_total: '81.00', unit_price: '27.00', commodity_key: 'cobra', commodity_name: 'Cobra' },
       ],
     }
-    vi.mocked(adminApi.getReports).mockResolvedValue([receiptReport])
+    mockReportPage([receiptReport])
     vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
       capture_mode: 'guided_photos_v1',
       processing_status: 'ready',
@@ -365,10 +416,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.selectOptions(findings[0], 'confirmed_violation')
     await user.selectOptions(findings[1], 'no_violation')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Compared unit prices with the SRP.')
-    expect(screen.getByRole('button', { name: /Validate findings/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeDisabled()
 
     await user.type(sardinesPrice, '55')
-    await user.click(screen.getByRole('button', { name: /Validate findings/i }))
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
 
     expect(adminApi.decideReport).toHaveBeenCalledWith(101, expect.objectContaining({
       item_decisions: [
@@ -379,7 +430,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('shows every structured OCR item without presenting legacy confidence as measured', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       raw_ocr_json: {
@@ -410,7 +461,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('uses persisted guided receipt items instead of inventing an item from raw OCR metadata', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
       raw_ocr_json: {
@@ -428,9 +479,162 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     render(<CitizenTipReview />)
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    expect(screen.getByText('Rice 1kg')).toBeInTheDocument()
-    expect(screen.getByText('Item label not detected')).toBeInTheDocument()
-    expect(screen.getByText('93% measured')).toBeInTheDocument()
-    expect(screen.getByText('Confidence unavailable')).toBeInTheDocument()
+    // Persisted items are reviewed item by item. The duplicate read-only copy of the same rows was
+    // removed, so these assert the surviving decision surface rather than that table.
+    expect(screen.getByRole('spinbutton', { name: /Receipt unit price for Rice 1kg/i })).toBeInTheDocument()
+    expect(screen.getByText(/Rice 1kg/)).toBeInTheDocument()
+    expect(screen.getByText(/OCR 93%/)).toBeInTheDocument()
+    // The unnamed second item is still reviewable, labelled by position.
+    expect(screen.getByText(/Item 2/)).toBeInTheDocument()
+    // Nothing was invented from raw OCR metadata.
+    expect(screen.queryByText('Item label not detected')).not.toBeInTheDocument()
+  })
+
+  it('states the price comparison per item and never guesses when no reference applies', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        {
+          id: 601, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00',
+          commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines',
+          reference: {
+            status: 'available', type: 'standard_srp', label: 'SRP baseline (provisional)',
+            value: 21.5, effective_date: '2026-05-11', receipt_unit_price: 30,
+            peso_difference: 8.5, percent_difference: 39.5, is_above_reference: true, auto_matched: true,
+          },
+        },
+        {
+          id: 602, sequence: 1, item_name: 'Unmatched line', quantity: '1', unit_price: '12.00',
+          reference: { status: 'unavailable', label: 'No applicable reference', is_above_reference: null },
+        },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText('Above reference')).toBeInTheDocument()
+    // Twice by design: once on the item badge, once in the report's total-excess tile.
+    expect(screen.getAllByText(/\+₱8\.50/)).toHaveLength(2)
+    expect(screen.getByText(/SRP baseline \(provisional\)/)).toBeInTheDocument()
+    // The report roll-up counts only what was actually compared.
+    expect(screen.getByText(/Compared 1 of 2 item\(s\)/)).toBeInTheDocument()
+    expect(screen.getByText(/1 item\(s\) have no applicable reference/)).toBeInTheDocument()
+    // An item with no reference must not read as compliant.
+    expect(screen.getByText('No applicable reference')).toBeInTheDocument()
+    expect(screen.queryByText('Within reference')).not.toBeInTheDocument()
+  })
+
+  it('offers commodity suggestions by key, not display name, and skips keyless candidates', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [{
+        id: 701, sequence: 0, item_name: 'ZZQX UNREADABLE', quantity: '1', unit_price: '30.00',
+        reference: {
+          status: 'unavailable', label: 'No applicable reference', is_above_reference: null,
+          auto_matched: false,
+          match_candidates: [
+            { id: 11, commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines', package_size: '155 g', match_score: 62 },
+            { id: 12, commodity_key: null, commodity_name: 'Keyless Commodity', match_score: 55 },
+          ],
+        },
+      }],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    const options = document.querySelectorAll('datalist option')
+    // The server resolves the reference by exact commodity key, so the option's value must be the
+    // key. Submitting the display name made every chosen suggestion fail to resolve.
+    expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual(['saba-sardines-155g'])
+    // A keyless bulletin can never resolve a reference, so it is not offered at all.
+    expect(screen.queryByText(/Keyless Commodity/)).not.toBeInTheDocument()
+  })
+
+  it('reports item progress and names what is blocking the decision', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        { id: 901, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00', commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines' },
+        { id: 902, sequence: 1, item_name: 'Cooking Oil', quantity: '1', unit_price: '75.00' },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText('0 of 2 items decided')).toBeInTheDocument()
+    // A disabled submit used to give no reason at all, leaving the evaluator to hunt the row.
+    expect(screen.getByText(/Add a decision reason/i)).toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Checked.')
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'confirmed_violation')
+
+    expect(await screen.findByText('1 of 2 items decided')).toBeInTheDocument()
+    expect(screen.getByText(/Cooking Oil still needs a commodity/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Record finding/i })).toBeDisabled()
+  })
+
+  it('marks each item decided or not so an incomplete row is findable at a glance', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      items: [
+        { id: 911, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00', commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines' },
+        { id: 912, sequence: 1, item_name: 'Cooking Oil', quantity: '1', unit_price: '75.00' },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getAllByText('Needs a decision')).toHaveLength(2)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'no_violation')
+
+    expect(await screen.findByText('Decided')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs a decision')).toHaveLength(1)
+  })
+
+  it('lets an item report be referred for field verification', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      verification_request: null,
+      items: [{ id: 801, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00' }],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    // The referral controls used to live only in the legacy branch, so on an item report — the
+    // normal case — the officer selector never rendered and referral was impossible.
+    await user.click(screen.getByRole('checkbox', { name: /Refer this report for field verification/i }))
+    expect(await screen.findByRole('combobox', { name: 'Field Officer' })).toBeInTheDocument()
+  })
+
+  it('shows the price freeze protocol when the receipt falls inside a declared emergency', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_available: false,
+      protocol: { mode: 'emergency', reference: 'PDRRMC-2026-07' },
+      items: [],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(screen.getByText(/Price Freeze Protocol/)).toBeInTheDocument()
+    expect(screen.getByText(/PDRRMC-2026-07/)).toBeInTheDocument()
   })
 })

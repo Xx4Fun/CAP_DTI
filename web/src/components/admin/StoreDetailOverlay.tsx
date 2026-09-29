@@ -19,7 +19,6 @@ export interface StoreDetailOverlayProps {
   store: StoreRecord
   onClose: () => void
   onCenterMap: () => void
-  onInviteVendor: (store: StoreRecord) => void
 }
 
 type TabType = 'overview' | 'trends' | 'legal' | 'complaints'
@@ -28,7 +27,6 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   store,
   onClose,
   onCenterMap,
-  onInviteVendor,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [analyticsData, setAnalyticsData] = useState<any>(null)
@@ -117,13 +115,23 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
       }}
     >
       {/* Top Store Photo Banner Header */}
-      <div style={{ position: 'relative', width: '100%', height: '140px', background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)', flexShrink: 0, overflow: 'hidden' }}>
-        {/* Visual Header Pattern Overlay */}
+      <div style={{ position: 'relative', width: '100%', height: '140px', background: '#e2e8f0', flexShrink: 0, overflow: 'hidden' }}>
+        <img
+          src={store.image_path || '/stores/store.webp'}
+          alt={`${store.store_name} establishment`}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+          onError={(event) => {
+            const image = event.currentTarget
+            if (image.getAttribute('src') !== '/stores/store.webp') image.src = '/stores/store.webp'
+            else image.style.display = 'none'
+          }}
+        />
         <div
           style={{
             position: 'absolute',
             inset: 0,
-            backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.15) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 40%)',
+            background: 'linear-gradient(to top, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.08) 75%)',
+            pointerEvents: 'none',
           }}
         />
 
@@ -224,26 +232,6 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
                 }}
               >
                 <i className="fa-solid fa-crosshairs" aria-hidden="true" /> Center Map
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onInviteVendor(store)}
-                style={{
-                  padding: '0.45rem 0.85rem',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  background: '#ffffff',
-                  color: '#0f172a',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                }}
-              >
-                <i className="fa-solid fa-envelope" style={{ color: '#1e3a8a' }} aria-hidden="true" /> Invite Vendor
               </button>
             </div>
 

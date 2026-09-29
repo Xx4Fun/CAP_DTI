@@ -51,6 +51,29 @@ function createCustomPinIcon(status: 'green' | 'yellow' | 'red', isSelected: boo
   })
 }
 
+function createStorePhotoPinIcon(store: StoreRecord, status: 'green' | 'yellow' | 'red', isSelected: boolean): L.DivIcon {
+  const pin = document.createElement('div')
+  pin.className = 'store-photo-pin'
+  const photo = document.createElement('img')
+  photo.className = 'store-photo-pin-image'
+  photo.alt = ''
+  photo.draggable = false
+  photo.src = store.image_path || '/stores/store.webp'
+  photo.onerror = () => {
+    if (photo.getAttribute('src') !== '/stores/store.webp') photo.src = '/stores/store.webp'
+    else photo.style.display = 'none'
+  }
+  pin.append(photo)
+
+  return L.divIcon({
+    className: `store-photo-pin-container status-${status} ${isSelected ? 'selected' : ''}`,
+    html: pin,
+    iconSize: [42, 52],
+    iconAnchor: [21, 52],
+    popupAnchor: [0, -48],
+  })
+}
+
 export const StoreMap: React.FC<StoreMapProps> = ({
   latitude = 10.7424,
   longitude = 121.9406,
@@ -165,9 +188,9 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
       const isSelected = store.id === selectedStoreId
       const statusInfo = getStoreStatusInfo(store)
-      const pinIcon = createCustomPinIcon(statusInfo.status, isSelected)
+      const pinIcon = createStorePhotoPinIcon(store, statusInfo.status, isSelected)
 
-      const marker = L.marker([lat, lng], { icon: pinIcon }).addTo(mapInstance.current!)
+      const marker = L.marker([lat, lng], { icon: pinIcon, title: store.store_name }).addTo(mapInstance.current!)
 
       marker.bindPopup(buildStorePopupContent(store, statusInfo, lat, lng))
 

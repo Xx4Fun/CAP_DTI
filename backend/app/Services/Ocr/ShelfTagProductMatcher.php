@@ -68,10 +68,7 @@ class ShelfTagProductMatcher
 
     public function match(array|string $productInput, ?string $packageSize = null, array $options = []): array
     {
-        $bulletins = SrpBulletin::query()
-            ->where('is_active', true)
-            ->with('aliases')
-            ->get();
+        $bulletins = $this->activeBulletins();
 
         if ($bulletins->isEmpty()) {
             return [];
@@ -118,6 +115,20 @@ class ShelfTagProductMatcher
         }
 
         return $candidates;
+    }
+
+    /**
+     * Held for the lifetime of this instance: a receipt is matched line by line, and reloading the
+     * whole active catalogue per line turned one query into one per item.
+     */
+    protected ?\Illuminate\Support\Collection $activeBulletins = null;
+
+    protected function activeBulletins(): \Illuminate\Support\Collection
+    {
+        return $this->activeBulletins ??= SrpBulletin::query()
+            ->where('is_active', true)
+            ->with('aliases')
+            ->get();
     }
 
     /**
@@ -291,6 +302,10 @@ class ShelfTagProductMatcher
         // Exclude baseline_price and any price information.
         return [
             'id' => (int) $bulletin->id,
+            // Nullable: srp_bulletins.commodity_key is nullable, so an active bulletin may have none.
+            // Consumers that resolve a regulatory reference by key must treat a keyless candidate as
+            // unusable rather than assume this is always present.
+            'commodity_key' => $bulletin->commodity_key === null ? null : (string) $bulletin->commodity_key,
             'commodity_name' => (string) $commodityName,
             'brand' => (string) $brand,
             'category' => (string) ($bulletin->category ?? 'General'),

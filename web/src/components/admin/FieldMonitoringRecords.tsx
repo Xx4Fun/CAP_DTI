@@ -8,11 +8,9 @@ import { adminApi } from '../../services/adminApi'
 import { exportMonitoringMatrixExcel } from '../../utils/monitoringExcelExport'
 import type {
   FieldVerificationRequestPage, MonitoringEstablishmentProfile, MonitoringEstablishmentSummary,
-  ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringMatrixCommodity,
-  MonitoringMatrixData, MonitoringMatrixEstablishment, MonitoringMatrixWeek, MonitoringPeriodPreset,
+  ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringPeriodPreset,
   MonitoringPriceHistoryPage, MonitoringPriceHistoryRow, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace,
 } from '../../types/admin'
-import type { ManagedSrpRecord } from '../../types/adminSrp'
 
 type Tab = 'establishments' | 'records' | 'verification'
 type ProfileTab = 'overview' | 'findings' | 'history' | 'records'
@@ -148,118 +146,6 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     finally { setLoading(false) }
   }, [queries.records, recordPeriod, recordPage])
 
-  const buildClientSideMatrixFallback = async (preset: MonitoringPeriodPreset): Promise<MonitoringMatrixData> => {
-    const [srpResult, recordsResult] = await Promise.all([
-      adminApi.getSrp({ per_page: 500 }),
-      adminApi.getMonitoringRecords({
-        period: preset === 'all_time' ? undefined : preset,
-        per_page: 50,
-      }),
-    ])
-
-    const srpList: ManagedSrpRecord[] = Array.isArray(srpResult) ? srpResult : (srpResult?.records ?? [])
-    const commodities: MonitoringMatrixCommodity[] = srpList
-      .filter((srp) => srp.is_active !== false)
-      .sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.commodity_name.localeCompare(b.commodity_name))
-      .map((srp) => {
-        const rawClassification = String(srp.regulatory_classification || '').toUpperCase()
-        const classification = rawClassification.includes('PRIME') ? 'Prime Commodities' : 'Basic Necessities'
-        return {
-          id: srp.id,
-          commodity_name: srp.commodity_name,
-          unit: srp.unit ?? null,
-          category: srp.category ?? 'General',
-          regulatory_classification: classification,
-          srp: Number(srp.baseline_price) || 0,
-        }
-      })
-
-    const rawRecs = (recordsResult?.data ?? []).slice().reverse()
-    const recs = await Promise.all(
-      rawRecs.map(async (r) => {
-        try {
-          return await adminApi.getMonitoringRecord(r.id)
-        } catch {
-          return r
-        }
-      })
-    )
-    const weekMap = new Map<string, { starts_at: string; ends_at: string; records: MonitoringRecordRecord[] }>()
-
-    recs.forEach((record) => {
-      const d = new Date(record.finalized_at)
-      const day = d.getDay()
-      const diffToMon = (day === 0 ? -6 : 1) - day
-      const mon = new Date(d)
-      mon.setDate(d.getDate() + diffToMon)
-      mon.setHours(0, 0, 0, 0)
-      const sun = new Date(mon)
-      sun.setDate(mon.getDate() + 6)
-      sun.setHours(23, 59, 59, 999)
-
-      const startsAt = mon.toISOString().split('T')[0]
-      const endsAt = sun.toISOString().split('T')[0]
-      const key = `${startsAt}_${endsAt}`
-
-      if (!weekMap.has(key)) {
-        weekMap.set(key, { starts_at: startsAt, ends_at: endsAt, records: [] })
-      }
-      weekMap.get(key)!.records.push(record)
-    })
-
-    const weeks: MonitoringMatrixWeek[] = []
-    let weekNum = 1
-    for (const [key, { starts_at, ends_at, records: weekRecs }] of weekMap.entries()) {
-      const startFormatted = new Date(starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      const endFormatted = new Date(ends_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-
-      const byStore = new Map<number, MonitoringRecordRecord[]>()
-      weekRecs.forEach((r) => {
-        if (!byStore.has(r.store.id)) byStore.set(r.store.id, [])
-        byStore.get(r.store.id)!.push(r)
-      })
-
-      const establishments: MonitoringMatrixEstablishment[] = []
-      for (const [, storeRecs] of byStore.entries()) {
-        const primary = storeRecs.slice().sort((a, b) => (b.items?.length || 0) - (a.items?.length || 0))[0] || storeRecs[storeRecs.length - 1]
-        const prices: Record<number, { recorded_price: number; is_anomaly: boolean }> = {}
-        storeRecs.forEach((r) => {
-          ;(r.items || []).forEach((item) => {
-            prices[item.srp_id] = {
-              recorded_price: Number(item.recorded_price) || 0,
-              is_anomaly: Boolean(item.is_anomaly),
-            }
-          })
-        })
-        establishments.push({
-          store_id: primary.store.id,
-          store_name: primary.store.store_name,
-          monitoring_date: primary.finalized_at.split('T')[0],
-          monitoring_date_formatted: new Date(primary.finalized_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          prices,
-        })
-      }
-
-      weeks.push({
-        week_number: weekNum,
-        week_key: key,
-        week_label: `WEEK ${weekNum} (${startFormatted} - ${endFormatted})`,
-        starts_at,
-        ends_at,
-        establishments,
-      })
-      weekNum++
-    }
-
-    return {
-      period: preset,
-      date_range: { from: null, to: null },
-      commodities,
-      weeks,
-      generated_at: new Date().toISOString(),
-    }
-  }
-
   const handleExportExcel = async () => {
     setExportingMatrix(true)
     setError('')
@@ -273,19 +159,9 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         custom: 'Custom Period',
       }
       const label = periodLabelMap[recordPeriod] || 'Price Monitoring Matrix'
-      let matrixData: MonitoringMatrixData
-      try {
-        matrixData = await adminApi.getMonitoringExportMatrix({
-          period: recordPeriod === 'all_time' ? undefined : recordPeriod,
-        })
-      } catch (apiErr: unknown) {
-        const status = (apiErr as { response?: { status?: number } })?.response?.status
-        if (status === 404) {
-          matrixData = await buildClientSideMatrixFallback(recordPeriod)
-        } else {
-          throw apiErr
-        }
-      }
+      const matrixData = await adminApi.getMonitoringExportMatrix({
+        period: recordPeriod === 'all_time' ? undefined : recordPeriod,
+      })
       await exportMonitoringMatrixExcel(matrixData, label)
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to export Excel matrix.')

@@ -119,6 +119,17 @@ class AdminRegulatoryWorkflowTest extends TestCase
 
     public function test_review_queue_uses_only_consumer_reports_and_preserves_original_ocr(): void
     {
+        // A finding must cite the reference that applied on the purchase date, so the bulletin the
+        // decision names has to exist. Without it the decision is refused, which is covered by
+        // test_a_finding_cannot_be_recorded_without_an_authoritative_reference.
+        SrpBulletin::create([
+            'commodity_name' => 'Saba Sardines',
+            'unit' => '155g',
+            'commodity_key' => 'saba-sardines-155g',
+            'baseline_price' => 21.50,
+            'effective_date' => '2026-05-11',
+            'is_active' => true,
+        ]);
         $report = ConsumerReport::create([
             'report_reference' => 'REP-ADMIN-001',
             'tracking_token_hash' => hash('sha256', 'tracking'),
