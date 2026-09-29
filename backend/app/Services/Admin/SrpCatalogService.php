@@ -9,6 +9,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SrpCatalogService
 {
@@ -246,6 +247,43 @@ class SrpCatalogService
     {
         return (string) ($record->commodity_key
             ?: Str::slug(trim($record->commodity_name.' '.($record->unit ?? ''))));
+    }
+
+    /**
+     * Name + unit identifies a commodity, except where DTI lists one brand and size in several categories
+     * (Argentina 150g corned beef vs meat loaf). The category is then appended, and the lineage that
+     * already owns the plain key keeps it.
+     *
+     * @param  array<string, ?string>  $claimed  keys already assigned in the same batch => their category
+     * @param  array<int, int>  $exceptIds  rows of the lineage being renamed
+     */
+    public function commodityKey(string $name, ?string $unit, ?string $category, array $claimed = [], array $exceptIds = []): string
+    {
+        $base = Str::slug(trim($name.' '.($unit ?? '')));
+        $norm = fn (?string $value) => strtolower(trim((string) $value));
+        $suffixed = $base.'-'.Str::slug((string) $category);
+        // An existing category lineage keeps its key even if the plain key's owner was renamed since.
+        if ($norm($category) !== '') {
+            $suffixedOwners = SrpBulletin::where('commodity_key', $suffixed)->whereNotIn('id', $exceptIds)->pluck('category');
+            if ($suffixedOwners->isNotEmpty() || array_key_exists($suffixed, $claimed)) {
+                if ($suffixedOwners->push($claimed[$suffixed] ?? $category)->contains(fn (?string $owner) => $norm($owner) !== $norm($category))) {
+                    throw ValidationException::withMessages([
+                        'commodity_key' => ["SRP identity {$suffixed} already belongs to a different commodity."],
+                    ]);
+                }
+
+                return $suffixed;
+            }
+        }
+        $owners = SrpBulletin::where('commodity_key', $base)->whereNotIn('id', $exceptIds)->pluck('category')->all();
+        if (array_key_exists($base, $claimed)) {
+            $owners[] = $claimed[$base];
+        }
+        // Owners without a category predate category identities; only categorised owners can conflict.
+        $known = array_filter($owners, fn (?string $owner) => $norm($owner) !== '');
+        $taken = $norm($category) !== '' && $known !== [] && ! collect($known)->contains(fn (?string $owner) => $norm($owner) === $norm($category));
+
+        return $taken ? $suffixed : $base;
     }
 
     private function applySearch(Builder $query, string $search): void

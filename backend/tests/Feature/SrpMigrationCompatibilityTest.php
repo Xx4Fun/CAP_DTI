@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ItemAlias;
 use App\Models\SrpBulletin;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -61,5 +62,29 @@ class SrpMigrationCompatibilityTest extends TestCase
             $this->assertStringContainsString('Review them', $exception->getMessage());
             $this->assertSame(2, SrpBulletin::where('commodity_key', 'rice-1kg')->count());
         }
+    }
+
+    public function test_rekey_migration_separates_categories_sharing_a_key_so_the_unique_index_applies(): void
+    {
+        $unique = require database_path('migrations/2026_09_27_000001_prevent_duplicate_srp_versions.php');
+        $unique->down();
+        $row = fn (string $category, float $price, string $date = '2026-05-11') => SrpBulletin::create([
+            'commodity_name' => 'Argentina (150g)', 'unit' => '150g', 'category' => $category, 'commodity_key' => 'argentina-150g',
+            'baseline_price' => $price, 'effective_date' => $date, 'is_active' => true,
+        ]);
+        $meatLoaf = $row('Meat Loaf', 23.75);
+        $cornedBeef = $row('Corned Beef', 36.75);
+        $beefLoaf = $row('Beef Loaf', 22.00);
+        $laterMeatLoaf = $row('Meat Loaf', 24.00, '2026-06-01');
+        ItemAlias::create(['alias_name' => 'ARGENTINA BEEF LOAF', 'srp_bulletin_id' => $beefLoaf->id]);
+
+        (require database_path('migrations/2026_09_26_000001_rekey_srp_commodities_sharing_a_key.php'))->up();
+
+        $this->assertSame('argentina-150g', $beefLoaf->fresh()->commodity_key);
+        $this->assertSame('argentina-150g-meat-loaf', $meatLoaf->fresh()->commodity_key);
+        $this->assertSame('argentina-150g-meat-loaf', $laterMeatLoaf->fresh()->commodity_key);
+        $this->assertSame('argentina-150g-corned-beef', $cornedBeef->fresh()->commodity_key);
+        $unique->up();
+        $this->assertSame(4, SrpBulletin::count());
     }
 }

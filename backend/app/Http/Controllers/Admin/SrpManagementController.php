@@ -67,7 +67,7 @@ class SrpManagementController extends Controller
             'image_path' => 'nullable|string|max:255',
         ]);
 
-        $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
+        $commodityKey = $catalog->commodityKey($data['commodity_name'], $data['unit'] ?? null, $data['category'] ?? null);
         $existingIdentity = SrpBulletin::where('commodity_key', $commodityKey)->exists()
             || SrpBulletin::whereNull('commodity_key')->get(['commodity_name', 'unit', 'commodity_key'])
                 ->contains(fn (SrpBulletin $record) => $catalog->lineageKey($record) === $commodityKey);
@@ -120,11 +120,10 @@ class SrpManagementController extends Controller
             'image_path' => 'nullable|string|max:255',
         ]);
 
-        $commodityKey = Str::slug(trim($data['commodity_name'].' '.($data['unit'] ?? '')));
         $targetImagePath = $data['image_path'] ?? $srp->image_path;
 
         // Sync metadata and image_path across all revisions of this commodity lineage
-        DB::transaction(function () use ($srp, $commodityKey, $data, $targetImagePath, $request, $audit, $catalog) {
+        DB::transaction(function () use ($srp, $data, $targetImagePath, $request, $audit, $catalog) {
             $lineage = function () use ($srp) {
                 $query = SrpBulletin::query();
 
@@ -135,6 +134,7 @@ class SrpManagementController extends Controller
 
             $lineageRows = $lineage()->lockForUpdate()->get(['id', 'unit', 'commodity_key', 'effective_date']);
             $lineageIds = $lineageRows->pluck('id');
+            $commodityKey = $catalog->commodityKey($data['commodity_name'], $data['unit'] ?? null, $data['category'] ?? null, [], $lineageIds->all());
             $dates = $lineageRows->map(fn (SrpBulletin $record) => $record->effective_date->toDateString());
             $targetExists = SrpBulletin::where('commodity_key', $commodityKey)->whereNotIn('id', $lineageIds)->exists()
                 || SrpBulletin::whereNull('commodity_key')->whereNotIn('id', $lineageIds)

@@ -22,6 +22,13 @@ class SrpRevisionService
     {
         $this->requireAvailable();
         $proposed = $this->proposedAttributes($original, $data);
+        // The category distinguishes lineages that share a name and unit, so a revision cannot move it.
+        $norm = fn (?string $value) => strtolower(trim((string) $value));
+        if ($original->commodity_key !== null && $norm($original->category) !== '' && $norm($proposed['category']) !== $norm($original->category)) {
+            throw ValidationException::withMessages([
+                'category' => ['Category is part of the commodity identity. Change it with Update SRP details instead of a price revision.'],
+            ]);
+        }
         $this->ensureNoConflict($original, $proposed);
 
         $changedFields = collect($proposed)

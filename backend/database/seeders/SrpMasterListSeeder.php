@@ -4,9 +4,9 @@ namespace Database\Seeders;
 
 use App\Models\ItemAlias;
 use App\Models\SrpBulletin;
+use App\Services\Admin\SrpCatalogService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use RuntimeException;
 
 class SrpMasterListSeeder extends Seeder
@@ -62,11 +62,12 @@ class SrpMasterListSeeder extends Seeder
             }
 
             // Check if record exists to preserve any attached image_path
-            $existing = SrpBulletin::where('commodity_name', $commodityName)->first();
-            $commodityKey = $existing?->commodity_key ?: Str::slug(trim($itemName.' '.$unit));
+            // DTI lists some brand + size pairs under several categories; each is its own commodity.
+            $existing = SrpBulletin::where('commodity_name', $commodityName)->where('category', $category)->first();
+            $commodityKey = $existing?->commodity_key ?: app(SrpCatalogService::class)->commodityKey($itemName, $unit, $category);
             if (! $existing?->commodity_key) {
                 $collision = SrpBulletin::query()->where('commodity_key', $commodityKey)->get()
-                    ->first(fn ($row) => $row->commodity_name !== $commodityName || $row->unit !== $unit);
+                    ->first(fn ($row) => $row->commodity_name !== $commodityName || $row->unit !== $unit || $row->category !== $category);
                 if ($collision) {
                     throw new RuntimeException("Derived commodity_key collision '{$commodityKey}' between '{$commodityName}' and '{$collision->commodity_name}'.");
                 }
@@ -93,16 +94,17 @@ class SrpMasterListSeeder extends Seeder
 
             // Non-destructively create or update SrpBulletin record
             $bulletin = SrpBulletin::updateOrCreate(
-                ['commodity_name' => $commodityName],
+                ['commodity_name' => $commodityName, 'category' => $category],
                 $attributes
             );
 
-            // Map plain item_name and full commodity_name as aliases for receipt OCR lookup
-            ItemAlias::updateOrCreate(
+            // Map plain item_name and full commodity_name as aliases for receipt OCR lookup. Keep an
+            // existing link: names shared across categories must not move to whichever row seeds last.
+            ItemAlias::firstOrCreate(
                 ['alias_name' => strtoupper($commodityName)],
                 ['srp_bulletin_id' => $bulletin->id]
             );
-            ItemAlias::updateOrCreate(
+            ItemAlias::firstOrCreate(
                 ['alias_name' => strtoupper($itemName)],
                 ['srp_bulletin_id' => $bulletin->id]
             );

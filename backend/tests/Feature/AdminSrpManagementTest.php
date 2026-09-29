@@ -381,6 +381,87 @@ final class AdminSrpManagementTest extends TestCase
         ])->assertOk()->assertJsonPath('data.insert_count', 1)->assertJsonPath('data.duplicate_count', 1);
     }
 
+    public function test_same_brand_and_size_in_different_categories_get_separate_keys(): void
+    {
+        $import = fn (string $date) => $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => $date, 'source_reference' => 'DTI-SRP-'.$date],
+            'items' => [
+                ['item_name' => 'Argentina', 'unit' => '150g', 'category' => 'Beef Loaf', 'srp' => 22],
+                ['item_name' => 'Argentina', 'unit' => '150g', 'category' => 'Corned Beef', 'srp' => 36.75],
+            ],
+        ])->assertOk();
+
+        $import('2026-12-01')->assertJsonPath('data.insert_count', 2)
+            ->assertJsonPath('data.rows.0.commodity_key', 'argentina-150g')
+            ->assertJsonPath('data.rows.1.commodity_key', 'argentina-150g-corned-beef');
+
+        SrpBulletin::create(['commodity_name' => 'Argentina (150g)', 'unit' => '150g', 'category' => 'Beef Loaf',
+            'commodity_key' => 'argentina-150g', 'baseline_price' => 22, 'effective_date' => '2026-12-01', 'is_active' => true]);
+        SrpBulletin::create(['commodity_name' => 'Argentina (150g)', 'unit' => '150g', 'category' => 'Corned Beef',
+            'commodity_key' => 'argentina-150g-corned-beef', 'baseline_price' => 36.75, 'effective_date' => '2026-12-01', 'is_active' => true]);
+
+        // A later bulletin continues each existing lineage, whatever order the rows arrive in.
+        $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => '2027-01-01', 'source_reference' => 'DTI-SRP-2027'],
+            'items' => [
+                ['item_name' => 'Argentina', 'unit' => '150g', 'category' => 'Corned Beef', 'srp' => 37],
+                ['item_name' => 'Argentina', 'unit' => '150g', 'category' => 'Beef Loaf', 'srp' => 23],
+            ],
+        ])->assertOk()->assertJsonPath('data.insert_count', 2)
+            ->assertJsonPath('data.rows.0.commodity_key', 'argentina-150g-corned-beef')
+            ->assertJsonPath('data.rows.1.commodity_key', 'argentina-150g');
+
+        $this->postJson('/api/admin/srp', [
+            'commodity_name' => 'Argentina', 'unit' => '150g', 'category' => 'Meat Loaf',
+            'baseline_price' => 23.75, 'effective_date' => '2026-12-01', 'source_reference' => 'DTI-SRP-MANUAL',
+        ])->assertCreated()->assertJsonPath('data.commodity_key', 'argentina-150g-meat-loaf');
+
+        $meatLoaf = SrpBulletin::where('commodity_key', 'argentina-150g-meat-loaf')->firstOrFail();
+        $this->putJson("/api/admin/srp/{$meatLoaf->id}", ['commodity_name' => 'Argentina', 'unit' => '150g', 'category' => 'Meat Loaf'])
+            ->assertOk();
+        $this->assertSame('argentina-150g-meat-loaf', $meatLoaf->fresh()->commodity_key);
+    }
+
+    public function test_category_lineages_survive_renames_and_revisions(): void
+    {
+        $row = fn (string $category, string $key) => SrpBulletin::create(['commodity_name' => 'Argentina (150g)', 'unit' => '150g',
+            'category' => $category, 'commodity_key' => $key, 'baseline_price' => 22, 'effective_date' => '2026-12-01',
+            'source_reference' => 'DTI-SRP', 'is_active' => true]);
+        $beefLoaf = $row('Beef Loaf', 'argentina-150g');
+        $row('Corned Beef', 'argentina-150g-corned-beef');
+
+        // The plain-key lineage cannot take over another lineage's category.
+        $this->putJson("/api/admin/srp/{$beefLoaf->id}", ['commodity_name' => 'Argentina', 'unit' => '150g', 'category' => 'Corned Beef'])
+            ->assertStatus(422);
+
+        // After the plain-key owner is renamed, Corned Beef still continues its own lineage.
+        $this->putJson("/api/admin/srp/{$beefLoaf->id}", ['commodity_name' => 'Argentina Loaf', 'unit' => '150g', 'category' => 'Beef Loaf'])
+            ->assertOk();
+        $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => '2027-01-01', 'source_reference' => 'DTI-SRP-2027'],
+            'items' => [['item_name' => 'Argentina', 'unit' => '150g', 'category' => 'Corned Beef', 'srp' => 37]],
+        ])->assertOk()->assertJsonPath('data.rows.0.commodity_key', 'argentina-150g-corned-beef');
+
+        // A legacy row without a category does not make two new categories share one key.
+        SrpBulletin::create(['commodity_name' => 'Bingo (150g)', 'unit' => '150g', 'category' => null, 'commodity_key' => 'bingo-150g',
+            'baseline_price' => 19.5, 'effective_date' => '2026-05-11', 'is_active' => true]);
+        $this->postJson('/api/admin/srp/import/preview', [
+            'metadata' => ['effective_date' => '2027-01-01', 'source_reference' => 'DTI-SRP-2027'],
+            'items' => [
+                ['item_name' => 'Bingo', 'unit' => '150g', 'category' => 'Beef Loaf', 'srp' => 19.5],
+                ['item_name' => 'Bingo', 'unit' => '150g', 'category' => 'Corned Beef', 'srp' => 23],
+            ],
+        ])->assertOk()->assertJsonPath('data.insert_count', 2)
+            ->assertJsonPath('data.rows.0.commodity_key', 'bingo-150g')
+            ->assertJsonPath('data.rows.1.commodity_key', 'bingo-150g-corned-beef');
+
+        // A price revision cannot move a keyed commodity to another category.
+        $this->postJson("/api/admin/srp/{$beefLoaf->id}/revisions/preview", [
+            'commodity_name' => 'Argentina Loaf', 'category' => 'Meat Loaf', 'unit' => '150g', 'baseline_price' => 23,
+            'effective_date' => '2027-02-01', 'source_reference' => 'DTI-SRP-2027-02', 'change_reason' => 'Bulletin.',
+        ])->assertStatus(422)->assertJsonValidationErrors('category');
+    }
+
     public function test_legacy_revision_ignores_other_unkeyed_commodities_on_the_same_date(): void
     {
         $legacy = SrpBulletin::create([

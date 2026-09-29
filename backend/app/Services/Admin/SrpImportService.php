@@ -12,7 +12,11 @@ use Illuminate\Validation\ValidationException;
 
 class SrpImportService
 {
-    public function __construct(private readonly AuditTrailService $audit, private readonly FieldNotificationService $notifications) {}
+    public function __construct(
+        private readonly AuditTrailService $audit,
+        private readonly FieldNotificationService $notifications,
+        private readonly SrpCatalogService $catalog,
+    ) {}
 
     public function preview(array $payload): array
     {
@@ -23,12 +27,14 @@ class SrpImportService
         if (!$source) throw ValidationException::withMessages(['metadata.source_reference' => ['An authoritative source reference is required.']]);
         if (!is_array($items) || $items === []) throw ValidationException::withMessages(['items' => ['At least one SRP item is required.']]);
 
-        $rows = collect($items)->map(function ($item) use ($date, $source) {
+        $claimed = [];
+        $rows = collect($items)->map(function ($item) use ($date, $source, &$claimed) {
             if (!isset($item['item_name'], $item['srp']) || !is_numeric($item['srp']) ||
                 (float) $item['srp'] <= 0 || !preg_match('/^\d+(\.\d{1,2})?$/', (string) $item['srp'])) {
                 throw ValidationException::withMessages(['items' => ['Every item requires a name and positive SRP in centavos.']]);
             }
-            $key = Str::slug(trim($item['item_name'].' '.($item['unit'] ?? '')));
+            $key = $this->catalog->commodityKey($item['item_name'], $item['unit'] ?? null, $item['category'] ?? null, $claimed);
+            $claimed[$key] ??= $item['category'] ?? null;
             return [
                 'commodity_key' => $key, 'commodity_name' => $item['item_name'],
                 'image_path' => $item['image_path'] ?? null,
