@@ -295,7 +295,6 @@ export const MoreView: React.FC<MoreViewProps> = ({
           </div>
           <div className="more-dti-header-texts">
             <h1 id="heading-dti-top" className="more-dti-title">DTI Antique Provincial Office</h1>
-            <div className="more-dti-subtitle">Government Consumer Protection</div>
             <div className="more-dti-hours-pill">
               <Clock size={12} />
               <span>Status: Mon – Fri · 8:00 AM – 5:00 PM</span>

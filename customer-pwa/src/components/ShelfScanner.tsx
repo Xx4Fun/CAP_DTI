@@ -41,14 +41,6 @@ interface ShelfScannerProps {
   mode?: 'manual' | 'ocr';
 }
 
-const STAPLE_CHIPS = [
-  { label: 'Rice', query: 'Rice' },
-  { label: 'Canned Fish', query: 'Sardines' },
-  { label: 'Milk', query: 'Milk' },
-  { label: 'Coffee', query: 'Coffee' },
-  { label: 'Bread', query: 'Bread' },
-  { label: 'Candles', query: 'Esperma' },
-];
 
 const getConciseCommodityTitle = (commodity: Pick<Commodity, 'commodity_name' | 'category' | 'unit' | 'package_size'>): string =>
   formatCommodityDisplay(
@@ -1070,25 +1062,6 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
                 />
               </div>
 
-              {!selectedCandidate && !commoditySearchQuery && (
-                <div className="shelf-compare-chips-container">
-                  <span className="shelf-compare-chips-label">Common staples</span>
-                  <div className="shelf-compare-chips-scroll">
-                    {STAPLE_CHIPS.map((chip) => (
-                      <button
-                        key={chip.query}
-                        type="button"
-                        className="shelf-compare-chip"
-                        onClick={() => {
-                          void searchCommodities(chip.query);
-                        }}
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {commoditySearchResults.length > 0 && (
                 <div className="shelf-compare-dropdown">
