@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CitizenTipReview } from './CitizenTipReview'
@@ -20,6 +20,7 @@ vi.mock('../../services/adminApi', () => ({
     getReportEvidence: vi.fn(),
     getReportEvidenceManifest: vi.fn(),
     getReportEvidenceAsset: vi.fn(),
+    getStores: vi.fn(),
   },
 }))
 
@@ -76,6 +77,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockReportPage(mockReports)
+    vi.mocked(adminApi.getStores).mockResolvedValue([
+      { id: 7, store_name: 'Gaisano Grand Mall', address: 'San Jose', latitude: 10.7, longitude: 121.9, is_active: true },
+      { id: 8, store_name: 'Antique Mart', address: 'San Jose', latitude: 10.7, longitude: 121.9, is_active: true },
+    ] as never)
     vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
     vi.mocked(adminApi.getReportEvidence).mockResolvedValue(new Blob(['fake-image-bytes'], { type: 'image/jpeg' }))
     vi.mocked(adminApi.decideReport).mockResolvedValue({
@@ -96,7 +101,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   it('lists reports in workflow filters and shows queue-wide counts', async () => {
     render(<CitizenTipReview />)
 
-    expect(await screen.findByRole('heading', { name: /Formal Receipt OCR Review Queue/i })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Consumer reports' })).toBeInTheDocument()
+    // The admin shell already titles the page; the list repeating "Consumer Reports" was noise.
+    expect(screen.queryByRole('heading', { name: /Consumer Reports/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Select a report to see the applicable protocol/i)).not.toBeInTheDocument()
 
     // Workflow states, replacing buckets that matched only two of the six statuses the system
     // writes and left two pills permanently empty.
@@ -114,6 +122,28 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /Violations/i }))
     expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'violations' }))
+  })
+
+  it('scopes the queue by establishment and receipt date on the server, and clears the scope', async () => {
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await screen.findByText('RPT-2026-001')
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Establishment' }), 'Gaisano Grand Mall')
+    expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({ store_id: 7, page: 1 }))
+
+    // jsdom drops partially typed date values, so set each date the way the picker commits it.
+    fireEvent.change(screen.getByLabelText('Receipt date from'), { target: { value: '2026-08-09' } })
+    fireEvent.change(screen.getByLabelText('Receipt date to'), { target: { value: '2026-08-12' } })
+    expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      store_id: 7, date_from: '2026-08-09', date_to: '2026-08-12', page: 1,
+    }))
+
+    await user.click(screen.getByRole('button', { name: /Clear filters/i }))
+    expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      store_id: undefined, date_from: undefined, date_to: undefined,
+    }))
+    expect(screen.queryByRole('button', { name: /Clear filters/i })).not.toBeInTheDocument()
   })
 
   it('opens a report at full width and returns to the list', async () => {

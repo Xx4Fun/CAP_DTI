@@ -18,7 +18,7 @@ import {
   ZoomOut,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import type { ConsumerReportFilter, ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult } from '../../types/admin'
+import type { ConsumerReportFilter, ConsumerReportItemRecord, ConsumerReportRecord, ManagedUserRecord, ReceiptEvidenceAssetRecord, ReceiptEvidenceManifest, ReceiptExtractionResult, StoreRecord } from '../../types/admin'
 import { suggestedUnitPrice, toPrice } from './receiptPrice'
 import { EvidenceSectionNav, ReceiptExtractionPanel } from './ReceiptExtractionPanel'
 import { ItemReferenceVerdict } from './ItemReferenceVerdict'
@@ -47,6 +47,11 @@ export const CitizenTipReview: React.FC = () => {
   const [filter, setFilter] = useState<ConsumerReportFilter>('to_review')
   const [filterCounts, setFilterCounts] = useState<Partial<Record<ConsumerReportFilter, number>>>({})
   const [searchTerm, setSearchTerm] = useState('')
+  /** Server-side scope: one establishment and a receipt-date range. Tab counts follow it. */
+  const [storeId, setStoreId] = useState<number | ''>('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [stores, setStores] = useState<StoreRecord[]>([])
   const [decisionIntent, setDecisionIntent] = useState<'verify' | 'close'>('verify')
   const [verificationChosen, setVerificationChosen] = useState(false)
   const [fieldOfficers, setFieldOfficers] = useState<ManagedUserRecord[]>([])
@@ -91,7 +96,10 @@ export const CitizenTipReview: React.FC = () => {
     // No `typeof adminApi.getReportPage === 'function'` guard here. It can only be false against a
     // partial test mock, and its synthetic meta omitted `from`/`to`, which broke the typecheck. The
     // mock supplies getReportPage via mockReportPage(), so production code needs no fallback.
-    void adminApi.getReportPage({ page: reportPage.current_page, per_page: reportPage.per_page, filter })
+    void adminApi.getReportPage({
+      page: reportPage.current_page, per_page: reportPage.per_page, filter,
+      store_id: storeId || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined,
+    })
       .then((response) => {
         setReports(response.data)
         setReportPage(response.meta)
@@ -100,7 +108,23 @@ export const CitizenTipReview: React.FC = () => {
         setReports([])
         setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
       }).finally(() => setLoading(false))
-  }, [reportPage.current_page, reportPage.per_page, filter])
+  }, [reportPage.current_page, reportPage.per_page, filter, storeId, dateFrom, dateTo])
+
+  // The establishment list only feeds the filter, so a failure leaves "All establishments" usable.
+  useEffect(() => {
+    void adminApi.getStores().then(setStores).catch(() => setStores([]))
+  }, [])
+
+  /** Any change of scope starts again from page 1; page 3 of the old scope may not exist. */
+  const toFirstPage = () => setReportPage((current) => ({ ...current, current_page: 1 }))
+  const scoped = Boolean(storeId || dateFrom || dateTo)
+  const clearFilters = () => {
+    setStoreId('')
+    setDateFrom('')
+    setDateTo('')
+    setSearchTerm('')
+    toFirstPage()
+  }
 
   useEffect(() => {
     if (!verificationChosen) return
@@ -507,70 +531,89 @@ export const CitizenTipReview: React.FC = () => {
 
   return (
     <div className="citizen-tip-review-workspace consumer-report-panel">
-      {!selected && (
-        <div className="review-header-bar consumer-report-card consumer-report-header">
-          <div className="consumer-report-header-row">
-            <div>
-              <div className="consumer-report-title">
-                <h2 aria-label="Consumer Reports — Formal Receipt OCR Review Queue">Consumer Reports</h2>
-                <span className="consumer-report-protocol">
-                  <span className="consumer-report-protocol-dot" />
-                  Select a report to see the applicable protocol
-                </span>
-              </div>
-              <p className="consumer-report-subtitle">
-                Review submitted consumer price concerns and determine the next action.
-              </p>
-            </div>
-
-            {/* One pill per bucket. */}
-            <div className="status-filter-pills consumer-report-filters">
+      {/* LIST OR DETAIL, never both. One report at full width gets the whole panel. The page title
+          comes from the admin shell, so the list carries no heading of its own. */}
+      {!selected ? (
+        <section className="admin-table-card consumer-report-list" aria-label="Consumer reports">
+          <div className="consumer-report-list-head">
+            {/* One tab per workflow bucket; counts follow the establishment and date scope. */}
+            <div className="status-filter-pills consumer-report-filters" role="group" aria-label="Report status">
               {FILTERS.map((pill) => (
                 <button
                   key={pill.id}
                   type="button"
+                  aria-pressed={filter === pill.id}
                   className={`filter-pill tone-${pill.tone} ${filter === pill.id ? 'active' : ''}`}
-                  onClick={() => { setFilter(pill.id); setReportPage((current) => ({ ...current, current_page: 1 })) }}
+                  onClick={() => { setFilter(pill.id); toFirstPage() }}
                 >
                   {pill.label}
-                  {filterCounts[pill.id] === undefined ? '' : ` (${filterCounts[pill.id]})`}
+                  {filterCounts[pill.id] !== undefined && (
+                    <span className="consumer-report-tab-count">{filterCounts[pill.id]}</span>
+                  )}
                 </button>
               ))}
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* LIST OR DETAIL, never both. One report at full width gets the whole panel. */}
-      {!selected ? (
-        <section className="admin-table-card consumer-report-list" aria-label="Consumer reports">
-          <div className="consumer-report-list-head">
-            <div className="admin-search-field consumer-report-search">
-              <Search size={14} />
-              <input
-                type="text"
-                placeholder="Search reference, store..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            <div className="consumer-report-toolbar-row">
+              <div className="admin-search-field consumer-report-search">
+                <Search size={14} />
+                <input
+                  type="text"
+                  aria-label="Search reports on this page"
+                  placeholder="Search reference, store..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <label className="consumer-report-scope-field">
+                <span>Establishment</span>
+                <select
+                  value={storeId}
+                  onChange={(event) => { setStoreId(event.target.value ? Number(event.target.value) : ''); toFirstPage() }}
+                >
+                  <option value="">All establishments</option>
+                  {stores.map((store) => <option key={store.id} value={store.id}>{store.store_name}</option>)}
+                </select>
+              </label>
+
+              <label className="consumer-report-scope-field">
+                <span>Receipt date from</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(event) => { setDateFrom(event.target.value); toFirstPage() }}
+                />
+              </label>
+
+              <label className="consumer-report-scope-field">
+                <span>to</span>
+                <input
+                  type="date"
+                  aria-label="Receipt date to"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(event) => { setDateTo(event.target.value); toFirstPage() }}
+                />
+              </label>
+
+              {(scoped || searchTerm) && (
+                <button type="button" className="admin-button secondary consumer-report-clear" onClick={clearFilters}>
+                  <XCircle size={14} aria-hidden="true" /> Clear filters
+                </button>
+              )}
             </div>
           </div>
 
-          {loading && (
-            <div className="consumer-report-queue-empty">
-              <RefreshCw size={16} className="spin-icon" />
-              Loading reports...
-            </div>
-          )}
-
-          {!loading && filteredReports.length === 0 && (
+          {!loading && filteredReports.length === 0 ? (
             <div className="consumer-report-queue-empty has-surface">
               <Shield size={20} />
-              <div className="consumer-report-queue-empty-title">No reports in this view</div>
+              <div className="consumer-report-queue-empty-title">
+                {scoped || searchTerm ? 'No reports match these filters' : 'No reports in this view'}
+              </div>
             </div>
-          )}
-
-          {!loading && filteredReports.length > 0 && (
+          ) : (
             <div className="admin-table-wrap">
               <table className="admin-data-table consumer-report-table">
                 <caption className="sr-only">Consumer reports awaiting or completed review</caption>
@@ -585,7 +628,19 @@ export const CitizenTipReview: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReports.map((report) => {
+                  {loading ? (
+                    Array.from({ length: 5 }, (_, idx) => (
+                      <tr key={idx} className="admin-skeleton-row" aria-hidden="true">
+                        <td data-label="Reference"><span className="skeleton-cell-ref" /></td>
+                        <td data-label="Store"><span className="skeleton-cell-store" /></td>
+                        <td data-label="Receipt date"><span className="skeleton-cell-date" /></td>
+                        <td data-label="Items" className="is-numeric"><span className="skeleton-cell-num" /></td>
+                        <td data-label="Above SRP" className="is-numeric"><span className="skeleton-cell-num" /></td>
+                        <td data-label="Status"><span className="skeleton-cell-status" /></td>
+                      </tr>
+                    ))
+                  ) : (
+                    filteredReports.map((report) => {
                     const above = report.above_reference_count ?? 0
                     return (
                       <tr
@@ -621,7 +676,7 @@ export const CitizenTipReview: React.FC = () => {
                         </td>
                       </tr>
                     )
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

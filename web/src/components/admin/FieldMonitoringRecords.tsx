@@ -532,7 +532,9 @@ function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
         </div>
         <div className="bento-content">
           <span className="bento-label">Total Establishments</span>
-          <strong className="bento-value">{summary?.total_establishments ?? '…'}</strong>
+          <strong className="bento-value">
+            {summary ? summary.total_establishments : <span className="bento-value-skeleton" aria-hidden="true" />}
+          </strong>
         </div>
       </div>
 
@@ -543,7 +545,9 @@ function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
         </div>
         <div className="bento-content">
           <span className="bento-label">{daily ? 'Due Today' : 'Not Yet Monitored'}</span>
-          <strong className="bento-value">{summary?.due ?? '…'}</strong>
+          <strong className="bento-value">
+            {summary ? summary.due : <span className="bento-value-skeleton" aria-hidden="true" />}
+          </strong>
         </div>
       </div>
 
@@ -554,7 +558,9 @@ function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
         </div>
         <div className="bento-content">
           <span className="bento-label">{daily ? 'Monitored Today' : 'Monitored This Week'}</span>
-          <strong className="bento-value">{summary?.completed ?? '…'}</strong>
+          <strong className="bento-value">
+            {summary ? summary.completed : <span className="bento-value-skeleton" aria-hidden="true" />}
+          </strong>
         </div>
       </div>
 
@@ -565,7 +571,9 @@ function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
         </div>
         <div className="bento-content">
           <span className="bento-label">Additional Visits</span>
-          <strong className="bento-value">{summary?.additional_visits ?? '…'}</strong>
+          <strong className="bento-value">
+            {summary ? summary.additional_visits : <span className="bento-value-skeleton" aria-hidden="true" />}
+          </strong>
         </div>
       </div>
     </section>

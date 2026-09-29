@@ -117,11 +117,11 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             aria-label={online ? 'Device online' : 'Device offline'}
             title={online ? 'Device network available' : 'Device offline'}
           >
-            {online ? <Wifi size={13} /> : <WifiOff size={13} />}
+            {online ? <Wifi size={17} /> : <WifiOff size={17} />}
             <span>{online ? 'Online' : 'Offline'}</span>
           </span>
 
-          {stores.length > 1 ? (
+          {stores.length > 1 && (
             <select
               className="header-store-select"
               aria-label="Active establishment"
@@ -130,12 +130,7 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             >
               {stores.map((store) => <option key={store.id} value={store.id}>{store.store_name}</option>)}
             </select>
-          ) : activeStore ? (
-            <span className="header-store-badge" title={activeStore.store_name}>
-              <StoreIcon size={14} className="header-store-icon" />
-              <span className="header-store-name">{activeStore.store_name}</span>
-            </span>
-          ) : null}
+          )}
 
           <button
             type="button"

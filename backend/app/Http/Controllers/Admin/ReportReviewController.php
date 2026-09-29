@@ -46,6 +46,9 @@ class ReportReviewController extends Controller
         'rejected' => ['Closed'],
     ];
 
+    /** Reports still with the consumer or the OCR pipeline; they never enter the review queue. */
+    private const UNREVIEWABLE_STATUSES = ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'];
+
     public function index(Request $request, AdminAuthorizationService $auth, ReceiptPriceComparison $comparison)
     {
         $auth->requireManager($request->user());
@@ -53,10 +56,16 @@ class ReportReviewController extends Controller
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:50',
             'filter' => ['sometimes', 'string', Rule::in(array_merge(['all'], array_keys(self::FILTERS)))],
+            'store_id' => 'sometimes|nullable|integer|exists:stores,id',
+            'date_from' => 'sometimes|nullable|date',
+            // Only when a start exists: otherwise Laravel reads "date_from" as a literal date and
+            // rejects a range that has an end alone.
+            'date_to' => array_filter(['sometimes', 'nullable', 'date', $request->filled('date_from') ? 'after_or_equal:date_from' : null]),
         ]);
         $filter = $filters['filter'] ?? 'all';
+        $scope = $this->scope($filters);
 
-        $query = $this->reviewQuery();
+        $query = $scope($this->reviewQuery());
         if (isset(self::FILTERS[$filter])) {
             $query->whereIn('status', self::FILTERS[$filter]);
         }
@@ -75,9 +84,41 @@ class ReportReviewController extends Controller
                 'filter' => $filter,
                 // Queue-wide, so a pill shows how much work exists rather than how much of it
                 // happens to be on the page being viewed.
-                'filter_counts' => $this->filterCounts(),
+                'filter_counts' => $this->filterCounts($scope),
             ],
         ]);
+    }
+
+    /**
+     * Narrows the queue to one establishment and a receipt-date range.
+     *
+     * The range is on the receipt date the table shows, which observedAtFor() takes from the OCR
+     * JSON when present. It is resolved here rather than in SQL: JSON date extraction differs between
+     * pgsql and sqlite, and a second definition of "receipt date" would drift from the column.
+     */
+    private function scope(array $filters): \Closure
+    {
+        $storeId = $filters['store_id'] ?? null;
+        $from = isset($filters['date_from']) ? \Illuminate\Support\Carbon::parse($filters['date_from'])->toDateString() : null;
+        $to = isset($filters['date_to']) ? \Illuminate\Support\Carbon::parse($filters['date_to'])->toDateString() : null;
+
+        $ids = null;
+        if ($from || $to) {
+            // ponytail: O(n) scan of queue receipt dates; store an observed_on column if the queue reaches thousands.
+            $ids = ConsumerReport::query()->whereNotIn('status', self::UNREVIEWABLE_STATUSES)
+                ->when($storeId, fn ($query) => $query->where('store_id', $storeId))
+                ->get(['id', 'raw_ocr_json', 'submitted_at', 'created_at'])
+                ->filter(function (ConsumerReport $report) use ($from, $to) {
+                    $date = $this->observedAtFor($report);
+
+                    return $date !== null && (! $from || $date >= $from) && (! $to || $date <= $to);
+                })
+                ->pluck('id');
+        }
+
+        return fn ($query) => $query
+            ->when($storeId, fn ($nested) => $nested->where('store_id', $storeId))
+            ->when($ids !== null, fn ($nested) => $nested->whereIn('id', $ids));
     }
 
     /**
@@ -87,9 +128,9 @@ class ReportReviewController extends Controller
      * is an unconstrained string and cancelling a referral restores a value captured in immutable
      * context_json. Unrecognised rows stay reachable under "all" and are logged instead.
      */
-    private function filterCounts(): array
+    private function filterCounts(\Closure $scope): array
     {
-        $byStatus = $this->reviewQuery()->getQuery()
+        $byStatus = $scope($this->reviewQuery())->getQuery()
             ->select('status')->selectRaw('count(*) as aggregate')
             ->groupBy('status')->pluck('aggregate', 'status');
 
@@ -111,7 +152,7 @@ class ReportReviewController extends Controller
     {
         return ConsumerReport::with([
             'store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'activeVerificationRequest', 'latestVerificationRequest',
-        ])->whereNotIn('status', ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed']);
+        ])->whereNotIn('status', self::UNREVIEWABLE_STATUSES);
     }
 
     /**

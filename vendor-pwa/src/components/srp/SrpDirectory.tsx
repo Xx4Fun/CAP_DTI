@@ -130,7 +130,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                     <span>{analysis.label}</span>
                   </span>
                 </div>
-                <div className="calc-stat-row"><span style={{ color: 'var(--text-muted)' }}>{selected.reference.label}:</span><strong>{formatPeso(selected.reference.value)}</strong></div>
+                <div className="calc-stat-row"><span style={{ color: 'var(--text-muted)' }}>Official Reference SRP:</span><strong>{formatPeso(selected.reference.value)}</strong></div>
                 <div className="calc-stat-row">
                   <span style={{ color: 'var(--text-muted)' }}>For review from:</span>
                   <strong>{formatPeso(analysis.reviewFrom)}</strong>
@@ -189,7 +189,6 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
                     <td>{item.regulatory_classification ? <span className="badge badge-navy">{item.regulatory_classification}</span> : '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--dti-navy)' }}>
                       {formatPeso(item.reference.value)}
-                      <div style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)' }}>{item.reference.label}</div>
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>{formatPeso(reviewFrom)}</td>
                   </tr>

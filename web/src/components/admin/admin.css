@@ -4864,6 +4864,12 @@
   animation: admin-skeleton 1.2s linear infinite;
 }
 
+.admin-skeleton-row span.skeleton-cell-ref { width: 130px; }
+.admin-skeleton-row span.skeleton-cell-store { width: 175px; }
+.admin-skeleton-row span.skeleton-cell-date { width: 105px; }
+.admin-skeleton-row span.skeleton-cell-num { width: 36px; margin-left: auto; }
+.admin-skeleton-row span.skeleton-cell-status { width: 88px; border-radius: 999px; }
+
 .admin-skeleton-block {
   display: block;
   width: 100%;
@@ -4872,6 +4878,66 @@
   background: linear-gradient(90deg, #f1f5f9 25%, #ffffff 50%, #f1f5f9 75%);
   background-size: 200% 100%;
   animation: admin-skeleton 1.5s ease-in-out infinite;
+}
+
+/* Consumer Report Queue Empty & Centered States */
+.consumer-report-queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 220px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--admin-muted, #64748b);
+  font-size: 0.9rem;
+}
+
+.consumer-report-queue-empty.has-surface {
+  background: transparent;
+}
+
+.consumer-report-queue-empty-title {
+  font-weight: 600;
+  color: #334155;
+  font-size: 0.95rem;
+}
+
+/* Store Manager GIS Sidebar Skeletons */
+.store-sidebar-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.store-card-skeleton {
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.store-skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Bento Metric Value Skeleton */
+.bento-value-skeleton {
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: admin-skeleton 1.5s ease-in-out infinite;
+  vertical-align: middle;
 }
 
 .admin-feedback {
@@ -7071,40 +7137,6 @@
 
 .consumer-report-panel { font-family: 'Plus Jakarta Sans', sans-serif; }
 
-.consumer-report-header {
-  display: grid;
-  gap: 1rem;
-  padding: 1.15rem 1.5rem;
-}
-
-.consumer-report-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.consumer-report-title {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.consumer-report-title h2 {
-  margin: 0;
-  font-size: 1.3rem;
-  font-weight: 800;
-  color: var(--admin-text);
-  letter-spacing: -0.02em;
-}
-
-.consumer-report-subtitle {
-  margin: 0.2rem 0 0;
-  font-size: 0.85rem;
-  color: var(--admin-muted);
-}
-
 .consumer-report-protocol {
   display: inline-flex;
   align-items: center;
@@ -7133,28 +7165,119 @@
 
 .consumer-report-protocol.is-emergency .consumer-report-protocol-dot { background: #f59e0b; }
 
+/* Status tabs: one segmented row. On a narrow screen the row scrolls inside itself so the page
+   never scrolls sideways. */
 .consumer-report-filters {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-surface-subtle);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .consumer-report-filters .filter-pill {
-  padding: 0.4rem 0.85rem;
-  border: 1px solid var(--admin-border);
-  border-radius: 8px;
-  background: var(--admin-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   color: #475569;
   font-size: 0.82rem;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.consumer-report-filters .filter-pill.active { border-width: 1.5px; }
-.consumer-report-filters .filter-pill.tone-accent.active { border-color: var(--admin-accent); background: var(--admin-accent-soft); color: var(--admin-accent); }
-.consumer-report-filters .filter-pill.tone-warn.active { border-color: #d97706; background: #fffbeb; color: #b45309; }
-.consumer-report-filters .filter-pill.tone-muted.active { border-color: #64748b; background: #f1f5f9; color: #334155; }
+.consumer-report-filters .filter-pill:hover { background: var(--admin-surface); color: var(--admin-text); }
+.consumer-report-filters .filter-pill:focus-visible { outline: 2px solid var(--admin-focus); outline-offset: 1px; }
+.consumer-report-filters .filter-pill.active { background: var(--admin-surface); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08); }
+.consumer-report-filters .filter-pill.tone-accent.active { border-color: var(--admin-accent); color: var(--admin-accent); }
+.consumer-report-filters .filter-pill.tone-warn.active { border-color: #d97706; color: #b45309; }
+.consumer-report-filters .filter-pill.tone-muted.active { border-color: #64748b; color: #334155; }
+
+.consumer-report-tab-count {
+  min-width: 1.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.consumer-report-filters .filter-pill.tone-accent.active .consumer-report-tab-count { background: var(--admin-accent-soft); color: var(--admin-accent); }
+.consumer-report-filters .filter-pill.tone-warn.active .consumer-report-tab-count { background: #fef3c7; color: #b45309; }
+.consumer-report-filters .filter-pill.tone-muted.active .consumer-report-tab-count { background: #f1f5f9; color: #334155; }
+
+/* Search, establishment and receipt-date range share one wrapping row. */
+.consumer-report-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+
+.consumer-report-toolbar-row .consumer-report-search { flex: 1 1 240px; width: auto; }
+
+.consumer-report-scope-field {
+  display: grid;
+  gap: 0.25rem;
+  flex: 0 1 auto;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.consumer-report-scope-field select,
+.consumer-report-scope-field input[type="date"] {
+  min-height: 2.1rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: var(--admin-surface-subtle);
+  color: var(--admin-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  box-sizing: border-box;
+}
+
+.consumer-report-scope-field select { min-width: 200px; max-width: 280px; }
+.consumer-report-scope-field input[type="date"] { width: 150px; }
+
+.consumer-report-scope-field select:focus,
+.consumer-report-scope-field input[type="date"]:focus {
+  border-color: var(--admin-primary);
+  background: var(--admin-surface);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.consumer-report-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+}
+
+@media (max-width: 640px) {
+  .consumer-report-toolbar-row > * { flex: 1 1 100%; }
+  .consumer-report-scope-field select,
+  .consumer-report-scope-field input[type="date"] { width: 100%; min-width: 0; max-width: none; }
+}
 
 /* --------------------------------------------------------------------------
    Consumer Reports list
@@ -7163,6 +7286,8 @@
 .consumer-report-list { display: grid; }
 
 .consumer-report-list-head {
+  display: grid;
+  gap: 0.85rem;
   padding: 1rem 1.15rem;
   border-bottom: 1px solid var(--admin-border);
 }
@@ -8025,3 +8150,607 @@
 }
 
 .consumer-report-fullscreen-locked svg { display: block; margin: 0 auto 0.5rem; color: #94a3b8; }
+
+/* ==========================================================================
+   Emergency Protocol & Price Freeze Regulatory Command Center
+   ========================================================================== */
+.emergency-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Hero Command Banner */
+.emergency-hero-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1.5rem 1.75rem;
+  border-radius: 18px;
+  color: #ffffff;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.12);
+  flex-wrap: wrap;
+  transition: background 250ms ease, box-shadow 250ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.emergency-hero-banner.is-normal {
+  background: linear-gradient(135deg, #0b192e 0%, #1e3a8a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.emergency-hero-banner.is-emergency {
+  background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+  border: 1px solid rgba(254, 202, 202, 0.25);
+  box-shadow: 0 6px 24px -2px rgba(153, 27, 27, 0.35);
+}
+
+.emergency-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 1.15rem;
+  min-width: 0;
+}
+
+.emergency-hero-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.emergency-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.emergency-hero-text h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.emergency-hero-text p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.4;
+}
+
+.emergency-hero-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.emergency-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  backdrop-filter: blur(8px);
+}
+
+.emergency-status-badge.badge-normal {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+}
+
+.emergency-status-badge.badge-danger {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(254, 202, 202, 0.45);
+  color: #fee2e2;
+  animation: pulse-border 2s infinite ease-in-out;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.emergency-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.emergency-pulse-dot.pulse-green {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+  animation: pulse-dot 2s infinite ease-in-out;
+}
+
+.emergency-pulse-dot.pulse-red {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4);
+  animation: pulse-dot 1.5s infinite ease-in-out;
+}
+
+.emergency-jurisdiction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Master-Detail Grid Workspace */
+.emergency-grid-workspace {
+  display: grid;
+  grid-template-columns: minmax(340px, 390px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  width: 100%;
+}
+
+@media (max-width: 1023px) {
+  .emergency-grid-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.emergency-col-left,
+.emergency-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+/* Standardized Card Headers */
+.emergency-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.15rem;
+  flex-wrap: wrap;
+}
+
+.emergency-card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.emergency-card-title-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.emergency-card-title-group h3 svg {
+  color: #2563eb;
+}
+
+.emergency-card-title-group p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* Declarations List */
+.emergency-decl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+}
+
+.admin-shell .emergency-decl-btn,
+.emergency-decl-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.95rem 1.1rem;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 14px;
+  background: #f8fafc !important;
+  text-align: left;
+  cursor: pointer;
+  transition: all 160ms ease;
+  width: 100%;
+  box-sizing: border-box;
+  color: inherit;
+  font: inherit;
+}
+
+.admin-shell .emergency-decl-btn:hover,
+.emergency-decl-btn:hover {
+  border-color: #cbd5e1 !important;
+  background: #ffffff !important;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+}
+
+.admin-shell .emergency-decl-btn.is-active,
+.admin-shell .emergency-decl-btn[aria-pressed="true"],
+.emergency-decl-btn.is-active,
+.emergency-decl-btn[aria-pressed="true"] {
+  border-color: #2563eb !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px #2563eb, 0 4px 14px rgba(37, 99, 235, 0.12) !important;
+}
+
+.emergency-decl-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.emergency-decl-top strong {
+  font-size: 0.94rem;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.emergency-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.emergency-status-chip.chip-draft {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+}
+
+.emergency-status-chip.chip-in-effect {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.emergency-status-chip.chip-ended {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.emergency-decl-dates {
+  font-size: 0.8rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Location Callout Facts */
+.emergency-location-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
+.emergency-location-strip span {
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.emergency-location-strip strong {
+  color: #0f172a;
+  font-weight: 750;
+}
+
+/* APC Candidate Matrix */
+.apc-candidate-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.85rem 1rem;
+}
+
+.apc-candidate-table td {
+  padding: 0.85rem 1rem;
+  vertical-align: middle;
+}
+
+.apc-computed-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.apc-computed-cell strong {
+  color: #1e3a8a;
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.apc-computed-cell small {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 600;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* Source Record Accordion */
+.apc-source-details {
+  margin-top: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+  transition: all 160ms ease;
+}
+
+.apc-source-details summary {
+  padding: 0.75rem 1rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e293b;
+  cursor: pointer;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+.apc-source-details[open] summary {
+  border-bottom-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.apc-source-details ul {
+  margin: 0;
+  padding: 0.85rem 1.25rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.apc-source-details li {
+  font-size: 0.82rem;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Compliance Verification Box */
+.apc-verification-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1.25rem 1.35rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1.5px solid #cbd5e1;
+  border-radius: 14px;
+  margin-top: 1.25rem;
+}
+
+.apc-verification-box .check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #0f172a;
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.apc-verification-box .check-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Active Price Freeze Action Card */
+.emergency-active-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.35rem;
+  background: #fef2f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 14px;
+  flex-wrap: wrap;
+}
+
+.emergency-active-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.emergency-active-banner-info h4 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 750;
+  color: #991b1b;
+}
+
+.emergency-active-banner-info p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #7f1d1d;
+}
+
+/* Card & Surface Polish for Emergency Container */
+.emergency-container .admin-card:not(.emergency-hero-banner) {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+/* Polished Form Inputs */
+.emergency-container .admin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #334155;
+}
+
+.emergency-container .admin-form input {
+  height: 42px;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 0.88rem;
+  color: #0f172a;
+  box-sizing: border-box;
+  transition: all 140ms ease;
+  width: 100%;
+}
+
+.emergency-container .admin-form input:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* Polished Buttons */
+.emergency-container .admin-button.primary {
+  height: 42px;
+  min-height: 42px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.emergency-container .admin-button.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.emergency-container .admin-button.secondary:not(.emergency-decl-btn) {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 0.95rem;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 650;
+  font-size: 0.84rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.emergency-container .admin-button.secondary:not(.emergency-decl-btn):hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Polished Table Container */
+.emergency-container .admin-table-wrap {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #ffffff;
+}
+
+.emergency-container .admin-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.emergency-container .admin-data-table th {
+  background: #f8fafc;
+  padding: 0.85rem 1rem;
+  font-size: 0.76rem;
+  font-weight: 750;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1.5px solid #e2e8f0;
+}
+
+.emergency-container .admin-data-table td {
+  padding: 0.85rem 1rem;
+  font-size: 0.85rem;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.emergency-container .admin-data-table tr:last-child td {
+  border-bottom: none;
+}

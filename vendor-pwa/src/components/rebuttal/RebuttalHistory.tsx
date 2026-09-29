@@ -7,9 +7,10 @@ interface RebuttalHistoryProps {
   notices: LegalNotice[];
   onViewNotice: (notice: LegalNotice) => void;
   onStartNewRebuttal: () => void;
+  onBackToNotices?: () => void;
 }
 
-export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onViewNotice, onStartNewRebuttal }) => {
+export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onViewNotice, onStartNewRebuttal, onBackToNotices }) => {
   const responses = notices
     .filter((notice) => notice.response_received_at)
     .sort((a, b) => new Date(b.response_received_at ?? 0).getTime() - new Date(a.response_received_at ?? 0).getTime());
@@ -30,6 +31,26 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
             <span>No pending inquiries</span>
           </span>
         )}
+      </div>
+
+      <div className="notices-mode-switch" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        {onBackToNotices && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={onBackToNotices}
+            style={{ borderRadius: 'var(--radius-full)', padding: '6px 14px', fontWeight: 600 }}
+          >
+            Issued Notices ({notices.length})
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          style={{ borderRadius: 'var(--radius-full)', padding: '6px 14px', fontWeight: 700 }}
+        >
+          Response History ({responses.length})
+        </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
