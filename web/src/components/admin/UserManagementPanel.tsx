@@ -29,6 +29,8 @@ import { VendorInviteForm } from './VendorInviteForm'
 // Fallback only (the Admin shell passes renderRegistration); lazy so leaflet stays out of this chunk.
 const StoreOnboarding = lazy(() => import('../StoreOnboarding').then((module) => ({ default: module.StoreOnboarding })))
 
+const STORE_PLACEHOLDER_IMAGE = '/stores/store.webp'
+
 type ManagementView = 'list' | 'vendor' | 'field-officer'
 type RoleFilter = 'all' | ManagedUserRole
 type StatusFilter = 'all' | 'active' | 'inactive'
@@ -337,7 +339,8 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
   const [selected, setSelected] = useState<StoreRecord | null>(null)
 
   useEffect(() => {
-    adminApi.getStores().then(setStores).catch((requestError) => setLoadError(errorMessage(requestError, 'Establishments could not load. Try again.')))
+    // Merge so a store registered while this load was in flight stays first (and inside the 50-row cap).
+    adminApi.getStores().then((loaded) => setStores((current) => current ? [...current, ...loaded.filter((store) => !current.some((local) => local.id === store.id))] : loaded)).catch((requestError) => setLoadError(errorMessage(requestError, 'Establishments could not load. Try again.')))
   }, [])
 
   const unlinked = useMemo(() => {
@@ -351,7 +354,7 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
   if (registering) {
     const controls = {
       onBack: () => setRegistering(false),
-      onCreated: (store: StoreRecord) => { setStores((current) => [store, ...(current ?? [])]); setSelected(store); setRegistering(false) },
+      onCreated: (store: StoreRecord) => { setStores((current) => [store, ...(current ?? [])]); setQuery(''); setSelected(store); setRegistering(false) },
     }
     return <div className="user-management-workspace">{renderRegistration ? renderRegistration(controls) : <Suspense fallback={null}><StoreOnboarding {...controls} /></Suspense>}</div>
   }
@@ -388,6 +391,13 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
                   {unlinked.map((store) => (
                     <label key={store.id} className={selected?.id === store.id ? 'selected' : ''}>
                       <input type="radio" name="vendor-store" checked={selected?.id === store.id} onChange={() => setSelected(store)} />
+                      <img
+                        className="vendor-store-thumb"
+                        src={store.image_path || STORE_PLACEHOLDER_IMAGE}
+                        alt=""
+                        loading="lazy"
+                        onError={(event) => { if (event.currentTarget.getAttribute('src') !== STORE_PLACEHOLDER_IMAGE) event.currentTarget.src = STORE_PLACEHOLDER_IMAGE }}
+                      />
                       <span><strong>{store.store_name}</strong><small>{store.address}</small></span>
                     </label>
                   ))}

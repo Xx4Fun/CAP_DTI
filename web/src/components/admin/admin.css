@@ -383,8 +383,8 @@
 }
 
 .search-and-chips-group .search-group {
-  flex: 0 1 270px;
-  min-width: 170px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .filter-group {
@@ -1216,18 +1216,14 @@
   }
 }
 
+/* Field Monitoring toolbar stays one row: search shrinks, the status filter truncates, the view switcher drops its labels. */
+.field-monitor-status-filter { flex: 0 1 auto; min-width: 0; }
+.field-monitor-status-filter select { width: 100%; max-width: 230px; min-width: 0; text-overflow: ellipsis; }
+
 @media (max-width: 1024px) {
-  .filter-tier-primary {
-    flex-wrap: wrap;
-  }
-  .search-and-chips-group {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  .search-and-chips-group .search-group {
-    flex: 1 1 100%;
-    max-width: none;
-  }
+  .filter-tier-primary { gap: .6rem; }
+  .search-and-chips-group { gap: .6rem; }
+  .view-segment-btn-modern span { display: none; }
 }
 
 @media (max-width: 960px) {
@@ -6196,7 +6192,15 @@
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
 }
 
-/* Surveillance Period Filter Toolbar */
+/* Field Monitoring officer assignment dialog (reuses the signature dialog frame) */
+.field-assign-body { padding: 1.15rem 1.35rem; }
+.field-assign-body .monitor-detail-facts { display: flex; flex-direction: column; gap: .85rem; margin: 0; }
+.field-assign-body label { display: flex; flex-direction: column; gap: .35rem; color: #1e293b; font-size: .82rem; font-weight: 700; }
+.field-assign-body select, .field-assign-body textarea { width: 100%; min-height: 42px; padding: .55rem .75rem; border: 1.5px solid #d0dbe9; border-radius: 10px; background: #fff; font: inherit; font-weight: 400; }
+.field-assign-body textarea { min-height: 90px; resize: vertical; }
+.field-assign-body .monitor-detail-facts > div { flex-direction: row; justify-content: flex-end; gap: .5rem; padding: 0; border: 0; background: none; }
+
+/* Period filter toolbar */
 .field-profile-period-bar {
   display: flex;
   align-items: center;
@@ -6530,11 +6534,23 @@
 
 /* Vendor onboarding and invitations (User Management) */
 .vendor-store-options { display: flex; flex-direction: column; gap: .5rem; max-height: 320px; overflow-y: auto; margin: 0; padding: 0; border: 0; }
-.vendor-store-options label { display: flex; align-items: flex-start; gap: .75rem; padding: .75rem .9rem; border: 1.5px solid var(--admin-border); border-radius: 10px; background: var(--admin-surface); cursor: pointer; }
+.vendor-store-options label { display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem; border: 1.5px solid var(--admin-border); border-radius: 10px; background: var(--admin-surface); cursor: pointer; }
 .vendor-store-options label.selected { border-color: var(--admin-accent); background: #eff6ff; }
 .vendor-store-options label span { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
 .vendor-store-options label strong { color: var(--admin-text); font-size: .9rem; }
 .vendor-store-options label small { color: var(--admin-muted); font-size: .78rem; overflow-wrap: anywhere; }
+.vendor-store-options input[type="radio"] { flex: none; width: 16px !important; height: 16px !important; min-height: 0 !important; margin: 0; padding: 0 !important; accent-color: var(--admin-accent); }
+.vendor-store-thumb { flex: none; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--admin-surface-2); border: 1px solid var(--admin-border); }
+.store-photo-field { display: flex; flex-direction: column; gap: .5rem; }
+.store-photo-title { color: #1e293b; font-size: .82rem; font-weight: 700; }
+.store-photo-preview { display: grid; place-items: center; height: 160px; max-width: 100%; overflow: hidden; border: 1.5px dashed #d0dbe9; border-radius: 12px; background: var(--admin-surface-2); }
+.store-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.store-photo-preview span { display: flex; flex-direction: column; align-items: center; gap: .4rem; padding: 0 1rem; color: var(--admin-muted); font-size: .8rem; text-align: center; }
+.store-photo-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* A label, so it misses the `.admin-shell button` box styles. */
+.store-photo-upload { position: relative; min-height: 40px; padding: .55rem .85rem; border: 1px solid; border-radius: 8px; font-weight: 500; cursor: pointer; }
+.store-photo-upload input { position: absolute; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; opacity: 0; overflow: hidden; }
+.store-photo-upload:focus-within { outline: 3px solid rgba(37,99,235,.3); outline-offset: 2px; }
 .vendor-invite-form { display: flex; flex-direction: column; gap: 1rem; }
 .vendor-invite-link { display: flex; gap: .5rem; align-items: center; }
 .vendor-invite-link input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem !important; }

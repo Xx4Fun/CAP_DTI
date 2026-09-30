@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { StoreMap } from './StoreMap'
 import { buildStorePopupContent, getStoreStatusInfo } from './storeMapUtils'
 import { StoreManager } from './StoreManager'
@@ -198,18 +198,57 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     // Submit
     await user.click(screen.getByRole('button', { name: 'Register establishment' }))
 
-    expect(api.post).toHaveBeenCalledWith('/admin/stores', expect.objectContaining({
-      dti_sec_number: null,
+    expect(api.post).toHaveBeenCalledWith('/admin/stores', expect.any(FormData), { headers: { 'Content-Type': 'multipart/form-data' } })
+    const body = vi.mocked(api.post).mock.calls.at(-1)![1] as FormData
+    expect(Object.fromEntries(body.entries())).toEqual({
       store_name: 'Antique Central Market',
-      owner_name: null,
       address: 'Bantayan, San Jose de Buenavista',
-      latitude: 10.7424,
-      longitude: 121.9406,
-    }))
+      latitude: '10.7424',
+      longitude: '121.9406',
+    })
     expect(onCreated).toHaveBeenCalled()
 
     // Test breadcrumb
     await user.click(screen.getByRole('button', { name: 'Back to User Management' }))
     expect(onBack).toHaveBeenCalled()
+  })
+
+  it('uploads an optional establishment photo with the registration and rejects oversized files', async () => {
+    const createObjectURL = vi.fn(() => 'blob:store-photo')
+    const revokeObjectURL = vi.fn()
+    const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL }
+    Object.assign(URL, { createObjectURL, revokeObjectURL })
+    onTestFinished(() => { Object.assign(URL, original) })
+    const user = userEvent.setup()
+    render(<StoreOnboarding onCreated={vi.fn()} />)
+
+    const input = screen.getByLabelText(/Establishment photo/) as HTMLInputElement
+    const oversized = new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'big.jpg', { type: 'image/jpeg' })
+    await user.upload(input, oversized)
+    expect(screen.getByRole('alert')).toHaveTextContent('2 MB or smaller')
+    expect(screen.queryByAltText('Selected establishment photo')).not.toBeInTheDocument()
+
+    const photo = new File(['photo'], 'shop.png', { type: 'image/png' })
+    await user.upload(input, photo)
+    expect(screen.getByAltText('Selected establishment photo')).toHaveAttribute('src', 'blob:store-photo')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(/Store \/ business name/i), 'Photo Mart')
+    await user.type(screen.getByLabelText(/Business address/i), 'San Jose')
+    await user.click(screen.getByRole('button', { name: 'Register establishment' }))
+
+    const body = vi.mocked(api.post).mock.calls.at(-1)![1] as FormData
+    expect(body.get('image')).toBe(photo)
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(screen.queryByAltText('Selected establishment photo')).not.toBeInTheDocument()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:store-photo')
+
+    // A rejected replacement drops the earlier photo instead of silently uploading it.
+    await user.upload(input, photo)
+    await user.upload(input, oversized)
+    expect(screen.getByRole('alert')).toHaveTextContent('2 MB or smaller')
+    expect(screen.queryByAltText('Selected establishment photo')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Register establishment' }))
+    expect((vi.mocked(api.post).mock.calls.at(-1)![1] as FormData).has('image')).toBe(false)
   })
 })

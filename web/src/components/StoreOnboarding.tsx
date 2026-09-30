@@ -5,10 +5,13 @@ import {
   ArrowLeft,
   CheckCircle2,
   Compass,
+  ImagePlus,
   Loader2,
   MapPin,
   ShieldCheck,
   Store,
+  Trash2,
+  Upload,
 } from 'lucide-react'
 import api from '../services/api'
 import { adminToast } from '../services/adminToast'
@@ -20,6 +23,9 @@ interface NominatimSuggestion {
   lat: string
   lon: string
 }
+
+const STORE_IMAGE_TYPES = ['image/webp', 'image/jpeg', 'image/png']
+const STORE_IMAGE_MAX_BYTES = 2 * 1024 * 1024
 
 export interface StoreOnboardingProps {
   onCreated?: (store: StoreRecord) => void
@@ -35,6 +41,9 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
   const [longitude, setLongitude] = useState(121.9406)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageError, setImageError] = useState('')
+  const [imagePreview, setImagePreview] = useState('')
 
   // Geocoding & address suggestions state
   const [suggestions, setSuggestions] = useState<NominatimSuggestion[]>([])
@@ -144,6 +153,32 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
     }
   }, [])
 
+  // Created and revoked in the same effect so a discarded render never leaks an object URL.
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('')
+      return
+    }
+    const url = URL.createObjectURL(imageFile)
+    setImagePreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [imageFile])
+
+  const pickImage = (file?: File) => {
+    if (!file) return
+    const problem = !STORE_IMAGE_TYPES.includes(file.type)
+      ? 'Choose a WebP, JPG or PNG image.'
+      : file.size > STORE_IMAGE_MAX_BYTES ? 'The photo must be 2 MB or smaller.' : ''
+    if (problem) {
+      // Drop any earlier photo so a rejected replacement never uploads the previous file.
+      setImageFile(null)
+      setImageError(problem)
+      return
+    }
+    setImageError('')
+    setImageFile(file)
+  }
+
   // Dismiss suggestions on outside click
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -244,13 +279,20 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
     setError('')
 
     try {
-      const response = await api.post<{ data: StoreRecord }>('/admin/stores', {
-        dti_sec_number: secNumber.trim() || null,
+      const form = new FormData()
+      const fields = {
+        dti_sec_number: secNumber.trim(),
         store_name: storeName.trim(),
-        owner_name: ownerName.trim() || null,
+        owner_name: ownerName.trim(),
         address: address.trim(),
-        latitude,
-        longitude,
+        latitude: String(latitude),
+        longitude: String(longitude),
+      }
+      Object.entries(fields).forEach(([key, value]) => { if (value) form.append(key, value) })
+      if (imageFile) form.append('image', imageFile)
+      // The shared client defaults to JSON, which would serialize FormData instead of uploading the file.
+      const response = await api.post<{ data: StoreRecord }>('/admin/stores', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       })
       adminToast.success('Establishment registered and published.', {
         id: 'store-onboard-success',
@@ -400,6 +442,33 @@ export const StoreOnboarding: React.FC<StoreOnboardingProps> = ({ onCreated, onB
                 <small className="field-helper-text">
                   Typing will suggest Philippine addresses; selecting one moves the map pin.
                 </small>
+              </div>
+
+              <div className="store-photo-field">
+                <label htmlFor="store-photo-input" className="store-photo-title">Establishment photo</label>
+                <div className="store-photo-preview">
+                  {imagePreview
+                    ? <img src={imagePreview} alt="Selected establishment photo" />
+                    : <span><ImagePlus size={22} aria-hidden="true" />No photo selected. The default storefront image is used.</span>}
+                </div>
+                <div className="store-photo-actions">
+                  <label className="admin-button secondary store-photo-upload">
+                    <Upload size={16} aria-hidden="true" /><span>{imageFile ? 'Replace photo' : 'Choose photo'}</span>
+                    <input
+                      id="store-photo-input"
+                      type="file"
+                      accept={STORE_IMAGE_TYPES.join(',')}
+                      onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = '' }}
+                    />
+                  </label>
+                  {imageFile && (
+                    <button type="button" className="admin-button secondary" onClick={() => { setImageFile(null); setImageError('') }}>
+                      <Trash2 size={16} aria-hidden="true" />Remove
+                    </button>
+                  )}
+                </div>
+                {imageError && <p role="alert" className="admin-feedback error">{imageError}</p>}
+                <small className="field-helper-text">Optional. WebP, JPG or PNG, up to 2 MB.</small>
               </div>
             </div>
           </div>

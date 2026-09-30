@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -143,6 +143,43 @@ describe('User Management', () => {
     await user.click(screen.getByRole('button', { name: 'Create invitation' }))
     expect(adminApi.inviteVendor).toHaveBeenCalledWith(42, 'new@shop.test')
   })
+
+  it('clears the search so a newly registered store that does not match it stays visible and selected', async () => {
+    const user = userEvent.setup()
+    render(<UserManagementPanel vendorRegistration={({ onCreated }) => (
+      <button type="button" onClick={() => onCreated(store({ id: 42, store_name: 'Newly Registered Mart', address: 'Sibalom' }))}>Finish registration</button>
+    )} />)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await user.click(screen.getByRole('button', { name: /Vendor account/i }))
+    await screen.findByRole('radio', { name: /Unlinked Grocery/ })
+    await user.type(screen.getByLabelText('Search establishments'), 'Grocery')
+    await user.click(screen.getByRole('button', { name: 'Register new establishment' }))
+    await user.click(screen.getByRole('button', { name: 'Finish registration' }))
+
+    expect(screen.getByLabelText('Search establishments')).toHaveValue('')
+    expect(screen.getByRole('radio', { name: /Newly Registered Mart/ })).toBeChecked()
+  })
+
+  it('shows each establishment photo with a placeholder fallback', async () => {
+    vi.mocked(adminApi.getStores).mockResolvedValue([
+      store({ id: 9, store_name: 'Unlinked Grocery', image_path: 'https://assets.example.test/store_images/grocery.webp' }),
+      store({ id: 10, store_name: 'No Photo Mart', image_path: null }),
+    ])
+    const user = userEvent.setup()
+    render(<UserManagementPanel />)
+
+    await screen.findByText('Maria Vendor')
+    await user.click(screen.getByRole('button', { name: 'Add user' }))
+    await user.click(screen.getByRole('button', { name: /Vendor account/i }))
+    const photoOf = async (name: RegExp) => (await screen.findByRole('radio', { name })).closest('label')!.querySelector('img')!
+
+    const grocery = await photoOf(/Unlinked Grocery/)
+    expect(grocery).toHaveAttribute('src', 'https://assets.example.test/store_images/grocery.webp')
+    expect(await photoOf(/No Photo Mart/)).toHaveAttribute('src', '/stores/store.webp')
+    fireEvent.error(grocery)
+    expect(grocery).toHaveAttribute('src', '/stores/store.webp')  })
 
   it('shows the server message when the establishment is already linked', async () => {
     vi.mocked(adminApi.inviteVendor).mockRejectedValue({ response: { data: { status: 'STORE_ALREADY_LINKED', message: 'This establishment already has a linked vendor account. Unlink it before inviting someone else.' } } })

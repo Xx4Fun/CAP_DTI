@@ -5,7 +5,10 @@ namespace Tests\Feature;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -138,5 +141,82 @@ class AdminRouteHardeningTest extends TestCase
             'actor_id' => $admin->id,
             'action' => 'store.created',
         ]);
+    }
+
+    private function storePayload(array $extra = []): array
+    {
+        return array_merge([
+            'store_name' => 'Photo Store',
+            'address' => 'San Jose de Buenavista, Antique',
+            'latitude' => 10.7424,
+            'longitude' => 121.9406,
+        ], $extra);
+    }
+
+    private function useStoreImageDisk(string $url): void
+    {
+        config()->set('filesystems.commodity_images_disk', 'store-images-test');
+        Storage::fake('store-images-test', ['url' => $url]);
+    }
+
+    public function test_manager_created_store_saves_uploaded_photo_as_absolute_url(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        $this->useStoreImageDisk('https://assets.example.test');
+
+        $response = $this->postJson('/api/admin/stores', $this->storePayload(['image' => UploadedFile::fake()->image('shop.jpg')]))
+            ->assertCreated();
+
+        $files = Storage::disk('store-images-test')->files('store_images');
+        $this->assertCount(1, $files);
+        $this->assertSame('https://assets.example.test/'.$files[0], $response->json('data.image_path'));
+        $this->assertDatabaseHas('stores', ['store_name' => 'Photo Store', 'image_path' => 'https://assets.example.test/'.$files[0]]);
+    }
+
+    public function test_manager_created_store_rejects_non_image_upload(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        $this->useStoreImageDisk('https://assets.example.test');
+
+        $this->postJson('/api/admin/stores', $this->storePayload(['image' => UploadedFile::fake()->create('permit.pdf', 10, 'application/pdf')]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('image');
+        $this->assertDatabaseCount('stores', 0);
+    }
+
+    public function test_store_photo_storage_failure_creates_no_store(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        config()->set('filesystems.commodity_images_disk', 'unavailable-store-images');
+        config()->set('filesystems.disks.unavailable-store-images', ['driver' => 'unavailable']);
+
+        $this->postJson('/api/admin/stores', $this->storePayload(['image' => UploadedFile::fake()->image('shop.jpg')]))
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'STORE_IMAGE_STORAGE_UNAVAILABLE');
+        $this->assertDatabaseCount('stores', 0);
+    }
+
+    public function test_store_photo_with_relative_url_is_rejected_and_removed(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        $this->useStoreImageDisk('/storage');
+
+        $this->postJson('/api/admin/stores', $this->storePayload(['image' => UploadedFile::fake()->image('shop.jpg')]))
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'STORE_IMAGE_STORAGE_UNAVAILABLE');
+        $this->assertDatabaseCount('stores', 0);
+        $this->assertSame([], Storage::disk('store-images-test')->files('store_images'));
+    }
+
+    public function test_store_photo_is_removed_when_audit_storage_is_unavailable(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        $this->useStoreImageDisk('https://assets.example.test');
+        Schema::drop('audit_events');
+
+        $this->postJson('/api/admin/stores', $this->storePayload(['image' => UploadedFile::fake()->image('shop.jpg')]))
+            ->assertStatus(503);
+        $this->assertDatabaseCount('stores', 0);
+        $this->assertSame([], Storage::disk('store-images-test')->files('store_images'));
     }
 }
