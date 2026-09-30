@@ -48,7 +48,7 @@ describe('StoreCommunications', () => {
     render(<StoreCommunications />)
 
     const list = await screen.findByRole('complementary', { name: 'Store conversations' })
-    expect(within(list).getByLabelText('2 unread')).toBeInTheDocument()
+    expect(await within(list).findByLabelText('2 unread')).toBeInTheDocument()
     expect(within(list).getByText('Unlinked')).toBeInTheDocument()
 
     await user.click(within(list).getByRole('button', { name: /Antique Grocery/ }))

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, FileText, Gavel, MessageSquare, Paperclip, Search, Send, ShieldAlert, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, FileText, Gavel, MessageSquare, Paperclip, Search, Send, ShieldAlert, X } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import type { ConversationNotice, ConversationSummary, ConversationThread, StoreMessageRecord } from '../../types/admin'
 import type { ModuleId } from './AdminShell'
@@ -14,6 +14,11 @@ const FILE_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 const messageOf = (error: unknown, fallback: string) => (error as { response?: { data?: { message?: string } } }).response?.data?.message || fallback
 const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''
 const label = (value: string) => value.replaceAll('_', ' ')
+const isImageAttachment = (attachment?: { name: string; mime?: string } | null) => {
+  if (!attachment) return false
+  if (attachment.mime?.startsWith('image/')) return true
+  return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(attachment.name)
+}
 
 /** Polls while the tab is visible; also runs once when it becomes visible again. */
 function useVisiblePoll(callback: () => void, delay: number, enabled = true) {
@@ -61,8 +66,27 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: (module: Modu
   const [file, setFile] = useState<File | null>(null)
   const [sending, setSending] = useState(false)
   const [showRecords, setShowRecords] = useState(false)
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
   const selectedRef = useRef<number | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+
+  const filePreviewUrl = useMemo(() => {
+    if (!file || !file.type.startsWith('image/')) return null
+    return URL.createObjectURL(file)
+  }, [file])
+
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl)
+    }
+  }, [filePreviewUrl])
+
+  useEffect(() => {
+    if (!previewImage) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewImage(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewImage])
 
   const loadList = useCallback(() => {
     const query = search.trim() ? { search: search.trim() } : {}
@@ -230,17 +254,33 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: (module: Modu
           <div className="comms-timeline" aria-live="polite">
             {thread.has_more && <button type="button" className="admin-button secondary comms-more" onClick={loadEarlier}>Load earlier messages</button>}
             {timeline.length ? timeline.map((entry) => entry.message ? (
-              <div key={`m${entry.message.id}`} className={`comms-bubble ${entry.message.sender_side}`}>
-                {entry.message.body && <p>{entry.message.body}</p>}
-                {entry.message.attachment && (
-                  <button type="button" className="comms-attachment" onClick={() => void openAttachment(entry.message!)}>
-                    <Paperclip size={14} aria-hidden="true" />{entry.message.attachment.name}
-                  </button>
-                )}
-                <span className="comms-bubble-meta">
-                  {entry.message.sender_side === 'dti' ? `${entry.message.sender_name || 'DTI'} → ${entry.message.vendor_name || 'vendor'}` : (entry.message.sender_name || 'Vendor')} · {time(entry.message.created_at)}
-                  {entry.message.sender_side === 'dti' && (entry.message.read_at ? ' · Seen' : ' · Sent')}
-                </span>
+              <div key={`m${entry.message.id}`} className={`comms-message-row ${entry.message.sender_side}`}>
+                <div className={`comms-bubble ${entry.message.sender_side}`}>
+                  {entry.message.body && <p>{entry.message.body}</p>}
+                  {entry.message.attachment && (
+                    isImageAttachment(entry.message.attachment) ? (
+                      <MessageImageAttachment
+                        storeId={thread.store.id}
+                        message={entry.message}
+                        onOpenPreview={(url, name) => setPreviewImage({ url, name })}
+                        onOpenFallback={() => void openAttachment(entry.message!)}
+                      />
+                    ) : (
+                      <button type="button" className="comms-attachment" onClick={() => void openAttachment(entry.message!)}>
+                        <Paperclip size={14} aria-hidden="true" />{entry.message.attachment.name}
+                      </button>
+                    )
+                  )}
+                </div>
+                <div className="comms-message-meta">
+                  <span className="sr-only">
+                    {entry.message.sender_side === 'dti'
+                      ? `${entry.message.sender_name || 'DTI'} → ${entry.message.vendor_name || 'vendor'}`
+                      : (entry.message.sender_name || 'Vendor')}
+                  </span>
+                  <span>{time(entry.message.created_at)}</span>
+                  {entry.message.sender_side === 'dti' && <span>{entry.message.read_at ? ' · Seen' : ' · Sent'}</span>}
+                </div>
               </div>
             ) : entry.event ? (
               <button key={`e${entry.notice!.id}-${entry.event}`} type="button" className="comms-event" onClick={() => goToLegal({ source_notice: entry.notice!.id })}>
@@ -255,7 +295,37 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: (module: Modu
           {threadError && <p className="comms-error" role="alert"><ShieldAlert size={16} aria-hidden="true" />{threadError}</p>}
           {thread.store.linked ? (
             <form className="comms-composer" onSubmit={(event) => void send(event)}>
-              {file && <span className="comms-file-chip"><Paperclip size={14} aria-hidden="true" />{file.name}<button type="button" onClick={() => setFile(null)} aria-label={`Remove ${file.name}`}><X size={14} /></button></span>}
+              {file && (
+                <div className="comms-composer-preview">
+                  {filePreviewUrl ? (
+                    <div className="comms-composer-img-card">
+                      <img src={filePreviewUrl} alt={file.name} className="comms-composer-img-thumb" />
+                      <button
+                        type="button"
+                        className="comms-composer-img-close"
+                        onClick={() => setFile(null)}
+                        aria-label={`Remove ${file.name}`}
+                        title={`Remove ${file.name}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="comms-composer-doc-card">
+                      <Paperclip size={15} aria-hidden="true" />
+                      <span>{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFile(null)}
+                        aria-label={`Remove ${file.name}`}
+                        title={`Remove ${file.name}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="comms-composer-row">
                 <label className="comms-attach" title="Attach a file">
                   <Paperclip size={18} aria-hidden="true" /><span className="sr-only">Attach a file</span>
@@ -263,17 +333,110 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: (module: Modu
                 </label>
                 <label className="comms-input">
                   <span className="sr-only">Message</span>
-                  <textarea rows={2} maxLength={MAX_BODY} placeholder="Write a message to this store's vendor" value={draft} onChange={(event) => setDraft(event.target.value)}
+                  <textarea rows={1} maxLength={MAX_BODY} placeholder="Write a message to this store's vendor" value={draft} onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
                 </label>
                 <button type="submit" className="admin-button primary" disabled={sending || (!draft.trim() && !file)}><Send size={16} aria-hidden="true" />{sending ? 'Sending…' : 'Send'}</button>
               </div>
-              <p className="comms-hint">Messages are informal. Formal explanations go through the vendor's notice response, and chat never starts a legal deadline.</p>
             </form>
           ) : <p className="comms-hint locked">This store has no linked vendor account, so the conversation is read-only. Link a vendor from User Management to message them.</p>}
         </>}
       </section>
+
+      {previewImage && (
+        <div className="comms-lightbox-overlay" onClick={() => setPreviewImage(null)} role="dialog" aria-modal="true" aria-label="Image Preview">
+          <div className="comms-lightbox-header" onClick={(e) => e.stopPropagation()}>
+            <span className="comms-lightbox-title">{previewImage.name}</span>
+            <div className="comms-lightbox-actions">
+              <button
+                type="button"
+                className="comms-lightbox-btn"
+                onClick={() => window.open(previewImage.url, '_blank')}
+                title="Open original in new tab"
+                aria-label="Open original in new tab"
+              >
+                <ExternalLink size={18} />
+              </button>
+              <button
+                type="button"
+                className="comms-lightbox-btn"
+                onClick={() => setPreviewImage(null)}
+                title="Close viewer"
+                aria-label="Close viewer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+          <div className="comms-lightbox-img-wrap" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage.url} alt={previewImage.name} className="comms-lightbox-img" />
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function MessageImageAttachment({
+  storeId,
+  message,
+  onOpenPreview,
+  onOpenFallback,
+}: {
+  storeId: number
+  message: StoreMessageRecord
+  onOpenPreview: (url: string, name: string) => void
+  onOpenFallback: () => void
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setFailed(false)
+    adminApi.getMessageAttachment(storeId, message.id)
+      .then((blob) => {
+        if (!active) return
+        const url = URL.createObjectURL(blob)
+        setImageUrl(url)
+      })
+      .catch(() => {
+        if (active) setFailed(true)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [storeId, message.id])
+
+  if (failed) {
+    return (
+      <button type="button" className="comms-attachment" onClick={onOpenFallback}>
+        <Paperclip size={14} aria-hidden="true" />{message.attachment!.name}
+      </button>
+    )
+  }
+
+  if (loading) {
+    return <div className="comms-img-skeleton" aria-label="Loading attachment image" />
+  }
+
+  if (!imageUrl) return null
+
+  return (
+    <button
+      type="button"
+      className="comms-msg-image-wrap"
+      onClick={() => onOpenPreview(imageUrl, message.attachment!.name)}
+      title={`Click to view full image: ${message.attachment!.name}`}
+      style={{ padding: 0, border: 'none', background: 'transparent' }}
+    >
+      <img src={imageUrl} alt={message.attachment!.name} className="comms-msg-image" />
+    </button>
   )
 }
 
