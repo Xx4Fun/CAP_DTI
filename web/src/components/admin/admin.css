@@ -5171,7 +5171,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-skeleton-row span {
+  .admin-skeleton-row span,
+  .admin-skeleton-block {
     animation: none;
   }
 }

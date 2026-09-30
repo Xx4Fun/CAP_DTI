@@ -48,6 +48,15 @@ describe('AdminShell', () => {
     })
   })
 
+  it('shows a skeleton, not loading text, while a lazy module chunk loads', () => {
+    window.history.replaceState({}, '', '/?module=consumer_reports')
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    const loader = screen.getByRole('status', { name: 'Loading Admin module' })
+    expect(loader.querySelectorAll('.admin-skeleton-block').length).toBeGreaterThan(0)
+    expect(within(loader).getByText('Loading Admin module...')).toHaveClass('sr-only')
+  })
+
   it('navigates directly to any module in a single click', async () => {
     const user = userEvent.setup()
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)

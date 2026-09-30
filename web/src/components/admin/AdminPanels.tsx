@@ -14,7 +14,15 @@ const SettingsPanel = lazy(() => import('./SettingsPanel').then((module) => ({ d
 const UserManagementPanel = lazy(() => import('./UserManagementPanel').then((module) => ({ default: module.UserManagementPanel })))
 const FieldMonitoringRecords = lazy(() => import('./FieldMonitoringRecords').then((module) => ({ default: module.FieldMonitoringRecords })))
 
-const PanelLoader = () => <div className="admin-panel-loader" role="status">Loading Admin module...</div>
+const PanelLoader = () => (
+  <div className="admin-dashboard-workspace" role="status" aria-label="Loading Admin module">
+    <span className="sr-only">Loading Admin module...</span>
+    <div className="admin-metric-grid-4">
+      {Array.from({ length: 4 }, (_, index) => <div key={index} className="admin-skeleton-block" style={{ height: '116px' }} />)}
+    </div>
+    <div className="admin-skeleton-block" style={{ height: '420px' }} />
+  </div>
+)
 
 export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (user: Partial<AdminUser>) => void }) {
   return <Suspense fallback={<PanelLoader />}><SettingsPanel user={props.user} onUserUpdate={props.onUserUpdate} /></Suspense>
