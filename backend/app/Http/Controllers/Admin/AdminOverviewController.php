@@ -20,6 +20,7 @@ class AdminOverviewController extends Controller
 
         return response()->json(['data' => [
             'stores' => Store::count(),
+            'recent_stores' => Store::orderBy('store_name')->limit(4)->get(['id', 'store_name', 'dti_sec_number', 'address', 'is_active']),
             'pending_reports' => ConsumerReport::whereNotIn('status', ['Resolved', 'Closed'])->count(),
             'active_emergencies' => $emergencyRecordsAvailable
                 ? RegulatoryEmergency::where('status', 'active')->count()

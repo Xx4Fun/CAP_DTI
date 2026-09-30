@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { getAdminToken, getAuthToken } from './adminSession';
+import { clearResponseCache } from './responseCache';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || 'https://cap-dti.onrender.com/api',
@@ -42,9 +43,18 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+// Any write can change a cached list, so a finished non-GET request drops the whole read cache.
+const clearCacheAfterWrite = (config?: AxiosRequestConfig) => {
+    if ((config?.method ?? 'get').toLowerCase() !== 'get') clearResponseCache();
+};
+
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        clearCacheAfterWrite(response.config);
+        return response;
+    },
     (error) => {
+        clearCacheAfterWrite(error.config);
         if (error.response?.status === 401 && getAdminToken()) {
             window.dispatchEvent(new Event('admin-auth-expired'));
         }

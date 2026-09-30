@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   ArrowLeft,
@@ -24,8 +24,10 @@ import { adminApi } from '../../services/adminApi'
 import type { VendorInvitationDeliveryStatus } from '../../services/adminApi'
 import type { ManagedUserPage, ManagedUserRecord, ManagedUserRole, StoreRecord, VendorInvitationRecord } from '../../types/admin'
 import { adminToast } from '../../services/adminToast'
-import { StoreOnboarding } from '../StoreOnboarding'
 import { VendorInviteForm } from './VendorInviteForm'
+
+// Fallback only (the Admin shell passes renderRegistration); lazy so leaflet stays out of this chunk.
+const StoreOnboarding = lazy(() => import('../StoreOnboarding').then((module) => ({ default: module.StoreOnboarding })))
 
 type ManagementView = 'list' | 'vendor' | 'field-officer'
 type RoleFilter = 'all' | ManagedUserRole
@@ -351,7 +353,7 @@ function VendorOnboarding({ renderRegistration, onBack, onInvited }: {
       onBack: () => setRegistering(false),
       onCreated: (store: StoreRecord) => { setStores((current) => [store, ...(current ?? [])]); setSelected(store); setRegistering(false) },
     }
-    return <div className="user-management-workspace">{renderRegistration ? renderRegistration(controls) : <StoreOnboarding {...controls} />}</div>
+    return <div className="user-management-workspace">{renderRegistration ? renderRegistration(controls) : <Suspense fallback={null}><StoreOnboarding {...controls} /></Suspense>}</div>
   }
 
   return (

@@ -29,12 +29,14 @@ class UserManagementController extends Controller
         ]);
 
         $base = User::query()->whereIn('role', self::MANAGED_ROLES);
-        $counts = [
-            'total' => (clone $base)->count(),
-            'field_officer' => (clone $base)->where('role', 'field_officer')->count(),
-            'vendor' => (clone $base)->where('role', 'vendor')->count(),
-            'inactive' => (clone $base)->where('is_active', false)->count(),
-        ];
+        $totals = (clone $base)->selectRaw(
+            'COUNT(*) AS total,'
+            ." SUM(CASE WHEN role = 'field_officer' THEN 1 ELSE 0 END) AS field_officer,"
+            ." SUM(CASE WHEN role = 'vendor' THEN 1 ELSE 0 END) AS vendor,"
+            .' SUM(CASE WHEN is_active = ? THEN 1 ELSE 0 END) AS inactive',
+            [false],
+        )->toBase()->first();
+        $counts = array_map('intval', (array) $totals);
 
         $query = $base->with(['stores:id,vendor_user_id,store_name']);
         if (($filters['role'] ?? 'all') !== 'all') {

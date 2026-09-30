@@ -27,7 +27,7 @@ return [
 
     'exposed_headers' => ['Retry-After'],
 
-    'max_age' => 0,
+    'max_age' => 7200,
 
     'supports_credentials' => false,
 

@@ -71,7 +71,7 @@ class ReportReviewController extends Controller
         }
 
         $paginator = $query->latest()->paginate($filters['per_page'] ?? 20);
-        $reports = $paginator->getCollection()->map(fn ($report) => $this->reportRow($report, $comparison));
+        $reports = $paginator->getCollection()->map(fn ($report) => $this->reportRow($report, $comparison, verifyFiles: false));
         return response()->json([
             'data' => $reports,
             'meta' => [
@@ -163,8 +163,14 @@ class ReportReviewController extends Controller
      * leaked the consumer's tracking token hashes. Routing every report-scoped response through this
      * allow-list fixes both.
      */
-    private function reportRow(ConsumerReport $report, ReceiptPriceComparison $comparison): array
+    /**
+     * @param bool $verifyFiles Queue pages skip the per-asset Storage round trip (an HTTP request on the
+     *                          s3 disk) and report DB-recorded assets as `evidence_verified: false`; detail
+     *                          and decision responses verify every file. Downloads always verify.
+     */
+    private function reportRow(ConsumerReport $report, ReceiptPriceComparison $comparison, bool $verifyFiles = true): array
     {
+        $assetAvailable = fn ($asset) => ! $verifyFiles || Storage::disk($asset->disk)->exists($asset->path);
         $request = $report->relationLoaded('activeVerificationRequest')
             ? ($report->activeVerificationRequest ?? $report->latestVerificationRequest)
             : $report->latestVerificationRequest;
@@ -214,8 +220,9 @@ class ReportReviewController extends Controller
                 'cancelled_at' => $request->cancelled_at,
             ] : null,
             'evidence_available' => ($report->image_vault_path && Storage::disk('local')->exists($report->image_vault_path))
-                || (bool) $report->evidenceBundle?->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path))
-                || $report->evidenceAttempts->flatMap->assets->contains(fn ($asset) => Storage::disk($asset->disk)->exists($asset->path)),
+                || (bool) $report->evidenceBundle?->assets->contains($assetAvailable)
+                || $report->evidenceAttempts->flatMap->assets->contains($assetAvailable),
+            'evidence_verified' => $verifyFiles,
             'evidence_summary' => $report->evidenceBundle ? [
                 'capture_mode' => $report->evidenceBundle->capture_mode,
                 'processing_status' => $report->evidenceBundle->processing_status,

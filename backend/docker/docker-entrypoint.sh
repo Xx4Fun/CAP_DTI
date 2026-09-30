@@ -4,9 +4,9 @@ set -e
 # Permissions setup
 chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache || true
 
-# Cache configuration & routes
-php artisan config:cache || true
-php artisan route:cache || true
+# Cache config, routes, events and views. No `|| true`: a failed cache must fail the boot, not
+# silently leave every request re-reading config and route files.
+php artisan optimize
 php artisan storage:link || true
 # Run database migrations
 php artisan migrate --force

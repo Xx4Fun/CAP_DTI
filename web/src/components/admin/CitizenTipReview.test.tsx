@@ -331,6 +331,26 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(await screen.findByText('Cancelled')).toBeInTheDocument()
   })
 
+  it('treats unverified queue evidence as unavailable until a file actually loads', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      evidence_verified: false,
+      evidence_summary: { capture_mode: 'continuous_video_v1', processing_status: 'confirmed', asset_count: 1 },
+    }])
+    vi.mocked(adminApi.getReportEvidenceManifest).mockResolvedValue({
+      capture_mode: 'continuous_video_v1', processing_status: 'confirmed', continuity: null, merchant: null, processing_result: null,
+      assets: [{ id: 801, kind: 'source_frame', sequence: 0, mime_type: 'image/jpeg', size_bytes: 5, sha256: 'x', metadata: null }],
+    } as never)
+    vi.mocked(adminApi.getReportEvidenceAsset).mockRejectedValue(new Error('404'))
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByText('RPT-2026-001'))
+
+    expect(await screen.findByText('Receipt evidence unavailable')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Download private receipt evidence/i })).not.toBeInTheDocument()
+  })
+
   it('shows original guided images before legacy derivatives and submits one decision per receipt item', async () => {
     const receiptReport = {
       ...mockReports[0],

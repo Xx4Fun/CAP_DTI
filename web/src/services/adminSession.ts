@@ -1,3 +1,5 @@
+import { clearResponseCache } from './responseCache'
+
 const ADMIN_TOKEN_KEY = 'price-watch.admin.token'
 const ADMIN_ACTIVITY_KEY = 'price-watch.admin.last-activity'
 
@@ -23,6 +25,7 @@ export function getAuthToken(): string | null {
 
 export function clearAdminSession(): void {
   memoryToken = null
+  clearResponseCache()
   sessionStorage.removeItem(ADMIN_TOKEN_KEY)
   sessionStorage.removeItem(ADMIN_ACTIVITY_KEY)
 }

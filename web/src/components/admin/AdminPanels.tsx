@@ -48,14 +48,12 @@ function formatSubjectType(type?: string): string {
 
 export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }) {
   const [summary, setSummary] = useState<AdminOverviewRecord | null>(null)
-  const [storesList, setStoresList] = useState<StoreRecord[]>([])
   const [reportsList, setReportsList] = useState<ConsumerReportRecord[]>([])
   const [error, setError] = useState(false)
 
   useEffect(() => {
     void adminApi.getOverview().then(setSummary).catch(() => setError(true))
-    void adminApi.getStores?.().then((data) => setStoresList(data ? data.slice(0, 4) : [])).catch(() => {})
-    void adminApi.getReports?.().then((data) => setReportsList(data ? data.slice(0, 4) : [])).catch(() => {})
+    void adminApi.getReportPage?.({ page: 1, per_page: 4 }).then((page) => setReportsList(page?.data ?? [])).catch(() => {})
   }, [])
 
   if (error) return <p role="alert" className="admin-inline-alert">The regulatory overview could not load. Refresh or try again later.</p>
@@ -82,6 +80,7 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
     )
   }
 
+  const storesList = summary.recent_stores ?? []
   const isEmergencyUnavailable = summary.active_emergencies === null || summary.availability?.regulatory_emergencies === false
   const isEmergencyActive = !isEmergencyUnavailable && (summary.active_emergencies ?? 0) > 0
 

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react'
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { StoreRecord } from '../../types/admin'
 import { StoreMap } from './StoreMap'
 import { getStoreStatusInfo } from './storeMapUtils'
-import { StoreDetailOverlay } from './StoreDetailOverlay'
+
+// chart.js lives in the detail overlay; keep it out of the map's first load.
+const StoreDetailOverlay = lazy(() => import('./StoreDetailOverlay').then((module) => ({ default: module.StoreDetailOverlay })))
 
 type StatusFilter = 'all' | 'no-findings' | 'pending' | 'findings'
 
@@ -61,7 +63,8 @@ export const StoreManager: React.FC = () => {
     findings: stores.filter((s) => (s.recidivism_index || 0) > 0).length,
   }
 
-  const filteredStores = stores.filter((s) => {
+  // Memoized so StoreMap keeps the same array and does not rebuild every marker on unrelated renders.
+  const filteredStores = useMemo(() => stores.filter((s) => {
     const matchesSearch =
       s.store_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,7 +78,7 @@ export const StoreManager: React.FC = () => {
     if (statusFilter === 'findings') return recidivism > 0
 
     return true
-  })
+  }), [stores, searchTerm, statusFilter])
 
   return (
     <div
@@ -195,11 +198,18 @@ export const StoreManager: React.FC = () => {
         <div style={{ width: '100%', height: '100%', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {isSidebarOpen && detailStore ? (
             /* Fully Replaces Entire Sidebar when Viewing Store Info */
-            <StoreDetailOverlay
-              store={detailStore}
-              onClose={() => setDetailStore(null)}
-              onCenterMap={() => handleCenterStore(detailStore.id)}
-            />
+            <Suspense fallback={
+              <div className="store-sidebar-skeleton-list" role="status" aria-label="Loading store details">
+                <span className="sr-only">Loading store details...</span>
+                {Array.from({ length: 3 }, (_, index) => <div key={index} className="admin-skeleton-block" style={{ height: '96px' }} />)}
+              </div>
+            }>
+              <StoreDetailOverlay
+                store={detailStore}
+                onClose={() => setDetailStore(null)}
+                onCenterMap={() => handleCenterStore(detailStore.id)}
+              />
+            </Suspense>
           ) : isSidebarOpen ? (
             /* Standard Store List & Search View */
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>

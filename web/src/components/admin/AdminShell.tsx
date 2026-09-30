@@ -174,9 +174,10 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   }, [isFieldOfficer])
 
   useEffect(() => {
-    void adminApi.getEmergencies().then((emergencies) => {
-      const hasActive = emergencies.some((e) => e.status === 'active')
-      setIsCalamityActive(hasActive || document.body.classList.contains('calamity-mode'))
+    // The overview count is enough for the badge; the full emergency list is only loaded by Emergency Protocol.
+    void adminApi.getOverview().then((overview) => {
+      if (overview.active_emergencies === null) throw new Error('Emergency records unavailable')
+      setIsCalamityActive(overview.active_emergencies > 0 || document.body.classList.contains('calamity-mode'))
     }).catch(() => {
       setIsCalamityActive(document.body.classList.contains('calamity-mode') ? true : null)
     })

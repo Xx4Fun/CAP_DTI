@@ -22,6 +22,9 @@ use App\Services\FieldReferenceResolver;
  */
 class ReceiptPriceComparison
 {
+    /** @var array<string, array<string, mixed>> References per commodity and exact instant, for this instance only. */
+    private array $references = [];
+
     public function __construct(
         private readonly TemporalSrpResolver $temporalResolver,
         private readonly FieldReferenceResolver $referenceResolver,
@@ -45,13 +48,22 @@ class ReceiptPriceComparison
             return $unavailable;
         }
 
+        // A queue page repeats the same commodity and purchase date across many lines.
+        $key = $commodityKey.'|'.FieldReferenceResolver::instantKey($observedAt);
+
+        return $this->references[$key] ??= $this->resolveReference($commodityKey, $observedAt, $unavailable);
+    }
+
+    /** @return array<string, mixed> */
+    private function resolveReference(string $commodityKey, string|\DateTimeInterface $observedAt, array $unavailable): array
+    {
         $bulletin = $this->temporalResolver->resolve($commodityKey, $observedAt);
 
         if (! $bulletin) {
             return $unavailable;
         }
 
-        $reference = $this->referenceResolver->resolve($bulletin, $observedAt);
+        $reference = $this->referenceResolver->resolve($bulletin, $observedAt, bulletinIsEffective: true);
 
         return $reference + [
             // The bulletin carries commodity identity even when an emergency record supplies the

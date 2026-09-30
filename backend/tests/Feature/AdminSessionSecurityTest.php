@@ -96,6 +96,21 @@ class AdminSessionSecurityTest extends TestCase
         ]);
     }
 
+    public function test_token_activity_is_written_at_most_once_a_minute(): void
+    {
+        Carbon::setTestNow('2026-07-30 08:00:00');
+        $newToken = $this->admin()->createToken('dti-admin-web', ['dti-admin'], now()->addHours(8));
+        $newToken->accessToken->forceFill(['last_used_at' => now()->subSeconds(30)])->save();
+
+        $this->withToken($newToken->plainTextToken)->getJson('/api/admin/session')->assertOk();
+        $this->assertSame('2026-07-30 07:59:30', $newToken->accessToken->fresh()->last_used_at->toDateTimeString());
+
+        Carbon::setTestNow('2026-07-30 08:01:00');
+        $this->app['auth']->forgetGuards();
+        $this->withToken($newToken->plainTextToken)->getJson('/api/admin/session')->assertOk();
+        $this->assertSame('2026-07-30 08:01:00', $newToken->accessToken->fresh()->last_used_at->toDateTimeString());
+    }
+
     public function test_logout_revokes_the_current_token_and_records_the_event(): void
     {
         $admin = $this->admin();

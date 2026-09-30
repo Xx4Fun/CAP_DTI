@@ -44,6 +44,7 @@ COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/receipt-uploads.ini $PHP_INI_DIR/conf.d/receipt-uploads.ini
 COPY docker/security.ini $PHP_INI_DIR/conf.d/security.ini
+COPY docker/opcache.ini $PHP_INI_DIR/conf.d/opcache-tuning.ini
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

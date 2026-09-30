@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AuditEvent;
+use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -58,6 +59,19 @@ class AdminAuthorizationAndAuditTest extends TestCase
         Sanctum::actingAs($this->user('field_officer'));
 
         $this->getJson('/api/admin/overview')->assertForbidden();
+    }
+
+    public function test_admin_overview_lists_first_four_stores_by_name(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        foreach (['Echo', 'Alpha', 'Delta', 'Charlie', 'Bravo'] as $name) {
+            Store::create(['store_name' => $name, 'address' => "$name St", 'latitude' => 10.7, 'longitude' => 122.0, 'is_active' => true]);
+        }
+
+        $response = $this->getJson('/api/admin/overview')->assertOk()->assertJsonPath('data.stores', 5);
+
+        $this->assertSame(['Alpha', 'Bravo', 'Charlie', 'Delta'], array_column($response->json('data.recent_stores'), 'store_name'));
+        $this->assertSame(['id', 'store_name', 'dti_sec_number', 'address', 'is_active'], array_keys($response->json('data.recent_stores.0')));
     }
 
     public function test_admin_overview_keeps_available_counts_when_emergency_schema_is_missing(): void

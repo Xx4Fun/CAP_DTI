@@ -9,6 +9,7 @@ vi.mock('../../services/adminApi', () => ({
     getOverview: vi.fn().mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 0 }),
     getStores: vi.fn().mockResolvedValue([]),
     getReports: vi.fn().mockResolvedValue([]),
+    getReportPage: vi.fn().mockResolvedValue({ data: [], meta: { current_page: 1, last_page: 1, per_page: 4, total: 0 } }),
     getEmergencies: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
     getConversations: vi.fn().mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 }),
@@ -205,11 +206,12 @@ describe('AdminShell', () => {
   })
 
   it('does not label an unavailable emergency status as normal market protocol', async () => {
-    vi.mocked(adminApi.getEmergencies).mockRejectedValueOnce(new Error('schema unavailable'))
+    vi.mocked(adminApi.getOverview).mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: null, availability: { regulatory_emergencies: false } })
 
     render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
 
     expect(await screen.findByText('Emergency status unavailable')).toBeInTheDocument()
     expect(screen.queryByText('Normal Market Protocol')).not.toBeInTheDocument()
+    vi.mocked(adminApi.getOverview).mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 0 })
   })
 })

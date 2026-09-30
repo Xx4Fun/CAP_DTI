@@ -837,7 +837,8 @@ export const CitizenTipReview: React.FC = () => {
 
                 <ReceiptExtractionPanel result={evidenceManifest?.processing_result as ReceiptExtractionResult | null | undefined} />
 
-                {selected.evidence_available && (
+                {/* Queue rows are not file-verified (evidence_verified false): offer the download only once a file has loaded. */}
+                {selected.evidence_available && (selected.evidence_verified !== false || evidenceUrl) && (
                   <button
                     type="button"
                     className="admin-button secondary consumer-report-download"

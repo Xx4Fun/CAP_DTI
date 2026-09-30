@@ -78,7 +78,12 @@ function App() {
   useEffect(() => {
     const adminToken = getAdminToken();
     if (adminToken) {
-      void ensureApiReady().then(() => api.get('/admin/session')).then((response) => {
+      // Ask for the session straight away; the readiness probe above runs in parallel. Only a
+      // network failure (e.g. a cold start) waits for readiness and retries this idempotent GET once.
+      void api.get('/admin/session').catch((error) => {
+        if (error.response) throw error;
+        return ensureApiReady().then(() => api.get('/admin/session'));
+      }).then((response) => {
         if (response.data.data.user.role === 'field_officer') {
           clearAdminSession();
           setPwaHandoff('field');

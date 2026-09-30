@@ -11,6 +11,7 @@ export interface AdminOverviewRecord {
   stores: number
   pending_reports: number
   active_emergencies: number | null
+  recent_stores?: Array<Pick<StoreRecord, 'id' | 'store_name' | 'dti_sec_number' | 'address' | 'is_active'>>
   availability?: {
     regulatory_emergencies: boolean
   }
@@ -314,6 +315,8 @@ export interface ConsumerReportRecord {
   raw_ocr_json: Record<string, unknown> | null
   evaluator_confirmed_json: Record<string, unknown> | null
   evidence_available: boolean
+  /** false on queue rows, whose stored files were not checked; detail and decision responses verify. */
+  evidence_verified?: boolean
   evidence_summary?: {
     capture_mode: string
     processing_status: string

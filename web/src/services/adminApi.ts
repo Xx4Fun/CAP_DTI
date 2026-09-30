@@ -1,4 +1,5 @@
 import api from './api'
+import { cached } from './responseCache'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
@@ -83,8 +84,8 @@ export const adminApi = {
   async resetManagedUserPassword(id: number, payload: { password: string; password_confirmation: string }): Promise<{ message: string }> {
     return data(await api.put(`/admin/users/${id}/password`, payload))
   },
-  async getStores(): Promise<StoreRecord[]> {
-    return data(await api.get('/admin/stores'))
+  getStores(): Promise<StoreRecord[]> {
+    return cached('stores', 60_000, async () => data<StoreRecord[]>(await api.get('/admin/stores')))
   },
   async updateStore(id: number, changes: Partial<StoreRecord>): Promise<StoreRecord> {
     return data(await api.patch(`/admin/stores/${id}`, changes))
@@ -308,9 +309,10 @@ export const adminApi = {
     stores: Array<{ id: number; store_name: string; address: string }>
     commodities: Array<{ commodity_key: string; commodity_name: string }>
   }> {
-    return data(await api.get('/admin/analytics/options'))
+    return cached('analytics-options', 60_000, async () => data(await api.get('/admin/analytics/options')))
   },
-  async getOverview(): Promise<AdminOverviewRecord> {
-    return data<AdminOverviewRecord>(await api.get('/admin/overview'))
+  // Short TTL: only de-duplicates the Dashboard and header-badge requests fired together on mount.
+  getOverview(): Promise<AdminOverviewRecord> {
+    return cached('overview', 5_000, async () => data<AdminOverviewRecord>(await api.get('/admin/overview')))
   },
 }

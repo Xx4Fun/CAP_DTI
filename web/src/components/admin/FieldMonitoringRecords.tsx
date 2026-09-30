@@ -5,7 +5,6 @@ import {
   ShieldCheck, Store, TrendingUp, TriangleAlert, User, UserCheck, X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
-import { exportMonitoringMatrixExcel } from '../../utils/monitoringExcelExport'
 import type {
   FieldVerificationRequestPage, MonitoringEstablishmentProfile, MonitoringEstablishmentSummary,
   ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringPeriodPreset,
@@ -162,6 +161,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       const matrixData = await adminApi.getMonitoringExportMatrix({
         period: recordPeriod === 'all_time' ? undefined : recordPeriod,
       })
+      const { exportMonitoringMatrixExcel } = await import('../../utils/monitoringExcelExport')
       await exportMonitoringMatrixExcel(matrixData, label)
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to export Excel matrix.')

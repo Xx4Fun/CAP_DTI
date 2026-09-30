@@ -289,6 +289,13 @@ class MonitoringRecordController extends Controller
         $establishments = $query->orderBy('store_name')->paginate($filters['per_page'] ?? 10);
         $establishments->setCollection($establishments->getCollection()->map(fn (Store $store) => $this->establishmentSummary($store)));
 
+        // whereHas / whereDoesntHave on the same constraint partition the stores, so each "not"
+        // figure is the total minus its complement rather than a second query.
+        $activeStores = Store::where('is_active', true)->count();
+        $completed = Store::where('is_active', true)->whereHas('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period))->count();
+        $allStores = Store::count();
+        $monitoredThisWeek = Store::whereHas('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count();
+
         return response()->json(['data' => [
             'monitoring_week' => [
                 'timezone' => $week['timezone'],
@@ -297,15 +304,15 @@ class MonitoringRecordController extends Controller
             ],
             'monitoring_period' => $this->periodPayload($period),
             'routine_summary' => [
-                'total_establishments' => Store::where('is_active', true)->count(),
-                'due' => Store::where('is_active', true)->whereDoesntHave('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period))->count(),
-                'completed' => Store::where('is_active', true)->whereHas('routineMonitoringRecords', fn ($records) => $this->routinePeriod($records, $period))->count(),
+                'total_establishments' => $activeStores,
+                'due' => $activeStores - $completed,
+                'completed' => $completed,
                 'additional_visits' => FieldVerificationRequest::whereIn('status', ['open', 'claimed'])->count(),
             ],
             'weekly_summary' => [
-                'total_establishments' => Store::count(),
-                'not_yet_monitored' => Store::whereDoesntHave('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
-                'monitored_this_week' => Store::whereHas('routineMonitoringRecords', fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']))->count(),
+                'total_establishments' => $allStores,
+                'not_yet_monitored' => $allStores - $monitoredThisWeek,
+                'monitored_this_week' => $monitoredThisWeek,
                 'verification_required' => Store::whereHas('verificationRequests', fn ($requests) => $requests->whereIn('status', ['open', 'claimed']))->count(),
             ],
             'establishments' => $establishments,

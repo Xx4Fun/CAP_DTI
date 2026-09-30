@@ -6,9 +6,20 @@ use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Support\MonitoringPeriod;
+use App\Support\MonitoringWeek;
+use Carbon\CarbonImmutable;
 
 class FieldReferenceResolver
 {
+    /** @var array<string, RegulatoryEmergency|null> Emergency in effect, per exact instant, for this instance only. */
+    private array $emergencies = [];
+
+    /** The key MonitoringPeriod::effectiveEmergency would resolve to: the exact instant, date-only read in Manila. */
+    public static function instantKey(string|\DateTimeInterface $observedAt): string
+    {
+        return CarbonImmutable::parse($observedAt, MonitoringWeek::TIMEZONE)->utc()->toIso8601String();
+    }
+
     public function version(array $reference): string
     {
         return hash('sha256', json_encode([
@@ -17,9 +28,10 @@ class FieldReferenceResolver
         ], JSON_PRESERVE_ZERO_FRACTION));
     }
 
-    public function resolve(SrpBulletin $submittedBulletin, string|\DateTimeInterface $observedAt): array
+    /** @param bool $bulletinIsEffective The caller already resolved the revision in effect on this date. */
+    public function resolve(SrpBulletin $submittedBulletin, string|\DateTimeInterface $observedAt, bool $bulletinIsEffective = false): array
     {
-        $bulletin = $submittedBulletin->commodity_key
+        $bulletin = $submittedBulletin->commodity_key && ! $bulletinIsEffective
             ? SrpBulletin::query()->where('commodity_key', $submittedBulletin->commodity_key)
                 ->whereDate('effective_date', '<=', $observedAt)
                 ->latest('effective_date')->latest('id')->first()
@@ -72,6 +84,10 @@ class FieldReferenceResolver
 
     private function effectiveEmergency(string|\DateTimeInterface $observedAt): ?RegulatoryEmergency
     {
-        return MonitoringPeriod::effectiveEmergency($observedAt);
+        $key = self::instantKey($observedAt);
+
+        return array_key_exists($key, $this->emergencies)
+            ? $this->emergencies[$key]
+            : $this->emergencies[$key] = MonitoringPeriod::effectiveEmergency($observedAt);
     }
 }
