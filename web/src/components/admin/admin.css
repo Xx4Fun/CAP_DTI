@@ -6705,6 +6705,10 @@
 .legal-issue-result ul { margin: 0; padding-left: 1.1rem; }
 .legal-issue-result .admin-button { justify-self: start; }
 .legal-queue > header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.legal-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.legal-workspace .legal-danger-button { border-color: #fecaca !important; background: #fff !important; color: #b91c1c !important; }
+.legal-workspace .legal-danger-button:hover:not(:disabled) { background: #fef2f2 !important; }
+.legal-discard { justify-self: center; color: #b91c1c; font-size: .78rem; font-weight: 650; }
 .legal-queue td small { display: block; color: var(--admin-muted); font-size: .72rem; }
 .legal-visit-search { display: flex; align-items: center; gap: .45rem; max-width: 420px; margin: .25rem 0 .75rem; padding: 0 .7rem; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--admin-muted); }
 .legal-workspace .legal-visit-search input:not([type=radio]):not([type=checkbox]) { min-height: 40px; padding: 0; border: 0; outline: none; }

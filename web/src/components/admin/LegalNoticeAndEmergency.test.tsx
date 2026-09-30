@@ -96,6 +96,43 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     expect(screen.getAllByRole('button', { name: 'Start LOI draft' })[0]).toBeEnabled()
   })
 
+  it('offers the existing open draft instead of starting a duplicate for the same visit', async () => {
+    const draft = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9, commodity_name: 'Rice', observed_price: 62, reference_value: 50 }] }, draft_payload: { legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [{
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' }, items: [],
+    }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'New notice' }))
+    expect(screen.queryByRole('button', { name: 'Use this visit' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Open existing LOI draft' }))
+    expect(adminApi.createLegalNotice).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
+  })
+
+  it('opens the existing notice when the server reports the visit already has one', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const existing = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Maria', legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.createLegalNotice).mockRejectedValue({ response: { status: 409, data: { message: 'An open notice already exists for this monitoring visit.' } } })
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [existing], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await screen.findByText('Rice')
+    await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
+
+    expect(await screen.findByLabelText('Representative / contact person')).toHaveValue('Maria')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('keeps official dispatch unavailable and sandboxes draft HTML', async () => {
     window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({

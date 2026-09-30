@@ -12,6 +12,7 @@ vi.mock('../../services/adminApi', () => ({
     downloadLegalAttachment: vi.fn(),
     getLegalDocument: vi.fn(),
     closeLegalNotice: vi.fn(),
+    cancelLegalNotice: vi.fn(),
     escalateLegalNotice: vi.fn(),
     updateLegalNotice: vi.fn(),
     previewLegalNotice: vi.fn(),
@@ -147,6 +148,60 @@ describe('Legal Actions vendor response review', () => {
     await user.click(await screen.findByRole('button', { name: 'Close notice' }))
     await user.click(within(screen.getByRole('dialog', { name: 'Close this notice?' })).getByRole('button', { name: 'Close notice' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Close is not allowed now.')
+  })
+
+  it('discards a draft from the queue after confirmation, keeping it as cancelled', async () => {
+    const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null } as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Discard Draft #3' }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard this draft?' })
+    expect(dialog).toHaveTextContent('kept as Cancelled')
+    expect(adminApi.cancelLegalNotice).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Discard draft' }))
+
+    expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(3)
+    expect(await screen.findByText('No drafts in the queue')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Issued & Responses/ }))
+    expect(screen.getByRole('cell', { name: /Draft #3/ })).toBeInTheDocument()
+    expect(screen.getAllByText('Cancelled').length).toBeGreaterThan(0)
+  })
+
+  it('discards the draft being edited and returns to the queue', async () => {
+    const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null, readiness: complete, attachments: [],
+      policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: [], legal_bases: [] }, draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    await user.click(screen.getByRole('button', { name: 'Discard draft' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard draft' }))
+
+    expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(3)
+    expect(await screen.findByRole('heading', { name: 'Action Queue' })).toBeInTheDocument()
+    expect(screen.getByText('No drafts in the queue')).toBeInTheDocument()
+  })
+
+  it('cancels an issued notice only after a warning that the vendor may have it', async () => {
+    vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...detailRecord, status: 'cancelled' })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel notice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancel this issued notice?' })
+    expect(dialog).toHaveTextContent('The vendor may already have this notice')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel notice' }))
+
+    expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(1)
+    expect(await screen.findByText('LOI · Cancelled')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close notice' })).not.toBeInTheDocument()
   })
 
   it('saves unsaved edits automatically before the preview', async () => {

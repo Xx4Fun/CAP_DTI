@@ -135,7 +135,17 @@ export const LegalNoticeManager = () => {
     if (!record || !selectedIds.length) return
     setBusy(true); setError('')
     try { openNotice(await adminApi.createLegalNotice({ monitoring_record_id: record.id, notice_type: noticeType, item_ids: selectedIds })); toast.success('Draft started. Fill in the recipient and reason, then issue.') }
-    catch (reason) { setError(messageOf(reason, 'The draft could not be created.')) }
+    catch (reason) {
+      // 409: this visit already has an open notice. Open it instead of stopping at an error.
+      const existing = (reason as { response?: { status?: number } }).response?.status === 409
+        ? (await adminApi.getLegalNotices().catch(() => null))?.data.find((item) => item.monitoring_record_id === record.id && ['draft', 'issued', 'response_received'].includes(item.status))
+        : undefined
+      if (existing) {
+        replaceInList(existing)
+        if (existing.status === 'draft') openNotice(existing); else reviewIssued(existing)
+        toast.info(`This visit already has an open ${existing.notice_type}; it is opened here.`)
+      } else setError(messageOf(reason, 'The draft could not be created.'))
+    }
     finally { setBusy(false) }
   }
 
@@ -255,7 +265,35 @@ export const LegalNoticeManager = () => {
     finally { setBusy(false) }
   }
 
+  const openNoticeFor = (visitId: number) => notices.find((item) => item.monitoring_record_id === visitId && ['draft', 'issued', 'response_received'].includes(item.status))
+
   const replaceInList = (updated: LegalNoticeRecord) => setNotices((current) => current.some((item) => item.id === updated.id) ? current.map((item) => item.id === updated.id ? updated : item) : [updated, ...current])
+
+  // Notices are legal records, so "delete" cancels: the row and audit history stay, the queue and the
+  // one-open-notice-per-visit lock release, and the visit can get a new notice.
+  const cancelNotice = (target: LegalNoticeRecord) => {
+    const draft = target.status === 'draft'
+    setConfirmation({
+      title: draft ? 'Discard this draft?' : 'Cancel this issued notice?',
+      body: <p>{draft
+        ? 'It leaves the Action Queue and the visit can get a new notice. The draft is kept as Cancelled in the audit record.'
+        : 'The vendor may already have this notice. Cancelling withdraws it and stops its deadline. The notice and its document are kept, marked Cancelled.'}</p>,
+      confirmLabel: draft ? 'Discard draft' : 'Cancel notice',
+      run: async () => {
+        detailRequest.current++
+        setBusy(true); setError('')
+        try {
+          const cancelled = await adminApi.cancelLegalNotice(target.id)
+          replaceInList(cancelled)
+          if (notice?.id === target.id) {
+            if (draft) { setNotice(null); setView('queue') } else openNotice(cancelled)
+          }
+          toast.success(draft ? 'Draft discarded.' : 'Notice cancelled.')
+        } catch (reason) { setError(messageOf(reason, draft ? 'The draft could not be discarded.' : 'The notice could not be cancelled.')) }
+        finally { setBusy(false) }
+      },
+    })
+  }
 
   const closeNotice = () => {
     if (!notice) return
@@ -336,7 +374,7 @@ export const LegalNoticeManager = () => {
 
     {error && <div className="legal-alert" role="alert"><ShieldAlert size={18}/><span>{error}</span></div>}
     {loading ? <div className="legal-loading" aria-label="Loading legal actions"/>
-      : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openNotice} onStart={() => { setNotice(null); if (!sourceId) setRecord(null); setView('prepare') }}/>
+      : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openNotice} onDiscard={cancelNotice} onStart={() => { setNotice(null); if (!sourceId) setRecord(null); setView('prepare') }}/>
       : view === 'issued' ? <>
         <Queue notices={notices.filter((item) => item.status !== 'draft')} onOpen={reviewIssued} issued/>
         {notice && notice.status !== 'draft' && <section className="legal-issued-detail">
@@ -363,10 +401,10 @@ export const LegalNoticeManager = () => {
             {notice.response_text && <p className="legal-response-text">{notice.response_text}</p>}
             <div className="legal-response-attachments">{notice.attachments?.filter((attachment) => ['vendor_response', 'offline_response'].includes(attachment.kind)).map((attachment) => <button type="button" key={attachment.id} className="admin-button secondary" onClick={() => void openAttachment(attachment.id)}><Paperclip size={16}/>{attachment.original_name}{attachment.category ? ` · ${attachment.category.replaceAll('_', ' ').toLowerCase()}` : ''}</button>)}</div>
           </section>}
-          {!['closed', 'cancelled'].includes(notice.status) && <div className="legal-delivery-controls">{notice.can_escalate && <button type="button" className="admin-button primary" disabled={busy} onClick={escalate}>Escalate to SCO</button>}<button type="button" className="admin-button secondary" disabled={busy} onClick={closeNotice}>Close notice</button></div>}
+          {!['closed', 'cancelled'].includes(notice.status) && <div className="legal-delivery-controls">{notice.can_escalate && <button type="button" className="admin-button primary" disabled={busy} onClick={escalate}>Escalate to SCO</button>}<button type="button" className="admin-button secondary" disabled={busy} onClick={closeNotice}>Close notice</button><button type="button" className="admin-button secondary legal-danger-button" disabled={busy} onClick={() => cancelNotice(notice)}>Cancel notice</button></div>}
         </section>}
       </>
-      : choosingVisit ? <VisitPicker page={visits} search={visitSearch} busy={busy} onSearch={setVisitSearch} onChoose={(id) => void chooseVisit(id)}/>
+      : choosingVisit ? <VisitPicker page={visits} search={visitSearch} busy={busy} openNoticeFor={openNoticeFor} onSearch={setVisitSearch} onChoose={(id) => void chooseVisit(id)} onOpenExisting={(existing) => existing.status === 'draft' ? openNotice(existing) : reviewIssued(existing)}/>
       : <div className="legal-editor-layout">
         <main className="legal-form-stack">
           <header className="legal-view-heading"><div><h2>Prepare Notice</h2><p>Build one evidence-backed notice for one accepted monitoring visit.</p></div><span className="legal-protocol">Evaluator review required</span></header>
@@ -425,6 +463,7 @@ export const LegalNoticeManager = () => {
           {error && view === 'prepare' && <p className="legal-panel-error" aria-live="polite">{error}</p>}
           <button type="button" className="admin-button primary" disabled={!notice || policyOff || busy} onClick={() => void requestIssue()}><Send size={17}/>Issue Notice</button>
           <p className="legal-issue-hint">{issueHint}</p>
+          {notice?.status === 'draft' && <button type="button" className="text-button legal-discard" disabled={busy} onClick={() => cancelNotice(notice)}>Discard draft</button>}
         </aside>
       </div>}
 
@@ -463,18 +502,27 @@ function IssueResult({ result, onRecordDelivery }: { result: { notification: Leg
   </div>
 }
 
-function VisitPicker({ page, search, busy, onSearch, onChoose }: { page: MonitoringRecordPage | null; search: string; busy: boolean; onSearch: (value: string) => void; onChoose: (id: number) => void }) {
+function VisitPicker({ page, search, busy, openNoticeFor, onSearch, onChoose, onOpenExisting }: {
+  page: MonitoringRecordPage | null; search: string; busy: boolean; openNoticeFor: (visitId: number) => LegalNoticeRecord | undefined
+  onSearch: (value: string) => void; onChoose: (id: number) => void; onOpenExisting: (notice: LegalNoticeRecord) => void
+}) {
   return <section className="legal-queue legal-visit-picker" aria-labelledby="legal-visit-picker-title">
     <header><h2 id="legal-visit-picker-title">Choose a monitoring visit</h2><p>Notices are prepared from an accepted visit with price observations.</p></header>
     <label className="legal-visit-search"><Search size={16} aria-hidden="true"/><input type="search" aria-label="Search visits" placeholder="Search store or officer…" value={search} onChange={(event) => onSearch(event.target.value)}/></label>
-    {!page ? <div className="legal-loading" aria-label="Loading visits"/> : page.data.length ? <div className="legal-table-wrap"><table><thead><tr><th>Establishment</th><th>Visit</th><th>Observations</th><th><span className="sr-only">Action</span></th></tr></thead><tbody>{page.data.map((visit) => <tr key={visit.id}><td><strong>{visit.store.store_name}</strong><small>{visit.store.address}</small></td><td>#{visit.id} · {new Date(visit.finalized_at).toLocaleDateString()}<small>{visit.officer.name}</small></td><td>{visit.anomaly_count ?? 0}</td><td><button type="button" disabled={busy} onClick={() => onChoose(visit.id)}>Use this visit</button></td></tr>)}</tbody></table></div>
+    {!page ? <div className="legal-loading" aria-label="Loading visits"/> : page.data.length ? <div className="legal-table-wrap"><table><thead><tr><th>Establishment</th><th>Visit</th><th>Observations</th><th><span className="sr-only">Action</span></th></tr></thead><tbody>{page.data.map((visit) => <tr key={visit.id}><td><strong>{visit.store.store_name}</strong><small>{visit.store.address}</small></td><td>#{visit.id} · {new Date(visit.finalized_at).toLocaleDateString()}<small>{visit.officer.name}</small></td><td>{visit.anomaly_count ?? 0}</td><td>{(() => {
+      // One open notice per visit: offer the existing one instead of a start that the server rejects.
+      const existing = openNoticeFor(visit.id)
+      return existing
+        ? <button type="button" onClick={() => onOpenExisting(existing)}>{existing.status === 'draft' ? `Open existing ${existing.notice_type} draft` : `Open issued ${existing.notice_type}`}</button>
+        : <button type="button" disabled={busy} onClick={() => onChoose(visit.id)}>Use this visit</button>
+    })()}</td></tr>)}</tbody></table></div>
       : <div className="legal-empty"><FileText size={28}/><strong>No visits with observations</strong><span>Accepted Field Monitoring visits with price observations appear here.</span></div>}
   </section>
 }
 
 const Section = ({ id, number, title, subtitle, children }: { id: string; number: string; title: string; subtitle: string; children: ReactNode }) => <section id={id} className="legal-section"><header><span>{number}</span><div><h3>{title}</h3><p>{subtitle}</p></div></header>{children}</section>
 const Fact = ({ label, value }: { label: string; value?: string | null }) => <div><span>{label}</span><strong>{value || 'Not recorded'}</strong></div>
-const Queue = ({ notices, onOpen, onStart, issued = false }: { notices: LegalNoticeRecord[]; onOpen: (notice: LegalNoticeRecord) => void; onStart?: () => void; issued?: boolean }) => <section className="legal-queue">
+const Queue = ({ notices, onOpen, onStart, onDiscard, issued = false }: { notices: LegalNoticeRecord[]; onOpen: (notice: LegalNoticeRecord) => void; onStart?: () => void; onDiscard?: (notice: LegalNoticeRecord) => void; issued?: boolean }) => <section className="legal-queue">
   <header><div><h2>{issued ? 'Issued & Responses' : 'Action Queue'}</h2><p>{issued ? 'Issued notices, delivery, deadlines, and vendor responses.' : 'Drafts waiting to be finished and issued.'}</p></div>{onStart && <button type="button" className="admin-button primary" onClick={onStart}><FilePenLine size={16}/>New notice</button>}</header>
   {notices.length ? <div className="legal-table-wrap"><table><thead><tr><th>Reference</th><th>Establishment</th><th>Type</th><th>Status</th><th>{issued ? 'Deadline' : 'Delivery'}</th><th><span className="sr-only">Action</span></th></tr></thead><tbody>{notices.map((notice) => <tr key={notice.id}>
     <td><strong>{notice.control_number || `Draft #${notice.id}`}</strong><small>{notice.preparer?.name || 'Not assigned'} · {new Date(notice.issued_at || notice.updated_at).toLocaleDateString()}</small></td>
@@ -482,7 +530,7 @@ const Queue = ({ notices, onOpen, onStart, issued = false }: { notices: LegalNot
     <td>{notice.notice_type}</td>
     <td>{notice.overdue ? 'Overdue' : humanize(notice.status)}{issued && <small>{humanize(notice.delivery_state)}</small>}</td>
     <td>{issued ? (notice.due_date_timestamp ? new Date(notice.due_date_timestamp).toLocaleString() : 'Starts after delivery') : humanize(notice.delivery_state)}</td>
-    <td><button type="button" onClick={() => onOpen(notice)}>{notice.status === 'draft' ? 'Continue draft' : 'Open'}</button></td>
+    <td><div className="legal-row-actions"><button type="button" onClick={() => onOpen(notice)}>{notice.status === 'draft' ? 'Continue draft' : 'Open'}</button>{onDiscard && notice.status === 'draft' && <button type="button" className="legal-danger-button" aria-label={`Discard ${notice.control_number || `Draft #${notice.id}`}`} onClick={() => onDiscard(notice)}>Discard</button>}</div></td>
   </tr>)}</tbody></table></div>
     : <div className="legal-empty"><FileText size={28}/><strong>{issued ? 'No issued notices' : 'No drafts in the queue'}</strong><span>{issued ? 'Issued notices appear here.' : 'Start a new notice from an accepted monitoring visit.'}</span></div>}
 </section>
