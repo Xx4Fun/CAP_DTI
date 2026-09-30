@@ -14,6 +14,7 @@ vi.mock('../../services/adminApi', () => ({
     previewLegalNotice: vi.fn(),
     issueLegalNotice: vi.fn(),
     getMonitoringRecord: vi.fn(),
+    getMonitoringRecords: vi.fn(),
     dispatchLegal: vi.fn(),
     getEmergencies: vi.fn(),
     getEmergency: vi.fn(),
@@ -65,12 +66,34 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
     await screen.findByText('Rice')
-    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    // Before the draft exists the later sections explain what comes next instead of showing dead fields.
+    expect(screen.queryByLabelText('Internal justification')).not.toBeInTheDocument()
+    expect(screen.getAllByText(/Available after you start the draft/).length).toBe(2)
+    await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
     expect(adminApi.createLegalNotice).toHaveBeenCalledWith({ monitoring_record_id: 14, notice_type: 'LOI', item_ids: [9] })
     await user.type(screen.getByLabelText('Internal justification'), 'Evaluator notes')
     expect(screen.queryByText('All changes saved')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Save Draft' }))
     expect(await screen.findByText('All changes saved')).toBeInTheDocument()
+  })
+
+  it('lets the evaluator pick a visit when Prepare Notice opens without one', async () => {
+    const visit = {
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online' as const, representative_name: 'Maria', items_count: 1, anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available' as const, reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    }
+    vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [visit], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(visit)
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'New notice' }))
+    await user.click(await screen.findByRole('button', { name: 'Use this visit' }))
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ anomaly: 'yes' }))
+    expect(adminApi.getMonitoringRecord).toHaveBeenCalledWith(14)
+    expect(await screen.findByRole('checkbox', { name: /Rice/ })).toBeChecked()
+    expect(screen.getAllByRole('button', { name: 'Start LOI draft' })[0]).toBeEnabled()
   })
 
   it('keeps official dispatch unavailable and sandboxes draft HTML', async () => {
@@ -88,9 +111,9 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     render(<><LegalNoticeManager /><AdminToastHost /></>)
 
     await screen.findByText('Rice')
-    await user.click(screen.getByRole('button', { name: 'Create draft' }))
+    await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
     expect(screen.getByRole('button', { name: 'Issue Notice' })).toBeDisabled()
-    expect(screen.getByText('LEGAL_POLICY_UNAVAILABLE')).toBeInTheDocument()
+    expect(screen.getByText(/Issuing is turned off until an approved legal policy/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Official Preview' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute('sandbox', '')
     expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()

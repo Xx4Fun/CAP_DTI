@@ -40,6 +40,8 @@ const detailRecord: LegalNoticeRecord = {
   policy: { status: 'LEGAL_POLICY_UNAVAILABLE', policy_version: null },
 }
 
+const complete = { case_reference: true, notice_type_and_basis: true, recipient_and_delivery: true, evidence_and_attachments: true, internal_justification: true }
+
 describe('Legal Actions vendor response review', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -58,7 +60,7 @@ describe('Legal Actions vendor response review', () => {
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
 
     const response = await screen.findByRole('region', { name: 'Vendor response' })
     expect(adminApi.getLegalNotice).toHaveBeenCalledWith(1)
@@ -79,7 +81,7 @@ describe('Legal Actions vendor response review', () => {
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
     const response = await screen.findByRole('region', { name: 'Vendor response' })
     await user.click(within(response).getByRole('button', { name: /freight-bill\.pdf/ }))
 
@@ -98,7 +100,7 @@ describe('Legal Actions vendor response review', () => {
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    const [reviewFirst, reviewSecond] = await screen.findAllByRole('button', { name: 'Review' })
+    const [reviewFirst, reviewSecond] = await screen.findAllByRole('button', { name: 'Open' })
     await user.click(reviewFirst)
     await user.click(reviewSecond)
     expect(await screen.findByRole('heading', { name: 'PM-2026-LOI-000002' })).toBeInTheDocument()
@@ -117,13 +119,14 @@ describe('Legal Actions vendor response review', () => {
       draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.escalateLegalNotice).mockResolvedValue(sco)
     vi.mocked(adminApi.updateLegalNotice).mockResolvedValue(sco)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
     await user.click(await screen.findByRole('button', { name: 'Escalate to SCO' }))
+    expect(adminApi.escalateLegalNotice).not.toHaveBeenCalled()
+    await user.click(within(screen.getByRole('dialog', { name: 'Escalate to a Show Cause Order?' })).getByRole('button', { name: 'Escalate' }))
 
     expect(adminApi.escalateLegalNotice).toHaveBeenCalledWith(1)
     expect(await screen.findByRole('heading', { name: 'Prepare Notice' })).toBeInTheDocument()
@@ -136,46 +139,83 @@ describe('Legal Actions vendor response review', () => {
 
   it('reports a failed close instead of failing silently', async () => {
     vi.mocked(adminApi.closeLegalNotice).mockRejectedValue({ response: { data: { message: 'Close is not allowed now.' } } })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
     await user.click(await screen.findByRole('button', { name: 'Close notice' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Close this notice?' })).getByRole('button', { name: 'Close notice' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Close is not allowed now.')
   })
 
-  it('blocks preview and issue while the draft has unsaved edits', async () => {
-    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { a: true }, attachments: [],
+  it('saves unsaved edits automatically before the preview', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [],
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: ['RA 7581 (Price Act)'] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.updateLegalNotice).mockImplementation(async (_id, payload) => ({ ...draft, draft_payload: { ...draft.draft_payload, ...(payload as object) } }))
+    vi.mocked(adminApi.previewLegalNotice).mockResolvedValue('<p>draft</p>')
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
-    await user.click(await screen.findByRole('button', { name: 'Continue' }))
-    const issue = screen.getByRole('button', { name: /Issue Notice/ })
-    expect(issue).toBeEnabled()
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
     await user.click(screen.getByRole('checkbox', { name: 'RA 7581 (Price Act)' }))
-    expect(issue).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Open Official Preview/ })).toBeDisabled()
-    expect(screen.getByText(/Save the draft first/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Open Official Preview/ })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /Open Official Preview/ }))
 
-    await user.click(screen.getByRole('button', { name: /Save Draft/ }))
-    await vi.waitFor(() => expect(issue).toBeEnabled())
+    expect(adminApi.updateLegalNotice).toHaveBeenCalledWith(1, expect.objectContaining({ legal_bases: [] }))
+    expect(adminApi.previewLegalNotice).toHaveBeenCalledWith(1)
+    expect(vi.mocked(adminApi.updateLegalNotice).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(adminApi.previewLegalNotice).mock.invocationCallOrder[0])
+  })
+
+  it('points to the first missing checklist item instead of issuing', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { ...complete, internal_justification: false }, attachments: [],
+      policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
+      draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    expect(screen.getByText('Still needed: Internal justification.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Issue Notice/ }))
+    expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(document.activeElement).toHaveAttribute('id', 'legal-section-5')
+
+    await user.click(screen.getByRole('button', { name: 'Internal justification' }))
+    expect(document.activeElement).toHaveAttribute('id', 'legal-section-5')
+  })
+
+  it('asks before discarding unsaved draft edits when switching tabs', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [],
+      policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
+      draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    await user.type(screen.getByLabelText('Internal justification'), 'x')
+    await user.click(screen.getByRole('button', { name: /Action Queue/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard unsaved changes?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('heading', { name: 'Prepare Notice' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Action Queue/ }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Discard changes' }))
+    expect(screen.getByRole('heading', { name: 'Action Queue' })).toBeInTheDocument()
   })
 
   it('records an emailed response with its actual receipt time', async () => {
     vi.mocked(adminApi.getLegalNotice).mockResolvedValue({ ...detailRecord, status: 'issued', delivery_state: 'received', response_received_at: null, response_text: null })
     vi.mocked(adminApi.recordOfflineResponse).mockResolvedValue({ ...detailRecord, status: 'response_received' })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    await user.click(await screen.findByRole('button', { name: 'Review' }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
     const section = await screen.findByRole('region', { name: 'Record an emailed or paper response' })
     const record = within(section).getByRole('button', { name: 'Record response' })
     expect(record).toBeDisabled()
@@ -185,25 +225,36 @@ describe('Legal Actions vendor response review', () => {
     const evidence = new File(['%PDF'], 'reply.pdf', { type: 'application/pdf' })
     await user.upload(within(section).getByLabelText(/Received email or scan/), evidence)
     await user.click(record)
+    await user.click(within(screen.getByRole('dialog', { name: 'Record this response?' })).getByRole('button', { name: 'Record response' }))
     expect(adminApi.recordOfflineResponse).toHaveBeenCalledWith(1, expect.objectContaining({ channel: 'email', response_text: 'Emailed reply citing a supplier price increase.', received_at: new Date('2026-09-15T09:30').toISOString(), evidence }))
   })
 
   it('stamps the e-signature only when the evaluator ticks it at issue', async () => {
-    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { a: true }, attachments: [],
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [], intended_delivery_method: 'email_and_hand_copy',
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       signatory: { name: 'Atty. Ana Reyes', office: 'Provincial Director, DTI Antique', has_signature: true },
-      draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
+      draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', recipient_email: 'maria@shop.test' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
-    vi.mocked(adminApi.issueLegalNotice).mockResolvedValue({ ...draft, status: 'issued' })
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(adminApi.issueLegalNotice).mockResolvedValue({ ...draft, status: 'issued', delivery_state: 'not_recorded', response_received_at: null, vendor_user_id: 12, notification: 'queued' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
-    await user.click(await screen.findByRole('button', { name: 'Continue' }))
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
     expect(screen.getByText('Atty. Ana Reyes')).toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: /Apply this official.s e-signature/ }))
     await user.click(screen.getByRole('button', { name: /Issue Notice/ }))
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('e-signature of Atty. Ana Reyes'))
+    const dialog = screen.getByRole('dialog', { name: 'Issue this Letter of Inquiry?' })
+    expect(dialog).toHaveTextContent('e-signature of Atty. Ana Reyes')
+    expect(dialog).toHaveTextContent('Maria Santos · maria@shop.test')
+    expect(dialog).toHaveTextContent('Portal + email + printed copy')
+    expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Issue notice' }))
     expect(adminApi.issueLegalNotice).toHaveBeenCalledWith(1, true)
+
+    const result = await screen.findByText('Notice issued. How it reaches the vendor:')
+    expect(result.parentElement).toHaveTextContent('Visible in the linked vendor’s portal.')
+    expect(result.parentElement).toHaveTextContent('Email notification queued to the vendor.')
+    await user.click(screen.getByRole('button', { name: 'Next: record when the vendor received it' }))
+    expect(screen.getByRole('combobox', { name: 'Record delivery state' })).toHaveFocus()
   })
 })
