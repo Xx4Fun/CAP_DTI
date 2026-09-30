@@ -38,6 +38,11 @@ html, body {
     color: var(--text-main);
 }
 
+/* Programmatic scrolling (scrollIntoView, focus) must not be able to scroll the page itself. */
+body {
+    overflow: clip;
+}
+
 /* Theme State of Calamity Class Modifiers */
 body.calamity-mode {
     --primary: #dc2626;

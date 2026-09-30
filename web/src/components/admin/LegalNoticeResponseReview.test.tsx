@@ -174,18 +174,27 @@ describe('Legal Actions vendor response review', () => {
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    // scrollIntoView would also scroll the clipped shell and body, pushing the whole layout up; only the panel may scroll.
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
     const user = userEvent.setup()
-    render(<LegalNoticeManager />)
+    const { container } = render(<div className="admin-panel"><LegalNoticeManager /></div>)
+    const panel = container.querySelector<HTMLElement>('.admin-panel')!
+    panel.scrollBy = vi.fn()
 
     await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
     expect(screen.getByText('Still needed: Internal justification.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Issue Notice/ }))
     expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(document.activeElement).toHaveAttribute('id', 'legal-section-5')
+    expect(screen.getByLabelText('Internal justification')).toHaveFocus()
+    expect(panel.scrollBy).toHaveBeenCalledTimes(1)
 
+    screen.getByRole('button', { name: /Save Draft/ }).focus()
     await user.click(screen.getByRole('button', { name: 'Internal justification' }))
-    expect(document.activeElement).toHaveAttribute('id', 'legal-section-5')
+    expect(screen.getByLabelText('Internal justification')).toHaveFocus()
+    expect(panel.scrollBy).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
   it('asks before discarding unsaved draft edits when switching tabs', async () => {

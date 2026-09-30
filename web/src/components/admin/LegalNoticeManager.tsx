@@ -39,10 +39,14 @@ const localNow = () => { const now = new Date(); now.setMinutes(now.getMinutes()
 const humanize = (value: string) => { const text = value.replaceAll('_', ' '); return text.charAt(0).toUpperCase() + text.slice(1) }
 const eligibleItems = (value: MonitoringRecordRecord) => value.items.filter((item) => item.is_anomaly && item.reference_status === 'available' && item.reference_value != null)
 const missingReadiness = (readiness: Record<string, boolean> = {}) => READINESS.filter((item) => !readiness[item.key])
+// Scroll only the Admin panel; scrollIntoView/focus would also scroll the overflow-hidden shell and body,
+// shoving the whole layout up. Then focus the section's first field without any further scrolling.
 const focusSection = (id: string) => {
   const section = document.getElementById(id)
-  section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-  section?.focus()
+  if (!section) return
+  const panel = section.closest<HTMLElement>('.admin-panel')
+  panel?.scrollBy?.({ top: section.getBoundingClientRect().top - panel.getBoundingClientRect().top - 16, behavior: 'smooth' })
+  section.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true })
 }
 
 const messageOf = (error: unknown, fallback: string) => {
@@ -468,7 +472,7 @@ function VisitPicker({ page, search, busy, onSearch, onChoose }: { page: Monitor
   </section>
 }
 
-const Section = ({ id, number, title, subtitle, children }: { id: string; number: string; title: string; subtitle: string; children: ReactNode }) => <section id={id} tabIndex={-1} className="legal-section"><header><span>{number}</span><div><h3>{title}</h3><p>{subtitle}</p></div></header>{children}</section>
+const Section = ({ id, number, title, subtitle, children }: { id: string; number: string; title: string; subtitle: string; children: ReactNode }) => <section id={id} className="legal-section"><header><span>{number}</span><div><h3>{title}</h3><p>{subtitle}</p></div></header>{children}</section>
 const Fact = ({ label, value }: { label: string; value?: string | null }) => <div><span>{label}</span><strong>{value || 'Not recorded'}</strong></div>
 const Queue = ({ notices, onOpen, onStart, issued = false }: { notices: LegalNoticeRecord[]; onOpen: (notice: LegalNoticeRecord) => void; onStart?: () => void; issued?: boolean }) => <section className="legal-queue">
   <header><div><h2>{issued ? 'Issued & Responses' : 'Action Queue'}</h2><p>{issued ? 'Issued notices, delivery, deadlines, and vendor responses.' : 'Drafts waiting to be finished and issued.'}</p></div>{onStart && <button type="button" className="admin-button primary" onClick={onStart}><FilePenLine size={16}/>New notice</button>}</header>

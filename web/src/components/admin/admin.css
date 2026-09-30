@@ -1748,10 +1748,12 @@
   color: var(--admin-muted);
 }
 
+/* clip, not hidden: an overflow-hidden box can still be scrolled by scrollIntoView/focus, which slides
+   the whole shell up and exposes the page behind it. Only .admin-panel should ever scroll. */
 .admin-app-wrapper {
   height: 100vh;
   max-height: 100vh;
-  overflow: hidden;
+  overflow: clip;
   background: var(--admin-bg);
 }
 
@@ -1762,7 +1764,7 @@
   display: flex;
   background: var(--admin-bg);
   color: var(--admin-text);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .admin-sidebar {
@@ -6687,7 +6689,6 @@
 .legal-start p { margin: 0; color: #334155; font-size: .8rem; }
 .legal-placeholder { margin: 0; color: var(--admin-muted); font-size: .8rem; }
 .legal-field-hint { color: var(--admin-muted); font-size: .72rem; font-weight: 500; }
-.legal-section:focus { outline: 3px solid rgba(37, 99, 235, .3); outline-offset: 2px; }
 .legal-checklist { display: grid; gap: .2rem; margin: 0; padding: 0; list-style: none; }
 .legal-checklist li { display: flex; align-items: center; gap: .45rem; min-height: 30px; color: #047857; font-size: .8rem; font-weight: 650; }
 .legal-checklist button { display: flex; align-items: center; gap: .45rem; width: 100%; min-height: 30px; padding: 0 .25rem; border: 0; border-radius: 6px; background: transparent; color: #b45309; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
