@@ -150,7 +150,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     await screen.findByText('Rice')
     await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
     expect(screen.getByRole('button', { name: 'Issue Notice' })).toBeDisabled()
-    expect(screen.getByText(/Issuing is turned off until an approved legal policy/)).toBeInTheDocument()
+    expect(screen.getByText(/Issuing needs a LOI signatory/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Official Preview' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute('sandbox', '')
     expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()

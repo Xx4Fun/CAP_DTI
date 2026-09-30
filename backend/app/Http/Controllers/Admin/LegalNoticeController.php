@@ -371,6 +371,8 @@ class LegalNoticeController extends Controller
         $data['policy'] = app(LegalPolicyService::class)->availability($notice->notice_type) + [
             'reasons' => config("legal_policy.rules.{$notice->notice_type}.reasons", []),
             'legal_bases' => config("legal_policy.rules.{$notice->notice_type}.legal_bases", []),
+            // Lets the draft form tick its checklist as the evaluator types, using the same rule as issue().
+            'required_fields' => config("legal_policy.rules.{$notice->notice_type}.required_fields", []),
         ];
         $store = Store::find($notice->store_id);
         $data['linked_vendor_user_id'] = $store?->vendor_user_id;

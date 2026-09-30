@@ -134,7 +134,7 @@ describe('DTI Admin safeguards', () => {
     render(<LegalDraftPanel />)
     await screen.findByText('Rice')
     await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
-    expect(await screen.findByText(/Issuing is turned off until an approved legal policy/)).toBeInTheDocument()
+    expect(await screen.findByText(/Issuing needs a LOI signatory/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Official Preview' }))
     expect(await screen.findByTitle('Watermarked legal draft preview')).toHaveAttribute(
       'srcdoc',

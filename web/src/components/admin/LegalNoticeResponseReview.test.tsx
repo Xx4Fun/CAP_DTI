@@ -204,6 +204,43 @@ describe('Legal Actions vendor response review', () => {
     expect(screen.queryByRole('button', { name: 'Close notice' })).not.toBeInTheDocument()
   })
 
+  it('ticks recipient, delivery and justification as the evaluator types, before saving', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, attachments: [], intended_delivery_method: null, internal_justification: null,
+      readiness: { case_reference: true, notice_type_and_basis: true, recipient_and_delivery: false, evidence_and_attachments: true, internal_justification: false },
+      policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'], required_fields: ['recipient_name', 'address', 'reason'] },
+      draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', address: 'San Angel' } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    const checklist = screen.getByText('Checklist').nextElementSibling as HTMLElement
+    expect(within(checklist).getByRole('button', { name: 'Recipient and delivery method' })).toBeInTheDocument()
+    expect(within(checklist).getByRole('button', { name: 'Internal justification' })).toBeInTheDocument()
+    // LOI does not require a legal basis; the reason alone completes this item.
+    expect(within(checklist).queryByRole('button', { name: 'Reason and legal basis' })).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('How the vendor receives it'), 'hand_copy')
+    await user.type(screen.getByLabelText('Internal justification'), 'Rice observed above SRP.')
+
+    expect(within(checklist).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(checklist).getByText('Recipient and delivery method')).toBeInTheDocument()
+    expect(screen.getByText('Unsaved edits are saved automatically when you issue.')).toBeInTheDocument()
+    expect(adminApi.updateLegalNotice).not.toHaveBeenCalled()
+  })
+
+  it('says who must set the missing signatory when issuing is off for that reason', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, attachments: [], readiness: complete, signatory: { name: null, office: null, has_signature: false },
+      policy: { status: 'LEGAL_POLICY_UNAVAILABLE', policy_version: null, reasons: [], legal_bases: [] }, draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    expect(screen.getByRole('button', { name: /Issue Notice/ })).toBeDisabled()
+    expect(screen.getByText('Issuing needs a LOI signatory. A Super Admin sets the name in Settings → Legal Signatories.')).toBeInTheDocument()
+  })
+
   it('saves unsaved edits automatically before the preview', async () => {
     const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [],
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'] },
@@ -225,9 +262,9 @@ describe('Legal Actions vendor response review', () => {
   })
 
   it('points to the first missing checklist item instead of issuing', async () => {
-    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { ...complete, internal_justification: false }, attachments: [],
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { ...complete, internal_justification: false }, attachments: [], intended_delivery_method: 'hand_copy',
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
-      draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
+      draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', address: 'San Angel' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
     // scrollIntoView would also scroll the clipped shell and body, pushing the whole layout up; only the panel may scroll.
     const scrollIntoView = vi.fn()

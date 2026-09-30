@@ -555,7 +555,7 @@ export interface LegalNoticeRecord {
   preparer?: { id: number; name: string } | null
   attachments?: Array<{ id: number; kind: string; category?: string | null; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
   readiness: Record<string, boolean>
-  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[] }
+  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[]; required_fields?: string[] }
   overdue?: boolean
   preceding_notice_id?: number | null
   vendor_user_id?: number | null

@@ -161,7 +161,19 @@ export const LegalNoticeManager = () => {
     finally { setBusy(false) }
   }
 
-  const readiness = notice?.readiness ?? {}
+  // Server readiness reflects the last save; for a draft, re-evaluate the form-driven items live with the
+  // server's rules so the checklist ticks while typing. Issue still saves and re-checks on the server.
+  const readiness = useMemo(() => {
+    const saved = notice?.readiness ?? {}
+    if (!notice || notice.status !== 'draft') return saved
+    const basesRequired = notice.policy?.required_fields?.includes('legal_bases') ?? notice.notice_type === 'SCO'
+    return {
+      ...saved,
+      notice_type_and_basis: !!form.reason && (!basesRequired || form.legal_bases.length > 0),
+      recipient_and_delivery: !!form.recipient_name.trim() && !!form.address.trim() && !!form.intended_delivery_method,
+      internal_justification: !!form.internal_justification.trim(),
+    }
+  }, [notice, form])
   const dirty = !!notice && notice.status === 'draft' && JSON.stringify(form) !== savedForm
   const saveIfDirty = async () => dirty ? save() : notice
 
@@ -363,7 +375,9 @@ export const LegalNoticeManager = () => {
 
   const policyOff = !!notice && notice.policy?.status !== 'LEGAL_POLICY_AVAILABLE'
   const missing = notice ? missingReadiness(readiness) : []
-  const issueHint = !notice ? 'Start a draft first.' : policyOff ? POLICY_OFF : missing.length ? `Still needed: ${missing[0].label}.` : dirty ? 'Unsaved edits are saved automatically when you issue.' : 'Ready to issue.'
+  const issueHint = !notice ? 'Start a draft first.'
+    : policyOff ? (notice.signatory?.name ? POLICY_OFF : `Issuing needs a ${notice.notice_type} signatory. A Super Admin sets the name in Settings → Legal Signatories.`)
+    : missing.length ? `Still needed: ${missing[0].label}.` : dirty ? 'Unsaved edits are saved automatically when you issue.' : 'Ready to issue.'
 
   return <div className="legal-workspace">
     <nav className="legal-tabs" aria-label="Legal Actions views">
