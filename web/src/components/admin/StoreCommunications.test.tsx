@@ -83,13 +83,10 @@ describe('StoreCommunications', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Prepare LOI/SCO' }))
     await user.click(screen.getByRole('button', { name: 'Prepare notice' }))
-    expect(onNavigate).toHaveBeenLastCalledWith('legal_actions')
-    expect(new URLSearchParams(window.location.search).get('source_record')).toBe('42')
+    expect(onNavigate).toHaveBeenLastCalledWith('legal_actions', expect.objectContaining({ source_record: 42 }))
 
     await user.click(screen.getByRole('button', { name: 'Open in Legal Actions' }))
-    const params = new URLSearchParams(window.location.search)
-    expect(params.get('source_notice')).toBe('11')
-    expect(params.get('source_record')).toBeNull()
+    expect(onNavigate).toHaveBeenLastCalledWith('legal_actions', { source_notice: 11 })
   })
 
   it('keeps an unlinked store read-only', async () => {

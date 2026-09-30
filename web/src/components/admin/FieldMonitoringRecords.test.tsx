@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -54,12 +54,13 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Establishments' })).toHaveAttribute('aria-selected', 'true')
-    const summary = screen.getByRole('region', { name: 'Field Monitoring overview' })
-    expect(summary).toHaveTextContent('Total Establishments1')
-    expect(summary).toHaveTextContent('Monitored This Week1')
-    expect(summary).toHaveTextContent('Additional Visits1')
-    expect(screen.getByText('Monitored This Week')).toBeInTheDocument()
-    expect(screen.getAllByText('Verification Required').length).toBeGreaterThan(1)
+    const filter = screen.getByRole('combobox', { name: 'Filter establishments' })
+    await waitFor(() => expect(within(filter).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'All establishments (1)', 'Not yet monitored (0)', 'Monitored this week (1)', 'Needs additional visit (1)', 'With observations',
+    ]))
+    expect(filter).toHaveValue('all')
+    expect(screen.queryByText(/Weekly monitoring/)).not.toBeInTheDocument()
+    expect(screen.getByText('Verification Required')).toBeInTheDocument()
     expect(screen.getByText('Ana Officer')).toBeInTheDocument()
     expect(document.querySelector('.establishment-row-img')).toHaveAttribute('src', '/stores/store.webp')
     expect(screen.queryByText(/12345678|inspection score|assigned officer|non-compliant|compliant/i)).not.toBeInTheDocument()
@@ -98,8 +99,7 @@ describe('FieldMonitoringRecords', () => {
     expect(screen.getByRole('heading', { name: 'Products requiring regulatory review' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve|reject/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Legal Actions' }))
-    expect(onNavigate).toHaveBeenCalledWith('legal_actions')
-    expect(new URLSearchParams(window.location.search).get('source_record')).toBe('14')
+    expect(onNavigate).toHaveBeenCalledWith('legal_actions', { source_record: 14, source_store: 2 })
   })
 
   it('links a completed verification request directly to its monitoring record', async () => {
@@ -127,14 +127,17 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     await screen.findByRole('region', { name: 'Monitoring establishments' })
     await user.type(screen.getByRole('searchbox', { name: 'Search establishments' }), 'Central')
-    await user.click(screen.getByRole('button', { name: 'With Observations' }))
-    await user.click(screen.getByRole('button', { name: 'Verification Required' }))
+    const filter = screen.getByRole('combobox', { name: 'Filter establishments' })
+    await user.selectOptions(filter, 'observations')
+    await waitFor(() => expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ observation: 'with_observations', additional_task: 'all' })))
+    expect(window.location.search).toContain('observation=with_observations')
+    await user.selectOptions(filter, 'verification')
+    await waitFor(() => expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ additional_task: 'verification_required', observation: 'all' })))
     await user.click(screen.getByRole('tab', { name: 'All Records' }))
     await waitFor(() => expect(window.location.search).toContain('establishment_search=Central'))
     expect(window.location.search).toContain('monitor_tab=records')
     expect(window.location.search).toContain('additional_task=verification_required')
-    expect(window.location.search).toContain('observation=with_observations')
-    expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ additional_task: 'verification_required', observation: 'with_observations' }))
+    expect(window.location.search).not.toContain('observation=')
     expect(screen.getByRole('searchbox', { name: 'Search monitoring visits' })).toHaveValue('')
   })
 
@@ -225,9 +228,81 @@ describe('FieldMonitoringRecords', () => {
 
     // Click Prepare Notice
     await user.click(screen.getByRole('button', { name: 'Prepare Notice' }))
-    expect(onNavigate).toHaveBeenCalledWith('legal_actions')
-    expect(new URLSearchParams(window.location.search).get('source_record')).toBe('14')
-    expect(new URLSearchParams(window.location.search).get('source_store')).toBe('2')
+    expect(onNavigate).toHaveBeenCalledWith('legal_actions', { source_record: 14, source_store: 2 })
+  })
+
+  it('drops a profile that finishes loading after the admin went back', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof adminApi.getMonitoringEstablishment>>) => void
+    const loaded = await adminApi.getMonitoringEstablishment(2, { period: 'last_4_weeks' })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
+    await act(async () => { finish(loaded) })
+
+    expect(screen.queryByRole('heading', { name: 'Gaisano Grand Mall' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'All Records' })).toHaveAttribute('aria-selected', 'true')
+    expect(new URLSearchParams(window.location.search).get('store')).toBeNull()
+  })
+
+  it('ignores Back/Forward into another module instead of loading its record', async () => {
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('region', { name: 'Monitoring establishments' })
+    act(() => {
+      window.history.pushState({}, '', '/?module=overview&record=14&store=2')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(adminApi.getMonitoringRecord).not.toHaveBeenCalled()
+    expect(adminApi.getMonitoringEstablishment).not.toHaveBeenCalled()
+  })
+
+  it('opens another establishment on Overview instead of the last profile tab', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    await user.click(await screen.findByRole('tab', { name: /Findings & Anomalies/i }))
+    await user.click(screen.getByRole('button', { name: 'Back to establishments directory' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens detail only from explicit buttons, not stray clicks on a table row', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('region', { name: 'Monitoring establishments' })
+    await user.click(screen.getByRole('button', { name: 'Table view' }))
+    await user.click(within(await screen.findByRole('table', { name: 'Monitoring establishments' })).getByText('San Jose de Buenavista'))
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
+    await user.click(await screen.findByText('ana@dti.gov.ph'))
+    expect(adminApi.getMonitoringEstablishment).not.toHaveBeenCalled()
+    expect(adminApi.getMonitoringRecord).not.toHaveBeenCalled()
+  })
+
+  it('filters to establishments not yet monitored from the status dropdown', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('region', { name: 'Monitoring establishments' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter establishments' }), 'due')
+    await waitFor(() => expect(adminApi.getMonitoringEstablishments).toHaveBeenCalledWith(expect.objectContaining({ routine_status: 'due' })))
+    expect(screen.getByRole('combobox', { name: 'Filter establishments' })).toHaveValue('due')
+    expect(window.location.search).toContain('routine_status=due')
+  })
+
+  it('assigns an open visit in a dialog that Escape closes', async () => {
+    vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 302, source_type: 'supervisor_directive', status: 'open', reason: 'Follow up.', requested_at: '2026-08-24T06:00:00Z', store: record.store, report: null, claimant: null, monitoring_record: null }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(screen.getByRole('tab', { name: 'Additional Visits' }))
+    await user.click(await screen.findByRole('button', { name: 'Assign' }))
+    expect(screen.getByRole('dialog', { name: 'Assign additional visit' })).toHaveTextContent('Antique Central Market')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Assign' }))
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
+    await user.click(screen.getByRole('button', { name: 'Assign visit' }))
+    await waitFor(() => expect(adminApi.assignFieldVerification).toHaveBeenCalledWith(302, 9))
   })
 
   it('renders cleaned up establishment profile header and truthful regulatory status', async () => {

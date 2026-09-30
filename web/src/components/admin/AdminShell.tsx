@@ -41,6 +41,10 @@ export type ModuleId =
   | 'audit_trail'
   | 'settings'
 
+/** Explicit hand-off values for the destination module (e.g. source_record for Legal Actions). */
+export type NavigationParams = Record<string, string | number>
+export type NavigateTo = (module: ModuleId, params?: NavigationParams) => void
+
 interface NavItemConfig {
   id: ModuleId
   icon: LucideIcon
@@ -183,12 +187,16 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
     })
   }, [])
 
-  const navigateTo = (module: ModuleId) => {
+  const navigateTo: NavigateTo = (module, params = {}) => {
     if (!canAccessModule(module, isFieldOfficer)) return
     setActiveModule(module)
     if (isCollapsed) setIsCollapsed(false)
+    // Start from a clean query: a module's leftover state (e.g. Field Monitoring's record=12)
+    // must not reopen something when the admin later returns to it.
     const url = new URL(window.location.href)
+    url.search = ''
     url.searchParams.set('module', module)
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)))
     window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
     setIsMobileOpen(false)
     setAccountMenuOpen(false)

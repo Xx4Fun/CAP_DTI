@@ -77,6 +77,15 @@ describe('AdminShell', () => {
     expect(fieldMonBtn).toHaveAttribute('aria-current', 'page')
   })
 
+  it('drops the previous module state from the URL so it cannot reopen later', async () => {
+    window.history.replaceState({}, '', '/?module=audit_trail&record=12&store=2&source_record=14&monitor_tab=records')
+    const user = userEvent.setup()
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }))
+    expect(window.location.search).toBe('?module=overview')
+  })
+
   it('does not expose Admin navigation to a field officer', () => {
     render(<AdminShell user={{ id: 2, name: 'Officer', email: 'officer@dti.test', role: 'field_officer' }} />)
 

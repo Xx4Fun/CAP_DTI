@@ -28,7 +28,7 @@ export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (u
   return <Suspense fallback={<PanelLoader />}><SettingsPanel user={props.user} onUserUpdate={props.onUserUpdate} /></Suspense>
 }
 
-import type { ModuleId } from './AdminShell'
+import type { ModuleId, NavigateTo } from './AdminShell'
 
 import { ArrowRight, Activity } from 'lucide-react'
 
@@ -346,7 +346,7 @@ export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleI
   return <Suspense fallback={<PanelLoader />}><UserManagementPanel vendorRegistration={({ onBack, onCreated }) => <StoreRegistrationPanel onNavigate={props.onNavigate} onBack={onBack} onCreated={onCreated} />} /></Suspense>
 }
 
-export function CommunicationsPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+export function CommunicationsPanel(props: { onNavigate?: NavigateTo }) {
   return <Suspense fallback={<PanelLoader />}><StoreCommunications onNavigate={props.onNavigate} /></Suspense>
 }
 
@@ -415,6 +415,6 @@ export function AuditPanel() {
   )
 }
 
-export function FieldMonitoringPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+export function FieldMonitoringPanel(props: { onNavigate?: NavigateTo }) {
   return <Suspense fallback={<PanelLoader />}><FieldMonitoringRecords onNavigate={props.onNavigate} /></Suspense>
 }

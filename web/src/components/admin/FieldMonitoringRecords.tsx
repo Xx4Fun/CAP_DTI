@@ -1,8 +1,8 @@
-import { type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock,
   Eye, FileSignature, FileSpreadsheet, History, LayoutGrid, List, MapPin, RefreshCw, Search, ShieldAlert,
-  ShieldCheck, Store, TrendingUp, TriangleAlert, User, UserCheck, X,
+  ShieldCheck, Store, Table, TrendingUp, TriangleAlert, User, UserCheck, X,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import type {
@@ -18,6 +18,8 @@ type AdditionalTask = 'all' | 'verification_required'
 type ObservationStatus = 'all' | 'with_observations' | 'reference_unavailable' | 'no_observations'
 type VerificationStatus = 'all' | 'open' | 'claimed' | 'completed' | 'cancelled'
 type ViewMode = 'list' | 'grid' | 'table'
+type ListFilter = 'all' | 'due' | 'completed' | 'verification' | 'observations'
+type ListFilterState = { routineStatus: RoutineStatus; additionalTask: AdditionalTask; observation: ObservationStatus }
 
 const emptyRecords: MonitoringRecordPage = { data: [], current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null }
 const emptyHistory: MonitoringPriceHistoryPage = { ...emptyRecords, data: [] }
@@ -51,7 +53,7 @@ function moveTabFocus(event: KeyboardEvent<HTMLDivElement>) {
   next.click()
 }
 
-export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: 'legal_actions') => void }) {
+export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: 'legal_actions', params?: Record<string, number>) => void }) {
   const params = new URLSearchParams(window.location.search)
   const [tab, setTab] = useState<Tab>(initialTab)
   const [searches, setSearches] = useState({
@@ -111,17 +113,27 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     return () => window.clearTimeout(timer)
   }, [searches])
 
+  // Each navigation (open, back, tab switch, history restore) takes a new number; a profile or
+  // record that finishes loading after the admin has moved on is dropped instead of popping open.
+  const navSeq = useRef(0)
+  const cancelNavigation = () => { navSeq.current += 1; setLoading(false) }
+
   const fetchRecord = useCallback(async (id: number) => {
+    const seq = ++navSeq.current
     setLoading(true); setError('')
     try {
-      setSelectedRecord(await adminApi.getMonitoringRecord(id))
-    } catch (reason) { setError(message(reason)) }
-    finally { setLoading(false) }
+      const next = await adminApi.getMonitoringRecord(id)
+      if (seq !== navSeq.current) return false
+      setSelectedRecord(next)
+      return true
+    } catch (reason) {
+      if (seq === navSeq.current) setError(message(reason))
+      return false
+    } finally { if (seq === navSeq.current) setLoading(false) }
   }, [])
 
   const openRecord = useCallback(async (id: number) => {
-    await fetchRecord(id)
-    updateUrl({ record: id })
+    if (await fetchRecord(id)) updateUrl({ record: id })
   }, [fetchRecord, updateUrl])
 
   const loadEstablishments = useCallback(async () => {
@@ -200,6 +212,10 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
   useEffect(() => {
     const restore = () => {
+      cancelNavigation()
+      // Back/Forward into another module: the shell swaps panels; never load a record from that URL.
+      const module = new URLSearchParams(window.location.search).get('module')
+      if (module !== 'field_monitoring' && module !== 'analytics') return
       const restored = initialTab()
       setTab(restored)
       const current = new URLSearchParams(window.location.search)
@@ -233,11 +249,15 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   }, [profile, selectedRecord])
 
   const switchTab = (next: Tab) => {
+    cancelNavigation()
     setTab(next); setProfile(null); setSelectedRecord(null)
     updateUrl({ monitor_tab: next === 'establishments' ? null : next, store: null, record: null })
   }
 
   async function openProfile(storeId: number, updateHistory = true, targetPeriod = period, targetFrom = customDateFrom, targetTo = customDateTo) {
+    const seq = ++navSeq.current
+    // A newly chosen store starts on Overview; period changes and URL restores keep the current tab.
+    const freshStore = updateHistory && profile?.store.id !== storeId
     setLoading(true); setError('')
     try {
       const periodParams = {
@@ -253,6 +273,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         adminApi.getMonitoringRecords({ store_id: storeId, anomaly: 'all', ...periodParams, per_page: 10 }),
         adminApi.getMonitoringFindings(storeId, { ...periodParams, per_page: 10 }),
       ])
+      if (seq !== navSeq.current) return
       setCommodity(selector)
       let resolvedFindings = nextFindings
       if (resolvedFindings.total === 0 && nextRecords.data.some((r) => (r.anomaly_count ?? 0) > 0)) {
@@ -292,12 +313,14 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         }
       }
       setProfile(nextProfile); setHistory(nextHistory); setProfileRecords(nextRecords); setFindings(resolvedFindings)
-      if (updateHistory) updateUrl({ store: storeId, period: targetPeriod, date_from: targetPeriod === 'custom' ? targetFrom : null, date_to: targetPeriod === 'custom' ? targetTo : null })
-    } catch (reason) { setError(message(reason)) }
-    finally { setLoading(false) }
+      if (freshStore) setProfileTab('overview')
+      if (updateHistory) updateUrl({ store: storeId, period: targetPeriod, date_from: targetPeriod === 'custom' ? targetFrom : null, date_to: targetPeriod === 'custom' ? targetTo : null, ...(freshStore ? { profile_tab: null } : {}) })
+    } catch (reason) { if (seq === navSeq.current) setError(message(reason)) }
+    finally { if (seq === navSeq.current) setLoading(false) }
   }
 
   const closeDetail = () => {
+    cancelNavigation()
     setSelectedRecord(null)
     updateUrl({ record: null })
   }
@@ -309,7 +332,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
   const handleCustomDateChange = async (from: string, to: string) => {
     setCustomDateFrom(from); setCustomDateTo(to)
-    if (profile && from && to) await openProfile(profile.store.id, true, 'custom', from, to)
+    if (profile && from && to && from <= to) await openProfile(profile.store.id, true, 'custom', from, to)
   }
 
   const loadProfileHistoryPage = async (page: number) => {
@@ -353,11 +376,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   }
 
   const handleRegulatoryAction = (storeId: number, recordId?: number) => {
-    const url = new URL(window.location.href)
-    if (recordId) url.searchParams.set('source_record', String(recordId))
-    url.searchParams.set('source_store', String(storeId))
-    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
-    onNavigate?.('legal_actions')
+    onNavigate?.('legal_actions', recordId ? { source_record: recordId, source_store: storeId } : { source_store: storeId })
   }
 
   if (selectedRecord) {
@@ -386,6 +405,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         findings={findings}
         error={error}
         onBack={() => {
+          cancelNavigation()
           setProfile(null)
           updateUrl({ store: null, profile_tab: null, period: null, date_from: null, date_to: null })
         }}
@@ -490,9 +510,15 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     {error && <div className="admin-feedback error" role="alert">{error}</div>}
     {tab === 'establishments' && <div role="tabpanel" id="monitor-panel-establishments" aria-labelledby="monitor-tab-establishments"><EstablishmentsView workspace={workspace} loading={loading} search={searches.establishments} routineStatus={routineStatus} additionalTask={additionalTask} observation={observation}
       onSearch={(value) => { setSearches((current) => ({ ...current, establishments: value })); setEstablishmentPage(1) }}
-      onRoutineStatus={(value) => { setRoutineStatus(value); setEstablishmentPage(1); updateUrl({ routine_status: value === 'all' ? null : value }) }}
-      onAdditionalTask={(value) => { setAdditionalTask(value); setEstablishmentPage(1); updateUrl({ additional_task: value === 'all' ? null : value }) }}
-      onObservation={(value) => { setObservation(value); setEstablishmentPage(1); updateUrl({ observation: value === 'all' ? null : value }) }}
+      onFilter={(next) => {
+        const filter = listFilters[next]
+        setRoutineStatus(filter.routineStatus); setAdditionalTask(filter.additionalTask); setObservation(filter.observation); setEstablishmentPage(1)
+        updateUrl({
+          routine_status: filter.routineStatus === 'all' ? null : filter.routineStatus,
+          additional_task: filter.additionalTask === 'all' ? null : filter.additionalTask,
+          observation: filter.observation === 'all' ? null : filter.observation,
+        })
+      }}
       onRefresh={loadEstablishments} onOpen={openProfile} onPage={setEstablishmentPage} /></div>}
     {tab === 'records' && <div role="tabpanel" id="monitor-panel-records" aria-labelledby="monitor-tab-records"><RecordsView page={records} loading={loading} search={searches.records} period={recordPeriod} exporting={exportingMatrix}
       onSearch={(value) => { setSearches((current) => ({ ...current, records: value })); setRecordPage(1) }}
@@ -508,75 +534,35 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   )
 }
 
-function BentoStats({ workspace }: { workspace?: MonitoringWorkspace | null }) {
+const listFilters: Record<ListFilter, ListFilterState> = {
+  all: { routineStatus: 'all', additionalTask: 'all', observation: 'all' },
+  due: { routineStatus: 'due', additionalTask: 'all', observation: 'all' },
+  completed: { routineStatus: 'completed', additionalTask: 'all', observation: 'all' },
+  verification: { routineStatus: 'all', additionalTask: 'verification_required', observation: 'all' },
+  observations: { routineStatus: 'all', additionalTask: 'all', observation: 'with_observations' },
+}
+
+// Older URLs could combine filters; show the most specific one.
+function currentListFilter({ routineStatus, additionalTask, observation }: ListFilterState): ListFilter {
+  if (observation === 'with_observations') return 'observations'
+  if (routineStatus !== 'all') return routineStatus
+  return additionalTask === 'verification_required' ? 'verification' : 'all'
+}
+
+/** One status filter beside the search; counts come from the workspace summary. */
+function StatusFilter({ workspace, value, onChange }: { workspace: MonitoringWorkspace | null; value: ListFilter; onChange: (value: ListFilter) => void }) {
   const summary = workspace?.routine_summary
-  const period = workspace?.monitoring_period
-  const daily = period?.cadence === 'daily'
-  return <div className="field-monitor-bento-container">
-    <div className="field-monitor-sync-strip" role="status">
-      <div className="sync-strip-indicator">
-        <span className="sync-live-dot" />
-        <span className="sync-strip-title">Field Inspection Surveillance Telemetry</span>
-      </div>
-      <div className="sync-strip-timestamp">
-        <Clock size={13} aria-hidden="true" />
-        <span>{daily ? 'Price Freeze daily monitoring' : 'Weekly monitoring'}: <strong>{period ? `${formatShortDate(period.starts_at)} – ${formatShortDate(period.ends_at)}` : 'Loading…'}</strong>{daily && period?.declaration_reference ? ` · ${period.declaration_reference}` : ''}</span>
-      </div>
-    </div>
-
-    <section className="field-monitor-bento" aria-label="Field Monitoring overview">
-      <div className="bento-card bento-primary">
-        <div className="bento-card-header">
-          <div className="bento-icon-wrapper blue" aria-hidden="true"><Building2 size={20} /></div>
-          <span className="bento-tag blue">Pilot Scope</span>
-        </div>
-        <div className="bento-content">
-          <span className="bento-label">Total Establishments</span>
-          <strong className="bento-value">
-            {summary ? summary.total_establishments : <span className="bento-value-skeleton" aria-hidden="true" />}
-          </strong>
-        </div>
-      </div>
-
-      <div className="bento-card bento-emerald">
-        <div className="bento-card-header">
-          <div className="bento-icon-wrapper emerald" aria-hidden="true"><Activity size={20} /></div>
-          <span className="bento-tag emerald">30-Day Window</span>
-        </div>
-        <div className="bento-content">
-          <span className="bento-label">{daily ? 'Due Today' : 'Not Yet Monitored'}</span>
-          <strong className="bento-value">
-            {summary ? summary.due : <span className="bento-value-skeleton" aria-hidden="true" />}
-          </strong>
-        </div>
-      </div>
-
-      <div className="bento-card bento-amber">
-        <div className="bento-card-header">
-          <div className="bento-icon-wrapper amber" aria-hidden="true"><AlertTriangle size={20} /></div>
-          <span className="bento-tag amber">Requires Review</span>
-        </div>
-        <div className="bento-content">
-          <span className="bento-label">{daily ? 'Monitored Today' : 'Monitored This Week'}</span>
-          <strong className="bento-value">
-            {summary ? summary.completed : <span className="bento-value-skeleton" aria-hidden="true" />}
-          </strong>
-        </div>
-      </div>
-
-      <div className="bento-card bento-violet">
-        <div className="bento-card-header">
-          <div className="bento-icon-wrapper violet" aria-hidden="true"><ShieldAlert size={20} /></div>
-          <span className="bento-tag violet">Dispatch Queue</span>
-        </div>
-        <div className="bento-content">
-          <span className="bento-label">Additional Visits</span>
-          <strong className="bento-value">
-            {summary ? summary.additional_visits : <span className="bento-value-skeleton" aria-hidden="true" />}
-          </strong>
-        </div>
-      </div>
-    </section>
+  const daily = workspace?.monitoring_period?.cadence === 'daily'
+  const label = (text: string, count?: number) => count === undefined ? text : `${text} (${count})`
+  return <div className="unified-select-wrap field-monitor-status-filter">
+    <select aria-label="Filter establishments" value={value} onChange={(event) => onChange(event.target.value as ListFilter)}>
+      <option value="all">{label('All establishments', summary?.total_establishments)}</option>
+      <option value="due">{label(daily ? 'Due today' : 'Not yet monitored', summary?.due)}</option>
+      <option value="completed">{label(daily ? 'Monitored today' : 'Monitored this week', summary?.completed)}</option>
+      <option value="verification">{label('Needs additional visit', summary?.additional_visits)}</option>
+      <option value="observations">With observations</option>
+    </select>
+    <ChevronDown size={15} className="unified-select-chevron" aria-hidden="true" />
   </div>
 }
 
@@ -670,19 +656,7 @@ function EstablishmentRowCard({ store, cadence: _cadence, onOpen }: { store: Mon
   return (
     <article className="establishment-row-card">
       {/* Left Column: Photo Media or Clean Architectural Facade */}
-      <div
-        className={`establishment-row-media ${isPlaceholder ? 'has-facade-placeholder' : ''}`}
-        onClick={() => onOpen(store.id)}
-        role="button"
-        tabIndex={0}
-        aria-label={`View photo of ${store.store_name}`}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onOpen(store.id)
-          }
-        }}
-      >
+      <div className={`establishment-row-media ${isPlaceholder ? 'has-facade-placeholder' : ''}`}>
         <div className="establishment-row-facade" aria-hidden="true">
           <div className="facade-icon-badge">
             {isMarket ? <Building2 size={32} /> : <Store size={32} />}
@@ -793,21 +767,16 @@ function EstablishmentRowCard({ store, cadence: _cadence, onOpen }: { store: Mon
   )
 }
 
-function EstablishmentsView({ workspace, loading, search, routineStatus: _routineStatus, additionalTask, observation, onSearch, onRoutineStatus, onAdditionalTask, onObservation, onOpen, onPage }: {
+function EstablishmentsView({ workspace, loading, search, routineStatus, additionalTask, observation, onSearch, onFilter, onOpen, onPage }: {
   workspace: MonitoringWorkspace | null; loading: boolean; search: string; routineStatus: RoutineStatus; additionalTask: AdditionalTask; observation: ObservationStatus
-  onSearch: (value: string) => void; onRoutineStatus: (value: RoutineStatus) => void; onAdditionalTask: (value: AdditionalTask) => void; onObservation: (value: ObservationStatus) => void; onRefresh?: () => void; onOpen: (id: number) => void; onPage: (page: number) => void
+  onSearch: (value: string) => void; onFilter: (value: ListFilter) => void; onRefresh?: () => void; onOpen: (id: number) => void; onPage: (page: number) => void
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const cadence = workspace?.monitoring_period?.cadence || 'weekly'
 
   return <>
-    {/* Hidden accessible summary for screen readers & automated compliance tests */}
-    <div className="sr-only">
-      <BentoStats workspace={workspace} />
-    </div>
-
     <section className="field-monitor-controls-container field-monitor-controls-modern" aria-label="Establishment filters">
-      {/* Option 1: Single Clean Toolbar with Search, Quick Triage Chips & View Switcher */}
+      {/* One row: search, status filter, view switcher */}
       <div className="filter-tier-primary">
         <div className="search-and-chips-group">
           <div className="filter-group search-group">
@@ -836,39 +805,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus: _routin
             </div>
           </div>
 
-          <div className="filter-group chips-group">
-            <div className="establishment-quick-chips" role="group" aria-label="Quick filters">
-              <button
-                type="button"
-                className={`quick-chip ${observation === 'all' && additionalTask === 'all' ? 'active' : ''}`}
-                onClick={() => {
-                  onRoutineStatus('all')
-                  onObservation('all')
-                  onAdditionalTask('all')
-                }}
-              >
-                All Establishments
-              </button>
-              <button
-                type="button"
-                className={`quick-chip ${observation === 'with_observations' ? 'active' : ''}`}
-                onClick={() => {
-                  onObservation(observation === 'with_observations' ? 'all' : 'with_observations')
-                }}
-              >
-                With Observations
-              </button>
-              <button
-                type="button"
-                className={`quick-chip ${additionalTask === 'verification_required' ? 'active' : ''}`}
-                onClick={() => {
-                  onAdditionalTask(additionalTask === 'verification_required' ? 'all' : 'verification_required')
-                }}
-              >
-                Verification Required
-              </button>
-            </div>
-          </div>
+          <StatusFilter workspace={workspace} value={currentListFilter({ routineStatus, additionalTask, observation })} onChange={onFilter} />
         </div>
 
         <div className="filter-group toggle-group">
@@ -903,7 +840,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus: _routin
               onClick={() => setViewMode('table')}
               title="Table view"
             >
-              <Calendar size={17} />
+              <Table size={17} />
               <span>Table</span>
             </button>
           </div>
@@ -966,18 +903,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus: _routin
                 <Skeleton columns={6} />
               ) : (
                 workspace?.establishments.data.map((store) => (
-                  <tr
-                    key={store.id}
-                    className="admin-clickable-row"
-                    onClick={() => onOpen(store.id)}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        onOpen(store.id)
-                      }
-                    }}
-                  >
+                  <tr key={store.id}>
                     <td data-label="Establishment">
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
@@ -996,7 +922,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus: _routin
                         type="button"
                         className="admin-table-action-btn"
                         aria-label={`Open ${store.store_name} monitoring profile`}
-                        onClick={(e) => { e.stopPropagation(); onOpen(store.id) }}
+                        onClick={() => onOpen(store.id)}
                       >
                         <Eye size={14} /> Open
                       </button>
@@ -1093,7 +1019,7 @@ function RecordsView({ page, loading, search, period, exporting, onSearch, onPer
 function RecordTable({ page, loading, onOpen, hideEstablishment = false }: { page: MonitoringRecordPage; loading: boolean; onOpen: (id: number) => void; hideEstablishment?: boolean }) {
   return <section className="admin-table-card field-monitor-table-card"><div className="admin-table-wrap">
     <table className="admin-data-table field-monitor-table"><caption className="sr-only">Accepted field monitoring visits</caption><thead><tr>{!hideEstablishment && <th>Establishment</th>}<th>Field officer</th><th>Visit finalized</th><th>Protocol / origin</th><th>Items</th><th>Observations</th><th><span className="sr-only">Action</span></th></tr></thead>
-      <tbody>{loading ? <Skeleton columns={hideEstablishment ? 6 : 7} /> : page.data.map((record) => <tr key={record.id} className="admin-clickable-row" onClick={() => onOpen(record.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(record.id) } }}>{!hideEstablishment && <td data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></td>}<td data-label="Field officer"><strong>{record.officer.name}</strong><small>{record.officer.email}</small></td><td data-label="Visit finalized">{formatDate(record.finalized_at)}</td><td data-label="Protocol / origin"><strong>{record.protocol_mode ? `${record.protocol_mode === 'emergency' ? 'Emergency' : 'Standard'} protocol` : 'Protocol unavailable'}</strong><small>{record.verification_request ? 'Verification visit' : 'Routine visit'}</small></td><td data-label="Items">{record.items_count ?? record.items?.length ?? 0}</td><td data-label="Observations"><span className={`monitor-observation ${record.anomaly_count ? 'attention' : 'compliant'}`}>{record.anomaly_count ? <><TriangleAlert size={12} />{record.anomaly_count}</> : 'None'}</span></td><td data-label="Action"><button type="button" className="admin-button secondary field-monitor-review-button" aria-label={`View visit ${record.id}`} onClick={(e) => { e.stopPropagation(); onOpen(record.id) }}><Eye size={16} />View</button></td></tr>)}</tbody>
+      <tbody>{loading ? <Skeleton columns={hideEstablishment ? 6 : 7} /> : page.data.map((record) => <tr key={record.id}>{!hideEstablishment && <td data-label="Establishment"><strong>{record.store.store_name}</strong><small>{record.store.address}</small></td>}<td data-label="Field officer"><strong>{record.officer.name}</strong><small>{record.officer.email}</small></td><td data-label="Visit finalized">{formatDate(record.finalized_at)}</td><td data-label="Protocol / origin"><strong>{record.protocol_mode ? `${record.protocol_mode === 'emergency' ? 'Emergency' : 'Standard'} protocol` : 'Protocol unavailable'}</strong><small>{record.verification_request ? 'Verification visit' : 'Routine visit'}</small></td><td data-label="Items">{record.items_count ?? record.items?.length ?? 0}</td><td data-label="Observations"><span className={`monitor-observation ${record.anomaly_count ? 'attention' : 'compliant'}`}>{record.anomaly_count ? <><TriangleAlert size={12} />{record.anomaly_count}</> : 'None'}</span></td><td data-label="Action"><button type="button" className="admin-button secondary field-monitor-review-button" aria-label={`View visit ${record.id}`} onClick={() => onOpen(record.id)}><Eye size={16} />View</button></td></tr>)}</tbody>
     </table>{!loading && !page.data.length && <Empty text="No accepted visits match." />}
   </div></section>
 }
@@ -1119,10 +1045,31 @@ function OfficerAssignmentForm({ submitLabel, reasonRequired = true, onSubmit, o
     finally { setSaving(false) }
   }}>
     {formError && <div className="admin-feedback error" role="alert">{formError}</div>}
-    <label>Field Officer<select aria-label="Field Officer" required value={officerId} onChange={(event) => setOfficerId(event.target.value)}><option value="">Select active officer</option>{officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}</select></label>
+    <label>Field Officer<select aria-label="Field Officer" autoFocus required value={officerId} onChange={(event) => setOfficerId(event.target.value)}><option value="">Select active officer</option>{officers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}</select></label>
     {reasonRequired && <label>Reason<textarea aria-label="Reason" required value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
     <div><button type="submit" className="admin-button primary" disabled={saving}>{saving ? 'Assigning…' : submitLabel}</button><button type="button" className="admin-button secondary" onClick={onCancel}>Cancel</button></div>
   </form>
+}
+
+function AssignmentDialog({ storeName, onClose, children }: { storeName: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  return <div className="admin-modal-backdrop" onClick={onClose}>
+    <div className="signature-preview-dialog field-assign-dialog" role="dialog" aria-modal="true" aria-labelledby="field-assign-title" onClick={(event) => event.stopPropagation()}>
+      <header className="signature-preview-header">
+        <div>
+          <h3 id="field-assign-title">Assign additional visit</h3>
+          <p>{storeName}</p>
+        </div>
+        <button type="button" className="signature-close-btn" aria-label="Close" onClick={onClose}><X size={18} /></button>
+      </header>
+      <div className="field-assign-body">{children}</div>
+    </div>
+  </div>
 }
 
 function VerificationView({ page, loading, search, status, scope, pending, onClearScope, onSearch, onStatus, onRefresh, onOpenRecord, onPage, onCancel, onReopen }: {
@@ -1130,6 +1077,8 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
   scope: string; pending: number | null; onClearScope: () => void; onSearch: (value: string) => void; onStatus: (value: VerificationStatus) => void; onRefresh: () => void; onOpenRecord: (id: number) => void; onPage: (page: number) => void; onCancel: (id: number) => void; onReopen: (id: number) => void
 }) {
   const [assigning, setAssigning] = useState<number | null>(null)
+  const assigningRequest = page.data.find((request) => request.id === assigning)
+  const closeAssign = useCallback(() => setAssigning(null), [])
   return <>
     {scope && <div className="field-monitor-scope"><span>Establishment</span><strong>{scope}</strong><button type="button" className="text-button" aria-label="Clear establishment filter" onClick={onClearScope}>Clear</button></div>}
     <section className="field-monitor-controls-unified" aria-label="Additional visit filters">
@@ -1187,9 +1136,14 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
     </section>
     <section className="admin-table-card"><div className="admin-table-wrap"><table className="admin-data-table"><caption className="sr-only">Additional field visits</caption>
       <thead><tr><th>Establishment</th><th>Source</th><th>Reason</th><th>Requested</th><th>Status</th><th>Assigned officer</th><th>Result</th></tr></thead>
-      <tbody>{loading ? <Skeleton columns={7} /> : page.data.map((request) => <tr key={request.id}><td data-label="Establishment"><strong>{request.store.store_name}</strong><small>{request.store.address}</small></td><td data-label="Source"><strong>{request.source_type === 'complaint' ? 'Complaint' : 'Supervisor directive'}</strong><small>{request.report?.report_reference || 'No consumer report'}</small></td><td data-label="Reason">{request.reason}</td><td data-label="Requested">{formatDate(request.requested_at)}</td><td data-label="Status"><span className={`admin-status-badge ${request.status === 'completed' ? 'current' : request.status === 'open' ? 'history' : ''}`}>{request.status === 'open' ? 'needs assignment' : request.status}</span></td><td data-label="Assigned officer">{request.claimant?.name || (request.status === 'open' ? 'Needs assignment' : 'Not assigned')}</td><td data-label="Result">{request.monitoring_record ? <button type="button" className="admin-button secondary" aria-label={`Open monitoring record ${request.monitoring_record.id}`} onClick={() => onOpenRecord(request.monitoring_record!.id)}>Record #{request.monitoring_record.id}</button> : request.status === 'cancelled' ? <button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onReopen(request.id)}>{pending === request.id ? 'Reopening…' : 'Reopen'}</button> : request.status === 'open' ? assigning === request.id ? <OfficerAssignmentForm submitLabel="Assign visit" reasonRequired={false} onCancel={() => setAssigning(null)} onSubmit={async (officerId) => { await adminApi.assignFieldVerification(request.id, officerId); setAssigning(null); onRefresh() }} /> : <><button type="button" className="admin-button primary" onClick={() => setAssigning(request.id)}>Assign</button><button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onCancel(request.id)}>{pending === request.id ? 'Cancelling…' : 'Cancel'}</button></> : 'Pending'}</td></tr>)}</tbody>
+      <tbody>{loading ? <Skeleton columns={7} /> : page.data.map((request) => <tr key={request.id}><td data-label="Establishment"><strong>{request.store.store_name}</strong><small>{request.store.address}</small></td><td data-label="Source"><strong>{request.source_type === 'complaint' ? 'Complaint' : 'Supervisor directive'}</strong><small>{request.report?.report_reference || 'No consumer report'}</small></td><td data-label="Reason">{request.reason}</td><td data-label="Requested">{formatDate(request.requested_at)}</td><td data-label="Status"><span className={`admin-status-badge ${request.status === 'completed' ? 'current' : request.status === 'open' ? 'history' : ''}`}>{request.status === 'open' ? 'needs assignment' : request.status}</span></td><td data-label="Assigned officer">{request.claimant?.name || (request.status === 'open' ? 'Needs assignment' : 'Not assigned')}</td><td data-label="Result">{request.monitoring_record ? <button type="button" className="admin-button secondary" aria-label={`Open monitoring record ${request.monitoring_record.id}`} onClick={() => onOpenRecord(request.monitoring_record!.id)}>Record #{request.monitoring_record.id}</button> : request.status === 'cancelled' ? <button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onReopen(request.id)}>{pending === request.id ? 'Reopening…' : 'Reopen'}</button> : request.status === 'open' ? <><button type="button" className="admin-button primary" onClick={() => setAssigning(request.id)}>Assign</button><button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onCancel(request.id)}>{pending === request.id ? 'Cancelling…' : 'Cancel'}</button></> : 'Pending'}</td></tr>)}</tbody>
     </table>{!loading && !page.data.length && <Empty text="No additional visits match." />}</div></section>
     <Pagination page={page} onPage={onPage} />
+    {assigningRequest && (
+      <AssignmentDialog storeName={assigningRequest.store.store_name} onClose={closeAssign}>
+        <OfficerAssignmentForm submitLabel="Assign visit" reasonRequired={false} onCancel={closeAssign} onSubmit={async (officerId) => { await adminApi.assignFieldVerification(assigningRequest.id, officerId); closeAssign(); onRefresh() }} />
+      </AssignmentDialog>
+    )}
   </>
 }
 
@@ -1202,7 +1156,7 @@ function PriceDeltaBanner({ row }: { row: MonitoringPriceHistoryRow }) {
     <div className="price-delta-header">
       <div className="price-delta-title">
         <TrendingUp size={18} />
-        <span>Surveillance Shelf Price vs Reference Baseline</span>
+        <span>Latest price vs reference</span>
       </div>
       <div className={`price-delta-badge ${isAnomaly ? 'anomaly' : 'compliant'}`}>
         {isAnomaly ? <TriangleAlert size={14} /> : <CheckCircle2 size={14} />}
@@ -1291,6 +1245,7 @@ function EstablishmentProfile({
   const isMarket = profile.store.store_name.toLowerCase().includes('market')
   const [assigning, setAssigning] = useState(false)
   const [assigned, setAssigned] = useState(false)
+  const closeAssign = useCallback(() => setAssigning(false), [])
 
   return (
     <article className="field-monitor-profile">
@@ -1344,23 +1299,25 @@ function EstablishmentProfile({
       </header>
 
       {assigning && (
-        <OfficerAssignmentForm
-          submitLabel="Assign visit"
-          onCancel={() => setAssigning(false)}
-          onSubmit={async (fieldOfficerId, reason) => {
-            await adminApi.createAdditionalVisit(profile.store.id, { field_officer_id: fieldOfficerId, reason })
-            setAssigning(false)
-            setAssigned(true)
-          }}
-        />
+        <AssignmentDialog storeName={profile.store.store_name} onClose={closeAssign}>
+          <OfficerAssignmentForm
+            submitLabel="Assign visit"
+            onCancel={closeAssign}
+            onSubmit={async (fieldOfficerId, reason) => {
+              await adminApi.createAdditionalVisit(profile.store.id, { field_officer_id: fieldOfficerId, reason })
+              setAssigning(false)
+              setAssigned(true)
+            }}
+          />
+        </AssignmentDialog>
       )}
       {assigned && <div className="admin-feedback success" role="status">Additional visit assigned.</div>}
 
-      {/* Surveillance Period Filter Toolbar */}
+      {/* Period filter toolbar */}
       <div className="field-profile-period-bar" aria-label="Monitoring period filter">
         <div className="period-bar-label">
           <Clock size={15} aria-hidden="true" />
-          <span>Surveillance Period:</span>
+          <span>Period:</span>
         </div>
         <div className="period-bar-pills" role="group" aria-label="Filter monitoring period">
           {(
@@ -1519,7 +1476,7 @@ function EstablishmentProfile({
             <div className="detail-card">
               <div className="detail-card-header">
                 <ShieldCheck size={18} className="detail-icon" aria-hidden="true" />
-                <h3 className="detail-card-title">Routine &amp; Verification Surveillance</h3>
+                <h3 className="detail-card-title">Monitoring status</h3>
               </div>
               <div className="detail-card-rows">
                 <div className="detail-row">
@@ -1587,7 +1544,7 @@ function EstablishmentProfile({
             <div className="field-monitor-items-heading">
               <div>
                 <h3>Flagged Price Anomalies &amp; Observations</h3>
-                <p>Commodities recorded above permissible price references in this surveillance window.</p>
+                <p>Commodities recorded above permissible price references in the selected period.</p>
               </div>
             </div>
 

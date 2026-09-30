@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { ArrowLeft, ExternalLink, FileText, Gavel, MessageSquare, Paperclip, Search, Send, ShieldAlert, X } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import type { ConversationNotice, ConversationSummary, ConversationThread, StoreMessageRecord } from '../../types/admin'
-import type { ModuleId } from './AdminShell'
+import type { NavigateTo } from './AdminShell'
 
 const THREAD_POLL_MS = 10_000
 const LIST_POLL_MS = 30_000
@@ -51,7 +51,7 @@ const noticeEntries = (notice: ConversationNotice): TimelineEntry[] => [
   ...(notice.cancelled_at ? [{ at: notice.cancelled_at, notice, event: 'Cancelled' }] : []),
 ]
 
-export function StoreCommunications({ onNavigate }: { onNavigate?: (module: ModuleId) => void }) {
+export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo }) {
   const [stores, setStores] = useState<ConversationSummary[]>([])
   // Pages of the store list currently shown; polling refreshes all of them.
   const [pages, setPages] = useState(1)
@@ -176,13 +176,7 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: (module: Modu
     } catch (reason) { opened.close(); setThreadError(messageOf(reason, 'The attachment could not be opened.')) }
   }
 
-  const goToLegal = (params: Record<string, number>) => {
-    const url = new URL(window.location.href)
-    for (const key of ['source_record', 'source_store', 'source_notice']) url.searchParams.delete(key)
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value))
-    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
-    onNavigate?.('legal_actions')
-  }
+  const goToLegal = (params: Record<string, number>) => onNavigate?.('legal_actions', params)
 
   return (
     <div className={`comms-workspace${selectedId ? ' has-selection' : ''}`}>
