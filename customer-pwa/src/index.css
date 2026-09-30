@@ -1123,6 +1123,19 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Shared spinner for lucide loader icons (`spin`, and the Tailwind-style `animate-spin`). */
+.spin,
+.animate-spin {
+  animation: page-loader-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .animate-spin {
+    animation: none;
+  }
+}
+
 .service-start-status strong,
 .service-start-status div {
   display: block;
