@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, RotateCw, WifiOff } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RotateCw, Wifi, WifiOff } from 'lucide-react';
 import type { ActiveTab, Advisory, LegalNotice, NotificationSettings, ResponseDraft, SrpCatalog, VendorOverview, VendorSession } from './app/types';
 import { canRespond, isFinished } from './app/rules';
 import { clearSession, loadSession, saveSession } from './app/session';
@@ -19,6 +19,15 @@ import { InvitationAccept } from './components/auth/InvitationAccept';
 import { NotificationSettingsModal } from './components/settings/NotificationSettingsModal';
 import { PwaUpdatePrompt } from './components/common/PwaUpdatePrompt';
 import { MessagesView } from './components/messages/MessagesView';
+
+const TAB_TITLES: Record<ActiveTab, string> = {
+  overview: 'Dashboard',
+  notices: 'Legal Notices',
+  messages: 'Communications',
+  rebuttals: 'Response & Rebuttal',
+  srp: 'Official SRP Catalog',
+  advisories: 'DTI Bulletins',
+};
 
 const invitationTokenFromUrl = () => window.location.pathname === '/vendor-invitation'
   ? new URLSearchParams(window.location.search).get('token')
@@ -331,6 +340,14 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           onOpenNotifications={() => setSettingsOpen(true)}
           onLogout={() => void logout()}
         />
+
+        <header className="vendor-content-toolbar">
+          <strong>{TAB_TITLES[activeTab]}</strong>
+          <span className={online ? 'online' : ''}>
+            {online ? <Wifi size={16} /> : <WifiOff size={16} />}
+            {online ? 'Online · Ready' : 'Offline · Showing saved data'}
+          </span>
+        </header>
 
         {toast && (
           <div role="status" className="vendor-toast">

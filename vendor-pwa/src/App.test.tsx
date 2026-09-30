@@ -91,6 +91,19 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(screen.queryByText(/must maintain commodity prices within published DTI Suggested Retail Price/)).not.toBeInTheDocument();
   });
 
+  it('titles the tablet content toolbar with the active tab', async () => {
+    signedIn();
+    api.conversation.mockResolvedValue({ store: overview.stores[0], messages: [], has_more: false, notices: [] });
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await screen.findByRole('heading', { name: 'Antique Grocery Mart' });
+    const title = () => container.querySelector('.vendor-content-toolbar strong')?.textContent;
+    expect(title()).toBe('Dashboard');
+    await user.click(screen.getByRole('button', { name: 'Messages Tab' }));
+    expect(title()).toBe('Communications');
+  });
+
   it('signs out locally even when server token revocation is still pending', async () => {
     signedIn();
     api.logout.mockImplementation(() => new Promise<void>(() => {}));
