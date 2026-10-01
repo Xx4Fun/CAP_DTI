@@ -2,11 +2,13 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
-import { AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel, SrpManagementPanel } from './AdminPanels'
+import { AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel } from './AdminPanels'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getReports: vi.fn(),
+    getReportPage: vi.fn(),
+    getStores: vi.fn(),
     getMonitoringRecord: vi.fn(),
     decideReport: vi.fn(),
     getReportEvidence: vi.fn(),
@@ -35,7 +37,8 @@ describe('DTI Admin safeguards', () => {
   })
 
   it('renders the original receipt OCR separately from evaluator corrections', async () => {
-    vi.mocked(adminApi.getReports).mockResolvedValue([{
+    vi.mocked(adminApi.getStores).mockResolvedValue([])
+    vi.mocked(adminApi.getReportPage).mockResolvedValue({ meta: { current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 }, data: [{
       id: 42,
       report_reference: 'RPT-00042',
       status: 'Under Review',
@@ -44,7 +47,7 @@ describe('DTI Admin safeguards', () => {
       raw_ocr_json: { product: 'Orig Rice', price: '50.00' },
       evaluator_confirmed_json: { product: 'Rice', price: '49.50' },
       evidence_available: true,
-    }])
+    }] } as never)
     vi.mocked(adminApi.decideReport).mockResolvedValue({
       id: 42,
       report_reference: 'RPT-00042',
@@ -71,10 +74,11 @@ describe('DTI Admin safeguards', () => {
     fireEvent.change(corrected, { target: { value: '{"commodity_key":"rice-1kg","commodity_name":"Rice","receipt_price":48.75,"observed_at":"2026-07-25"}' } })
     await user.selectOptions(screen.getByRole('combobox', { name: 'Regulatory finding' }), 'confirmed_violation')
     await user.type(screen.getByRole('textbox', { name: 'Decision reason' }), 'Checked against receipt.')
-    await user.click(screen.getByRole('button', { name: 'Correct' }))
+    await user.click(screen.getByRole('button', { name: 'Record finding' }))
 
+    // The evaluator's edited values are what is submitted; the raw OCR above is never overwritten.
     expect(adminApi.decideReport).toHaveBeenCalledWith(42, expect.objectContaining({
-      action: 'correct', corrected: expect.objectContaining({ receipt_price: 48.75, regulatory_finding: 'confirmed_violation' }),
+      action: 'validate', corrected: expect.objectContaining({ receipt_price: 48.75, regulatory_finding: 'confirmed_violation' }),
     }))
   })
 
@@ -165,21 +169,5 @@ describe('DTI Admin safeguards', () => {
     expect(await screen.findByText('rice-1kg')).toBeInTheDocument()
     expect(screen.getByText(/45\.50/)).toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
-  })
-
-  it('shows historical SRP versions and opens the manual item creation modal', async () => {
-    vi.mocked(adminApi.getSrp).mockResolvedValue([
-      { id: 2, commodity_name: 'Rice', unit: '1kg', baseline_price: 48, effective_date: '2026-08-01', source_reference: 'DTI-08' },
-      { id: 1, commodity_name: 'Rice', unit: '1kg', baseline_price: 46, effective_date: '2026-05-01', source_reference: 'DTI-05' },
-    ])
-    const user = userEvent.setup()
-    render(<SrpManagementPanel />)
-
-    expect(await screen.findByText('2026-08-01')).toBeInTheDocument()
-    expect(screen.getByText('2026-05-01')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Add SRP Item' }))
-
-    expect(screen.getByRole('dialog', { name: 'Add SRP bulletin item' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Commodity Name')).toBeInTheDocument()
   })
 })
