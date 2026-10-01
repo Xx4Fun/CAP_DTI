@@ -6996,6 +6996,7 @@
 }
 
 /* Technical payloads are reference material, not working surface: collapsed by
+.legal-signature-draw{display:grid;gap:.5rem}.legal-signature-draw .settings-hint{margin:0}.legal-signature-draw canvas{display:block;width:100%;max-width:520px;height:160px;border:1.5px dashed #94a3b8;border-radius:10px;background:#fff;touch-action:none;cursor:crosshair}.legal-signature-draw .legal-signatory-image-actions>button{flex:0 0 auto;width:auto}
    default, and no longer each in their own little scrollport. */
 .consumer-report-technical {
   border: 1px solid var(--admin-border);

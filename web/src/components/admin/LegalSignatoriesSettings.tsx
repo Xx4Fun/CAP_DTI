@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { PenLine, RefreshCw, Save, Trash2, Upload } from 'lucide-react'
+import { Check, PenLine, RefreshCw, RotateCcw, Save, Signature, Trash2, Upload, X } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
 import type { LegalSignatoryRecord } from '../../types/admin'
@@ -51,6 +51,7 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
   const [preview, setPreview] = useState<string | null>(null)
   // Bumped on every successful change: two uploads within one second share an updated_at.
   const [revision, setRevision] = useState(0)
+  const [drawing, setDrawing] = useState(false)
 
   useEffect(() => {
     if (!record.has_signature) { setPreview(null); return }
@@ -119,10 +120,16 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
               <Upload size={15} aria-hidden="true" /><span>{record.has_signature ? 'Replace e-signature' : 'Upload e-signature'}</span>
               <input type="file" accept="image/png,image/jpeg" disabled={busy} onChange={(event) => { upload(event.target.files?.[0]); event.target.value = '' }} />
             </label>
+            <button type="button" className="session-btn-secondary" disabled={busy || drawing} onClick={() => setDrawing(true)}>
+              <Signature size={15} aria-hidden="true" /><span>Draw e-signature</span>
+            </button>
             {record.has_signature && <button type="button" className="session-btn-secondary" disabled={busy} onClick={remove}><Trash2 size={15} aria-hidden="true" /><span>Remove</span></button>}
           </div>
         )}
       </div>
+      {canEdit && drawing && (
+        <SignatureDrawPad type={type} disabled={busy} onCancel={() => setDrawing(false)} onUse={(file) => { setDrawing(false); upload(file) }} />
+      )}
       {record.updated_by && <p className="settings-hint">Last changed by {record.updated_by}{record.updated_at ? ` on ${new Date(record.updated_at).toLocaleString()}` : ''}.</p>}
       {canEdit && (
         <div className="settings-action-bar">
@@ -133,5 +140,88 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
         </div>
       )}
     </form>
+  )
+}
+
+// Max size the backend accepts (LegalSignatoryController::uploadSignature).
+const MAX_WIDTH = 2400
+const MAX_HEIGHT = 1200
+
+/** Sign with mouse, pen or finger. Saved as a transparent PNG trimmed to the ink, through the same upload as a file. */
+function SignatureDrawPad({ type, disabled, onCancel, onUse }: { type: NoticeType; disabled: boolean; onCancel: () => void; onUse: (file: File) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const ratio = useRef(1)
+  const active = useRef(false)
+  const bounds = useRef<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null)
+  const [hasInk, setHasInk] = useState(false)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    ratio.current = window.devicePixelRatio || 1
+    const rect = canvas.getBoundingClientRect()
+    canvas.width = Math.round(rect.width * ratio.current)
+    canvas.height = Math.round(rect.height * ratio.current)
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.scale(ratio.current, ratio.current)
+    context.lineCap = 'round'; context.lineJoin = 'round'; context.lineWidth = 2.6; context.strokeStyle = '#0b1f44'
+  }, [])
+
+  const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const p = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    const b = bounds.current
+    bounds.current = b ? { minX: Math.min(b.minX, p.x), minY: Math.min(b.minY, p.y), maxX: Math.max(b.maxX, p.x), maxY: Math.max(b.maxY, p.y) } : { minX: p.x, minY: p.y, maxX: p.x, maxY: p.y }
+    return p
+  }
+  const start = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    active.current = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    const p = point(event)
+    const context = event.currentTarget.getContext('2d')
+    context?.beginPath(); context?.moveTo(p.x, p.y); context?.lineTo(p.x + 0.1, p.y + 0.1); context?.stroke()
+    setHasInk(true)
+  }
+  const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!active.current) return
+    const p = point(event)
+    const context = event.currentTarget.getContext('2d')
+    context?.lineTo(p.x, p.y); context?.stroke()
+  }
+  const finish = () => { active.current = false }
+
+  const clear = () => {
+    const canvas = canvasRef.current
+    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+    bounds.current = null
+    setHasInk(false)
+  }
+
+  const use = () => {
+    const canvas = canvasRef.current
+    const b = bounds.current
+    if (!canvas || !b) return
+    // Crop to the ink plus a small margin, so the printed signature isn't shrunk by empty space.
+    const r = ratio.current, pad = 10 * r
+    const x = Math.max(0, Math.floor(b.minX * r - pad)), y = Math.max(0, Math.floor(b.minY * r - pad))
+    const w = Math.max(1, Math.min(canvas.width, Math.ceil(b.maxX * r + pad)) - x), h = Math.max(1, Math.min(canvas.height, Math.ceil(b.maxY * r + pad)) - y)
+    const scale = Math.min(1, MAX_WIDTH / w, MAX_HEIGHT / h)
+    const out = document.createElement('canvas')
+    out.width = Math.max(1, Math.round(w * scale)); out.height = Math.max(1, Math.round(h * scale))
+    out.getContext('2d')?.drawImage(canvas, x, y, w, h, 0, 0, out.width, out.height)
+    out.toBlob((blob) => { if (blob) onUse(new File([blob], `${type}-signature.png`, { type: 'image/png' })) }, 'image/png')
+  }
+
+  return (
+    <div className="legal-signature-draw">
+      <p className="settings-hint">Sign inside the box with a mouse, pen, or finger. It is saved as a transparent PNG.</p>
+      <canvas ref={canvasRef} aria-label={`${type} signature drawing area`} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} onPointerLeave={finish} />
+      <div className="legal-signatory-image-actions">
+        <button type="button" className="session-btn-secondary" onClick={clear} disabled={!hasInk || disabled}><RotateCcw size={15} aria-hidden="true" /><span>Clear</span></button>
+        <button type="button" className="session-btn-secondary" onClick={onCancel}><X size={15} aria-hidden="true" /><span>Cancel</span></button>
+        <button type="button" className="session-btn-primary" onClick={use} disabled={!hasInk || disabled}><Check size={15} aria-hidden="true" /><span>Use this signature</span></button>
+      </div>
+    </div>
   )
 }

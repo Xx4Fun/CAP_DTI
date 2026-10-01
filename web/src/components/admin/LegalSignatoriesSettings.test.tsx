@@ -1,4 +1,4 @@
-import { configure, render, screen, within } from '@testing-library/react'
+import { configure, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -43,6 +43,31 @@ describe('LegalSignatoriesSettings', () => {
     await user.upload(within(loi).getByLabelText('Upload e-signature'), new File(['png'], 'sig.png', { type: 'image/png' }))
     expect(api.uploadLegalSignature).toHaveBeenCalledWith('LOI', expect.any(File))
     expect(await within(loi).findByRole('img', { name: 'LOI e-signature' })).toHaveAttribute('src', 'blob:signature')
+  })
+
+  it('uploads a hand-drawn e-signature as a PNG', async () => {
+    api.uploadLegalSignature.mockResolvedValue(record({ has_signature: true }))
+    api.getLegalSignatureImage.mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+    URL.createObjectURL = vi.fn(() => 'blob:signature')
+    URL.revokeObjectURL = vi.fn()
+    const context = { scale: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), clearRect: vi.fn(), drawImage: vi.fn() }
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((done) => done(new Blob(['png'], { type: 'image/png' })))
+    const user = userEvent.setup()
+    render(<LegalSignatoriesSettings canEdit />)
+
+    const loi = await screen.findByRole('form', { name: 'LOI signatory' })
+    await user.click(within(loi).getByRole('button', { name: 'Draw e-signature' }))
+    const pad = within(loi).getByLabelText('LOI signature drawing area')
+    expect(within(loi).getByRole('button', { name: 'Use this signature' })).toBeDisabled()
+    fireEvent.pointerDown(pad, { clientX: 20, clientY: 30 })
+    fireEvent.pointerMove(pad, { clientX: 120, clientY: 60 })
+    fireEvent.pointerUp(pad)
+    await user.click(within(loi).getByRole('button', { name: 'Use this signature' }))
+
+    await vi.waitFor(() => expect(api.uploadLegalSignature).toHaveBeenCalledWith('LOI', expect.objectContaining({ type: 'image/png', name: 'LOI-signature.png' })))
+    expect(within(loi).queryByLabelText('LOI signature drawing area')).not.toBeInTheDocument()
+    vi.restoreAllMocks()
   })
 
   it('rejects non-image signature files before upload', async () => {
