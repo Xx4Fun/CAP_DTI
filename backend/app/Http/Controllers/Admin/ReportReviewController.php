@@ -397,8 +397,9 @@ class ReportReviewController extends Controller
             $data['item_decisions'] = validator($data['item_decisions'] ?? [], [
                 '*' => 'required|array',
                 '*.item_id' => 'required|integer',
-                '*.commodity_key' => 'required|string|max:255',
-                '*.commodity_name' => 'required|string|max:255',
+                // A line that is not an SRP commodity has no key; only a violation needs one to cite.
+                '*.commodity_key' => 'nullable|string|max:255|required_if:*.regulatory_finding,confirmed_violation',
+                '*.commodity_name' => 'nullable|string|max:255',
                 '*.receipt_price' => 'required|numeric|min:0',
                 '*.observed_at' => 'required|date',
                 '*.regulatory_finding' => 'required|in:confirmed_violation,no_violation,insufficient_evidence',

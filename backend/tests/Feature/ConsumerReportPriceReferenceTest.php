@@ -207,6 +207,24 @@ class ConsumerReportPriceReferenceTest extends TestCase
         $this->assertSame(0, RegulatoryFinding::count());
     }
 
+    public function test_a_line_with_no_srp_commodity_can_be_cleared_but_not_cited_as_a_violation(): void
+    {
+        $report = $this->report(items: [['item_name' => 'SUMMIT MINERAL WATER 5L', 'unit_price' => 61.00]]);
+        $decision = fn (string $finding) => $this->postJson("/api/admin/reports/{$report->id}/decision", [
+            'action' => 'validate', 'reason' => 'Not an SRP commodity.',
+            'item_decisions' => [[
+                'item_id' => $report->items()->first()->id, 'commodity_key' => null, 'commodity_name' => null,
+                'receipt_price' => 61.00, 'observed_at' => '2026-07-20', 'regulatory_finding' => $finding,
+            ]],
+        ]);
+
+        $decision('confirmed_violation')->assertUnprocessable();
+        $decision('no_violation')->assertOk();
+
+        $this->assertSame('Resolved', $report->refresh()->status);
+        $this->assertSame(0, RegulatoryFinding::count(), 'No baseline, so nothing to record.');
+    }
+
     public function test_a_finding_captures_the_reference_it_was_decided_against(): void
     {
         $bulletin = $this->bulletin();

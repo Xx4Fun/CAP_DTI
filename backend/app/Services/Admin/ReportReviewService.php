@@ -154,7 +154,10 @@ class ReportReviewService
 
                 // Insufficient evidence asserts nothing about price, so it records no finding — and
                 // supersedes any earlier one, which would otherwise keep counting toward recidivism.
-                if (! in_array($decision['regulatory_finding'], self::FINDING_OUTCOMES, true)) {
+                // "No violation" on a line with no SRP commodity has no baseline to record against,
+                // so it is recorded the same way. A key that was given but does not resolve still 422s.
+                $unregulated = $decision['regulatory_finding'] === 'no_violation' && empty($decision['commodity_key']);
+                if ($unregulated || ! in_array($decision['regulatory_finding'], self::FINDING_OUTCOMES, true)) {
                     RegulatoryFinding::where('source_type', 'consumer_report_item')
                         ->where('source_id', $item->id)->delete();
 
