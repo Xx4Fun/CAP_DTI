@@ -203,7 +203,7 @@ export const adminApi = {
   async updateEmergency(id: number, payload: unknown): Promise<RegulatoryEmergencyRecord> {
     return data(await api.patch(`/admin/emergencies/${id}`, payload))
   },
-  async getLegalNotices(params: { search?: string; status?: string } = {}): Promise<LegalNoticePage> {
+  async getLegalNotices(params: { search?: string; status?: string; store_id?: number; page?: number } = {}): Promise<LegalNoticePage> {
     return data(await api.get('/admin/legal-notices', { params }))
   },
   async getLegalNotice(id: number): Promise<LegalNoticeRecord> {

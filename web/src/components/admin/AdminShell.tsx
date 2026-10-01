@@ -134,6 +134,8 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   const [isCalamityActive, setIsCalamityActive] = useState<boolean | null>(null)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false)
+  const collapsedRef = useRef(isCollapsed)
+  const collapsedBeforeFocus = useRef<boolean | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [logoutModalOpen, setLogoutModalOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -144,6 +146,24 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   }
 
   const heading = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => { collapsedRef.current = isCollapsed }, [isCollapsed])
+
+  // Wide views (Field Monitoring visit review) ask for the sidebar to collapse while open,
+  // then hand back whatever state the admin had before.
+  useEffect(() => {
+    const onFocusMode = (event: Event) => {
+      if ((event as CustomEvent<boolean>).detail) {
+        if (collapsedBeforeFocus.current === null) collapsedBeforeFocus.current = collapsedRef.current
+        setIsCollapsed(true)
+      } else if (collapsedBeforeFocus.current !== null) {
+        setIsCollapsed(collapsedBeforeFocus.current)
+        collapsedBeforeFocus.current = null
+      }
+    }
+    window.addEventListener('admin:sidebar-focus', onFocusMode)
+    return () => window.removeEventListener('admin:sidebar-focus', onFocusMode)
+  }, [])
 
   useEffect(() => {
     heading.current?.focus()

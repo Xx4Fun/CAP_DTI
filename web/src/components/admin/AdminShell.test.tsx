@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -84,6 +84,18 @@ describe('AdminShell', () => {
 
     await user.click(screen.getByRole('button', { name: 'Dashboard' }))
     expect(window.location.search).toBe('?module=overview')
+  })
+
+  it('collapses the sidebar while a wide view is open and restores it afterwards', () => {
+    const { container } = render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+    const sidebar = container.querySelector('.admin-sidebar')!
+    expect(sidebar).not.toHaveClass('collapsed')
+
+    act(() => { window.dispatchEvent(new CustomEvent('admin:sidebar-focus', { detail: true })) })
+    expect(sidebar).toHaveClass('collapsed')
+
+    act(() => { window.dispatchEvent(new CustomEvent('admin:sidebar-focus', { detail: false })) })
+    expect(sidebar).not.toHaveClass('collapsed')
   })
 
   it('does not expose Admin navigation to a field officer', () => {

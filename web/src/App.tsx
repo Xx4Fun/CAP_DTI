@@ -156,6 +156,8 @@ function App() {
   ) => {
     if (logoutInProgress.current) return;
     logoutInProgress.current = true;
+    (api as any).endAdminSession?.();
+    setReauthenticationOpen(false);
     try {
       if (getAdminToken() || localStorage.getItem('token')) {
         await api.post('/logout');
@@ -166,6 +168,7 @@ function App() {
       clearAdminSession();
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      (api as any).finishAdminLogout?.();
       setUser(null);
       setSession(null);
       setSessionWarning(false);
@@ -356,13 +359,18 @@ function App() {
               onSubmit={async (event) => {
                 event.preventDefault();
                 const form = new FormData(event.currentTarget);
+                const epoch = (api as any).getAdminSessionEpoch?.();
+                // Logged out (or another user signed in) while the password was being checked: touch nothing.
+                const stale = () => (api as any).isAdminSessionActive && !(api as any).isAdminSessionActive(epoch);
                 try {
                   await api.post('/admin/reauthenticate', { password: String(form.get('password')) });
+                  if (stale()) return;
                   setReauthenticationOpen(false);
                   setReauthenticationError('');
                   touchAdminActivity();
                   (api as any).resumePendingAdminRequests?.();
                 } catch (error: any) {
+                  if (stale()) return;
                   setReauthenticationError(error.response?.data?.message || 'Password confirmation failed.');
                 }
               }}

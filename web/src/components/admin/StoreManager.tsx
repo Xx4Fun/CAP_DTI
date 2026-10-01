@@ -205,6 +205,7 @@ export const StoreManager: React.FC = () => {
               </div>
             }>
               <StoreDetailOverlay
+                key={detailStore.id}
                 store={detailStore}
                 onClose={() => setDetailStore(null)}
                 onCenterMap={() => handleCenterStore(detailStore.id)}
@@ -440,9 +441,7 @@ export const StoreManager: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            setSelectedStoreId(store.id)
-                            setDetailStore(store)
-                            setIsSidebarOpen(true)
+                            handleOpenStoreDetail(store)
                           }}
                           style={{
                             flex: 1,

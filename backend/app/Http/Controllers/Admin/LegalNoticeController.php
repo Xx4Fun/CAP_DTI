@@ -35,9 +35,10 @@ class LegalNoticeController extends Controller
     public function index(Request $request, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-        $filters = $request->validate(['search' => ['nullable', 'string', 'max:120'], 'status' => ['nullable', Rule::in(['draft', 'issued', 'response_received', 'closed', 'cancelled'])], 'page' => ['nullable', 'integer', 'min:1']]);
+        $filters = $request->validate(['search' => ['nullable', 'string', 'max:120'], 'status' => ['nullable', Rule::in(['draft', 'issued', 'response_received', 'closed', 'cancelled'])], 'page' => ['nullable', 'integer', 'min:1'], 'store_id' => ['nullable', 'integer', 'min:1']]);
         $query = LegalNotice::with(['store:id,store_name,address', 'preparer:id,name'])->latest('updated_at');
         if ($filters['status'] ?? null) $query->where('status', $filters['status']);
+        if (isset($filters['store_id'])) $query->where('store_id', $filters['store_id']);
         if ($search = trim($filters['search'] ?? '')) $query->where(fn ($q) => $q->where('control_number', 'like', "%$search%")->orWhereHas('store', fn ($store) => $store->where('store_name', 'like', "%$search%")));
         return response()->json(['data' => $query->paginate(20)]);
     }

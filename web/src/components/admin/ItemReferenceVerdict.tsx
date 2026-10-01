@@ -58,18 +58,20 @@ export const ItemReferenceVerdict: React.FC<{ reference?: ItemPriceReference }> 
             {' vs '}
             {reference?.value !== null && reference?.value !== undefined ? peso(reference.value) : 'reference unavailable'}
           </span>
-          {/* Naming the reference type matters: an emergency ceiling and an ordinary SRP are
-              different legal instruments, and the evaluator must see which one governed. */}
-          <span className={reference?.type === 'emergency_ceiling' ? 'consumer-report-verdict-source is-emergency' : 'consumer-report-verdict-source'}>
-            {reference?.label}
-            {reference?.effective_date ? ` · effective ${reference.effective_date}` : ''}
-          </span>
+          {/* Only an emergency ceiling is named: it is a different legal instrument from the
+              ordinary SRP, which is the default and needs no label. */}
+          {reference?.type === 'emergency_ceiling' && (
+            <span className="consumer-report-verdict-source is-emergency">
+              {reference.label}
+              {reference.effective_date ? ` · effective ${reference.effective_date}` : ''}
+            </span>
+          )}
         </div>
       )}
 
       {reference?.auto_matched === false && (reference?.match_candidates?.length ?? 0) > 0 && (
         <span className="consumer-report-verdict-warning">
-          Commodity not matched with confidence — confirm the key below.
+          Commodity not matched with confidence — confirm the commodity below.
         </span>
       )}
     </div>

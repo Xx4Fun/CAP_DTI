@@ -1,5 +1,10 @@
 import type { StoreRecord } from '../../types/admin'
 
+// The 10% allowance is the field-inspection rule (FieldMonitoringController). An emergency ceiling has none,
+// and a confirmed receipt finding was decided against the reference itself (ReceiptPriceComparison).
+export const reviewThreshold = (row: { srp?: unknown; reference_type?: string | null; source?: string }): number | null =>
+  row.srp ? (row.reference_type === 'emergency_ceiling' || row.source === 'Validated receipt' ? Number(row.srp) : Number(row.srp) * 1.10) : null
+
 export function getStoreStatusInfo(store: StoreRecord): {
   status: 'green' | 'yellow' | 'red'
   label: string

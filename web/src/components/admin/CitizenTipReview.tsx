@@ -209,7 +209,10 @@ export const CitizenTipReview: React.FC = () => {
         commodity_name: String(saved?.commodity_name ?? item.commodity_name ?? item.item_name ?? ''),
         receipt_price: typeof saved?.receipt_price === 'number' ? saved.receipt_price : (suggestedUnitPrice(item) ?? ''),
         observed_at: String(saved?.observed_at ?? observedAt),
-        regulatory_finding: String(saved?.regulatory_finding ?? ''),
+        // Pre-filled from the comparison: only a line above its reference reads as a violation.
+        // A line with no reference (not an SRP commodity) defaults to no violation.
+        regulatory_finding: String(saved?.regulatory_finding
+          ?? (item.reference?.is_above_reference === true ? 'confirmed_violation' : 'no_violation')),
       } satisfies ItemDecision]
     }))
     setItemDecisions(seeded)
@@ -272,8 +275,8 @@ export const CitizenTipReview: React.FC = () => {
     if (!selected) return
     if ((action === 'validate' || action === 'correct') && (selected.items?.length ?? 0) > 0) {
       const decisions = selected.items!.map((item) => itemDecisions[item.id])
-      if (decisions.some((decision) => !decision?.commodity_key || !decision.regulatory_finding)) {
-        setError('Complete the commodity key and finding for every receipt item.')
+      if (!itemReviewComplete) {
+        setError('Every item needs a unit price and a finding; a confirmed violation also needs its commodity.')
         return
       }
       setDecisionSaving(true)
@@ -434,18 +437,17 @@ export const CitizenTipReview: React.FC = () => {
     },
     { above: 0, within: 0, unresolved: 0, compared: 0, total: 0, excess: 0 },
   )
-  const itemReviewComplete = hasItemReview && selected!.items!.every((item) => {
-    const decision = itemDecisions[item.id]
-    return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
-      && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
-  })
-
-  /** Per-item completeness, so progress and the blocking reason share one definition. */
+  /**
+   * Per-item completeness, so progress, the blocking reason, and submit share one definition.
+   * Only a confirmed violation needs a commodity: it is what links the line to the SRP it breaches.
+   */
   const isItemDecided = (itemId: number) => {
     const decision = itemDecisions[itemId]
-    return Boolean(decision?.commodity_key && decision.commodity_name && decision.regulatory_finding)
+    return Boolean(decision?.regulatory_finding)
+      && (decision.regulatory_finding !== 'confirmed_violation' || Boolean(decision.commodity_key))
       && typeof decision.receipt_price === 'number' && decision.receipt_price >= 0
   }
+  const itemReviewComplete = hasItemReview && selected!.items!.every((item) => isItemDecided(item.id))
 
   const decidedItemCount = (selected?.items ?? []).filter((item) => isItemDecided(item.id)).length
 
@@ -460,9 +462,9 @@ export const CitizenTipReview: React.FC = () => {
     const first = pending[0]
     const missing = (() => {
       const decision = itemDecisions[first.id]
-      if (!decision?.commodity_key) return 'commodity'
-      if (typeof decision.receipt_price !== 'number') return 'unit price'
-      return 'finding'
+      if (typeof decision?.receipt_price !== 'number') return 'unit price'
+      if (!decision.regulatory_finding) return 'finding'
+      return 'commodity'
     })()
     return pending.length === 1
       ? `${first.item_name || `Item ${first.sequence + 1}`} still needs a ${missing}`
@@ -952,8 +954,8 @@ export const CitizenTipReview: React.FC = () => {
                 )}
 
                 {/* Legacy reports only. When the report has persisted items, the same rows already
-                    appear twice — read-only under "System extraction" and editable under
-                    "Item-by-item findings" — so a third copy here only cost the evaluator a re-read. */}
+                    appear twice — read-only under "System extraction" and editable in the item
+                    list below — so a third copy here only cost the evaluator a re-read. */}
                 {!hasItemReview && structuredOcrItems.length > 0 && (
                   <div className="consumer-report-legacy-items">
                     <table>
@@ -986,18 +988,17 @@ export const CitizenTipReview: React.FC = () => {
 
               {/* DTI DECISION & REVIEW SECTION */}
               <div className="consumer-report-decision">
-                <div>
-                  <h3 className="consumer-report-decision-title">DTI evaluator findings and decision</h3>
-                  <p className="consumer-report-decision-lede">What should happen to this report?</p>
-                </div>
+                <h3 className="consumer-report-decision-title">DTI evaluator findings and decision</h3>
 
                 {/* Structured Multi-Item Forms (when applicable) */}
                 {hasItemReview && (
                   <div className="consumer-report-item-list">
-                    <div className="consumer-report-item-list-title">Item-by-item findings</div>
                     {selected.items!.map((item) => {
                       const decision = itemDecisions[item.id]
                       const decided = isItemDecided(item.id)
+                      // Keyless bulletins cannot resolve a reference, so they are never offered.
+                      const candidates = (item.reference?.match_candidates ?? []).filter((candidate) => Boolean(candidate.commodity_key))
+                      const currentKey = decision?.commodity_key || ''
                       return (
                         <fieldset key={item.id} className={`consumer-report-item${decided ? ' is-decided' : ''}`}>
                           {/* Identity, then the verdict, then the fields that settle it. These read
@@ -1039,44 +1040,42 @@ export const CitizenTipReview: React.FC = () => {
                                 <small>Unit price not available from the receipt extraction. Enter it from the original photo.</small>
                               )}
                             </label>
-                            <label>
-                              Commodity key
-                              {/* Pre-filled from the automatic match when one was confident. The list
-                                  offers the ranked alternatives so a wrong or missing match is corrected
-                                  by choosing, not by recalling an exact key from memory. */}
-                              <input
-                                list={`commodity-options-${item.id}`}
-                                aria-label={`Commodity key for ${item.item_name || item.id}`}
-                                value={decision?.commodity_key || ''}
-                                onChange={(event) => setItemDecisions((current) => ({
-                                  ...current,
-                                  [item.id]: {
-                                    ...current[item.id],
-                                    commodity_key: event.target.value,
-                                    // Choosing a suggestion must carry its name across too. Updating only
-                                    // the key would store a canonical key beside the unmatched OCR name.
-                                    commodity_name: candidateFor(item, event.target.value)?.commodity_name
-                                      ?? current[item.id]?.commodity_name
-                                      ?? '',
-                                  },
-                                }))}
-                              />
-                              <datalist id={`commodity-options-${item.id}`}>
-                                {/* The value is the commodity KEY, because the server resolves the
-                                    regulatory reference by exact key. Offering the display name here
-                                    made every chosen suggestion fail to resolve. Keyless bulletins
-                                    cannot resolve at all, so they are not offered. */}
-                                {(item.reference?.match_candidates ?? [])
-                                  .filter((candidate) => Boolean(candidate.commodity_key))
-                                  .map((candidate) => (
+                            {/* The commodity links the line to its SRP bulletin. A confident automatic
+                                match needs no input; an unsure one is settled by choosing a name. The
+                                option VALUE is the key, because the server resolves the reference by
+                                exact key. */}
+                            {item.reference?.auto_matched !== true && candidates.length > 0 && (
+                              <label>
+                                Commodity
+                                <select
+                                  aria-label={`Commodity for ${item.item_name || item.id}`}
+                                  value={currentKey}
+                                  onChange={(event) => setItemDecisions((current) => ({
+                                    ...current,
+                                    [item.id]: {
+                                      ...current[item.id],
+                                      commodity_key: event.target.value,
+                                      // Choosing a suggestion must carry its name across too. Updating only
+                                      // the key would store a canonical key beside the unmatched OCR name.
+                                      commodity_name: candidateFor(item, event.target.value)?.commodity_name
+                                        ?? current[item.id]?.commodity_name
+                                        ?? '',
+                                    },
+                                  }))}
+                                >
+                                  <option value="">Not an SRP commodity</option>
+                                  {currentKey && !candidates.some((candidate) => candidate.commodity_key === currentKey) && (
+                                    <option value={currentKey}>{decision?.commodity_name || currentKey}</option>
+                                  )}
+                                  {candidates.map((candidate) => (
                                     <option key={candidate.id} value={candidate.commodity_key as string}>
                                       {candidate.commodity_name}
                                       {candidate.package_size ? ` · ${candidate.package_size}` : ''}
-                                      {` · match ${candidate.match_score}`}
                                     </option>
                                   ))}
-                              </datalist>
-                            </label>
+                                </select>
+                              </label>
+                            )}
                             <label>
                               Finding
                               <select
@@ -1084,7 +1083,6 @@ export const CitizenTipReview: React.FC = () => {
                                 value={decision?.regulatory_finding || ''}
                                 onChange={(event) => setItemDecisions((current) => ({ ...current, [item.id]: { ...current[item.id], regulatory_finding: event.target.value } }))}
                               >
-                                <option value="">Select a finding</option>
                                 <option value="confirmed_violation">Confirmed violation</option>
                                 <option value="no_violation">No violation</option>
                                 <option value="insufficient_evidence">Insufficient evidence</option>
@@ -1231,7 +1229,7 @@ export const CitizenTipReview: React.FC = () => {
                   {hasItemReview && (
                     <div className="consumer-report-progress">
                       <span>{decidedItemCount} of {selected.items!.length} items decided</span>
-                      {!itemReviewComplete && (
+                      {blockingReason && (
                         <span className="is-blocked">{blockingReason}</span>
                       )}
                     </div>

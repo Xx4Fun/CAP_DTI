@@ -31,13 +31,15 @@ describe('ReceiptExtractionPanel', () => {
     render(<ReceiptExtractionPanel result={result} />)
 
     const panel = screen.getByRole('region', { name: 'System extraction' })
-    expect(within(panel).getByText('gemini-3.8-flash')).toBeInTheDocument()
+    // Engine internals and the raw OCR line repeat nothing the evaluator decides on.
+    expect(within(panel).queryByText('gemini-3.8-flash')).not.toBeInTheDocument()
+    expect(within(panel).queryByText(/route:/)).not.toBeInTheDocument()
+    expect(within(panel).queryByText(/003644049 1 15\.50 15\.50T/)).not.toBeInTheDocument()
     expect(within(panel).getByText('GAISANO GRAND MALL OF ANTIQUE')).toBeInTheDocument()
     expect(within(panel).getAllByText('Not available').length).toBeGreaterThanOrEqual(3)
     const duplicate = screen.getByRole('row', { name: 'Extracted item 2' })
     expect(within(duplicate).getByText('unit price uncertain (unparseable)')).toBeInTheDocument()
     expect(within(duplicate).getByText('possible duplicate of #1')).toBeInTheDocument()
-    expect(within(screen.getByRole('row', { name: 'Extracted item 1' })).getByText(/003644049 1 15\.50 15\.50T/)).toBeInTheDocument()
     expect(within(panel).getByText('1 line(s) not treated as items')).toBeInTheDocument()
     expect(within(panel).getByText(/−₱1\.00 \(PROMO\)/)).toBeInTheDocument()
     expect(within(panel).getByText('Rounding')).toBeInTheDocument()

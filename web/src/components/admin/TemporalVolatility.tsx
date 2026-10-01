@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'chart.js'
 import { adminApi } from '../../services/adminApi'
+import { reviewThreshold } from './storeMapUtils'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -85,7 +86,7 @@ export const TemporalVolatility: React.FC = () => {
   const activeRows = getFilteredRows()
 
   const hasAnomaly = activeRows.some(
-    (row: any) => row.srp && Number(row.price) > Number(row.srp) * 1.10
+    (row: any) => row.srp && Number(row.price) > reviewThreshold(row)!
   )
 
   // Calculate peso & percentage variance calculation callout
@@ -94,10 +95,10 @@ export const TemporalVolatility: React.FC = () => {
     const validRows = activeRows.filter((r: any) => r.srp)
     if (validRows.length === 0) return null
 
-    const over10Rows = validRows.filter((r: any) => Number(r.price) > Number(r.srp) * 1.10)
+    const overThresholdRows = validRows.filter((r: any) => Number(r.price) > reviewThreshold(r)!)
     const targetRow =
-      over10Rows.length > 0
-        ? over10Rows.reduce((max: any, r: any) =>
+      overThresholdRows.length > 0
+        ? overThresholdRows.reduce((max: any, r: any) =>
             Number(r.price) / Number(r.srp) > Number(max.price) / Number(max.srp) ? r : max
           )
         : validRows.reduce((max: any, r: any) =>
@@ -109,20 +110,20 @@ export const TemporalVolatility: React.FC = () => {
     const diff = price - srp
     const pct = ((price - srp) / srp) * 100
 
-    if (price > srp * 1.10) {
+    if (price > reviewThreshold(targetRow)!) {
       return {
         type: 'danger',
-        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the applicable SRP and above the 110% comparison line. No legal action is inferred.`,
+        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the reference price and above the review threshold. No legal action is inferred.`,
       }
     } else if (price > srp) {
       return {
         type: 'warning',
-        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the applicable SRP and below the 110% comparison line.`,
+        text: `+₱${diff.toFixed(2)} (+${pct.toFixed(1)}%) above the reference price and below the review threshold.`,
       }
     } else {
       return {
         type: 'success',
-        text: `₱${diff.toFixed(2)} (${pct.toFixed(1)}%) variance from the applicable SRP. This alone is not a complete compliance determination.`,
+        text: `₱${diff.toFixed(2)} (${pct.toFixed(1)}%) variance from the reference price. This alone is not a complete compliance determination.`,
       }
     }
   }
@@ -132,7 +133,7 @@ export const TemporalVolatility: React.FC = () => {
   const labels = activeRows.map((r: any) => r.date)
   const priceSeries = activeRows.map((r: any) => Number(r.price))
   const srpSeries = activeRows.map((r: any) => (r.srp ? Number(r.srp) : null))
-  const allowanceSeries = srpSeries.map((srp) => (srp !== null ? srp * 1.10 : null))
+  const thresholdSeries = activeRows.map(reviewThreshold)
 
   const chartOptions = {
     responsive: true,
@@ -180,8 +181,8 @@ export const TemporalVolatility: React.FC = () => {
               tension: 0.3,
             },
             {
-              label: '10% Regulatory Allowance Band',
-              data: allowanceSeries,
+              label: 'Review threshold',
+              data: thresholdSeries,
               borderColor: '#eab308',
               backgroundColor: 'rgba(234, 179, 8, 0.05)',
               borderWidth: 1.5,
@@ -189,7 +190,7 @@ export const TemporalVolatility: React.FC = () => {
               tension: 0,
             },
             {
-              label: 'Official Prevailing SRP Baseline',
+              label: 'Reference price',
               data: srpSeries,
               borderColor: '#1d4ed8',
               backgroundColor: 'rgba(29, 78, 216, 0.05)',
@@ -243,7 +244,7 @@ export const TemporalVolatility: React.FC = () => {
               Temporal Price Volatility Analytics
             </h3>
             <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-              Compare historical field inspection shelf prices against flat baseline SRPs and 10% allowance ceilings.
+              Compare historical field inspection shelf prices against reference prices and review thresholds.
             </p>
           </div>
 
@@ -537,7 +538,7 @@ export const TemporalVolatility: React.FC = () => {
               padding: '0.85rem 1rem',
             }}
           >
-            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Official Prevailing SRP</span>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Reference price</span>
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1d4ed8', marginTop: '0.2rem' }}>
               {latestSrp > 0 ? `₱${latestSrp.toFixed(2)}` : 'N/A'}
             </div>
@@ -702,7 +703,7 @@ export const TemporalVolatility: React.FC = () => {
               }}
             />
             <span style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 600 }}>
-              <strong>Official Prevailing SRP Baseline</strong>{' '}
+              <strong>Reference price</strong>{' '}
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400 }}>
                 (flat reference line)
               </span>
@@ -722,9 +723,9 @@ export const TemporalVolatility: React.FC = () => {
               }}
             />
             <span style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 600 }}>
-              <strong>10% Regulatory Allowance Band</strong>{' '}
+              <strong>Review threshold</strong>{' '}
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400 }}>
-                (allowance threshold zone)
+                (10% above SRP; equals the ceiling under an emergency price freeze)
               </span>
             </span>
           </div>
@@ -743,7 +744,7 @@ export const TemporalVolatility: React.FC = () => {
             <span style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 600 }}>
               <strong>Recorded Field Shelf Price</strong>{' '}
               <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 400 }}>
-                (actual inspection price line, turning red when exceeding +10% SRP ceiling)
+                (actual inspection price line, turning red above the review threshold)
               </span>
             </span>
           </div>
@@ -857,7 +858,7 @@ export const TemporalVolatility: React.FC = () => {
                       fontWeight: 600,
                     }}
                   >
-                    Applicable SRP
+                    Reference price
                   </th>
                   <th
                     style={{
@@ -887,7 +888,8 @@ export const TemporalVolatility: React.FC = () => {
                 {activeRows.map((row: any, index: number) => {
                   const price = Number(row.price)
                   const srp = row.srp ? Number(row.srp) : null
-                  const isOver10Percent = srp ? price > srp * 1.10 : false
+                  const threshold = reviewThreshold(row)
+                  const isOverThreshold = threshold !== null && price > threshold
                   const isOverSrp = srp ? price > srp : false
 
                   return (
@@ -901,7 +903,7 @@ export const TemporalVolatility: React.FC = () => {
                           fontFamily: 'monospace',
                           fontWeight: 700,
                           fontSize: '0.9rem',
-                          color: isOver10Percent ? '#dc2626' : isOverSrp ? '#d97706' : '#0f172a',
+                          color: isOverThreshold ? '#dc2626' : isOverSrp ? '#d97706' : '#0f172a',
                         }}
                       >
                         ₱{price.toFixed(2)}
@@ -928,9 +930,9 @@ export const TemporalVolatility: React.FC = () => {
                               fontWeight: 600,
                             }}
                           >
-                            No SRP Baseline
+                            No reference price
                           </span>
-                        ) : isOver10Percent ? (
+                        ) : isOverThreshold ? (
                           <span
                             style={{
                               padding: '0.25rem 0.65rem',
@@ -942,7 +944,7 @@ export const TemporalVolatility: React.FC = () => {
                               fontWeight: 700,
                             }}
                           >
-                            Above SRP by more than 10%
+                            Above review threshold
                           </span>
                         ) : isOverSrp ? (
                           <span
@@ -956,7 +958,7 @@ export const TemporalVolatility: React.FC = () => {
                               fontWeight: 700,
                             }}
                           >
-                            Above applicable SRP
+                            Above reference price
                           </span>
                         ) : (
                           <span

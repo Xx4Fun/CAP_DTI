@@ -557,6 +557,8 @@ export interface LegalNoticeRecord {
   readiness: Record<string, boolean>
   policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[]; required_fields?: string[] }
   overdue?: boolean
+  closed_at?: string | null
+  cancelled_at?: string | null
   preceding_notice_id?: number | null
   vendor_user_id?: number | null
   /** Draft whose store's vendor link changed since it was prepared; the recipient must be confirmed before issue. */

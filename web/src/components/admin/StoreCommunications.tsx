@@ -108,7 +108,7 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
 
   const openStore = (id: number) => {
     selectedRef.current = id
-    setSelectedId(id); setThread(null); setThreadError(''); setDraft(''); setFile(null); setShowRecords(false)
+    setSelectedId(id); setThread(null); setPreviewImage(null); setThreadError(''); setDraft(''); setFile(null); setShowRecords(false)
     adminApi.getConversation(id)
       .then((value) => { if (selectedRef.current === id) setThread(value) })
       .catch((reason) => { if (selectedRef.current === id) setThreadError(messageOf(reason, 'This conversation could not be loaded.')) })
@@ -218,7 +218,7 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
           threadError ? <p className="comms-error" role="alert">{threadError}</p> : <div className="legal-loading" aria-label="Loading conversation" />
         ) : <>
           <header className="comms-thread-header">
-            <button type="button" className="comms-back" onClick={() => { selectedRef.current = null; setSelectedId(null); setThread(null) }} aria-label="Back to stores"><ArrowLeft size={18} /></button>
+            <button type="button" className="comms-back" onClick={() => { selectedRef.current = null; setSelectedId(null); setThread(null); setPreviewImage(null) }} aria-label="Back to stores"><ArrowLeft size={18} /></button>
             <div>
               <h2>{thread.store.store_name}</h2>
               <p>{thread.store.vendor ? `${thread.store.vendor.name} · ${thread.store.vendor.email}${thread.store.vendor.is_active ? '' : ' · inactive'}` : 'No vendor account linked'}</p>
@@ -388,12 +388,13 @@ function MessageImageAttachment({
 
   useEffect(() => {
     let active = true
+    let url: string | null = null
     setLoading(true)
     setFailed(false)
     adminApi.getMessageAttachment(storeId, message.id)
       .then((blob) => {
         if (!active) return
-        const url = URL.createObjectURL(blob)
+        url = URL.createObjectURL(blob)
         setImageUrl(url)
       })
       .catch(() => {
@@ -402,8 +403,10 @@ function MessageImageAttachment({
       .finally(() => {
         if (active) setLoading(false)
       })
+    // The parent closes its lightbox before switching threads, so nothing still shows this URL when it is revoked.
     return () => {
       active = false
+      if (url) URL.revokeObjectURL(url)
     }
   }, [storeId, message.id])
 

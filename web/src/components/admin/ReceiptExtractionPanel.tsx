@@ -63,10 +63,6 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
     <section aria-label="System extraction" className="receipt-extraction">
       <div className="receipt-extraction-head">
         <h4>System extraction (read-only)</h4>
-        <span>
-          <Badge tone="info">{result.engine?.model || 'Gemini'}</Badge>
-          {result.engine?.route && <Badge tone="muted">route: {result.engine.route}</Badge>}
-        </span>
       </div>
 
       <div className="receipt-extraction-group">
@@ -88,7 +84,7 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
         <table aria-label="Extracted items" className="receipt-extraction-table">
           <thead>
             <tr>
-              <th>#</th><th>Sec.</th><th>Description</th><th>Qty</th>
+              <th>#</th><th>Description</th><th>Qty</th>
               <th>Unit price</th><th>Line total</th>
             </tr>
           </thead>
@@ -98,7 +94,6 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
               return (
                 <tr key={item.sequence} aria-label={`Extracted item ${index + 1}`}>
                   <td>{index + 1}</td>
-                  <td>{item.section ?? '—'}</td>
                   <td>
                     <div className="receipt-extraction-itemname">{item.item_name || 'Not available'}</div>
                     {(uncertain.length > 0 || item.possible_duplicate_of != null) && <div className="receipt-extraction-flags">
@@ -108,7 +103,6 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
                       })}
                       {item.possible_duplicate_of != null && <Badge tone="bad">possible duplicate of #{position(item.possible_duplicate_of) || item.possible_duplicate_of + 1}</Badge>}
                     </div>}
-                    {item.raw_text && <pre className="receipt-extraction-raw">{item.raw_text}</pre>}
                   </td>
                   <td>{item.quantity ?? 'Not available'}</td>
                   <td>{peso(item.unit_price) ?? 'Not available'}</td>
@@ -116,7 +110,7 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
                 </tr>
               )
             })}
-            {items.length === 0 && <tr><td colSpan={6}>No items extracted.</td></tr>}
+            {items.length === 0 && <tr><td colSpan={5}>No items extracted.</td></tr>}
           </tbody>
         </table>
       </div>

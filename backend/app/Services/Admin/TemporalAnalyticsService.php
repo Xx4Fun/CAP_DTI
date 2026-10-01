@@ -7,10 +7,30 @@ use App\Models\RegulatoryFinding;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\TemporalInspection;
+use App\Services\FieldReferenceResolver;
 
 class TemporalAnalyticsService
 {
-    public function __construct(private readonly TemporalSrpResolver $resolver) {}
+    public function __construct(
+        private readonly TemporalSrpResolver $resolver,
+        private readonly FieldReferenceResolver $references,
+    ) {}
+
+    /**
+     * Reference for a row that did not capture its own, as it stood at that time: an emergency ceiling in force
+     * replaces the SRP and its allowance (unavailable ceiling: no reference rather than assuming the SRP), and
+     * otherwise the SRP revision then in effect, falling back to the caller's value when none resolves.
+     *
+     * @return array{0: mixed, 1: string}
+     */
+    private function uncapturedReference(?SrpBulletin $bulletin, \DateTimeInterface $at, mixed $srp): array
+    {
+        $reference = $bulletin ? $this->references->resolve($bulletin, $at) : null;
+
+        return ($reference['type'] ?? null) === 'emergency_ceiling'
+            ? [$reference['value'], 'emergency_ceiling']
+            : [$reference['value'] ?? $srp, 'standard_srp'];
+    }
 
     public function forStore(Store $store, ?string $commodityKey, \DateTimeInterface $asOf): array
     {
@@ -27,7 +47,13 @@ class TemporalAnalyticsService
             // whenever a bulletin was revised, and could not represent an emergency ceiling at all.
             $baseline = $finding->reference_value
                 ?? ($commodityKey ? $this->resolver->resolve($commodityKey, $finding->observed_at)?->baseline_price : $srp?->baseline_price);
-            $rows->push(['date' => $finding->observed_at->format('Y-m-d'), 'price' => $finding->observed_price, 'srp' => $baseline, 'source' => 'Validated receipt']);
+            $referenceType = $finding->reference_type;
+            if ($referenceType === null) {
+                // Decided before findings recorded their reference.
+                [$baseline, $referenceType] = $this->uncapturedReference($srp, $finding->observed_at, $baseline);
+            }
+            $rows->push(['date' => $finding->observed_at->format('Y-m-d'), 'price' => $finding->observed_price, 'srp' => $baseline, 'source' => 'Validated receipt', 'reference_type' => $referenceType,
+                'commodity_key' => $srp?->commodity_key, 'commodity_name' => $srp?->commodity_name]);
         }
         $inspections = TemporalInspection::with('bulletin')->where('store_id', $store->id)
             ->where('validation_status', 'verified')->whereNotNull('officer_signature')->where('officer_signature', '!=', '')
@@ -36,18 +62,27 @@ class TemporalAnalyticsService
             if ($commodityKey && $inspection->bulletin?->commodity_key !== $commodityKey) {
                 continue;
             }
-            $captured = MonitoringRecordItem::query()->where('srp_id', $inspection->srp_id)
-                ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)
-                    ->where('status', 'accepted')->where('finalized_at', $inspection->inspection_timestamp))
-                ->first();
-            $resolved = $captured ? null : ($commodityKey ? $this->resolver->resolve($commodityKey, $inspection->inspection_timestamp) : $inspection->bulletin);
+            $captured = $inspection->monitoring_record_item_id
+                ? MonitoringRecordItem::find($inspection->monitoring_record_item_id)
+                : MonitoringRecordItem::query()->where('srp_id', $inspection->srp_id)
+                    ->whereHas('record', fn ($record) => $record->where('store_id', $store->id)
+                        ->where('status', 'accepted')->where('finalized_at', $inspection->inspection_timestamp))
+                    ->first();
+            if ($captured) {
+                [$reference, $referenceType] = [$captured->reference_value, $captured->reference_type];
+            } else {
+                $resolved = $commodityKey ? $this->resolver->resolve($commodityKey, $inspection->inspection_timestamp) : $inspection->bulletin;
+                [$reference, $referenceType] = $this->uncapturedReference($inspection->bulletin, $inspection->inspection_timestamp, $resolved?->baseline_price);
+            }
             $rows->push([
                 'date' => $inspection->inspection_timestamp->format('Y-m-d'),
                 'price' => $inspection->recorded_price,
-                'srp' => $captured?->reference_value ?? $resolved?->baseline_price,
+                'srp' => $reference,
                 'source' => 'Verified field inspection',
-                'reference_type' => $captured?->reference_type,
+                'reference_type' => $referenceType,
                 'reference_source' => $captured?->reference_source,
+                'commodity_key' => $inspection->bulletin?->commodity_key,
+                'commodity_name' => $inspection->bulletin?->commodity_name,
             ]);
         }
         $rows = $rows->sortBy('date')->values();

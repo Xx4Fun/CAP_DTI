@@ -152,7 +152,7 @@ describe('FieldMonitoringRecords', () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-    expect(screen.getByText('Latest accepted routine monitoring').closest('div')).toHaveTextContent('Aug 24, 2026')
+    expect(screen.getByText('Last monitored').closest('div')).toHaveTextContent('Aug 24, 2026')
     expect(screen.getByText('Verification claimed by Ana Officer')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View Additional Visits' }))
     expect(await screen.findByText('Gaisano Grand Mall', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
@@ -185,7 +185,7 @@ describe('FieldMonitoringRecords', () => {
     expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
 
     // Switch period to This Week
-    await user.click(screen.getByRole('button', { name: 'This Week' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitoring period' }), 'this_week')
     await waitFor(() => {
       expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledWith(2, expect.objectContaining({ period: 'this_week' }))
     })
@@ -244,6 +244,55 @@ describe('FieldMonitoringRecords', () => {
     expect(screen.queryByRole('heading', { name: 'Gaisano Grand Mall' })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'All Records' })).toHaveAttribute('aria-selected', 'true')
     expect(new URLSearchParams(window.location.search).get('store')).toBeNull()
+  })
+
+  it('closes the profile on Back to the list but keeps it on Back within the same store', async () => {
+    window.history.replaceState({}, '', '/?module=field_monitoring')
+    window.history.pushState({}, '', '/?module=field_monitoring&store=2')
+    render(<FieldMonitoringRecords />)
+    expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
+
+    act(() => {
+      window.history.pushState({}, '', '/?module=field_monitoring&store=2&profile_tab=history')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
+
+    act(() => {
+      window.history.pushState({}, '', '/?module=field_monitoring')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
+  })
+
+  it('reloads the same establishment when Back restores a different period', async () => {
+    window.history.replaceState({}, '', '/?module=field_monitoring&store=2&period=this_week')
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockClear()
+
+    act(() => {
+      window.history.pushState({}, '', '/?module=field_monitoring&store=2')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await waitFor(() => expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledWith(2, expect.objectContaining({ period: 'last_4_weeks' })))
+  })
+
+  it('keeps the previous commodity when switching commodity fails', async () => {
+    const profile = await adminApi.getMonitoringEstablishment(2, { period: 'last_4_weeks' })
+    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ ...profile, monitored_commodities: [...profile.monitored_commodities, { selector: 'key:sugar', commodity_name: 'Sugar', unit: 'kg' }] })
+    window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })
+    await user.click(screen.getByRole('tab', { name: 'Price History' }))
+    vi.mocked(adminApi.getMonitoringPriceHistory).mockRejectedValueOnce({ response: { data: { message: 'History unavailable.' } } })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Commodity' }), 'key:sugar')
+
+    expect(await screen.findByText('History unavailable.')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Commodity' })).toHaveValue('key:rice')
+    expect(new URLSearchParams(window.location.search).get('commodity')).toBeNull()
   })
 
   it('ignores Back/Forward into another module instead of loading its record', async () => {

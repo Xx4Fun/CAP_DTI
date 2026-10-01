@@ -358,7 +358,7 @@ class MonitoringRecordController extends Controller
             ])->unique('selector')->values();
 
         return response()->json(['data' => [
-            'store' => $store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public']),
+            'store' => $store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public', 'recidivism_index', 'image_path']),
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
             'period_completed_records_count' => $store->period_completed_records_count ?? $store->completed_records_count,

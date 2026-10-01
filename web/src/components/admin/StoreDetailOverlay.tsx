@@ -9,8 +9,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
-import type { StoreRecord } from '../../types/admin'
-import { getStoreStatusInfo } from './storeMapUtils'
+import type { ConsumerReportRecord, LegalNoticeRecord, StoreRecord } from '../../types/admin'
+import { getStoreStatusInfo, reviewThreshold } from './storeMapUtils'
 import { adminApi } from '../../services/adminApi'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
@@ -23,40 +23,132 @@ export interface StoreDetailOverlayProps {
 
 type TabType = 'overview' | 'trends' | 'legal' | 'complaints'
 
+type TrendRow = {
+  date: string
+  price: number | string
+  srp: number | string | null
+  source: string
+  reference_type?: string | null
+  commodity_key?: string | null
+  commodity_name?: string | null
+}
+
+const UNIDENTIFIED_COMMODITY = '__unidentified__'
+
+type PageResult<T> = { rows: T[]; page: number; lastPage: number; total: number }
+type PagedState<T> = PageResult<T> & { loading: boolean; error: boolean }
+type StorePages<T> = PagedState<T> & { loadMore: () => void }
+
+const loadReports = (storeId: number, page: number): Promise<PageResult<ConsumerReportRecord>> =>
+  adminApi.getReportPage({ page, per_page: 20, store_id: storeId })
+    .then((r) => ({ rows: r.data, page: r.meta.current_page, lastPage: r.meta.last_page, total: r.meta.total }))
+
+const loadNotices = (storeId: number, page: number): Promise<PageResult<LegalNoticeRecord>> =>
+  adminApi.getLegalNotices({ store_id: storeId, page })
+    .then((r) => ({ rows: r.data, page: r.current_page, lastPage: r.last_page, total: r.total }))
+
+// One store per mount (StoreManager keys the overlay by store id); "Load more" appends the next page.
+function useStorePages<T>(storeId: number, load: (storeId: number, page: number) => Promise<PageResult<T>>): StorePages<T> {
+  const [state, setState] = useState<PagedState<T>>({ rows: [], page: 0, lastPage: 1, total: 0, loading: true, error: false })
+  // n forces a refetch when a failed page is requested again.
+  const [request, setRequest] = useState({ page: 1, n: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+    setState((s) => ({ ...s, loading: true, error: false }))
+    load(storeId, request.page).then((r) => {
+      if (!cancelled) setState((s) => ({ ...r, rows: request.page === 1 ? r.rows : [...s.rows, ...r.rows], loading: false, error: false }))
+    }).catch(() => {
+      if (!cancelled) setState((s) => ({ ...s, loading: false, error: true }))
+    })
+    return () => { cancelled = true }
+  }, [storeId, load, request])
+
+  return { ...state, loadMore: () => setRequest((r) => ({ page: state.page + 1, n: r.n + 1 })) }
+}
+
+const formatDay = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+const noticeDates = (notice: LegalNoticeRecord) => {
+  const parts = [
+    notice.issued_at && `Issued ${formatDay(notice.issued_at)}`,
+    notice.cancelled_at && `Cancelled ${formatDay(notice.cancelled_at)}`,
+    notice.closed_at && `Closed ${formatDay(notice.closed_at)}`,
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : `Updated ${formatDay(notice.updated_at)}`
+}
+
+const panelText: React.CSSProperties = { padding: '1rem', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }
+const errorText: React.CSSProperties = { ...panelText, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }
+const rowCard: React.CSSProperties = { background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.2rem' }
+
+function PagedList<T>({ list, empty, failed, render }: {
+  list: StorePages<T>
+  empty: string
+  failed: string
+  render: (row: T) => React.ReactNode
+}) {
+  return (
+    <>
+      {list.rows.map(render)}
+      {list.loading && <div role="status" style={panelText}>Loading…</div>}
+      {list.error && <div role="alert" style={errorText}>{failed}</div>}
+      {!list.loading && !list.error && list.rows.length === 0 && <div role="status" style={panelText}>{empty}</div>}
+      {!list.loading && list.page > 0 && list.page < list.lastPage && (
+        <button type="button" onClick={list.loadMore} style={{ padding: '0.45rem', borderRadius: '8px', border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e3a8a', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}>
+          Load more
+        </button>
+      )}
+    </>
+  )
+}
+
 export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   store,
   onClose,
   onCenterMap,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
-  const [analyticsData, setAnalyticsData] = useState<any>(null)
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+  const [trendRows, setTrendRows] = useState<TrendRow[]>([])
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true)
+  const [analyticsError, setAnalyticsError] = useState(false)
+  const [selectedCommodity, setSelectedCommodity] = useState('')
   const statusInfo = getStoreStatusInfo(store)
   const storeId = store.id
+  const reports = useStorePages(storeId, loadReports)
+  const notices = useStorePages(storeId, loadNotices)
 
   useEffect(() => {
-    // Fetch store analytics when trends tab is selected or component mounts
+    let cancelled = false
     setLoadingAnalytics(true)
-    adminApi.getAnalyticsOptions().then((opts) => {
-        const defaultCommodity = opts.commodities[0]?.commodity_key
-        if (!defaultCommodity) return null
-        return adminApi.getAnalytics(storeId, defaultCommodity)
-      }).then((res) => {
-        setAnalyticsData(res)
-        setLoadingAnalytics(false)
-      }).catch(() => {
-        setLoadingAnalytics(false)
-      })
+    setAnalyticsError(false)
+    // No commodity filter: every commodity this store has data for, so the tab can offer a choice.
+    adminApi.getAnalytics(storeId).then((res: any) => {
+      if (cancelled) return
+      setTrendRows(res?.table_rows ?? [])
+      setLoadingAnalytics(false)
+    }).catch(() => {
+      if (cancelled) return
+      setAnalyticsError(true)
+      setLoadingAnalytics(false)
+    })
+    return () => { cancelled = true }
   }, [storeId])
 
   const recidivism = store.recidivism_index || 0
 
-  // Prepare chart data for temporal trend tab
-  const activeRows = analyticsData?.table_rows || []
-  const labels = activeRows.map((r: any) => r.date)
-  const priceSeries = activeRows.map((r: any) => Number(r.price))
-  const srpSeries = activeRows.map((r: any) => (r.srp ? Number(r.srp) : null))
-  const allowanceSeries = srpSeries.map((srp: number | null) => (srp !== null ? srp * 1.10 : null))
+  // A finding whose bulletin was later deleted has no commodity; keep it visible in its own group.
+  const keyOf = (r: TrendRow) => r.commodity_key || UNIDENTIFIED_COMMODITY
+  const commodityOptions = [...new Map(
+    trendRows.map((r) => [keyOf(r), r.commodity_key ? r.commodity_name || r.commodity_key : 'Unidentified commodity']),
+  )]
+  const commodityKey = selectedCommodity || commodityOptions[0]?.[0] || ''
+  const activeRows = trendRows.filter((r) => keyOf(r) === commodityKey)
+  const labels = activeRows.map((r) => r.date)
+  const priceSeries = activeRows.map((r) => Number(r.price))
+  const srpSeries = activeRows.map((r) => (r.srp ? Number(r.srp) : null))
+  const thresholdSeries = activeRows.map((r) => reviewThreshold(r))
 
   const chartData =
     activeRows.length > 0
@@ -64,7 +156,8 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
           labels,
           datasets: [
             {
-              label: 'Recorded Shelf Price',
+              // Receipts and field inspections both feed this series; the tooltip names each point's source.
+              label: 'Observed price',
               data: priceSeries,
               borderColor: recidivism > 0 ? '#dc2626' : '#d97706',
               backgroundColor: 'rgba(217, 119, 6, 0.1)',
@@ -72,14 +165,14 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
               tension: 0.3,
             },
             {
-              label: '10% Allowance Ceiling',
-              data: allowanceSeries,
+              label: 'Review threshold',
+              data: thresholdSeries,
               borderColor: '#eab308',
               borderDash: [4, 4],
               borderWidth: 1.5,
             },
             {
-              label: 'Official Prevailing SRP',
+              label: 'Reference price',
               data: srpSeries,
               borderColor: '#1d4ed8',
               borderDash: [6, 4],
@@ -99,8 +192,17 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
         ticks: { color: '#64748b', font: { size: 10 }, callback: (v: any) => `₱${Number(v).toFixed(0)}` },
       },
     },
-    plugins: { legend: { display: false } },
+    plugins: {
+      legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+      tooltip: {
+        callbacks: {
+          afterLabel: (ctx: any) => (ctx.datasetIndex === 0 ? `Source: ${activeRows[ctx.dataIndex]?.source ?? '—'}` : ''),
+        },
+      },
+    },
   }
+
+  const count = (list: { loading: boolean; error: boolean; total: number }) => (list.error ? '—' : list.loading && list.total === 0 ? '…' : String(list.total))
 
   return (
     <div
@@ -285,6 +387,14 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
                     {store.is_verified ? 'Verified DTI Node' : 'Pending Audit'}
                   </div>
                 </div>
+                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.65rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Reports in review queue</span>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', marginTop: '0.2rem' }}>{count(reports)}</div>
+                </div>
+                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.65rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Legal notices</span>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', marginTop: '0.2rem' }}>{count(notices)}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -295,12 +405,25 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-                4-Week Shelf Price Volatility
+                4-Week Price History
               </h4>
               <span style={{ fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 600, background: '#eff6ff', padding: '0.2rem 0.5rem', borderRadius: '6px' }}>
                 Temporal Matrix
               </span>
             </div>
+
+            {!loadingAnalytics && commodityOptions.length > 0 && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
+                Commodity
+                <select
+                  value={commodityKey}
+                  onChange={(e) => setSelectedCommodity(e.target.value)}
+                  style={{ padding: '0.4rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', color: '#0f172a', background: '#ffffff' }}
+                >
+                  {commodityOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+                </select>
+              </label>
+            )}
 
             {loadingAnalytics && (
               <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
@@ -314,7 +437,11 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
               </div>
             )}
 
-            {!loadingAnalytics && !chartData && (
+            {analyticsError && (
+              <div role="alert" style={errorText}>Price history could not be loaded.</div>
+            )}
+
+            {!loadingAnalytics && !analyticsError && !chartData && (
               <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
                 No temporal price records available for this establishment.
               </div>
@@ -326,12 +453,23 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
         {activeTab === 'legal' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-              Legal Notice & Action History
+              Legal Notice & Action History{!notices.error && notices.page > 0 ? ` (${notices.total})` : ''}
             </h4>
 
-            <div role="status" style={{ padding: '1rem', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
-              No authoritative legal action records are available for this establishment.
-            </div>
+            <PagedList
+              list={notices}
+              empty="No authoritative legal action records are available for this establishment."
+              failed="Legal notices could not be loaded."
+              render={(notice) => (
+                <div key={notice.id} style={rowCard}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <strong style={{ color: '#0f172a' }}>{notice.notice_type} · {notice.control_number ?? 'Draft'}</strong>
+                    <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{notice.status.replace(/_/g, ' ')}</span>
+                  </div>
+                  <span>{noticeDates(notice)}</span>
+                </div>
+              )}
+            />
           </div>
         )}
 
@@ -339,12 +477,28 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
         {activeTab === 'complaints' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-              Citizen OCR Receipt Scans & Tips
+              Consumer reports in DTI review queue{!reports.error && reports.page > 0 ? ` (${reports.total})` : ''}
             </h4>
 
-            <div role="status" style={{ padding: '1rem', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
-              No consumer report records are available for this establishment.
-            </div>
+            <PagedList
+              list={reports}
+              empty="No consumer report records are available for this establishment."
+              failed="Consumer reports could not be loaded."
+              render={(report) => (
+                <div key={report.id} style={rowCard}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <strong style={{ color: '#0f172a', fontFamily: 'monospace' }}>{report.report_reference}</strong>
+                    <span style={{ fontWeight: 700 }}>{report.status}</span>
+                  </div>
+                  <span>
+                    {report.observed_at ? `Receipt ${formatDay(report.observed_at)}` : `Submitted ${formatDay(report.submitted_at)}`}
+                    {(report.above_reference_count ?? 0) > 0 && (
+                      <strong style={{ color: '#dc2626' }}> · {report.above_reference_count} above reference</strong>
+                    )}
+                  </span>
+                </div>
+              )}
+            />
           </div>
         )}
       </div>

@@ -568,7 +568,13 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getByText('Above reference')).toBeInTheDocument()
     // Twice by design: once on the item badge, once in the report's total-excess tile.
     expect(screen.getAllByText(/\+₱8\.50/)).toHaveLength(2)
-    expect(screen.getByText(/SRP baseline \(provisional\)/)).toBeInTheDocument()
+    // The ordinary SRP is the default and is not labelled; only an emergency ceiling is named.
+    expect(screen.queryByText(/SRP baseline \(provisional\)/)).not.toBeInTheDocument()
+    // Defaults follow the comparison: above reference reads as a violation, no reference as none.
+    expect(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i })).toHaveValue('confirmed_violation')
+    expect(screen.getByRole('combobox', { name: /Finding for Unmatched line/i })).toHaveValue('no_violation')
+    // A confident automatic match asks the evaluator for nothing.
+    expect(screen.queryByRole('combobox', { name: /Commodity for Saba Sardines/i })).not.toBeInTheDocument()
     // The report roll-up counts only what was actually compared.
     expect(screen.getByText(/Compared 1 of 2 item\(s\)/)).toBeInTheDocument()
     expect(screen.getByText(/1 item\(s\) have no applicable reference/)).toBeInTheDocument()
@@ -598,12 +604,21 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     render(<CitizenTipReview />)
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    const options = document.querySelectorAll('datalist option')
+    const commodity = screen.getByRole('combobox', { name: /Commodity for ZZQX UNREADABLE/i })
     // The server resolves the reference by exact commodity key, so the option's value must be the
     // key. Submitting the display name made every chosen suggestion fail to resolve.
-    expect(Array.from(options).map((option) => option.getAttribute('value'))).toEqual(['saba-sardines-155g'])
+    expect(Array.from(commodity.querySelectorAll('option')).map((option) => option.getAttribute('value'))).toEqual(['', 'saba-sardines-155g'])
+    expect(screen.getByRole('option', { name: 'Saba Sardines · 155 g' })).toBeInTheDocument()
     // A keyless bulletin can never resolve a reference, so it is not offered at all.
     expect(screen.queryByText(/Keyless Commodity/)).not.toBeInTheDocument()
+
+    // Left unmatched, the line is recorded as no violation without a commodity.
+    vi.mocked(adminApi.decideReport).mockResolvedValue({ ...mockReports[0], status: 'Resolved' })
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Not an SRP commodity.')
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
+    expect(adminApi.decideReport).toHaveBeenCalledWith(101, expect.objectContaining({
+      item_decisions: [expect.objectContaining({ item_id: 701, commodity_key: '', regulatory_finding: 'no_violation' })],
+    }))
   })
 
   it('reports item progress and names what is blocking the decision', async () => {
@@ -620,12 +635,14 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     render(<CitizenTipReview />)
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    expect(screen.getByText('0 of 2 items decided')).toBeInTheDocument()
+    // Every line starts with a default finding, so nothing is pending until one is changed.
+    expect(screen.getByText('2 of 2 items decided')).toBeInTheDocument()
     // A disabled submit used to give no reason at all, leaving the evaluator to hunt the row.
     expect(screen.getByText(/Add a decision reason/i)).toBeInTheDocument()
 
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Checked.')
-    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'confirmed_violation')
+    // A violation must cite the SRP it breaches, and Cooking Oil has no commodity.
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Cooking Oil/i }), 'confirmed_violation')
 
     expect(await screen.findByText('1 of 2 items decided')).toBeInTheDocument()
     expect(screen.getByText(/Cooking Oil still needs a commodity/i)).toBeInTheDocument()
@@ -638,7 +655,8 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
       evidence_available: false,
       items: [
         { id: 911, sequence: 0, item_name: 'Saba Sardines', quantity: '1', unit_price: '30.00', commodity_key: 'saba-sardines-155g', commodity_name: 'Saba Sardines' },
-        { id: 912, sequence: 1, item_name: 'Cooking Oil', quantity: '1', unit_price: '75.00' },
+        // Two units and only a line total: the unit price is unknown until the evaluator enters it.
+        { id: 912, sequence: 1, item_name: 'Cooking Oil', quantity: '2', line_total: '150.00', unit_price: null },
       ],
     }])
 
@@ -646,12 +664,13 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     render(<CitizenTipReview />)
     await user.click(await screen.findByText('RPT-2026-001'))
 
-    expect(screen.getAllByText('Needs a decision')).toHaveLength(2)
-
-    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i }), 'no_violation')
-
-    expect(await screen.findByText('Decided')).toBeInTheDocument()
+    expect(screen.getAllByText('Decided')).toHaveLength(1)
     expect(screen.getAllByText('Needs a decision')).toHaveLength(1)
+
+    await user.type(screen.getByRole('spinbutton', { name: /Receipt unit price for Cooking Oil/i }), '75')
+
+    expect(await screen.findAllByText('Decided')).toHaveLength(2)
+    expect(screen.queryByText('Needs a decision')).not.toBeInTheDocument()
   })
 
   it('lets an item report be referred for field verification', async () => {

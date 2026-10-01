@@ -8,6 +8,10 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-01 — Field Officer device PIN change
+
+- Profile lets an unlocked officer change this device's four-digit PIN offline after entering the current PIN and confirming a new one. The change rewraps the existing vault key so encrypted work and biometric enrollment remain available; it does not change the server password or lock the workspace.
+
 ## 2026-09-28 — Store Communications and the LOI/SCO issuance policy
 
 - **Legal policy approved (supersedes the 2026-08-29 "drafts only" state).** The project owner approved the values printed on the DTI forms:
@@ -150,6 +154,7 @@ Only record choices that should constrain future work. Newest entries go first a
 - Regulatory evidence integrity takes priority over convenience.
 - Anomalies and OCR uncertainty are not legal findings.
 - Finalized field evidence must not be silently changed.
+- Consumer report item findings default from the SRP comparison (above reference = confirmed violation, otherwise no violation). A "no violation" line with no SRP commodity records no regulatory finding; a confirmed violation must cite a commodity.
 - The legacy Flutter client remains out of normal feature scope unless the user explicitly includes it.
 
 See `../PRODUCT.md` for the fuller product contract.
