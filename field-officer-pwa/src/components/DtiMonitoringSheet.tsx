@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Building2, Search, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Building2, Search, SearchX, TriangleAlert, X } from 'lucide-react'
 import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
 import type { Bulletin, MonitoringProtocol, MonitoringReference, ReferenceSnapshot, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
 
@@ -301,20 +301,23 @@ export function DtiMonitoringSheet({
           </thead>
           <tbody>
             {groupedSections.length === 0 ? (
-              <tr>
+              <tr className="dti-matrix-empty-row">
                 <td colSpan={5} className="dti-matrix-empty">
-                  <p>No commodities found matching current filters</p>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      setSearchQuery('')
-                      setSelectedCategory('ALL')
-                      setFilterMode('all')
-                    }}
-                  >
-                    Reset filters
-                  </button>
+                  <div className="dti-matrix-empty-content">
+                    <SearchX size={36} className="dti-matrix-empty-icon" aria-hidden="true" />
+                    <p className="dti-matrix-empty-text">No commodities found matching current filters</p>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setSearchQuery('')
+                        setSelectedCategory('ALL')
+                        setFilterMode('all')
+                      }}
+                    >
+                      Reset filters
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (

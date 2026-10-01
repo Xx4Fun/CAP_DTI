@@ -282,4 +282,26 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('WILKINS Distilled (500mL)')).toBeInTheDocument()
     expect(screen.queryByText('Argentina Corned Beef (150g)')).not.toBeInTheDocument()
   })
+
+  it('renders centered empty state when search filter has no matching commodities and resets filters on click', () => {
+    const updatePrice = vi.fn()
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={mockDraft}
+        bulletins={mockBulletins}
+        onUpdatePrice={updatePrice}
+      />
+    )
+
+    const searchInput = screen.getByPlaceholderText(/Search commodity or brand/i)
+    fireEvent.change(searchInput, { target: { value: 'NonExistentBrand123' } })
+
+    expect(screen.getByText('No commodities found matching current filters')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
+    expect(screen.queryByText('No commodities found matching current filters')).not.toBeInTheDocument()
+    expect(screen.getByText('Argentina Corned Beef (150g)')).toBeInTheDocument()
+  })
 })

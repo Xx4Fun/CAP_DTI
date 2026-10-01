@@ -257,7 +257,7 @@ describe('Field top-level pages', () => {
   it('renders profile details and sign out action', async () => {
     const toggle = vi.fn().mockResolvedValue(undefined)
     const logout = vi.fn()
-    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={toggle} onLogout={logout} />)
+    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={toggle} onChangePin={vi.fn()} onLogout={logout} />)
 
     expect(screen.getByRole('heading', { name: 'Ana Officer' })).toBeInTheDocument()
     expect(screen.getByText('ana@dti.test')).toBeInTheDocument()
@@ -265,5 +265,60 @@ describe('Field top-level pages', () => {
     await waitFor(() => expect(toggle).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('changes a confirmed device PIN and stays in Profile', async () => {
+    const changePin = vi.fn().mockResolvedValue(undefined)
+    render(<ProfilePage session={session} online={false} biometricAvailability="available" biometricEnabled={false} onToggleBiometric={vi.fn()} onChangePin={changePin} onLogout={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change device PIN' }))
+    fireEvent.change(screen.getByLabelText('Current 4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.change(screen.getByLabelText('New 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.change(screen.getByLabelText('Confirm new 4-digit device PIN'), { target: { value: '1357' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save new PIN' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('PINs do not match')
+    expect(changePin).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Confirm new 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save new PIN' }))
+    await waitFor(() => expect(changePin).toHaveBeenCalledWith('4321', '2468'))
+    expect(screen.getByRole('status')).toHaveTextContent('Device PIN changed')
+    expect(screen.getByRole('heading', { name: 'Ana Officer' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Current 4-digit device PIN')).not.toBeInTheDocument()
+  })
+
+  it('can cancel or retry a failed PIN change without claiming success', async () => {
+    const changePin = vi.fn().mockRejectedValue(new Error('The current PIN is incorrect.'))
+    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={vi.fn()} onChangePin={changePin} onLogout={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change device PIN' }))
+    fireEvent.change(screen.getByLabelText('Current 4-digit device PIN'), { target: { value: '1111' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel PIN change' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change device PIN' }))
+    expect(screen.getByLabelText('Current 4-digit device PIN')).toHaveValue('')
+
+    fireEvent.change(screen.getByLabelText('Current 4-digit device PIN'), { target: { value: '1111' } })
+    fireEvent.change(screen.getByLabelText('New 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.change(screen.getByLabelText('Confirm new 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save new PIN' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('current PIN is incorrect')
+    expect(screen.queryByText('Device PIN changed')).not.toBeInTheDocument()
+  })
+
+  it('blocks other device security changes while the PIN update is saving', async () => {
+    let finish!: () => void
+    const onChangePin = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    render(<ProfilePage session={session} online biometricAvailability="available" biometricEnabled={false} onToggleBiometric={vi.fn()} onChangePin={onChangePin} onLogout={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Change device PIN' }))
+    fireEvent.change(screen.getByLabelText('Current 4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.change(screen.getByLabelText('New 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.change(screen.getByLabelText('Confirm new 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save new PIN' }))
+
+    expect(screen.getByRole('button', { name: 'Enable biometric unlock' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel PIN change' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDisabled()
+    finish()
+    expect(await screen.findByRole('status')).toHaveTextContent('Device PIN changed')
   })
 })

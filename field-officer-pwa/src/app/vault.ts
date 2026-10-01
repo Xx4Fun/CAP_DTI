@@ -285,6 +285,35 @@ export async function rewrapVaultPin(pin: string): Promise<void> {
   await rememberVaultSession(activeKey)
 }
 
+export async function changeVaultPin(currentPin: string, newPin: string): Promise<void> {
+  const dataKey = activeKey
+  if (!dataKey) throw new Error('Unlock this device before changing its PIN.')
+  if (!/^\d{4}$/.test(currentPin) || !/^\d{4}$/.test(newPin)) throw new Error('Both PINs must have exactly four digits.')
+  if (currentPin === newPin) throw new Error('Choose a different new PIN.')
+  const metadata = await getRaw<VaultMetadata>(METADATA_KEY)
+  if (!metadata) throw new Error('No secure vault exists on this device.')
+
+  let currentKey: number[]
+  try {
+    const pinKey = await derivePinKey(currentPin, new Uint8Array(metadata.pinSalt))
+    const wrapped = await decrypt<{ key: number[] }>(metadata.pinWrapper, pinKey)
+    await verifyDataKey(await importDataKey(new Uint8Array(wrapped.key)), metadata.verifier)
+    currentKey = wrapped.key
+  } catch {
+    throw new Error('The current PIN is incorrect or the secure vault is damaged.')
+  }
+
+  const unlockedKey = await exportDataKey(dataKey)
+  if (activeKey !== dataKey || unlockedKey.some((byte, index) => byte !== currentKey[index]) || unlockedKey.length !== currentKey.length) {
+    throw new Error('The secure vault changed while updating its PIN. Lock and unlock it, then try again.')
+  }
+  const pinSalt = crypto.getRandomValues(new Uint8Array(16))
+  const pinKey = await derivePinKey(newPin, pinSalt)
+  const pinWrapper = await encrypt({ key: unlockedKey }, pinKey)
+  if (activeKey !== dataKey) throw new Error('The workspace was locked before the PIN change completed. Unlock it and try again.')
+  await setRaw(METADATA_KEY, { ...metadata, pinSalt: Array.from(pinSalt), pinWrapper, pinLength: 4 } satisfies VaultMetadata)
+}
+
 export function lockVault() { activeKey = null; clearVaultSession() }
 
 export async function writeSecret(key: string, value: unknown): Promise<void> {

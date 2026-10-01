@@ -13,7 +13,7 @@ const fixtures = vi.hoisted(() => ({
     offline_lease: { id: 'lease-old', expires_at: '2099-08-29T00:00:00Z' },
   },
   vault: {
-    archiveUnreadableDrafts: vi.fn(), archiveUnreadableQueue: vi.fn(), clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
+    archiveUnreadableDrafts: vi.fn(), archiveUnreadableQueue: vi.fn(), changeVaultPin: vi.fn(), clearVault: vi.fn(), createVault: vi.fn(), deleteSecret: vi.fn(), enableBiometricUnlock: vi.fn(),
     getBiometricUnlockAvailability: vi.fn().mockResolvedValue('prf-unsupported'),
     getVaultPinLength: vi.fn().mockResolvedValue(null), hasBiometricUnlock: vi.fn().mockResolvedValue(false), hasVault: vi.fn().mockResolvedValue(false),
     isBiometricUnlockAvailable: vi.fn().mockResolvedValue(false), lockVault: vi.fn(),
@@ -914,6 +914,25 @@ describe('field workspace security flow', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Synchronize all completed visits')
     expect(fixtures.api.logout).not.toHaveBeenCalled()
     expect(fixtures.vault.clearVault).not.toHaveBeenCalled()
+  })
+
+  it('connects Profile PIN changes to the device vault without locking the workspace', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Authenticate' }))
+    fireEvent.change(screen.getByLabelText('4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.change(screen.getByLabelText('Confirm 4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue with PIN' }))
+    await screen.findByText(/Good day, Ana/i)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open profile' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Change device PIN' }))
+    fireEvent.change(screen.getByLabelText('Current 4-digit device PIN'), { target: { value: '4321' } })
+    fireEvent.change(screen.getByLabelText('New 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.change(screen.getByLabelText('Confirm new 4-digit device PIN'), { target: { value: '2468' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save new PIN' }))
+
+    await waitFor(() => expect(fixtures.vault.changeVaultPin).toHaveBeenCalledWith('4321', '2468'))
+    expect(screen.getByRole('heading', { name: 'Ana Officer' })).toBeInTheDocument()
+    expect(fixtures.vault.lockVault).not.toHaveBeenCalled()
   })
 
   it('blocks sign out while unfinished drafts remain and routes to Current Work', async () => {

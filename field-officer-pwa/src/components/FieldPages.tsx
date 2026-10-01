@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
-  History, LogOut, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
+  History, LockKeyhole, LogOut, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import { readSecret, writeSecret, type BiometricAvailability } from '../app/vault'
+import { DevicePinInput } from './DevicePinInput'
 import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
 import { apiError, fieldApi } from '../services/fieldApi'
 import type { ArchivedVisit, BootstrapData, FieldSession, FieldVerificationRequest, GeoPosition, MonitoringRecord, MonitoringRecordDetail, Page, QueuedVisit, VisitDraft } from '../types'
@@ -746,14 +747,21 @@ interface ProfilePageProps {
   biometricAvailability: BiometricAvailability
   biometricEnabled: boolean
   onToggleBiometric: () => Promise<void>
+  onChangePin: (currentPin: string, newPin: string) => Promise<void>
   onReplayGuide?: () => void
   onLock?: () => void
   onLogout: () => void
 }
 
-export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onReplayGuide, onLogout }: ProfilePageProps) {
+export function ProfilePage({ session, online, biometricAvailability, biometricEnabled, onToggleBiometric, onChangePin, onReplayGuide, onLogout }: ProfilePageProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pinEditing, setPinEditing] = useState(false)
+  const [currentPin, setCurrentPin] = useState('')
+  const [newPin, setNewPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [pinChanged, setPinChanged] = useState(false)
   const authorizationValid = canFinalizeWithLease(session.offline_lease)
   const biometricDetail = biometricAvailability === 'available'
     ? (biometricEnabled ? 'Enabled on this device. Your four-digit PIN remains available.' : 'Use this device’s fingerprint or facial verification. Your PIN remains the fallback.')
@@ -768,15 +776,46 @@ export function ProfilePage({ session, online, biometricAvailability, biometricE
     try { await onToggleBiometric() } catch (reason) { setError(apiError(reason, 'Biometric security could not be changed.')) } finally { setBusy(false) }
   }
 
+  const closePinForm = () => {
+    setPinEditing(false); setCurrentPin(''); setNewPin(''); setConfirmPin(''); setPinError('')
+  }
+  const submitPinChange = async () => {
+    if (busy) return
+    if (!/^\d{4}$/.test(currentPin) || !/^\d{4}$/.test(newPin) || !/^\d{4}$/.test(confirmPin)) {
+      setPinError('Enter four digits in each PIN field.'); return
+    }
+    if (newPin !== confirmPin) { setPinError('PINs do not match. Re-enter the confirmation.'); return }
+    setBusy(true); setPinError('')
+    try {
+      await onChangePin(currentPin, newPin)
+      closePinForm()
+      setPinChanged(true)
+    } catch (reason) {
+      setCurrentPin('')
+      setPinError(reason instanceof Error ? reason.message : 'The device PIN could not be changed. Your previous PIN still works.')
+    } finally { setBusy(false) }
+  }
+
   return <div className="page field-page field-profile-page">
     <section className="field-profile-identity"><span className="field-profile-avatar"><UserRound /></span><div><h2>{session.user.name}</h2><p>{session.user.email}</p><span>DTI Field Monitoring Officer</span></div></section>
     <div className="field-profile-grid">
       <section><div className="field-settings-heading"><span><BadgeCheck /></span><div><h2>Device authorization</h2><p>Authority to work with downloaded field data.</p></div></div><dl><div><dt>Connection</dt><dd className={online ? 'positive' : ''}>{online ? 'Online' : 'Offline'}</dd></div><div><dt>Offline authorization</dt><dd className={authorizationValid ? 'positive' : 'attention'}>{authorizationValid ? 'Active' : 'Expired'}</dd></div><div><dt>Valid until</dt><dd>{formatDate(session.offline_lease.expires_at)}</dd></div></dl></section>
-      <section><div className="field-settings-heading"><span><Fingerprint /></span><div><h2>Biometric unlock</h2><p>{biometricDetail}</p></div></div>{biometricAvailability === 'available' && <button type="button" className="secondary-button" disabled={busy} onClick={() => void toggleBiometric()}>{busy ? 'Updating…' : biometricEnabled ? 'Disable biometric unlock' : 'Enable biometric unlock'}</button>}{error && <p className="form-error" role="alert">{error}</p>}</section>
+      <section><div className="field-settings-heading"><span><Fingerprint /></span><div><h2>Biometric unlock</h2><p>{biometricDetail}</p></div></div>{biometricAvailability === 'available' && <button type="button" className="secondary-button" disabled={busy} onClick={() => void toggleBiometric()}>{busy && !pinEditing ? 'Updating…' : biometricEnabled ? 'Disable biometric unlock' : 'Enable biometric unlock'}</button>}{error && <p className="form-error" role="alert">{error}</p>}</section>
+      <section><div className="field-settings-heading"><span><LockKeyhole /></span><div><h2>Device PIN</h2><p>Change the four-digit PIN for this device. Your saved visits stay protected.</p></div></div>
+        {pinEditing ? <form className="field-profile-pin-form" onSubmit={(event) => { event.preventDefault(); void submitPinChange() }}>
+          <div className="field-profile-pin-field"><span>Current PIN</span><DevicePinInput autoFocus label="Current 4-digit device PIN" value={currentPin} onChange={setCurrentPin} disabled={busy} /></div>
+          <div className="field-profile-pin-field"><span>New PIN</span><DevicePinInput label="New 4-digit device PIN" value={newPin} onChange={setNewPin} disabled={busy} /></div>
+          <div className="field-profile-pin-field"><span>Confirm new PIN</span><DevicePinInput label="Confirm new 4-digit device PIN" value={confirmPin} onChange={setConfirmPin} disabled={busy} /></div>
+          {pinError && <p className="form-error" role="alert">{pinError}</p>}
+          <button type="submit" className="primary-button" disabled={busy}>{busy ? 'Saving…' : 'Save new PIN'}</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={closePinForm}>Cancel PIN change</button>
+        </form> : <button type="button" className="secondary-button" disabled={busy} onClick={() => { setPinChanged(false); setPinEditing(true) }}>Change device PIN</button>}
+        {pinChanged && <p role="status">Device PIN changed. Use the new PIN at your next unlock.</p>}
+      </section>
       {onReplayGuide && <section><div className="field-settings-heading"><span><Eye /></span><div><h2>App guide</h2><p>Review what each section does and how to complete a visit.</p></div></div><button type="button" className="secondary-button" onClick={onReplayGuide}>Replay app guide</button></section>}
     </div>
     <div className="field-profile-signout-section">
-      <button type="button" className="field-signout-button" onClick={onLogout}>
+      <button type="button" className="field-signout-button" disabled={busy} onClick={onLogout}>
         <LogOut size={18} aria-hidden="true" />
         <span>Sign out</span>
       </button>

@@ -8,7 +8,7 @@ Installable React PWA for DTI field officers. Accounts are issued from Admin Use
 2. Run `npm install`.
 3. Run `npm run dev` (defaults to `http://localhost:5175`).
 
-The first sign-in must be online. The Admin-issued password is the officer's final credential, followed by creation of a 4–8 digit device PIN. A random AES-GCM data key protects cached field data in IndexedDB and is wrapped by the PIN-derived key. Supported devices may also enable WebAuthn PRF biometric unlock while retaining the PIN fallback.
+The first sign-in must be online. The Admin-issued password is the officer's final credential, followed by creation of a four-digit device PIN. Officers can change that PIN from Profile, including offline, by entering the current PIN and confirming a new one. A random AES-GCM data key protects cached field data in IndexedDB and is wrapped by the PIN-derived key. Supported devices may also enable WebAuthn PRF biometric unlock while retaining the PIN fallback.
 
 ## Production configuration
 

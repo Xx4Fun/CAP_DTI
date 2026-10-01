@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  archiveUnreadableDrafts, archiveUnreadableQueue, clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
+  archiveUnreadableDrafts, archiveUnreadableQueue, changeVaultPin, clearVault, createVault, enableBiometricUnlock, getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock,
   isBiometricUnlockAvailable, lockVault, readSecret, restoreVaultSession,
   requestPersistentStorage, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './vault'
@@ -325,6 +325,61 @@ describe('encrypted offline vault', () => {
     await unlockVault('2468')
     expect(await readSecret('queue')).toEqual([{ client_uuid: 'evidence-1' }])
     expect(await hasBiometricUnlock()).toBe(true)
+  })
+
+  it('changes the PIN while preserving encrypted work, session restore, and biometric unlock', async () => {
+    const provider = biometricProvider()
+    await createVault('4321')
+    await writeSecret('drafts', [{ client_uuid: 'unfinished-visit' }])
+    await writeSecret('queue', [{ client_uuid: 'pending-visit' }])
+    await enableBiometricUnlock(provider)
+    const encryptedDrafts = await rawRecord('secret:drafts')
+    const encryptedQueue = await rawRecord('secret:queue')
+
+    await changeVaultPin('4321', '2468')
+    expect(await rawRecord('secret:drafts')).toEqual(encryptedDrafts)
+    expect(await rawRecord('secret:queue')).toEqual(encryptedQueue)
+    expect(await readSecret('drafts')).toEqual([{ client_uuid: 'unfinished-visit' }])
+    expect(await restoreVaultSession()).toBe(true)
+    lockVault()
+    await expect(unlockVault('4321')).rejects.toThrow('PIN')
+    await unlockVault('2468')
+    expect(await readSecret('queue')).toEqual([{ client_uuid: 'pending-visit' }])
+    lockVault()
+    await unlockVaultWithBiometrics(provider)
+    expect(await readSecret('drafts')).toEqual([{ client_uuid: 'unfinished-visit' }])
+    expect(await hasBiometricUnlock()).toBe(true)
+  })
+
+  it('rejects an incorrect, invalid, or unchanged PIN without altering the vault', async () => {
+    await createVault('4321')
+    await writeSecret('drafts', [{ client_uuid: 'preserved' }])
+    const original = await rawRecord('vault:v2')
+
+    await expect(changeVaultPin('1111', '2468')).rejects.toThrow('current PIN')
+    await expect(changeVaultPin('4321', '4321')).rejects.toThrow('different')
+    await expect(changeVaultPin('4321', '12')).rejects.toThrow('four digits')
+    expect(await rawRecord('vault:v2')).toEqual(original)
+    expect(await readSecret('drafts')).toEqual([{ client_uuid: 'preserved' }])
+    lockVault()
+    await unlockVault('4321')
+  })
+
+  it('keeps the previous PIN when saving the new wrapper fails', async () => {
+    await createVault('4321')
+    await writeSecret('queue', [{ client_uuid: 'preserved' }])
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(() => { throw new Error('simulated interruption') })
+    try {
+      await expect(changeVaultPin('4321', '2468')).rejects.toThrow('simulated interruption')
+    } finally {
+      put.mockRestore()
+    }
+
+    lockVault()
+    await unlockVault('4321')
+    expect(await readSecret('queue')).toEqual([{ client_uuid: 'preserved' }])
+    lockVault()
+    await expect(unlockVault('2468')).rejects.toThrow('PIN')
   })
 
   it('keeps the previous PIN wrapper when a migration write is interrupted', async () => {

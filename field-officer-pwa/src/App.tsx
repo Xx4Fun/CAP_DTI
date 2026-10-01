@@ -18,7 +18,7 @@ import { SignaturePad } from './components/SignaturePad'
 import { apiError, fieldApi } from './services/fieldApi'
 import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
 import {
-  archiveUnreadableDrafts, archiveUnreadableQueue, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
+  archiveUnreadableDrafts, archiveUnreadableQueue, changeVaultPin, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
   requestPersistentStorage, restoreVaultSession, rewrapVaultPin, unlockVault, unlockVaultWithBiometrics, writeSecret,
 } from './app/vault'
@@ -734,7 +734,7 @@ export default function App() {
             setActiveDraftId(null); setCompletion({ status: completionStatus, storeName }); setView('home')
           }} />}
           {view === 'history' && <HistoryPage session={session} online={online} />}
-          {view === 'profile' && <ProfilePage session={session} online={online} biometricAvailability={biometricAvailability} biometricEnabled={biometricEnabled} onToggleBiometric={toggleBiometric} onReplayGuide={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()} onLogout={() => void logoutWorkspace()} />}
+          {view === 'profile' && <ProfilePage session={session} online={online} biometricAvailability={biometricAvailability} biometricEnabled={biometricEnabled} onToggleBiometric={toggleBiometric} onChangePin={changeVaultPin} onReplayGuide={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()} onLogout={() => void logoutWorkspace()} />}
           {guideOpen && <FirstUseGuide step={guideStep} onStep={setGuideStep} onClose={closeGuide} />}
           <NotificationDrawer open={notificationsOpen} online={online} state={notificationState} notifications={notifications} onClose={() => setNotificationsOpen(false)} onRead={(id) => void readNotification(id)} onReadAll={() => void readAllNotifications()} />
           {signOutDialog && (
