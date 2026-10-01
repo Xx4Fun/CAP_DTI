@@ -101,7 +101,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
         </nav>
 
         <main className="settings-content-card">
-          {tab === 'signatories' ? <LegalSignatoriesSettings canEdit={user.role === 'super_admin'} /> : <>
+          {tab === 'signatories' ? <LegalSignatoriesSettings canEdit={user.role === 'super_admin' || user.role === 'dti_evaluator'} /> : <>
           <form onSubmit={handleProfileSubmit} className="settings-form-section">
             <div className="settings-section-header">
               <h3>My Profile &amp; Security</h3>

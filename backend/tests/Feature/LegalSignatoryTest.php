@@ -45,11 +45,18 @@ class LegalSignatoryTest extends TestCase
         $this->actingAs($this->evaluator, 'sanctum')->getJson('/api/admin/legal-signatories')->assertOk()->assertJsonPath('data.LOI.name', 'Atty. Ana Reyes');
     }
 
-    public function test_only_a_super_admin_can_change_signatories_or_their_image(): void
+    public function test_dti_evaluators_can_change_signatories_but_field_officers_cannot(): void
     {
-        $this->actingAs($this->evaluator, 'sanctum')->putJson('/api/admin/legal-signatories/LOI', ['name' => 'Someone', 'office' => 'Office'])->assertForbidden();
-        $this->actingAs($this->evaluator, 'sanctum')->post('/api/admin/legal-signatories/LOI/signature', ['signature' => UploadedFile::fake()->image('sig.png', 600, 200)], ['Accept' => 'application/json'])->assertForbidden();
-        $this->actingAs($this->superAdmin, 'sanctum')->putJson('/api/admin/legal-signatories/XYZ', ['name' => 'Someone', 'office' => 'Office'])->assertNotFound();
+        $this->actingAs($this->evaluator, 'sanctum')->putJson('/api/admin/legal-signatories/LOI', ['name' => 'Atty. Ana Reyes', 'office' => 'Provincial Director, DTI Antique'])
+            ->assertOk()->assertJsonPath('data.name', 'Atty. Ana Reyes');
+        $this->actingAs($this->evaluator, 'sanctum')->post('/api/admin/legal-signatories/LOI/signature', ['signature' => UploadedFile::fake()->image('sig.png', 600, 200)], ['Accept' => 'application/json'])
+            ->assertOk()->assertJsonPath('data.has_signature', true);
+        $this->assertDatabaseHas('audit_events', ['action' => 'legal.signature_uploaded', 'subject_type' => 'legal-signatory:LOI']);
+
+        $officer = User::create(['name' => 'Officer', 'email' => 'officer@dti.test', 'password' => 'password', 'role' => 'field_officer']);
+        $this->actingAs($officer, 'sanctum')->putJson('/api/admin/legal-signatories/LOI', ['name' => 'Someone', 'office' => 'Office'])->assertForbidden();
+        $this->actingAs($officer, 'sanctum')->post('/api/admin/legal-signatories/LOI/signature', ['signature' => UploadedFile::fake()->image('sig.png', 600, 200)], ['Accept' => 'application/json'])->assertForbidden();
+        $this->actingAs($this->evaluator, 'sanctum')->putJson('/api/admin/legal-signatories/XYZ', ['name' => 'Someone', 'office' => 'Office'])->assertNotFound();
     }
 
     public function test_signature_image_is_private_validated_replaced_and_removable(): void

@@ -376,7 +376,7 @@ export const LegalNoticeManager = () => {
   const policyOff = !!notice && notice.policy?.status !== 'LEGAL_POLICY_AVAILABLE'
   const missing = notice ? missingReadiness(readiness) : []
   const issueHint = !notice ? 'Start a draft first.'
-    : policyOff ? (notice.signatory?.name ? POLICY_OFF : `Issuing needs a ${notice.notice_type} signatory. A Super Admin sets the name in Settings → Legal Signatories.`)
+    : policyOff ? (notice.signatory?.name ? POLICY_OFF : `Issuing needs a ${notice.notice_type} signatory. Set the name in Settings → Legal Signatories.`)
     : missing.length ? `Still needed: ${missing[0].label}.` : dirty ? 'Unsaved edits are saved automatically when you issue.' : 'Ready to issue.'
 
   return <div className="legal-workspace">

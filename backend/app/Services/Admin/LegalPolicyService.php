@@ -105,7 +105,7 @@ class LegalPolicyService
         return $this->rule($noticeType);
     }
 
-    /** The configured rule for a type, with the signatory a Super Admin set in Settings taking precedence. */
+    /** The configured rule for a type, with the signatory a DTI admin set in Settings taking precedence. */
     private function rule(string $type): array
     {
         $rule = config("legal_policy.rules.$type", []);

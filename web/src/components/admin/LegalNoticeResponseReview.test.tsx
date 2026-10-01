@@ -238,7 +238,7 @@ describe('Legal Actions vendor response review', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
     expect(screen.getByRole('button', { name: /Issue Notice/ })).toBeDisabled()
-    expect(screen.getByText('Issuing needs a LOI signatory. A Super Admin sets the name in Settings → Legal Signatories.')).toBeInTheDocument()
+    expect(screen.getByText('Issuing needs a LOI signatory. Set the name in Settings → Legal Signatories.')).toBeInTheDocument()
   })
 
   it('saves unsaved edits automatically before the preview', async () => {

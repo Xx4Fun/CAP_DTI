@@ -25,7 +25,7 @@ describe('LegalSignatoriesSettings', () => {
     api.getLegalSignatories.mockResolvedValue({ LOI: record(), SCO: record({ name: 'Atty. Ben Cruz', office: 'Director, Fair Trade Enforcement Bureau', source: 'settings' }) })
   })
 
-  it('lets a Super Admin set the LOI signatory and upload an e-signature', async () => {
+  it('lets DTI staff set the LOI signatory and upload an e-signature', async () => {
     api.updateLegalSignatory.mockResolvedValue(record({ name: 'Atty. Ana Reyes', source: 'settings' }))
     api.uploadLegalSignature.mockResolvedValue(record({ name: 'Atty. Ana Reyes', source: 'settings', has_signature: true, updated_at: '2026-09-28T01:00:00Z' }))
     api.getLegalSignatureImage.mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
@@ -54,12 +54,31 @@ describe('LegalSignatoriesSettings', () => {
     expect(api.uploadLegalSignature).not.toHaveBeenCalled()
   })
 
-  it('shows evaluators who signs without letting them change it', async () => {
+  it('shows read-only viewers who signs without letting them change it', async () => {
     render(<LegalSignatoriesSettings canEdit={false} />)
     const sco = await screen.findByRole('form', { name: 'SCO signatory' })
     expect(within(sco).getByLabelText('Signatory name')).toHaveValue('Atty. Ben Cruz')
     expect(within(sco).getByLabelText('Signatory name')).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Save .* signatory/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Upload e-signature/)).not.toBeInTheDocument()
+    expect(within(screen.getByRole('form', { name: 'LOI signatory' })).getByText('Not set: ask DTI staff')).toBeInTheDocument()
+  })
+
+  it('reloads the preview after a replacement even when updated_at is unchanged', async () => {
+    const signed = record({ name: 'Atty. Ana Reyes', source: 'settings', has_signature: true, updated_at: '2026-09-28T01:00:00Z' })
+    api.getLegalSignatories.mockResolvedValue({ LOI: signed, SCO: record() })
+    api.uploadLegalSignature.mockResolvedValue(signed)
+    api.getLegalSignatureImage.mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
+    URL.createObjectURL = vi.fn(() => 'blob:signature')
+    URL.revokeObjectURL = vi.fn()
+    const user = userEvent.setup()
+    render(<LegalSignatoriesSettings canEdit />)
+
+    const loi = await screen.findByRole('form', { name: 'LOI signatory' })
+    await within(loi).findByRole('img', { name: 'LOI e-signature' })
+    expect(api.getLegalSignatureImage).toHaveBeenCalledTimes(1)
+    await user.upload(within(loi).getByLabelText('Replace e-signature'), new File(['png'], 'sig.png', { type: 'image/png' }))
+    await vi.waitFor(() => expect(api.getLegalSignatureImage).toHaveBeenCalledTimes(2))
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:signature')
   })
 })

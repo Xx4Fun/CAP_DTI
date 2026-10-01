@@ -17,7 +17,7 @@ const messageOf = (error: unknown, fallback: string) => {
   return (response?.data?.errors && Object.values(response.data.errors).flat()[0]) || response?.data?.message || fallback
 }
 
-/** Settings › Legal Signatories. Everyone who issues notices can see who signs; only a Super Admin can change it. */
+/** Settings › Legal Signatories. DTI evaluators and Super Admins set who signs and upload the e-signature. */
 export function LegalSignatoriesSettings({ canEdit }: { canEdit: boolean }) {
   const [records, setRecords] = useState<Record<NoticeType, LegalSignatoryRecord> | null>(null)
   const [error, setError] = useState('')
@@ -30,12 +30,12 @@ export function LegalSignatoriesSettings({ canEdit }: { canEdit: boolean }) {
     <section className="settings-form-section" aria-labelledby="legal-signatories-title">
       <div className="settings-section-header">
         <h3 id="legal-signatories-title">Legal Signatories</h3>
-        <p>The official printed as signatory on issued LOIs and SCOs. {canEdit ? 'Changes ask for your password again and are recorded in the audit trail.' : 'Only a Super Admin can change these.'}</p>
+        <p>The official printed as signatory on issued LOIs and SCOs. {canEdit ? 'Changes ask for your password again and are recorded in the audit trail.' : 'Only DTI staff can change these.'}</p>
       </div>
       {error && <div className="settings-alert-badge error" role="alert">{error}</div>}
       {records && TYPES.map(({ type, title, hint }) => (
         <SignatoryCard key={type} type={type} title={title} hint={hint} record={records[type]} canEdit={canEdit}
-          onSaved={(next) => setRecords({ ...records, [type]: next })} />
+          onSaved={(next) => setRecords((current) => current && { ...current, [type]: next })} />
       ))}
     </section>
   )
@@ -49,17 +49,23 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<string | null>(null)
+  // Bumped on every successful change: two uploads within one second share an updated_at.
+  const [revision, setRevision] = useState(0)
 
   useEffect(() => {
     if (!record.has_signature) { setPreview(null); return }
+    let active = true
     let url: string | null = null
-    adminApi.getLegalSignatureImage(type).then((blob) => { url = URL.createObjectURL(blob); setPreview(url) }).catch(() => setPreview(null))
-    return () => { if (url) URL.revokeObjectURL(url) }
-  }, [type, record.has_signature, record.updated_at])
+    setPreview(null)
+    adminApi.getLegalSignatureImage(type)
+      .then((blob) => { if (!active) return; url = URL.createObjectURL(blob); setPreview(url) })
+      .catch(() => { if (active) setPreview(null) })
+    return () => { active = false; if (url) URL.revokeObjectURL(url) }
+  }, [type, record.has_signature, record.updated_at, revision])
 
   const run = async (action: () => Promise<LegalSignatoryRecord>, done: string) => {
     setBusy(true); setError('')
-    try { onSaved(await action()); adminToast.success(done, { id: `signatory-${type}` }) }
+    try { onSaved(await action()); setRevision((value) => value + 1); adminToast.success(done, { id: `signatory-${type}` }) }
     catch (reason) { setError(messageOf(reason, 'The change could not be saved.')) }
     finally { setBusy(false) }
   }
@@ -87,7 +93,7 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
         <PenLine size={18} aria-hidden="true" />
         <div><h4>{title}</h4><p>{hint}</p></div>
         <span className={`legal-signatory-source ${record.name ? '' : 'missing'}`}>
-          {record.name ? (record.source === 'settings' ? 'Set in Settings' : 'From server configuration') : 'Not set: issuing is disabled'}
+          {record.name ? (record.source === 'settings' ? 'Set in Settings' : 'From server configuration') : canEdit ? 'Not set: issuing is disabled' : 'Not set: ask DTI staff'}
         </span>
       </header>
       {error && <div className="settings-alert-badge error" role="alert">{error}</div>}
@@ -103,7 +109,9 @@ function SignatoryCard({ type, title, hint, record, canEdit, onSaved }: {
       </div>
       <div className="legal-signatory-image">
         <div className="legal-signatory-preview">
-          {preview ? <img src={preview} alt={`${type} e-signature`} /> : <span>No e-signature uploaded. Notices print the name only and are signed by hand.</span>}
+          {preview ? <img src={preview} alt={`${type} e-signature`} />
+            : record.has_signature ? <span>E-signature on file. Loading preview…</span>
+            : <span>No e-signature uploaded. Notices print the name only and are signed by hand.</span>}
         </div>
         {canEdit && (
           <div className="legal-signatory-image-actions">

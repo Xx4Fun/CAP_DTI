@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/** Settings › Legal Signatories: who signs LOIs and SCOs, and their e-signature image. Super Admin only to change. */
+/** Settings › Legal Signatories: who signs LOIs and SCOs, and their e-signature image. Any DTI admin (evaluator or Super Admin) may change it. */
 class LegalSignatoryController extends Controller
 {
     public function index(Request $request, AdminAuthorizationService $auth, LegalSignatoryService $signatories)
@@ -81,7 +81,8 @@ class LegalSignatoryController extends Controller
 
     private function authorizeChange(Request $request, string $type, SensitiveActionGuard $guard): string
     {
-        abort_unless($request->user()?->role === 'super_admin', 403, 'Only a Super Admin can change legal signatories.');
+        // No Super Admin account exists in this deployment, so DTI evaluators manage signatories; the password re-check and audit trail still apply.
+        abort_unless($request->user() && app(AdminAuthorizationService::class)->canManage($request->user()), 403, 'Only DTI staff can change legal signatories.');
         $guard->requireRecentReauthentication($request);
         return $this->type($type);
     }

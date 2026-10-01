@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Who signs each notice type. Names, positions, and the e-signature image are kept in system_settings by a
- * Super Admin; the legal_policy config (and its env signatory names) is the fallback.
+ * DTI admin; the legal_policy config (and its env signatory names) is the fallback.
  */
 class LegalSignatoryService
 {

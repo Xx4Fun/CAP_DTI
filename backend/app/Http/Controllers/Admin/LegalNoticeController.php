@@ -172,7 +172,7 @@ class LegalNoticeController extends Controller
                 // The e-signature is stamped only when the issuing evaluator explicitly applies it.
                 $signatories = app(LegalSignatoryService::class);
                 $signatory = $signatories->forType($notice->notice_type);
-                abort_if($applySignature && ! $signatory['image_path'], 422, 'No e-signature image is set for this notice type. Ask a Super Admin to upload it in Settings, or issue without it.');
+                abort_if($applySignature && ! $signatory['image_path'], 422, 'No e-signature image is set for this notice type. Upload it in Settings › Legal Signatories, or issue without it.');
                 $signatureImage = $applySignature ? $signatories->imageDataUri($signatory) : null;
                 $notice->signatory_snapshot = ['name' => $rules['signatory']['name'], 'office' => $rules['signatory']['office'], 'signature_applied' => (bool) $signatureImage, 'signature_sha256' => $signatureImage ? $signatory['image_sha256'] : null];
                 $bytes = Pdf::loadView($policy->templateFor($notice->notice_type), ['notice' => $notice, 'draft' => false, 'policy' => $rules, 'signatureImage' => $signatureImage])->setPaper('a4')->output();
