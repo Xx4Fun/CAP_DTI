@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
@@ -361,24 +362,14 @@ export function MonitoringPage({
                         </div>
                       </div>
 
-                      <div className="field-draft-stats-grid">
+                      <div className="field-draft-stats-grid field-assigned-stats">
                         <div className="field-draft-stat">
                           <small>Directive Type</small>
                           <strong>{isComplaint ? 'Citizen Complaint' : 'Supervisor Directive'}</strong>
                         </div>
                         <div className="field-draft-stat">
-                          <small>Directive Status</small>
-                          <strong className="stat-ok">
-                            {hasDraft ? 'Draft in progress' : 'Ready for visit'}
-                          </strong>
-                        </div>
-                        <div className="field-draft-stat">
                           <small>Assignment Scope</small>
                           <strong>Full Retail Audit</strong>
-                        </div>
-                        <div className="field-draft-stat">
-                          <small>Reference / ID</small>
-                          <strong>#{request.id} · Priority</strong>
                         </div>
                       </div>
 
@@ -431,7 +422,7 @@ export function MonitoringPage({
             </section>
           ) : null}
 
-        {confirmRelease && (
+        {confirmRelease && createPortal(
           <div className="field-dialog-backdrop" role="presentation" onClick={() => setConfirmRelease(null)}>
             <section
               className="field-dialog field-discard-dialog field-release-dialog"
@@ -445,12 +436,12 @@ export function MonitoringPage({
                 The assigned visit for <strong>{confirmRelease.store.store_name}</strong> will be removed from your list and sent back to Admin for reassignment.
               </p>
               <div className="field-dialog-actions">
-                <button type="button" className="secondary-button" onClick={() => setConfirmRelease(null)}>
+                <button type="button" className="primary-button" onClick={() => setConfirmRelease(null)}>
                   Keep assignment
                 </button>
                 <button
                   type="button"
-                  className="primary-button"
+                  className="danger-button"
                   disabled={!online}
                   onClick={() => {
                     const request = confirmRelease
@@ -462,7 +453,8 @@ export function MonitoringPage({
                 </button>
               </div>
             </section>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>}
 
@@ -561,7 +553,7 @@ export function MonitoringPage({
         const targetDraft = drafts.find((d) => d.client_uuid === confirmDiscard)
         const targetStore = bootstrap.stores.find((s) => s.id === targetDraft?.store_id)
         const storeName = targetStore?.store_name || (targetDraft?.store_id ? `Store #${targetDraft.store_id}` : 'Store not yet chosen')
-        return (
+        return createPortal(
           <div className="field-dialog-backdrop" role="presentation" onClick={() => setConfirmDiscard(null)}>
             <section
               className="field-dialog field-discard-dialog"
@@ -594,7 +586,8 @@ export function MonitoringPage({
                 </button>
               </div>
             </section>
-          </div>
+          </div>,
+          document.body,
         )
       })()}
       </div>}
