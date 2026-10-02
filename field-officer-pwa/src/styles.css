@@ -1326,6 +1326,129 @@ html, body, #root {
   border-color: #ef4444;
 }
 
+/* Assigned Visits Modern Cards (matching Current Work) */
+.field-verification-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-verification-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-assigned-work-card {
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #dce4ee;
+  box-shadow: 0 10px 28px rgba(15, 39, 79, 0.08);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.field-assigned-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #0e305d 0%, #174281 100%);
+  color: #ffffff;
+}
+
+.field-assigned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.field-assigned-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7);
+  animation: pulse-ring-assigned 2s infinite;
+}
+
+@keyframes pulse-ring-assigned {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+}
+
+.field-assigned-store-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.field-assigned-reason-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+}
+
+.field-assigned-reason-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #b45309;
+}
+
+.field-assigned-reason-text {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #78350f;
+  line-height: 1.45;
+}
+
+.field-assigned-return-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  border-color: #cbd5e1;
+  background: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.field-assigned-return-btn:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.field-assigned-return-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
 .field-discard-dialog {
   max-width: 440px;
   padding: 24px;
@@ -1419,6 +1542,56 @@ html, body, #root {
   gap: 8px;
   flex-shrink: 0;
 }
+
+/* Return to Admin confirmation */
+.field-release-dialog .field-dialog-actions { justify-content: space-between; }
+
+/* Sync Queue hero + cards (mirror Current Work) */
+.field-sync-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px solid #dce4ee;
+  border-radius: 18px;
+  box-shadow: 0 10px 28px rgba(15, 39, 79, 0.08);
+}
+
+.field-sync-hero-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.field-sync-hero-text h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.field-sync-hero .field-sync-btn { flex-shrink: 0; }
+
+@media (max-width: 480px) {
+  .field-sync-hero { flex-wrap: wrap; }
+  .field-sync-hero .field-sync-btn { width: 100%; justify-content: center; min-height: 44px; }
+}
+
+.field-queue-badge { color: #fcd34d; }
+.field-queue-pulse { background: #fbbf24; animation: none; }
+
+.field-queue-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.field-draft-body .field-queue-expanded-content { padding: 0; border-top: 0; background: none; }
+.field-draft-body .field-queue-evidence-strip span { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Sync Queue Accordion */
 .field-sync-header-controls {
@@ -1906,8 +2079,9 @@ html, body, #root {
 .field-profile-grid dd.attention { color: #a45e06; }
 .field-profile-grid .secondary-button { width: 100%; margin-top: auto; padding-top: 10px; }
 .field-profile-pin-form { display: grid; gap: 12px; margin-top: 18px; }
-.field-profile-pin-field { display: grid; gap: 8px; }
-.field-profile-pin-field > span { color: #183757; font-size: .82rem; font-weight: 700; }
+.field-profile-pin-field { display: flex; align-items: center; gap: 12px; }
+.field-profile-pin-field > span { flex: 0 0 120px; color: #183757; font-size: .82rem; font-weight: 700; }
+.field-profile-pin-field > .device-pin-field { flex: 1; min-width: 0; }
 .field-profile-pin-form .pin-slots { gap: 8px; }
 .field-profile-pin-form .pin-slots > span { width: min(52px, 21%); height: 52px; font-size: 1.6rem; }
 .field-profile-pin-form > button { width: 100%; }

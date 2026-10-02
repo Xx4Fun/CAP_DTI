@@ -147,6 +147,9 @@ describe('Field top-level pages', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Sync Queue 1' }))
     expect(screen.getByText('Pending upload')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Pending upload for Market One' })).toBeInTheDocument()
+    expect(screen.queryByText(/Completed visits remain protected/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Rep:/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Sync all now' }))
     expect(sync).toHaveBeenCalledTimes(1)
 
@@ -179,9 +182,49 @@ describe('Field top-level pages', () => {
     )
 
     expect(screen.getByText('Showing saved assigned visits')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Assigned visit for Market One' })).toBeInTheDocument()
     expect(screen.getByText('Market One')).toBeInTheDocument()
+    expect(screen.getAllByText('Supervisor Directive')).toHaveLength(2)
+    expect(screen.getByText('Ready for visit')).toBeInTheDocument()
+    expect(screen.getByText('Check the reported shelf price.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start assigned visit' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Return to Admin' })).toBeDisabled()
+  })
+
+  it('confirms before returning an assigned visit to Admin', () => {
+    const release = vi.fn()
+    const request = { id: 8, source_type: 'complaint' as const, status: 'claimed' as const, reason: 'Check shelf price.', requested_at: '2026-08-30T00:00:00Z', claimed_at: '2026-08-30T00:05:00Z', claimed_by: 1, store: bootstrap.stores[0] }
+    render(
+      <MonitoringPage
+        initialTab="verification"
+        drafts={[]}
+        queue={[]}
+        bootstrap={bootstrap}
+        online
+        syncing={false}
+        authorizationValid
+        requests={[request]}
+        requestsState="ready"
+        onStartAssigned={vi.fn()}
+        onRelease={release}
+        onRetry={vi.fn()}
+        onResume={vi.fn()}
+        onStart={vi.fn()}
+        onDiscard={vi.fn()}
+        onSync={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Admin' }))
+    expect(screen.getByRole('dialog', { name: 'Return this visit to Admin?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep assignment' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(release).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Admin' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, return' }))
+    expect(release).toHaveBeenCalledWith(request)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('shows accepted server records in History without a local queue section', async () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Building2, CalendarCheck, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ClipboardList, Clock, CloudOff, Compass, Eye, Fingerprint,
-  History, LockKeyhole, LogOut, MapPin, PackageSearch, Plus, RefreshCw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
+  History, LockKeyhole, LogOut, MapPin, PackageSearch, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, TriangleAlert, UserRound, WifiOff,
 } from 'lucide-react'
 import { canFinalizeWithLease } from '../app/sessionPolicy'
 import { readSecret, writeSecret, type BiometricAvailability } from '../app/vault'
@@ -304,8 +304,14 @@ export function MonitoringPage({
   const [tab, setTab] = useState<'work' | 'verification' | 'sync'>(initialTab)
   const [expandedQueue, setExpandedQueue] = useState<string | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
+  const [confirmRelease, setConfirmRelease] = useState<FieldVerificationRequest | null>(null)
   const actionableDrafts = drafts.filter((d) => d.store_id !== null || d.items.length > 0)
   const sortedDrafts = [...actionableDrafts].sort((a, b) => b.started_at.localeCompare(a.started_at))
+  const countAnomalies = (items: VisitDraft['items']) => items.reduce((count, item) => {
+    const srp = bootstrap.srp_bulletins.find((bulletin) => bulletin.id === item.srp_id)
+    if (!srp) return count
+    return analyzeWithReference(item, resolveVisitReference(item, srp, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || [])).is_anomaly ? count + 1 : count
+  }, 0)
 
   const toggleQueueItem = (uuid: string) => {
     setExpandedQueue((prev) => (prev === uuid ? null : uuid))
@@ -320,31 +326,152 @@ export function MonitoringPage({
         <button type="button" role="tab" aria-selected={tab === 'sync'} onClick={() => setTab('sync')}>Sync Queue <span className="tab-badge">{queue.length}</span></button>
       </div>
 
-      {tab === 'verification' && <section className="field-card-section field-verification-section" role="tabpanel">
+      {tab === 'verification' && <div role="tabpanel" className="field-verification-tabpanel">
         {requestsState === 'unavailable' && <div className="field-offline-state"><WifiOff /><div><h2>Showing saved assigned visits</h2><p>Reconnect to refresh assignments. Saved assignments remain available offline.</p></div></div>}
         {requestsState === 'loading' && requests.length === 0 ? <div role="status">Loading assigned visits…</div>
-          : requests.length ? <div className="field-verification-list">{requests.map((request) => <article key={request.id}>
-              <div><strong>{request.store.store_name}</strong><small>{request.store.address}</small></div>
-              <small>{request.source_type === 'complaint' ? 'Complaint verification' : 'Supervisor directive'}</small>
-              <p>{request.reason}</p>
-              <small>Requested {formatDate(request.requested_at)}</small>
-              <div className="field-verification-actions">
-                <button type="button" className="primary-button" onClick={() => onStartAssigned(request)}>Start assigned visit</button>
-                {!drafts.some((draft) => draft.verification_request_id === request.id) && <button type="button" className="secondary-button" disabled={!online} onClick={() => onRelease(request)}>Return to Admin</button>}
+          : requests.length ? (
+            <div className="field-verification-cards">
+              {requests.map((request) => {
+                const isComplaint = request.source_type === 'complaint'
+                const hasDraft = drafts.some((draft) => draft.verification_request_id === request.id)
+                return (
+                  <section
+                    key={request.id}
+                    className="field-active-work-card field-assigned-work-card"
+                    aria-label={`Assigned visit for ${request.store.store_name}`}
+                  >
+                    <div className="field-draft-banner field-assigned-banner">
+                      <span className="field-draft-badge field-assigned-badge">
+                        <span className="field-draft-pulse field-assigned-pulse" />
+                        {isComplaint ? 'Complaint Verification' : 'Supervisor Directive'}
+                      </span>
+                      <span className="field-draft-timestamp">
+                        Requested {formatDate(request.requested_at)}
+                      </span>
+                    </div>
+
+                    <div className="field-draft-body">
+                      <div className="field-draft-store-info">
+                        <div className="field-draft-store-icon field-assigned-store-icon">
+                          <Building2 size={24} />
+                        </div>
+                        <div>
+                          <h2>{request.store.store_name}</h2>
+                          <p>{request.store.address}</p>
+                        </div>
+                      </div>
+
+                      <div className="field-draft-stats-grid">
+                        <div className="field-draft-stat">
+                          <small>Directive Type</small>
+                          <strong>{isComplaint ? 'Citizen Complaint' : 'Supervisor Directive'}</strong>
+                        </div>
+                        <div className="field-draft-stat">
+                          <small>Directive Status</small>
+                          <strong className="stat-ok">
+                            {hasDraft ? 'Draft in progress' : 'Ready for visit'}
+                          </strong>
+                        </div>
+                        <div className="field-draft-stat">
+                          <small>Assignment Scope</small>
+                          <strong>Full Retail Audit</strong>
+                        </div>
+                        <div className="field-draft-stat">
+                          <small>Reference / ID</small>
+                          <strong>#{request.id} · Priority</strong>
+                        </div>
+                      </div>
+
+                      {request.reason && (
+                        <div className="field-assigned-reason-box">
+                          <div className="field-assigned-reason-header">
+                            <ClipboardList size={15} />
+                            <span>Evaluator Instructions / Reason</span>
+                          </div>
+                          <p className="field-assigned-reason-text">{request.reason}</p>
+                        </div>
+                      )}
+
+                      <div className="field-draft-actions-bar">
+                        <button
+                          type="button"
+                          className="primary-button field-draft-resume"
+                          onClick={() => onStartAssigned(request)}
+                        >
+                          <ArrowRight size={18} />
+                          <span>Start assigned visit</span>
+                        </button>
+
+                        {!hasDraft && (
+                          <button
+                            type="button"
+                            className="secondary-button field-assigned-return-btn"
+                            disabled={!online}
+                            onClick={() => setConfirmRelease(request)}
+                          >
+                            <RotateCcw size={16} />
+                            <span>Return to Admin</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          ) : requestsState === 'ready' ? (
+            <section className="field-card-section field-activity-empty-card">
+              <div className="field-empty-visual">
+                <CheckCircle2 size={36} />
               </div>
-            </article>)}</div> : requestsState === 'ready' ? <div className="field-quiet-state"><CheckCircle2 /><strong>No assigned visits</strong><span>Complaint and supervisor assignments will appear here.</span></div> : null}
-      </section>}
+              <div className="field-empty-text">
+                <h2>No assigned visits</h2>
+                <p>Complaint and supervisor assignments will appear here.</p>
+              </div>
+            </section>
+          ) : null}
+
+        {confirmRelease && (
+          <div className="field-dialog-backdrop" role="presentation" onClick={() => setConfirmRelease(null)}>
+            <section
+              className="field-dialog field-discard-dialog field-release-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="field-release-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="field-release-title">Return this visit to Admin?</h2>
+              <p>
+                The assigned visit for <strong>{confirmRelease.store.store_name}</strong> will be removed from your list and sent back to Admin for reassignment.
+              </p>
+              <div className="field-dialog-actions">
+                <button type="button" className="secondary-button" onClick={() => setConfirmRelease(null)}>
+                  Keep assignment
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={!online}
+                  onClick={() => {
+                    const request = confirmRelease
+                    setConfirmRelease(null)
+                    onRelease(request)
+                  }}
+                >
+                  Yes, return
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+      </div>}
 
       {tab === 'work' && <div role="tabpanel">
       {sortedDrafts.length ? sortedDrafts.map((activeDraft) => {
         const activeStore = bootstrap.stores.find((store) => store.id === activeDraft.store_id)
         const activeStoreName = activeStore?.store_name || (activeDraft.store_id ? `Store #${activeDraft.store_id}` : 'Store not yet chosen')
         const activeStoreAddress = activeStore?.address || 'Establishment selection pending'
-        const activeAnomalies = activeDraft.items.reduce((count, item) => {
-          const srp = bootstrap.srp_bulletins.find((bulletin) => bulletin.id === item.srp_id)
-          if (!srp) return count
-          return analyzeWithReference(item, resolveVisitReference(item, srp, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || [])).is_anomaly ? count + 1 : count
-        }, 0)
+        const activeAnomalies = countAnomalies(activeDraft.items)
         return (
         <section key={activeDraft.client_uuid} className="field-active-work-card" aria-label={`Unfinished visit for ${activeStoreName}`}>
           <div className="field-draft-banner">
@@ -472,120 +599,147 @@ export function MonitoringPage({
       })()}
       </div>}
 
-      {tab === 'sync' && <section className="field-card-section field-sync-section" aria-label="Queued offline visits" role="tabpanel">
-        <div className="field-section-card-header">
-          <div className="field-section-title-wrap">
-            <div className="field-section-icon bento-icon-amber">
-              <CloudOff size={18} />
-            </div>
-            <div>
-              <h3>Pending uploads</h3>
-              <p>Completed visits remain protected on this device until accepted by the server.</p>
-            </div>
+      {tab === 'sync' && <div role="tabpanel" aria-label="Queued offline visits" className="field-verification-tabpanel">
+        <section className="field-sync-hero">
+          <div className="field-section-icon bento-icon-amber">
+            <CloudOff size={20} />
           </div>
-          <div className="field-sync-header-controls">
+          <div className="field-sync-hero-text">
+            <h3>Pending uploads</h3>
             <span className="field-queue-counter-badge">{queue.length} pending</span>
-            {queue.length > 0 && (
-              <button
-                type="button"
-                className="primary-button field-sync-btn"
-                disabled={!online || syncing}
-                onClick={onSync}
-              >
-                <RefreshCw size={16} className={syncing ? 'spin' : ''} />
-                <span>{syncing ? 'Synchronizing…' : 'Sync all now'}</span>
-              </button>
-            )}
           </div>
-        </div>
+          {queue.length > 0 && (
+            <button
+              type="button"
+              className="primary-button field-sync-btn"
+              disabled={!online || syncing}
+              onClick={onSync}
+            >
+              <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+              <span>{syncing ? 'Synchronizing…' : 'Sync all now'}</span>
+            </button>
+          )}
+        </section>
 
-        {queue.length > 0 ? (
-          <div className="field-queue-accordion-list">
-            {queue.map((item) => {
-              const store = bootstrap.stores.find((s) => s.id === item.store_id)
-              const storeName = store?.store_name || 'Store not selected'
-              const isExpanded = expandedQueue === item.client_uuid
+        {queue.length > 0 ? queue.map((item) => {
+          const store = bootstrap.stores.find((s) => s.id === item.store_id)
+          const storeName = store?.store_name || 'Store not selected'
+          const isExpanded = expandedQueue === item.client_uuid
+          const anomalies = countAnomalies(item.items)
 
-              return (
-                <article key={item.client_uuid} className={`field-queue-card ${isExpanded ? 'expanded' : ''}`}>
-                  <div className="field-queue-card-summary" onClick={() => toggleQueueItem(item.client_uuid)}>
-                    <div className="field-queue-summary-left">
-                      <div className="field-queue-store-name-row">
-                        <strong>{storeName}</strong>
-                        <span className="field-sync-pill pending">
-                          <CloudOff size={11} />
-                          Pending upload
-                        </span>
-                      </div>
-                      <small className="field-queue-meta-text">
-                        {item.items.length} item{item.items.length === 1 ? '' : 's'} recorded · Finalized {item.finalized_at ? formatDate(item.finalized_at) : 'locally'}
-                        {item.representative?.name ? ` · Rep: ${item.representative.name}` : ''}
-                      </small>
-                      {item.sync_error && <p className="form-error" role="alert">{item.sync_error}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      className="field-queue-toggle-btn"
-                      aria-expanded={isExpanded}
-                      aria-label={isExpanded ? 'Hide recorded items' : 'View recorded items'}
-                    >
-                      <span>{isExpanded ? 'Hide' : 'Details'}</span>
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
+          return (
+            <section key={item.client_uuid} className="field-active-work-card field-assigned-work-card" aria-label={`Pending upload for ${storeName}`}>
+              <div className="field-draft-banner field-queue-banner">
+                <span className="field-draft-badge field-queue-badge">
+                  <span className="field-draft-pulse field-queue-pulse" />
+                  Pending upload
+                </span>
+                <span className="field-draft-timestamp">Finalized {item.finalized_at ? formatDate(item.finalized_at) : 'locally'}</span>
+              </div>
+
+              <div className="field-draft-body">
+                <div className="field-draft-store-info">
+                  <div className="field-draft-store-icon">
+                    <Building2 size={24} />
                   </div>
+                  <div>
+                    <h2>{storeName}</h2>
+                    <p>{store?.address || 'Address unavailable'}</p>
+                  </div>
+                </div>
 
-                  {isExpanded && (
-                    <div className="field-queue-expanded-content">
+                <div className="field-draft-stats-grid">
+                  <div className="field-draft-stat">
+                    <small>Prices Encoded</small>
+                    <strong>{item.items.length} line{item.items.length === 1 ? '' : 's'}</strong>
+                  </div>
+                  <div className="field-draft-stat">
+                    <small>Reference assessment</small>
+                    <strong className={anomalies > 0 ? 'stat-warn' : 'stat-ok'}>
+                      {anomalies > 0 ? `${anomalies} for review` : 'Within reference range'}
+                    </strong>
+                  </div>
+                  <div className="field-draft-stat">
+                    <small>Signatures</small>
+                    <strong>{item.signatures.officer_png_base64 && item.signatures.representative_png_base64 ? 'Both signed' : 'Signatures pending'}</strong>
+                  </div>
+                  <div className="field-draft-stat">
+                    <small>GPS Location</small>
+                    <strong>{item.location ? `±${Math.round(item.location.accuracy_meters)} m locked` : 'GPS pending'}</strong>
+                  </div>
+                </div>
+
+                {item.sync_error && <p className="form-error" role="alert">{item.sync_error}</p>}
+
+                {isExpanded && (
+                  <div className="field-queue-expanded-content">
+                    {item.location && (
                       <div className="field-queue-evidence-strip">
-                        <span>✍️ Officer & Representative Signatures Captured</span>
-                        {item.location && (
-                          <span>📍 GPS Lock ±{Math.round(item.location.accuracy_meters)}m ({item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)})</span>
-                        )}
+                        <span><MapPin size={14} /> GPS {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}</span>
                       </div>
+                    )}
 
-                      <div className="field-queue-items-table">
-                        <div className="field-queue-table-head">
-                          <span>Commodity</span>
-                          <span>Active Reference</span>
-                          <span>Recorded Price</span>
-                          <span>Variance</span>
-                        </div>
-                        {item.items.map((line) => {
-                          const bulletin = bootstrap.srp_bulletins.find((b) => b.id === line.srp_id)
-                          const reference = bulletin ? resolveVisitReference(line, bulletin, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || []) : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
-                          const analysis = analyzeWithReference(line, reference)
-                          return (
-                            <div key={line.srp_id} className="field-queue-table-row">
-                              <span className="queue-col-name"><strong>{bulletin?.commodity_name || `Item #${line.srp_id}`}</strong></span>
-                              <span className="queue-col-ref">{reference.value === null ? 'Unavailable' : `₱${reference.value.toFixed(2)}`}</span>
-                              <span className="queue-col-price"><strong>₱{line.recorded_price.toFixed(2)}</strong></span>
-                              <span className="queue-col-variance">
-                                <em className={analysis.is_anomaly ? 'variance-anomaly' : 'variance-ok'}>
-                                  {analysis.label === 'Regulatory reference unavailable' ? 'Unavailable' : analysis.is_anomaly ? `+${analysis.variance_percent}%` : 'Within reference'}
-                                </em>
-                              </span>
-                            </div>
-                          )
-                        })}
+                    <div className="field-queue-items-table">
+                      <div className="field-queue-table-head">
+                        <span>Commodity</span>
+                        <span>Active Reference</span>
+                        <span>Recorded Price</span>
+                        <span>Variance</span>
                       </div>
+                      {item.items.map((line) => {
+                        const bulletin = bootstrap.srp_bulletins.find((b) => b.id === line.srp_id)
+                        const reference = bulletin ? resolveVisitReference(line, bulletin, bootstrap.protocol?.mode || 'standard', bootstrap.regulatory_prices || [], bootstrap.monitoring_references || []) : { status: 'unavailable' as const, type: 'standard_srp' as const, value: null }
+                        const analysis = analyzeWithReference(line, reference)
+                        return (
+                          <div key={line.srp_id} className="field-queue-table-row">
+                            <span className="queue-col-name"><strong>{bulletin?.commodity_name || `Item #${line.srp_id}`}</strong></span>
+                            <span className="queue-col-ref">{reference.value === null ? 'Unavailable' : `₱${reference.value.toFixed(2)}`}</span>
+                            <span className="queue-col-price"><strong>₱{line.recorded_price.toFixed(2)}</strong></span>
+                            <span className="queue-col-variance">
+                              <em className={analysis.is_anomaly ? 'variance-anomaly' : 'variance-ok'}>
+                                {analysis.label === 'Regulatory reference unavailable' ? 'Unavailable' : analysis.is_anomaly ? `+${analysis.variance_percent}%` : 'Within reference'}
+                              </em>
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
-                  )}
-                  {item.sync_error && <button type="button" className="secondary-button field-retry-sync" disabled={!online || syncing} onClick={() => onRetry(item.client_uuid)}>Retry this visit</button>}
-                  {item.sync_error_kind === 'rejected' && onArchive && <button type="button" className="secondary-button field-retry-sync" disabled={syncing} onClick={() => onArchive(item.client_uuid)}>Archive this visit</button>}
-                </article>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="field-quiet-state">
-            <ShieldCheck size={32} />
-            <strong>All visits synchronized</strong>
-            <span>Completed visits are encrypted locally and automatically dispatched once online.</span>
-          </div>
+                  </div>
+                )}
+
+                <div className="field-draft-actions-bar">
+                  <div className="field-queue-card-actions">
+                    {item.sync_error && <button type="button" className="secondary-button" disabled={!online || syncing} onClick={() => onRetry(item.client_uuid)}>Retry this visit</button>}
+                    {item.sync_error_kind === 'rejected' && onArchive && <button type="button" className="secondary-button" disabled={syncing} onClick={() => onArchive(item.client_uuid)}>Archive this visit</button>}
+                  </div>
+                  <button
+                    type="button"
+                    className="field-queue-toggle-btn"
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Hide recorded items' : 'View recorded items'}
+                    onClick={() => toggleQueueItem(item.client_uuid)}
+                  >
+                    <span>{isExpanded ? 'Hide' : 'Details'}</span>
+                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
+                </div>
+              </div>
+            </section>
+          )
+        }) : (
+          <section className="field-card-section field-activity-empty-card">
+            <div className="field-empty-visual">
+              <ShieldCheck size={36} />
+            </div>
+            <div className="field-empty-text">
+              <h2>All visits synchronized</h2>
+              <p>Completed visits are encrypted locally and automatically dispatched once online.</p>
+            </div>
+          </section>
         )}
 
         {archived.length > 0 && (
-          <div className="field-queue-accordion-list" aria-label="Archived visits">
+          <section className="field-card-section field-queue-accordion-list" aria-label="Archived visits">
             <h3>Archived on this device ({archived.length})</h3>
             <p className="field-inline-note">
               <TriangleAlert size={16} />
@@ -607,7 +761,7 @@ export function MonitoringPage({
                 </div>
               </article>
             ))}
-          </div>
+          </section>
         )}
 
         {!online && queue.length > 0 && (
@@ -616,7 +770,7 @@ export function MonitoringPage({
             Connect to the internet to upload {queue.length} secured inspection record{queue.length === 1 ? '' : 's'}.
           </p>
         )}
-      </section>}
+      </div>}
     </div>
   )
 }
