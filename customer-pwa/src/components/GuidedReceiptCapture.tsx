@@ -268,6 +268,15 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     setError('');
   };
 
+  const deleteFrame = (index: number) => {
+    URL.revokeObjectURL(frames[index].url);
+    setFrames((current) => current.filter((_, frameIndex) => frameIndex !== index));
+    // Indexes shift after a removal, so a pending retake could point at the wrong photo.
+    setRetakeIndex(null);
+    // The roll trigger disappears with the last photo, so close rather than strand an empty sheet.
+    if (frames.length === 1) setGalleryOpen(false);
+  };
+
   const cancelCapture = async () => {
     stopCamera();
     try {
@@ -446,12 +455,14 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
           url: frame.url,
           alt: `Receipt section ${index + 1}`,
           retakeLabel: `Retake section ${sectionNumber(index)}`,
+          deleteLabel: `Delete section ${sectionNumber(index)}`,
           viewLabel: `View section ${sectionNumber(index)} full size`,
           flag: frame.issue ? ISSUE_TEXT[frame.issue].flag : undefined,
         }))}
         triggerRef={galleryTriggerRef}
         onDismiss={() => setGalleryOpen(false)}
         onRetake={(index) => { setRetakeIndex(index); setGalleryOpen(false); }}
+        onDelete={deleteFrame}
         onView={(index) => setViewer({ url: frames[index].url, sequence: index })}
         onRestart={targetedRecapture ? undefined : () => { clearFrames(); setGalleryOpen(false); }}
         note={`${frames.length} of ${maximumFrames} sections captured`}

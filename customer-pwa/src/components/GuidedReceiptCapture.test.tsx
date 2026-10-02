@@ -97,6 +97,26 @@ describe('GuidedReceiptCapture', () => {
     expect(screen.getByRole('button', { name: 'Captured sections (1)' })).not.toHaveClass('receipt-capture-roll--flagged');
   });
 
+  it('deletes a single section, and closes the sheet once the last one is gone', async () => {
+    const user = userEvent.setup();
+    renderCapture();
+
+    await user.click(await screen.findByRole('button', { name: 'Capture receipt' }));
+    await user.click(await screen.findByRole('button', { name: 'Add receipt section' }));
+    await user.click(await screen.findByRole('button', { name: 'Captured sections (2)' }));
+    await user.click(await screen.findByRole('button', { name: 'Delete section 1' }));
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:receipt-1');
+    expect(screen.getByText('1 of 12 sections captured')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Captured sections (1)' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete section 1' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Delete section 1' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Captured sections/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Capture receipt' })).toBeInTheDocument();
+  });
+
   it('names overexposure rather than calling a washed-out photo dark', async () => {
     evaluateCanvasMock.mockReturnValue(tooBright);
     const user = userEvent.setup();

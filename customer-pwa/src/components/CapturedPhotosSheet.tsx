@@ -1,5 +1,5 @@
 import type React from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import { PriceSheet } from './PriceSheet';
 
 export interface CapturedPhotoItem {
@@ -8,6 +8,8 @@ export interface CapturedPhotoItem {
   alt: string;
   /** Accessible name for this row's retake control, e.g. "Retake section 3". */
   retakeLabel: string;
+  /** Accessible name for this row's delete control, e.g. "Delete section 3". */
+  deleteLabel: string;
   /** Accessible name for the full-size trigger, e.g. "View section 3 full size". */
   viewLabel: string;
   /** Quality flag text when the capture check flagged this photo, e.g. "Too dark". */
@@ -21,6 +23,8 @@ export interface CapturedPhotosSheetProps {
   onDismiss: () => void;
   /** Retaking closes the sheet so the shutter can show its replacement label straight away. */
   onRetake: (index: number) => void;
+  /** Drops one photo without retaking it or restarting the whole roll. */
+  onDelete: (index: number) => void;
   /** Opens the photo full size, so a capture can actually be checked rather than assumed. */
   onView: (index: number) => void;
   /** Omitted during a targeted recapture, where starting over is not offered. */
@@ -42,6 +46,7 @@ export function CapturedPhotosSheet({
   triggerRef,
   onDismiss,
   onRetake,
+  onDelete,
   onView,
   onRestart,
   note,
@@ -96,6 +101,14 @@ export function CapturedPhotosSheet({
               onClick={() => onRetake(index)}
             >
               <RotateCcw size={18} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="captured-photos-delete"
+              aria-label={photo.deleteLabel}
+              onClick={() => onDelete(index)}
+            >
+              <Trash2 size={18} aria-hidden="true" />
             </button>
           </div>
         ))}

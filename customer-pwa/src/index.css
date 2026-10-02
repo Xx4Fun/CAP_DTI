@@ -4658,7 +4658,8 @@ body {
   outline-offset: -1px;
 }
 
-.captured-photos-retake {
+.captured-photos-retake,
+.captured-photos-delete {
   min-width: 44px;
   min-height: 44px;
   flex: 0 0 auto;
@@ -4670,6 +4671,12 @@ body {
   background: #fff;
   color: var(--primary);
   cursor: pointer;
+}
+
+/* Same red as Restart photos: both discard captures. */
+.captured-photos-delete {
+  border-color: #fca5a5;
+  color: #b91c1c;
 }
 
 .captured-photos-actions {
