@@ -8,6 +8,22 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-03 — One rule for public images
+
+- **Why.** An item photo added in DTI Admin › Price Regulation showed in Admin but not in the Customer PWA. The customer app rewrote every URL containing `commodity_images/` to a copy bundled in the app, and uploads are never bundled. That rewrite existed because the 114 seeded product photos were never uploaded to the production bucket, so both apps hid the gap with bundled copies. Store photos had a third arrangement: copies bundled into all four apps, and the vendor app guessed photos from store names.
+- **Rule.**
+  1. Public catalog images (commodity and store photos) live on the `COMMODITY_IMAGE_DISK` disk. In production that is the public Supabase bucket `commodity-images`. The database stores the object key (`commodity_images/<file>`, `store_images/<file>`). Legacy absolute URLs stay valid.
+  2. `App\Services\CommodityImageStorage::publicUrl()` is the only code that turns a stored value into a URL. Every API field rendered as `<img src>` is an absolute URL or `null`. Stores get this through a `Store::image_path` accessor. Commodity endpoints call it explicitly: public catalog, admin list, every comparison `product`, scan-tag candidates.
+  3. Clients render the URL as given. On `null` or a load error they show a placeholder. Bundled image files are placeholders only. The one exception is the Customer PWA's offline fallback data (`srpFallback.ts` and the fallback stores in `client.ts`), which keeps its bundled copies.
+  4. Private evidence is unchanged and never gets a public URL: receipts, signatures, legal documents and message attachments.
+- **Writes.** A new `image_path` must be an uploaded key that exists on the disk; resubmitting the unchanged stored value is allowed. This applies to SRP create, metadata edit, revision and import. A metadata edit that omits `image_path` changes no photo, which fixed a bug that wiped photos across a lineage. A revision without its own photo inherits only from the same commodity: same key first, otherwise identical name + unit + category.
+- **Environment prerequisite.** Every environment's bucket must contain the seed photos before this code is deployed:
+  - `customer-pwa/public/storage/commodity_images/*.webp` → `commodity_images/`
+  - the five store photos in `customer-pwa/public/stores/` → `store_images/`
+  - Migration `2026_10_03_000001_store_image_paths_to_bucket_keys` rewrites `stores.image_path` to those keys and sets the generic `/stores/store.webp` to null.
+- **Rollback.** Revert the code first, which restores the bundled `/stores/` files and the old resolvers. Then redeploy and run `migrate:rollback --step=1`. The migration's `down()` on its own leaves new code with no store photos.
+- Evidence: `docs/plans/image-urls/PLAN.md`, `PLAN-REVIEW-LOG.md` (Codex approved at round 5), `backend/tests/Feature/PublicImageRuleTest.php`.
+
 ## 2026-10-01 — Field Officer device PIN change
 
 - Profile lets an unlocked officer change this device's four-digit PIN offline after entering the current PIN and confirming a new one. The change rewraps the existing vault key so encrypted work and biometric enrollment remain available; it does not change the server password or lock the workspace.

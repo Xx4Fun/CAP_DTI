@@ -125,15 +125,16 @@ describe('SRP management workspace', () => {
     expect(screen.queryByText('Premium Rice')).not.toBeInTheDocument()
   })
 
-  it('uses the configured image URL and falls back to a bundled legacy image', async () => {
+  it('renders the server image URL and shows the placeholder when it fails to load', async () => {
     vi.mocked(adminApi.getSrp).mockResolvedValue({
       ...page, records: [{ ...page.records[0], image_path: 'commodity_images/rice.webp', image_url: 'https://assets.example.test/rice.webp' }],
     })
-    render(<SrpManagementPanel />)
+    const { container } = render(<SrpManagementPanel />)
     const image = await screen.findByRole('img', { name: 'Premium Rice' })
     expect(image).toHaveAttribute('src', 'https://assets.example.test/rice.webp')
     fireEvent.error(image)
-    expect(await screen.findByRole('img', { name: 'Premium Rice' })).toHaveAttribute('src', '/storage/commodity_images/rice.webp')
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Premium Rice' })).not.toBeInTheDocument())
+    expect(container.querySelector('.srp-commodity-thumb-fallback')).not.toBeNull()
   })
 
   it('loads every current page in the batch editor', async () => {

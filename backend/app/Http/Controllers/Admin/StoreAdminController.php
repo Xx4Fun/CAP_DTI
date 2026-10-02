@@ -38,11 +38,10 @@ class StoreAdminController extends Controller
         ]);
         unset($data['image']);
         $storedImage = null;
-        $imageUrl = '/stores/store.webp';
         if ($request->hasFile('image')) {
             try {
                 $storedImage = $images->store($request->file('image'), 'store_images');
-                $imageUrl = $this->publicImageUrl($request, $images->url($storedImage));
+                $this->assertPublicUrl($images->publicUrl($storedImage));
             } catch (Throwable $exception) {
                 $this->discardImage($images, $storedImage);
                 report($exception);
@@ -54,7 +53,7 @@ class StoreAdminController extends Controller
             }
         }
         $data = array_merge($data, [
-            'image_path' => $imageUrl,
+            'image_path' => $storedImage,
             'is_active' => true,
             'is_verified' => true,
             'is_public' => true,
@@ -76,20 +75,16 @@ class StoreAdminController extends Controller
         return response()->json(['data' => $store], 201);
     }
 
-    /** Every client renders image_path directly as an <img> src, so it must be an absolute URL a browser can load. */
-    private function publicImageUrl(Request $request, string $url): string
+    /** Every client renders image_path directly as an <img> src, so the disk must give an absolute URL a browser can load. */
+    private function assertPublicUrl(?string $url): void
     {
-        $production = app()->environment('production');
-        if (str_starts_with($url, 'http://') && ($request->isSecure() || $request->header('X-Forwarded-Proto') === 'https' || $production)) {
-            $url = 'https://'.substr($url, 7);
-        }
-        $usable = filter_var($url, FILTER_VALIDATE_URL)
+        $usable = $url
+            && filter_var($url, FILTER_VALIDATE_URL)
             && in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)
-            && ! ($production && in_array(parse_url($url, PHP_URL_HOST), ['localhost', '127.0.0.1'], true));
+            && ! (app()->environment('production') && in_array(parse_url($url, PHP_URL_HOST), ['localhost', '127.0.0.1'], true));
         if (! $usable) {
             throw new RuntimeException('Store image storage did not return a public absolute URL.');
         }
-        return $url;
     }
 
     private function discardImage(CommodityImageStorage $images, ?string $path): void

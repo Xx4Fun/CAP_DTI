@@ -32,7 +32,17 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
-        globPatterns: ['**/*.{html,js,css,ico,jpg,jpeg,png,svg,webp,webmanifest,woff2}']
+        globPatterns: ['**/*.{html,js,css,ico,jpg,jpeg,png,svg,webp,webmanifest,woff2}'],
+        // Store photos come from the public image bucket; keep ones already seen for offline field work.
+        runtimeCaching: [{
+          urlPattern: ({ request, url }) => request.destination === 'image' && /\/(store_images|commodity_images)\//.test(url.pathname),
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'public-images',
+            expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        }],
       }
     })
   ],

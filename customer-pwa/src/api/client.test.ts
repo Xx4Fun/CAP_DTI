@@ -62,17 +62,14 @@ describe('API client request serialization', () => {
 });
 
 describe('resolveImageUrl', () => {
-  it('resolves remote Supabase commodity image URLs to local bundled assets', () => {
-    const supabaseUrl = 'https://rvatqhywtgyehigslyox.supabase.co/storage/v1/object/public/commodity-images/commodity_images/distilled_water_absolute_1lwebp.webp';
-    expect(resolveImageUrl(supabaseUrl)).toBe('/storage/commodity_images/distilled_water_absolute_1lwebp.webp');
+  it('renders API image URLs as given, including uploads that are not bundled', () => {
+    const uploaded = 'https://rvatqhywtgyehigslyox.supabase.co/storage/v1/object/public/commodity-images/commodity_images/78OSzUp6MHDggMriaimGlKSTrq1SsR2U6F3tGKpM.webp';
+    expect(resolveImageUrl(uploaded)).toBe(uploaded);
+    const seeded = 'https://cap-dti.onrender.com/storage/commodity_images/distilled_water_absolute_350ml.webp';
+    expect(resolveImageUrl(seeded)).toBe(seeded);
   });
 
-  it('resolves remote Render commodity image URLs to local bundled assets', () => {
-    const renderUrl = 'https://cap-dti.onrender.com/storage/commodity_images/distilled_water_absolute_350ml.webp';
-    expect(resolveImageUrl(renderUrl)).toBe('/storage/commodity_images/distilled_water_absolute_350ml.webp');
-  });
-
-  it('resolves relative DB path to local bundled assets', () => {
+  it('maps offline fallback catalog keys to the bundled copies', () => {
     const dbPath = 'commodity_images/milk_bear_brand_135g.webp';
     expect(resolveImageUrl(dbPath)).toBe('/storage/commodity_images/milk_bear_brand_135g.webp');
   });

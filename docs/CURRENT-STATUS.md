@@ -31,6 +31,13 @@ This page records boundaries for interpreting project status. Keep task-specific
 - Do not place secrets, report tracking tokens, customer evidence, or production credentials in documentation.
 - Production legal documents (issued notice PDFs, attachments, e-signatures) share the private Supabase `receipt-evidence` bucket through the `legal_documents` disk. That bucket's allowed MIME types must include `application/pdf`; it was added 2026-10-02 after issuing failed with "Private document storage is unavailable". Bucket settings live in Supabase, not in this repository.
 
+## Public images
+
+- Public catalog images (commodity and store photos) are served from the public Supabase bucket `commodity-images`. It accepts webp/jpeg/png up to 2 MB. Render chooses the disk through the dashboard variable `COMMODITY_IMAGE_DISK`; `render.yaml` does not set it.
+- Any new environment must first have the seed photos uploaded. The source folders are listed in [[DECISIONS]] 2026-10-03.
+- For local development, copy those files into `backend/storage/app/public/{commodity_images,store_images}`.
+- Known limit: the Customer PWA does not precache its bundled fallback-catalog photos (`globIgnores` in `customer-pwa/vite.config.ts`, unchanged by the image work). They show when the API is unreachable but the site is online, and on a fully offline first session only if the browser already cached them.
+
 ## Updating this page
 
 Update the `reviewed` date only after checking the affected source or environment. Prefer a link to a focused audit over copying detailed results here.

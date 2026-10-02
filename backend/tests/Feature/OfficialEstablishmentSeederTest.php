@@ -7,6 +7,7 @@ use App\Models\Store;
 use App\Models\User;
 use Database\Seeders\OfficialEstablishmentSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -52,13 +53,13 @@ class OfficialEstablishmentSeederTest extends TestCase
             'owner_name' => 'Robinsons Supermarket Corporation', 'address' => 'San Angel',
         ]);
         $this->assertDatabaseHas('stores', [
-            'store_name' => 'Puregold Price Club Incorporated', 'image_path' => '/stores/store.webp',
+            'store_name' => 'Puregold Price Club Incorporated', 'image_path' => null,
         ]);
-        $this->assertDatabaseHas('stores', ['store_name' => 'Gaisano Grand Mall', 'image_path' => '/stores/gaisano-grand.webp']);
-        $this->assertDatabaseHas('stores', ['store_name' => 'Robinsons Supermarket Corp.', 'image_path' => '/stores/robinsons.webp']);
-        $this->assertDatabaseHas('stores', ['store_name' => 'Merrymart Consumer Corp.', 'image_path' => '/stores/merrymart.webp']);
-        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 1", 'image_path' => '/stores/licandas-branch-1.webp']);
-        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'image_path' => '/stores/licandas-branch-2.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Gaisano Grand Mall', 'image_path' => 'store_images/gaisano-grand.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Robinsons Supermarket Corp.', 'image_path' => 'store_images/robinsons.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Merrymart Consumer Corp.', 'image_path' => 'store_images/merrymart.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 1", 'image_path' => 'store_images/licandas-branch-1.webp']);
+        $this->assertDatabaseHas('stores', ['store_name' => "Licanda's Retail Chain Branch 2 (Licandas OPC 1)", 'image_path' => 'store_images/licandas-branch-2.webp']);
         $this->assertSame(11, AuditEvent::query()->where('action', 'store.official_list_seeded')->count());
 
         $this->seed(OfficialEstablishmentSeeder::class);
@@ -71,11 +72,11 @@ class OfficialEstablishmentSeederTest extends TestCase
     {
         $this->seed(OfficialEstablishmentSeeder::class);
         $expected = [
-            'Gaisano Grand Mall' => '/stores/gaisano-grand.webp',
-            'Robinsons Supermarket Corp.' => '/stores/robinsons.webp',
-            'Merrymart Consumer Corp.' => '/stores/merrymart.webp',
-            "Licanda's Retail Chain Branch 1" => '/stores/licandas-branch-1.webp',
-            "Licanda's Retail Chain Branch 2 (Licandas OPC 1)" => '/stores/licandas-branch-2.webp',
+            'Gaisano Grand Mall' => Storage::disk('public')->url('store_images/gaisano-grand.webp'),
+            'Robinsons Supermarket Corp.' => Storage::disk('public')->url('store_images/robinsons.webp'),
+            'Merrymart Consumer Corp.' => Storage::disk('public')->url('store_images/merrymart.webp'),
+            "Licanda's Retail Chain Branch 1" => Storage::disk('public')->url('store_images/licandas-branch-1.webp'),
+            "Licanda's Retail Chain Branch 2 (Licandas OPC 1)" => Storage::disk('public')->url('store_images/licandas-branch-2.webp'),
         ];
         ksort($expected);
 

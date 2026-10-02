@@ -4,6 +4,8 @@ namespace App\Services\Ocr;
 
 use App\Models\SrpBulletin;
 use App\Models\Store;
+use App\Services\Admin\SrpCatalogService;
+use App\Services\CommodityImageStorage;
 use Illuminate\Support\Facades\Cache;
 
 class ShelfTagComparisonService
@@ -11,6 +13,8 @@ class ShelfTagComparisonService
     public function __construct(
         private readonly RegulatoryPriceResolver $regulatoryPriceResolver,
         private readonly HistoricalPriceResolver $historicalPriceResolver,
+        private readonly SrpCatalogService $catalog,
+        private readonly CommodityImageStorage $images,
     ) {
     }
 
@@ -48,6 +52,7 @@ class ShelfTagComparisonService
             'product' => [
                 'id' => (int) $product->id,
                 'commodity_name' => (string) $product->commodity_name,
+                'image_path' => $this->images->publicUrl($this->catalog->imageResolver()($product)),
                 'category' => (string) ($product->category ?? ''),
                 'unit' => (string) ($product->unit ?? ''),
                 'regulatory_classification' => (string) ($product->regulatory_classification ?? ''),

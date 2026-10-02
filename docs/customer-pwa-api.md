@@ -5,6 +5,8 @@ This document specifies the RESTful API endpoints for the PRICE-Watch Consumer P
 
 Base URL: `http://localhost:8000/api` (or environment-configured `VITE_API_BASE_URL`)
 
+Image fields: `image_path` in `/public/commodities`, `/public/establishments`, every comparison `product` (`/public/compare-price`, `/public/scan-tag/compare`) and `/public/scan-tag` candidates is an absolute URL or `null`. Render it as given; never map it to a bundled file (see `DECISIONS.md` 2026-10-03).
+
 ---
 
 ## 1. Public Information Endpoints

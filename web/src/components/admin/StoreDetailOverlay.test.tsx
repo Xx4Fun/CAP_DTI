@@ -28,7 +28,7 @@ const store = {
   is_verified: true,
   is_public: true,
   recidivism_index: 1,
-  image_path: '/stores/robinsons.webp',
+  image_path: 'https://assets.example.test/store_images/robinsons.webp',
 }
 
 const reportPage = (rows: object[], page = 1, lastPage = 1, total = rows.length) => ({
@@ -54,7 +54,7 @@ describe('StoreDetailOverlay regulatory integrity', () => {
     renderOverlay()
 
     const hero = screen.getByRole('img', { name: /Verified Market establishment/i }) as HTMLImageElement
-    expect(hero.getAttribute('src')).toBe('/stores/robinsons.webp')
+    expect(hero.getAttribute('src')).toBe('https://assets.example.test/store_images/robinsons.webp')
     fireEvent.error(hero)
     expect(hero.getAttribute('src')).toBe('/stores/store.webp')
     expect(screen.queryByRole('button', { name: /Invite Vendor/i })).not.toBeInTheDocument()

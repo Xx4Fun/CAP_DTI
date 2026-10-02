@@ -258,36 +258,11 @@ export interface TrackReportResponse {
   status_history: StatusHistoryItem[];
 }
 
+// The API sends absolute image URLs (or null), rendered as given. Relative values come only from this
+// app's offline fallback data and point at its bundled copies. Never rewrite an API URL to a bundled
+// file: uploaded images are not bundled (docs/plans/image-urls/PLAN.md).
 export const resolveImageUrl = (imagePath: string | null | undefined): string | null => {
   if (!imagePath) return null;
-
-  // 1. Route any commodity image path or URL (including Supabase, Render, or relative paths)
-  // directly to the local bundled asset for instant, offline, reliable display.
-  const commodityMatch = imagePath.match(/commodity_images\/([^/?#]+)/);
-  if (commodityMatch) {
-    return `/storage/commodity_images/${commodityMatch[1]}`;
-  }
-
-  // 2. Direct static paths bundled in the PWA
-  if (
-    imagePath.startsWith('/stores/') ||
-    imagePath.startsWith('/branding/') ||
-    imagePath.startsWith('/icons/') ||
-    imagePath.startsWith('/home/') ||
-    imagePath.startsWith('/storage/') ||
-    imagePath.startsWith('/products/')
-  ) {
-    return imagePath;
-  }
-  if (imagePath.startsWith('storage/')) {
-    return `/${imagePath}`;
-  }
-
-  // 3. Other full URLs (e.g. external links)
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-    return imagePath;
-  }
-
-  const origin = API_BASE_URL.replace(/\/api\/?$/, '');
-  return `${origin}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+  if (/^https?:\/\//.test(imagePath) || imagePath.startsWith('/')) return imagePath;
+  return `/storage/${imagePath.replace(/^storage\//, '')}`;
 };

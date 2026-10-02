@@ -63,59 +63,15 @@ function normalizePage(value: SrpPage | SrpRecord[]): SrpPage {
   }
 }
 
-function resolveCommodityImageUrl(imagePath?: string | null): string | null {
-  if (!imagePath || typeof imagePath !== 'string') return null
-
-  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath
-
-  const commodityMatch = imagePath.match(/commodity_images\/([^/?#]+)/)
-  if (commodityMatch) {
-    return `/storage/commodity_images/${commodityMatch[1]}`
-  }
-
-  if (
-    imagePath.startsWith('/storage/') ||
-    imagePath.startsWith('/products/') ||
-    imagePath.startsWith('/stores/')
-  ) {
-    return imagePath
-  }
-
-  if (imagePath.startsWith('storage/')) {
-    return `/${imagePath}`
-  }
-
-  return null
-}
-
-function CommodityThumbnail({
-  imagePath,
-  imageUrl,
-  altText,
-}: {
-  imagePath?: string | null
-  imageUrl?: string | null
-  altText: string
-}) {
-  const [failedPrimary, setFailedPrimary] = useState<string | null>(null)
-  const [failedLegacy, setFailedLegacy] = useState<string | null>(null)
-  const legacyUrl = useMemo(() => resolveCommodityImageUrl(imagePath), [imagePath])
-  const resolvedUrl = imageUrl && failedPrimary !== imageUrl
-    ? imageUrl
-    : legacyUrl && failedLegacy !== legacyUrl ? legacyUrl : null
+// The server sends a loadable image URL or null; a failed load shows the icon (docs/plans/image-urls/PLAN.md).
+function CommodityThumbnail({ imageUrl, altText }: { imageUrl?: string | null; altText: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const resolvedUrl = imageUrl && failedUrl !== imageUrl ? imageUrl : null
 
   return (
     <div className="srp-commodity-thumb">
       {resolvedUrl ? (
-        <img
-          src={resolvedUrl}
-          alt={altText}
-          loading="lazy"
-          onError={() => {
-            if (resolvedUrl === imageUrl && failedPrimary !== imageUrl) setFailedPrimary(imageUrl ?? null)
-            else setFailedLegacy(resolvedUrl)
-          }}
-        />
+        <img src={resolvedUrl} alt={altText} loading="lazy" onError={() => setFailedUrl(resolvedUrl)} />
       ) : (
         <div className="srp-commodity-thumb-fallback" aria-hidden="true">
           <Package size={20} />
@@ -1324,7 +1280,7 @@ export function SrpManagementPanel() {
                         const parsed = formatCommodityDisplay(record.commodity_name, record.category || '', record.unit || '')
                         return (
                           <div className="srp-commodity-cell">
-                            <CommodityThumbnail imagePath={record.image_path} imageUrl={record.image_url} altText={parsed.title} />
+                            <CommodityThumbnail imageUrl={record.image_url} altText={parsed.title} />
                             <div className="srp-commodity-details">
                               <strong>{parsed.title}</strong>
                               <small>{parsed.unit || 'Unit not specified'}</small>

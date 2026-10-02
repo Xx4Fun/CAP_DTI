@@ -866,8 +866,8 @@ describe('field workspace security flow', () => {
       bootstrap: {
         version: 'v1', is_delta: false,
         stores: [
-          { id: 8, store_name: 'Far Market', address: 'Far Road', latitude: 10.8, longitude: 121.9, is_active: true, image_path: '/stores/store.webp' },
-          { id: 7, store_name: 'Near Market', address: 'Near Road', latitude: 10.741, longitude: 121.981, is_active: true, image_path: '/stores/gaisano-grand.webp' },
+          { id: 8, store_name: 'Far Market', address: 'Far Road', latitude: 10.8, longitude: 121.9, is_active: true, image_path: null },
+          { id: 7, store_name: 'Near Market', address: 'Near Road', latitude: 10.741, longitude: 121.981, is_active: true, image_path: 'https://assets.example.test/store_images/gaisano-grand.webp' },
         ],
         srp_bulletins: [], recent_prices: [],
       },
@@ -890,7 +890,7 @@ describe('field workspace security flow', () => {
       'Choose Near Market to record prices',
     ])
     expect(screen.getByText('0 m')).toBeInTheDocument()
-    expect(storeCards[1].querySelector('img')).toHaveAttribute('src', '/stores/gaisano-grand.webp')
+    expect(storeCards[1].querySelector('img')).toHaveAttribute('src', 'https://assets.example.test/store_images/gaisano-grand.webp')
     expect(screen.queryByRole('button', { name: 'Continue to Record Prices' })).not.toBeInTheDocument()
 
     fireEvent.click(storeCards[1])

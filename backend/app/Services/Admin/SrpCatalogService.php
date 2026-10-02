@@ -243,6 +243,30 @@ class SrpCatalogService
         return [70.0 + ((array_sum($tokenScores) / count($tokenScores)) * 20.0), $asTyped];
     }
 
+    /**
+     * Resolver for a revision's photo: its own, else the newest photo of the same commodity — same key, else
+     * identical name + unit + category from keyless history. A keyed row never lends its photo by name: a renamed
+     * lineage keeps its key, so a name match there would be another commodity.
+     *
+     * @return \Closure(SrpBulletin): ?string
+     */
+    public function imageResolver(): \Closure
+    {
+        $identity = fn (SrpBulletin $row) => json_encode([$row->commodity_name, $row->unit, $row->category]);
+        $withImages = SrpBulletin::query()
+            ->whereNotNull('image_path')
+            ->where('image_path', '!=', '')
+            ->orderBy('id')
+            ->get(['commodity_key', 'commodity_name', 'unit', 'category', 'image_path']);
+        $byKey = $withImages->filter(fn (SrpBulletin $row) => filled($row->commodity_key))->pluck('image_path', 'commodity_key')->all();
+        $byIdentity = $withImages->filter(fn (SrpBulletin $row) => blank($row->commodity_key))
+            ->mapWithKeys(fn (SrpBulletin $row) => [$identity($row) => $row->image_path])->all();
+
+        return fn (SrpBulletin $record): ?string => $record->image_path
+            ?: (filled($record->commodity_key) ? ($byKey[$record->commodity_key] ?? null) : null)
+            ?: ($byIdentity[$identity($record)] ?? null);
+    }
+
     public function lineageKey(SrpBulletin $record): string
     {
         return (string) ($record->commodity_key

@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\SrpBulletin;
 use App\Models\User;
+use App\Services\CommodityImageStorage;
 use App\Services\FieldNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class SrpImportService
         private readonly AuditTrailService $audit,
         private readonly FieldNotificationService $notifications,
         private readonly SrpCatalogService $catalog,
+        private readonly CommodityImageStorage $images,
     ) {}
 
     public function preview(array $payload): array
@@ -46,6 +48,15 @@ class SrpImportService
                 'price_freeze_treatment' => $item['price_freeze_treatment'] ?? null,
             ];
         })->values();
+        foreach ($rows->whereNotNull('image_path')->unique(fn ($row) => $row['commodity_key'].'|'.json_encode($row['image_path'])) as $row) {
+            $imagePath = $row['image_path'];
+            if (! is_string($imagePath) || $imagePath === '' || strlen($imagePath) > 255) {
+                throw ValidationException::withMessages(['items' => ['Each image_path must be text of at most 255 characters.']]);
+            }
+            // The commodity's own stored reference may be resubmitted as-is (e.g. a legacy absolute URL).
+            $stored = SrpBulletin::where('commodity_key', $row['commodity_key'])->where('image_path', $imagePath)->exists() ? $imagePath : null;
+            $this->images->assertWritable($imagePath, $stored, 'items');
+        }
 
         $seen = [];
         $duplicates = $rows->filter(function ($row) use (&$seen, $date) {

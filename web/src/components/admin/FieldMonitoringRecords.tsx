@@ -594,7 +594,7 @@ function EstablishmentCard({ store, cadence: _cadence, onOpen }: { store: Monito
   const isMarket = store.store_name.toLowerCase().includes('market')
   const initials = getStoreInitials(store.store_name)
   const imageUrl = getStoreImageUrl(store)
-  const isPlaceholder = !store.image_path || store.image_path === '/stores/store.webp'
+  const isPlaceholder = !store.image_path
 
   return <article className="establishment-card-wrapper">
     <button
@@ -671,7 +671,7 @@ function EstablishmentRowCard({ store, cadence: _cadence, onOpen }: { store: Mon
   const imageUrl = getStoreImageUrl(store)
   const isMarket = store.store_name.toLowerCase().includes('market')
   const initials = getStoreInitials(store.store_name)
-  const isPlaceholder = !store.image_path || store.image_path === '/stores/store.webp'
+  const isPlaceholder = !store.image_path
 
   return (
     <article className="establishment-row-card">

@@ -19,6 +19,7 @@ tags:
 - Responsibility: APIs, authentication, regulatory records, report evidence, field synchronization, and persistence.
 - Start with: `backend/README.md`, `backend/routes/`, and the relevant controller, service, model, migration, and test.
 - OCR operations: `../backend/docs/receipt-ocr-remediation.md`
+- Public image URLs: `app/Services/CommodityImageStorage.php` (`publicUrl`) is the single owner. The rule is in [[DECISIONS]] 2026-10-03, and the plan is in `plans/image-urls/`.
 
 ## DTI Admin portal
 

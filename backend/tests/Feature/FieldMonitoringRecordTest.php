@@ -218,7 +218,7 @@ class FieldMonitoringRecordTest extends TestCase
     {
         [$officer, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
-        $store->update(['image_path' => '/stores/gaisano-grand.webp']);
+        $store->update(['image_path' => 'store_images/gaisano-grand.webp']);
         $bulletin = $this->bulletin('Rice', 100);
         TemporalInspection::create([
             'store_id' => $store->id, 'srp_id' => $bulletin->id,
@@ -230,7 +230,7 @@ class FieldMonitoringRecordTest extends TestCase
         $full = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()
             ->assertJsonPath('data.is_delta', false)
             ->assertJsonPath('data.stores.0.id', $store->id)
-            ->assertJsonPath('data.stores.0.image_path', '/stores/gaisano-grand.webp')
+            ->assertJsonPath('data.stores.0.image_path', Storage::disk('public')->url('store_images/gaisano-grand.webp'))
             ->assertJsonPath('data.srp_bulletins.0.id', $bulletin->id)
             ->assertJsonPath('data.monitoring_references.0.srp_id', $bulletin->id)
             ->assertJsonPath('data.monitoring_references.0.type', 'standard_srp')
@@ -776,7 +776,7 @@ class FieldMonitoringRecordTest extends TestCase
         Storage::fake('receipt_evidence');
         [, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
-        $store->update(['image_path' => '/stores/gaisano-grand.webp']);
+        $store->update(['image_path' => 'store_images/gaisano-grand.webp']);
         $rice = $this->bulletin('Rice', 100);
         $milk = $this->bulletin('Milk', 50);
 
@@ -816,7 +816,7 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.weekly_summary.verification_required', 0)
             ->assertJsonPath('data.establishments.total', 1)
             ->assertJsonPath('data.establishments.data.0.id', $store->id)
-            ->assertJsonPath('data.establishments.data.0.image_path', '/stores/gaisano-grand.webp')
+            ->assertJsonPath('data.establishments.data.0.image_path', Storage::disk('public')->url('store_images/gaisano-grand.webp'))
             ->assertJsonPath('data.establishments.data.0.routine_status', 'completed')
             ->assertJsonPath('data.establishments.data.0.weekly_routine_status', 'monitored_this_week')
             ->assertJsonPath('data.establishments.data.0.has_prior_routine_monitoring', true)

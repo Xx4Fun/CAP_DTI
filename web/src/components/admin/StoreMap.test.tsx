@@ -28,7 +28,7 @@ vi.mock('../../services/adminApi', () => ({
         is_verified: true,
         is_public: true,
         recidivism_index: 0,
-        image_path: '/stores/robinsons.webp',
+        image_path: 'https://assets.example.test/store_images/robinsons.webp',
       },
       {
         id: 2,
@@ -158,8 +158,8 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
 
   it('uses establishment photos and anchors GIS pins at their tips', () => {
     const stores: StoreRecord[] = [
-      { id: 1, store_name: 'Photo Store', address: 'San Jose', latitude: 10.7424, longitude: 121.9406, is_active: true, is_verified: true, is_public: true, image_path: '/stores/robinsons.webp' },
-      { id: 2, store_name: 'No Photo Store', address: 'San Jose', latitude: 10.745, longitude: 121.942, is_active: false, is_verified: true, is_public: false, image_path: '/stores/missing.webp' },
+      { id: 1, store_name: 'Photo Store', address: 'San Jose', latitude: 10.7424, longitude: 121.9406, is_active: true, is_verified: true, is_public: true, image_path: 'https://assets.example.test/store_images/robinsons.webp' },
+      { id: 2, store_name: 'No Photo Store', address: 'San Jose', latitude: 10.745, longitude: 121.942, is_active: false, is_verified: true, is_public: false, image_path: 'https://assets.example.test/store_images/missing.webp' },
       { id: 3, store_name: 'Pending Store', address: 'San Jose', latitude: 10.747, longitude: 121.944, is_active: true, is_verified: false, is_public: false },
     ]
     const { container } = render(<StoreMap stores={stores} selectedStoreId={1} />)
@@ -171,7 +171,7 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     expect((pins[0] as HTMLElement).style.marginTop).toBe('-52px')
     expect((pins[0] as HTMLElement).style.marginLeft).toBe('-21px')
     const photos = container.querySelectorAll<HTMLImageElement>('.store-photo-pin-image')
-    expect(photos[0].getAttribute('src')).toBe('/stores/robinsons.webp')
+    expect(photos[0].getAttribute('src')).toBe('https://assets.example.test/store_images/robinsons.webp')
     fireEvent.error(photos[1])
     expect(photos[1].getAttribute('src')).toBe('/stores/store.webp')
     expect(photos[2].getAttribute('src')).toBe('/stores/store.webp')

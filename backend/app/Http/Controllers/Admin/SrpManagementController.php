@@ -33,13 +33,11 @@ class SrpManagementController extends Controller
         ]);
 
         $page = $catalog->paginate($filters);
-        $page->getCollection()->each(function (SrpBulletin $record) use ($images) {
-            $path = $record->image_path;
-            $record->setAttribute('image_url', !$path ? null : (
-                str_starts_with($path, 'http://') || str_starts_with($path, 'https://')
-                    ? $path : $images->url($path)
-            ));
-        });
+        // Current and scheduled rows show the commodity's photo as customers see it; history rows show their own.
+        $imageFor = ($filters['view'] ?? 'current') === 'history'
+            ? fn (SrpBulletin $record) => $record->image_path
+            : $catalog->imageResolver();
+        $page->getCollection()->each(fn (SrpBulletin $record) => $record->setAttribute('image_url', $images->publicUrl($imageFor($record))));
 
         return response()->json([
             'data' => $page,
@@ -52,7 +50,8 @@ class SrpManagementController extends Controller
         AdminAuthorizationService $auth,
         AuditTrailService $audit,
         FieldNotificationService $notifications,
-        SrpCatalogService $catalog
+        SrpCatalogService $catalog,
+        CommodityImageStorage $images
     ) {
         $auth->requireManager($request->user());
 
@@ -66,6 +65,7 @@ class SrpManagementController extends Controller
             'source_reference' => 'required|string|max:255',
             'image_path' => 'nullable|string|max:255',
         ]);
+        $images->assertWritable($data['image_path'] ?? null, null);
 
         $commodityKey = $catalog->commodityKey($data['commodity_name'], $data['unit'] ?? null, $data['category'] ?? null);
         $existingIdentity = SrpBulletin::where('commodity_key', $commodityKey)->exists()
@@ -100,6 +100,8 @@ class SrpManagementController extends Controller
             return $bulletin;
         });
 
+        $bulletin->setAttribute('image_url', $images->publicUrl($bulletin->image_path));
+
         return response()->json(['data' => $bulletin], 201);
     }
 
@@ -108,7 +110,8 @@ class SrpManagementController extends Controller
         SrpBulletin $srp,
         AdminAuthorizationService $auth,
         AuditTrailService $audit,
-        SrpCatalogService $catalog
+        SrpCatalogService $catalog,
+        CommodityImageStorage $images
     ) {
         $auth->requireManager($request->user());
 
@@ -120,10 +123,16 @@ class SrpManagementController extends Controller
             'image_path' => 'nullable|string|max:255',
         ]);
 
-        $targetImagePath = $data['image_path'] ?? $srp->image_path;
+        // Only a new image (or an explicit clear) is written across the lineage. An omitted or resubmitted unchanged
+        // image_path leaves every revision's photo as it is, so older revisions keep photos the edited row lacks.
+        $imageChange = array_key_exists('image_path', $data) && $data['image_path'] !== $srp->image_path
+            ? ['image_path' => $data['image_path']] : [];
+        if ($imageChange) {
+            $images->assertWritable($data['image_path'], $srp->image_path);
+        }
 
-        // Sync metadata and image_path across all revisions of this commodity lineage
-        DB::transaction(function () use ($srp, $data, $targetImagePath, $request, $audit, $catalog) {
+        // Sync metadata (and an explicit image change) across all revisions of this commodity lineage
+        DB::transaction(function () use ($srp, $data, $imageChange, $request, $audit, $catalog) {
             $lineage = function () use ($srp) {
                 $query = SrpBulletin::query();
 
@@ -166,13 +175,15 @@ class SrpManagementController extends Controller
                     'unit' => $data['unit'] ?? null,
                     'category' => $data['category'] ?? null,
                     'regulatory_classification' => $data['regulatory_classification'] ?? null,
-                    'image_path' => $targetImagePath,
+                    ...$imageChange,
                 ]);
             $srp->refresh();
             $audit->recordOrFail($request, 'srp.metadata_updated', $srp, [
                 'commodity_name' => $srp->commodity_name,
             ]);
         });
+
+        $srp->setAttribute('image_url', $images->publicUrl($srp->image_path));
 
         return response()->json(['data' => $srp]);
     }
@@ -200,6 +211,7 @@ class SrpManagementController extends Controller
         $created = [];
         DB::transaction(function () use ($data, $request, $revisionService, $audit, $catalog, &$created) {
             $current = $catalog->currentRecords()->keyBy('id');
+            $imageFor = $catalog->imageResolver();
             $ids = collect($data['updates'])->pluck('id');
             if ($ids->unique()->count() !== $ids->count() || $ids->contains(fn ($id) => !$current->has($id))) {
                 throw ValidationException::withMessages([
@@ -214,18 +226,9 @@ class SrpManagementController extends Controller
                     ]);
                 }
 
-                $imagePath = $original->image_path;
-                if (!$imagePath) {
-                    $imagePath = SrpBulletin::query()
-                        ->where('commodity_key', $original->commodity_key)
-                        ->orWhere('commodity_name', $original->commodity_name)
-                        ->whereNotNull('image_path')
-                        ->value('image_path');
-                }
-
                 $payload = [
                     'commodity_name' => $original->commodity_name,
-                    'image_path' => $imagePath,
+                    'image_path' => $imageFor($original),
                     'category' => $original->category,
                     'unit' => $original->unit,
                     'regulatory_classification' => $original->regulatory_classification,
@@ -288,7 +291,7 @@ class SrpManagementController extends Controller
 
     private function validateRevision(Request $request, SrpBulletin $srp): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'commodity_name' => 'required|string|max:255',
             'image_path' => 'nullable|string|max:255',
             'category' => 'nullable|string|max:255',
@@ -299,5 +302,8 @@ class SrpManagementController extends Controller
             'source_reference' => 'required|string|max:255',
             'change_reason' => 'required|string|max:2000',
         ]);
+        app(CommodityImageStorage::class)->assertWritable($data['image_path'] ?? null, $srp->image_path);
+
+        return $data;
     }
 }

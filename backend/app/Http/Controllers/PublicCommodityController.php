@@ -20,38 +20,13 @@ class PublicCommodityController extends Controller
             ? $catalog->currentIdentityMatches($search, (int) $request->input('limit', 5))
             : $catalog->currentRecords($search);
 
-        // Map existing non-null image_paths across all bulletins by commodity_name & commodity_key
-        $imageMapByKey = SrpBulletin::query()
-            ->whereNotNull('image_path')
-            ->where('image_path', '!=', '')
-            ->orderByDesc('id')
-            ->get()
-            ->pluck('image_path', 'commodity_key')
-            ->filter()
-            ->toArray();
+        $imageFor = $catalog->imageResolver();
 
-        $imageMapByName = SrpBulletin::query()
-            ->whereNotNull('image_path')
-            ->where('image_path', '!=', '')
-            ->orderByDesc('id')
-            ->get()
-            ->pluck('image_path', 'commodity_name')
-            ->filter()
-            ->toArray();
-
-        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageMapByKey, $imageMapByName, $imageStorage, $identityMode) {
-            $rawPath = $record->image_path;
-            if (! $rawPath && ! empty($record->commodity_key) && isset($imageMapByKey[$record->commodity_key])) {
-                $rawPath = $imageMapByKey[$record->commodity_key];
-            }
-            if (! $rawPath && ! empty($record->commodity_name) && isset($imageMapByName[$record->commodity_name])) {
-                $rawPath = $imageMapByName[$record->commodity_name];
-            }
-
+        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageFor, $imageStorage, $identityMode) {
             return [
                 'id' => (int) $record->id,
                 'commodity_name' => (string) $record->commodity_name,
-                'image_path' => $this->formatImageUrl($rawPath, $imageStorage),
+                'image_path' => $imageStorage->publicUrl($imageFor($record)),
                 'category' => $record->category,
                 'unit' => $record->unit,
                 'regulatory_classification' => $record->regulatory_classification,
@@ -111,32 +86,5 @@ class PublicCommodityController extends Controller
                 'history' => $history,
             ],
         ]);
-    }
-
-    private function formatImageUrl(?string $path, CommodityImageStorage $imageStorage): ?string
-    {
-        if (! $path) {
-            return null;
-        }
-
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            if (str_starts_with($path, 'http://') && (request()->isSecure() || request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production'))) {
-                return 'https://'.substr($path, 7);
-            }
-
-            return $path;
-        }
-
-        $cleanPath = ltrim($path, '/');
-        if (str_starts_with($cleanPath, 'storage/')) {
-            $cleanPath = substr($cleanPath, 8);
-        }
-
-        $url = $imageStorage->url($cleanPath);
-        if (str_starts_with($url, 'http://') && (request()->isSecure() || request()->header('X-Forwarded-Proto') === 'https' || app()->environment('production'))) {
-            $url = 'https://'.substr($url, 7);
-        }
-
-        return $url;
     }
 }

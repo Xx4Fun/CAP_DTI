@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { navigate } from '../app/routing';
 import { resolveImageUrl } from '../api/client';
-import { fallbackCommodities } from '../data/srpFallback';
 import {
   getRecentComparisons,
   clearRecentComparisons,
@@ -398,11 +397,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
           <div className="more-comparison-scroll-container" tabIndex={0} aria-label="Scrollable price comparison list">
             <div className="more-comparison-list" role="feed" aria-label="Recent price comparisons">
               {comparisons.map((item) => {
-              const matchedCommodity = fallbackCommodities.find(
-                (c) => c.id === item.commodityId || c.commodity_name.trim().toLowerCase() === item.commodityName.trim().toLowerCase()
-              );
-              const rawImagePath = item.imagePath || matchedCommodity?.image_path || null;
-              const resolvedThumbUrl = resolveImageUrl(rawImagePath);
+              const resolvedThumbUrl = resolveImageUrl(item.imagePath);
 
               return (
                 <article

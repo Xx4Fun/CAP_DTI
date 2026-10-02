@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\CommodityImageStorage;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -38,6 +40,12 @@ class Store extends Model
         'is_public' => 'boolean',
         'verified_at' => 'datetime',
     ];
+
+    /** The stored object key reaches every client as a loadable URL (or null); see CommodityImageStorage. */
+    protected function imagePath(): Attribute
+    {
+        return Attribute::get(fn (?string $value) => app(CommodityImageStorage::class)->publicUrl($value));
+    }
 
     public function inspections(): HasMany
     {

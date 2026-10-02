@@ -131,7 +131,7 @@ class AdminRouteHardeningTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.dti_sec_number', null)
             ->assertJsonPath('data.owner_name', null)
-            ->assertJsonPath('data.image_path', '/stores/store.webp')
+            ->assertJsonPath('data.image_path', null)
             ->assertJsonPath('data.is_active', true)
             ->assertJsonPath('data.is_verified', true)
             ->assertJsonPath('data.is_public', true)
@@ -159,7 +159,7 @@ class AdminRouteHardeningTest extends TestCase
         Storage::fake('store-images-test', ['url' => $url]);
     }
 
-    public function test_manager_created_store_saves_uploaded_photo_as_absolute_url(): void
+    public function test_manager_created_store_saves_uploaded_photo_key_and_returns_its_url(): void
     {
         Sanctum::actingAs($this->user('dti_evaluator'));
         $this->useStoreImageDisk('https://assets.example.test');
@@ -170,7 +170,7 @@ class AdminRouteHardeningTest extends TestCase
         $files = Storage::disk('store-images-test')->files('store_images');
         $this->assertCount(1, $files);
         $this->assertSame('https://assets.example.test/'.$files[0], $response->json('data.image_path'));
-        $this->assertDatabaseHas('stores', ['store_name' => 'Photo Store', 'image_path' => 'https://assets.example.test/'.$files[0]]);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Photo Store', 'image_path' => $files[0]]);
     }
 
     public function test_manager_created_store_rejects_non_image_upload(): void

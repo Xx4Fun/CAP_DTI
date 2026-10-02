@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Services\Admin\SrpCatalogService;
+use App\Services\CommodityImageStorage;
 use App\Services\FieldReferenceResolver;
 use App\Services\Ocr\HistoricalPriceResolver;
 use App\Services\Ocr\ScanSessionRepository;
@@ -218,6 +220,7 @@ class PublicPwaController extends Controller
             $detectedPrice = (float) $matches[1];
         }
 
+        $imageFor = app(SrpCatalogService::class)->imageResolver();
         $hasTextQuery = $queryText !== '';
         return response()->json([
             'success' => true,
@@ -229,7 +232,7 @@ class PublicPwaController extends Controller
                 'store' => self::formatPublicStore($store),
                 'detected_price' => $detectedPrice,
                 'ocr_status' => $hasTextQuery ? 'TEXT_QUERY_MATCHED' : 'MANUAL_SELECTION_REQUIRED',
-                'candidates' => $candidates,
+                'candidates' => $candidates->each(fn (SrpBulletin $candidate) => $candidate->image_path = app(CommodityImageStorage::class)->publicUrl($imageFor($candidate))),
                 'timestamp' => now()->toIso8601String(),
             ]
         ]);
@@ -696,6 +699,7 @@ class PublicPwaController extends Controller
                 'product' => [
                     'id' => $bulletin->id,
                     'commodity_name' => $bulletin->commodity_name,
+                    'image_path' => app(CommodityImageStorage::class)->publicUrl(app(SrpCatalogService::class)->imageResolver()($bulletin)),
                     'category' => $bulletin->category,
                     'unit' => $bulletin->unit,
                     'regulatory_classification' => $bulletin->regulatory_classification,
