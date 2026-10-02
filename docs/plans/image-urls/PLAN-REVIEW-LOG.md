@@ -113,3 +113,14 @@ Not exercised in the browser: the Customer recent-comparisons thumbnail after a 
 
 - Uploaded 124 objects to `commodity-images` with no overwrite: 119 `commodity_images/*.webp` + 5 `store_images/*.webp`. Result: 124 uploaded, 0 existing, 0 failed.
 - Verified before deploy: all 115 live commodity URLs + 5 store keys → 200 `image/webp` (was 114 × 400).
+
+## Production verification (2026-10-03, after deploy of `1983857`)
+
+- Backend (Render) live: `/public/establishments` returns `store_images/` bucket URLs; migration applied.
+- API sweep (`--prod`): 168 commodities (118 photo, 50 null) + 10 stores (5 photo, 5 null). All 120 unique URLs 200 `image/*`. No relative, `http://` or localhost URLs.
+- Photo coverage 120 → 118. Both losses were cross-lineage borrowing, now blocked by design:
+  - #314 Argentina (170g) Beef Loaf had shown #300 Meat Loaf's photo.
+  - #242 Refresh (500mL) Mineralized Water had borrowed from #230 Refresh (500mL) Purified Water. #230 holds `mineralized_water_refresh_500ml.webp`, a seed-mapping error (the photo belongs to #242), left for the owner to correct.
+- Customer PWA (fresh session, caches cleared): 168 cards, 118/118 photos load, 0 broken, 0 bundled rewrites. The reported item #338 "Spicy Noodles Beef" (admin upload `78OSzUp6…webp`) shows on the card and the detail page. Compare › store selection shows 5/5 store photos.
+- Admin, vendor and field bundles redeployed: no URL rewrite or name guessing; bundled store photos removed (`/stores/robinsons.webp` 404); admin and vendor keep the `store.webp` placeholder; field `sw.js` has the `public-images` runtime cache.
+- Not browser-checked in production: authenticated Admin, Vendor and Field screens (no signed-in session in the agent browser; production passwords are not entered by the agent). These screens use the same API URLs verified above and were browser-checked locally.
