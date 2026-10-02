@@ -65,7 +65,7 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
         <h4>System extraction (read-only)</h4>
       </div>
 
-      <div className="receipt-extraction-group">
+      <div className="receipt-extraction-group receipt-extraction-overview-grid">
         <Field label="Merchant">
           {result.merchant?.display_name || 'Not available'}{' '}
           {result.merchant?.status && <Badge tone={result.merchant.status === 'matched' ? 'ok' : 'warn'}>{result.merchant.status}</Badge>}
@@ -122,7 +122,7 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
         </details>
       )}
 
-      <div className="receipt-extraction-group">
+      <div className="receipt-extraction-group receipt-extraction-totals-grid">
         <Field label="Subtotal">{peso(result.subtotal) ?? 'Not available'}{result.subtotal_uncertain && <> <Badge>uncertain</Badge></>}</Field>
         {(result.discounts ?? []).map((line, index) => <AmountRow key={`discount-${index}`} label="Discount" line={line} sign="−" />)}
         {(result.adjustments ?? []).map((line, index) => (
@@ -131,19 +131,21 @@ export const ReceiptExtractionPanel: React.FC<{ result: ReceiptExtractionResult 
         <Field label="Total">{peso(result.total) ?? 'Not available'}{result.total_uncertain && <> <Badge>uncertain</Badge></>}</Field>
       </div>
 
-      <div aria-label="Reconciliation" className="receipt-extraction-reconciliation">
-        <div>
-          <strong>Reconciliation</strong>
-          <Badge tone={statusTone(reconciliation?.status)}>{reconciliation?.status || 'Not available'}</Badge>
+      <div aria-label="Reconciliation" className={`receipt-extraction-reconciliation ${reconciliation?.status === 'mismatch' ? 'is-mismatch' : ''}`}>
+        <div className="receipt-reconciliation-header">
+          <div className="receipt-reconciliation-title">
+            <strong>Reconciliation</strong>
+            <Badge tone={statusTone(reconciliation?.status)}>{reconciliation?.status || 'Not available'}</Badge>
+          </div>
           {reconciliation?.items_sum && <span className="receipt-extraction-sum">items sum {peso(reconciliation.items_sum)}</span>}
         </div>
-        <div>
+        <div className="receipt-reconciliation-checks">
           {Object.entries(reconciliation?.checks ?? {}).map(([check, status]) => (
             <Badge key={check} tone={statusTone(status)}>{CHECK_LABELS[check] ?? check}: {status}</Badge>
           ))}
         </div>
         {reconciliation?.duplicates_are_likely_genuine && (
-          <span className="receipt-extraction-caution">Counting the flagged duplicates makes the amounts reconcile, so they may be genuine repeat purchases.</span>
+          <div className="receipt-extraction-caution">Counting the flagged duplicates makes the amounts reconcile, so they may be genuine repeat purchases.</div>
         )}
       </div>
 
@@ -172,10 +174,10 @@ export const EvidenceSectionNav: React.FC<{
   if (index < 0) return null
   return (
     <div className="evidence-section-nav">
-      <button type="button" disabled={busy || index === 0} onClick={() => onSelect(sections[index - 1])}>Previous section</button>
-      <strong>Section {index + 1} of {sections.length}</strong>
+      <button type="button" className="evidence-nav-prev" disabled={busy || index === 0} onClick={() => onSelect(sections[index - 1])}>Previous section</button>
+      <strong className="evidence-nav-label">Section {index + 1} of {sections.length}</strong>
       {selected.attempt_number ? <span className="evidence-section-nav-attempt">attempt {selected.attempt_number}{selected.is_current ? ' (current)' : ''}</span> : null}
-      <button type="button" disabled={busy || index === sections.length - 1} onClick={() => onSelect(sections[index + 1])}>Next section</button>
+      <button type="button" className="evidence-nav-next" disabled={busy || index === sections.length - 1} onClick={() => onSelect(sections[index + 1])}>Next section</button>
     </div>
   )
 }

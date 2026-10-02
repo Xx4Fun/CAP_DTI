@@ -192,6 +192,11 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(rotateBtn)
     await user.click(resetBtn)
 
+    // Ctrl+wheel / pinch over the receipt zooms the image; the page must not zoom with it.
+    const viewport = document.querySelector('.consumer-report-viewport')!
+    expect(fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100 })).toBe(false)
+    expect(fireEvent.wheel(viewport, { deltaY: -100 })).toBe(true)
+
     // Right column OCR breakdown & action buttons
     expect(screen.getByText(/Formal receipt \| Consumer report/i)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Raw OCR and system-extracted information' })).toBeInTheDocument()

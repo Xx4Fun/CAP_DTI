@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Download,
+  FileText,
   Lock,
   Maximize2,
   RefreshCw,
@@ -61,6 +62,18 @@ export const CitizenTipReview: React.FC = () => {
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [isFullScreen, setIsFullScreen] = useState(false)
+  /** Ctrl+wheel (and trackpad pinch, which arrives as Ctrl+wheel) zooms the receipt, not the page.
+      Native listener: React's onWheel is passive, so preventDefault there cannot stop page zoom. */
+  const wheelZoomRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      setZoom((z) => Math.min(Math.max(z * Math.exp(-event.deltaY / 300), 0.5), 3))
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    return () => node.removeEventListener('wheel', onWheel)
+  }, [])
   const [evidenceUrl, setEvidenceUrl] = useState<string | null>(null)
   const [evidenceLoading, setEvidenceLoading] = useState(false)
   const [evidenceManifest, setEvidenceManifest] = useState<ReceiptEvidenceManifest | null>(null)
@@ -795,7 +808,7 @@ export const CitizenTipReview: React.FC = () => {
               </div>
 
               {/* Receipt Viewport Canvas */}
-              <div className="evidence-viewport consumer-report-viewport">
+              <div ref={wheelZoomRef} className="evidence-viewport consumer-report-viewport">
                 {evidenceLoading ? (
                   <div className="consumer-report-viewport-status">
                     <RefreshCw size={20} className="spin-icon" />
@@ -826,16 +839,18 @@ export const CitizenTipReview: React.FC = () => {
 
               <div className="consumer-report-detected">
                 <h4>Raw OCR and system-extracted information</h4>
-                <div className="consumer-report-detected-group">
-                  <div className="consumer-report-detected-row">
-                    <span>Merchant OCR:</span>
-                    <strong>{detectedMerchant || 'Not detected'}</strong>
+                {!evidenceManifest?.processing_result && (
+                  <div className="consumer-report-detected-group">
+                    <div className="consumer-report-detected-row">
+                      <span>Merchant OCR:</span>
+                      <strong>{detectedMerchant || 'Not detected'}</strong>
+                    </div>
+                    <div className="consumer-report-detected-row">
+                      <span>Transaction Date:</span>
+                      <strong>{detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}</strong>
+                    </div>
                   </div>
-                  <div className="consumer-report-detected-row">
-                    <span>Transaction Date:</span>
-                    <strong>{detectedTransactionDate ? String(detectedTransactionDate) : 'Not detected'}</strong>
-                  </div>
-                </div>
+                )}
 
                 <ReceiptExtractionPanel result={evidenceManifest?.processing_result as ReceiptExtractionResult | null | undefined} />
 
@@ -1228,9 +1243,15 @@ export const CitizenTipReview: React.FC = () => {
 
                   {hasItemReview && (
                     <div className="consumer-report-progress">
-                      <span>{decidedItemCount} of {selected.items!.length} items decided</span>
+                      <span className="consumer-report-progress-count">
+                        <CheckCircle2 size={14} className="progress-check-icon" />
+                        {decidedItemCount} of {selected.items!.length} items decided
+                      </span>
                       {blockingReason && (
-                        <span className="is-blocked">{blockingReason}</span>
+                        <span className="is-blocked">
+                          <AlertCircle size={14} className="progress-alert-icon" />
+                          {blockingReason}
+                        </span>
                       )}
                     </div>
                   )}
@@ -1253,45 +1274,59 @@ export const CitizenTipReview: React.FC = () => {
                   )}
 
                   <div className="consumer-report-actions">
-                    <button
-                      type="button"
-                      className="admin-button primary"
-                      disabled={decisionSaving || !reason || !verificationChosen || !fieldOfficerId}
-                      title={verificationChosen ? undefined : 'Tick "Refer this report for field verification" above to enable'}
-                      onClick={() => void requestVerification()}
-                    >
-                      <Send size={15} aria-hidden="true" /> Refer for field verification
-                    </button>
+                    <div className="consumer-report-actions-primary-group">
+                      <button
+                        type="button"
+                        className="admin-button primary action-primary"
+                        disabled={decisionSaving || !reason || verificationChosen || (hasItemReview ? !itemReviewComplete : !finding)}
+                        onClick={() => void decide(isCorrection ? 'correct' : 'validate')}
+                      >
+                        <ShieldCheck size={15} aria-hidden="true" />
+                        {decisionSaving ? 'Saving decision...' : 'Record finding'}
+                      </button>
 
-                    <button
-                      type="button"
-                      className="admin-button primary"
-                      disabled={decisionSaving || !reason || verificationChosen || (hasItemReview ? !itemReviewComplete : !finding)}
-                      onClick={() => void decide(isCorrection ? 'correct' : 'validate')}
-                    >
-                      {decisionSaving ? 'Saving decision...' : 'Record finding'}
-                    </button>
+                      <button
+                        type="button"
+                        className="admin-button secondary action-referral"
+                        disabled={decisionSaving || !reason || !verificationChosen || !fieldOfficerId}
+                        title={verificationChosen ? undefined : 'Tick "Refer this report for field verification" above to enable'}
+                        onClick={() => void requestVerification()}
+                      >
+                        <Send size={15} aria-hidden="true" /> Refer for field verification
+                      </button>
 
-                    <button
-                      type="button"
-                      className="admin-button secondary"
-                      disabled={decisionSaving || !reason || verificationChosen}
-                      title="Resolves the report without recording any regulatory finding"
-                      onClick={() => void decide('dismiss')}
-                    >
-                      Resolve without a finding
-                    </button>
+                      <button
+                        type="button"
+                        className="admin-button secondary action-resolve"
+                        disabled={decisionSaving || !reason || verificationChosen}
+                        title="Resolves the report without recording any regulatory finding"
+                        onClick={() => void decide('dismiss')}
+                      >
+                        Resolve without a finding
+                      </button>
+                    </div>
 
-                    <button
-                      type="button"
-                      className="admin-button danger"
-                      disabled={decisionSaving || !reason || verificationChosen}
-                      title="Closes the report without recording any regulatory finding"
-                      onClick={() => void decide('reject')}
-                    >
-                      <XCircle size={15} aria-hidden="true" /> Reject report
-                    </button>
+                    <div className="consumer-report-actions-danger-group">
+                      <button
+                        type="button"
+                        className="admin-button danger action-reject"
+                        disabled={decisionSaving || !reason || verificationChosen}
+                        title="Closes the report without recording any regulatory finding"
+                        onClick={() => void decide('reject')}
+                      >
+                        <XCircle size={15} aria-hidden="true" /> Reject report
+                      </button>
+                    </div>
                   </div>
+
+                  {selected.store_name && (
+                    <div className="consumer-report-notice-callout">
+                      <FileText size={15} className="notice-callout-icon" />
+                      <span>
+                        Need formal regulatory enforcement? Issue a <strong>Letter of Inquiry (LOI)</strong> or <strong>Show Cause Order (SCO)</strong> under Legal Actions.
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Collapsible Technical & Audit Data Accordion */}
@@ -1360,7 +1395,7 @@ export const CitizenTipReview: React.FC = () => {
               Close Full View
             </button>
           </div>
-          <div className="consumer-report-fullscreen-body">
+          <div ref={wheelZoomRef} className="consumer-report-fullscreen-body">
             {evidenceUrl ? (
               <img
                 src={evidenceUrl}

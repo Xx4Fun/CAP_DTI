@@ -7113,15 +7113,43 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
-  font-size: 0.78rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.consumer-report-progress-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-weight: 700;
-  color: var(--admin-muted);
+  color: #1e293b;
+  font-size: 0.8rem;
+  background: #f1f5f9;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+}
+
+.consumer-report-progress-count .progress-check-icon {
+  color: #059669;
 }
 
 .consumer-report-progress .is-blocked {
-  color: var(--admin-warning);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.76rem;
   font-weight: 600;
+}
+
+.consumer-report-progress .is-blocked .progress-alert-icon {
+  color: #d97706;
 }
 
 .consumer-report-decision-note-group {
@@ -7151,14 +7179,70 @@
 
 .consumer-report-actions {
   display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.consumer-report-actions-primary-group {
+  display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.consumer-report-actions .admin-button {
+.consumer-report-actions-primary-group .action-primary {
   flex: 1 1 12rem;
   justify-content: center;
-  min-height: 40px;
+  min-height: 42px;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.consumer-report-actions-primary-group .action-referral {
+  flex: 1 1 11rem;
+  justify-content: center;
+  min-height: 42px;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.consumer-report-actions-primary-group .action-resolve {
+  flex: 1 1 11rem;
+  justify-content: center;
+  min-height: 42px;
+}
+
+.consumer-report-actions-danger-group {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.consumer-report-actions-danger-group .action-reject {
+  min-height: 34px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.78rem;
+}
+
+.consumer-report-notice-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
+.consumer-report-notice-callout strong {
+  color: #1d4ed8;
+}
+
+.notice-callout-icon {
+  color: #2563eb;
+  flex-shrink: 0;
 }
 
 @container consumer-report-workspace (max-width: 620px) {
@@ -7433,6 +7517,57 @@
   background: var(--admin-surface-subtle);
 }
 
+.receipt-extraction-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.receipt-extraction-overview-grid .receipt-extraction-field {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+}
+
+.receipt-extraction-overview-grid .receipt-extraction-field > span {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  color: var(--admin-muted);
+}
+
+.receipt-extraction-overview-grid .receipt-extraction-field > strong {
+  text-align: left;
+  font-size: 0.82rem;
+}
+
+.receipt-extraction-totals-grid {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.receipt-extraction-totals-grid .receipt-extraction-field:last-child {
+  padding-top: 0.45rem;
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--admin-border);
+  font-size: 0.92rem;
+}
+
+.receipt-extraction-totals-grid .receipt-extraction-field:last-child > strong {
+  font-size: 1.05rem;
+  color: var(--admin-text);
+  font-weight: 800;
+}
+
 .receipt-extraction-field {
   display: flex;
   justify-content: space-between;
@@ -7474,10 +7609,55 @@
   color: #475569;
 }
 
-.receipt-extraction-reconciliation { display: grid; gap: 0.3rem; }
-.receipt-extraction-reconciliation strong { color: var(--admin-text); margin-right: 0.35rem; }
-.receipt-extraction-sum { color: var(--admin-muted); }
-.receipt-extraction-caution { color: #92400e; }
+.receipt-extraction-reconciliation {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-surface-subtle);
+}
+
+.receipt-extraction-reconciliation.is-mismatch {
+  border-color: #fed7aa;
+  background: #fffbeb;
+}
+
+.receipt-reconciliation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.receipt-reconciliation-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.receipt-reconciliation-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.receipt-extraction-sum {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--admin-muted);
+}
+
+.receipt-extraction-caution {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #92400e;
+  line-height: 1.4;
+  padding: 0.35rem 0.55rem;
+  background: rgba(254, 243, 199, 0.7);
+  border-radius: 4px;
+}
 
 .receipt-extraction-warnings {
   margin: 0;
@@ -7509,15 +7689,19 @@
 .evidence-section-nav {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
+  gap: 0.4rem;
+  font-size: 0.72rem;
   color: #475569;
+  background: var(--admin-surface);
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--admin-border);
 }
 
 .admin-shell .evidence-section-nav button,
 .evidence-section-nav button {
   min-height: auto;
-  padding: 0.16rem 0.45rem;
+  padding: 0.2rem 0.55rem;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
   background: var(--admin-surface);
@@ -7536,10 +7720,13 @@
 }
 
 .admin-shell .evidence-section-nav button:disabled,
-.evidence-section-nav button:disabled { opacity: 0.45; cursor: not-allowed; }
+.evidence-section-nav button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
-.evidence-section-nav strong {
-  font-size: 0.72rem;
+.evidence-nav-label {
+  font-size: 0.74rem;
   font-weight: 700;
   color: #1e293b;
 }
@@ -7547,6 +7734,9 @@
 .evidence-section-nav-attempt {
   font-size: 0.68rem;
   color: var(--admin-muted);
+  background: #f1f5f9;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
 }
 
 .receipt-extraction-flags { margin-top: 0.15rem; }
@@ -8100,7 +8290,6 @@
 
 .consumer-report-viewport img {
   object-fit: contain;
-  transition: transform 0.2s ease;
 }
 
 .consumer-report-viewport-status {
@@ -8548,7 +8737,6 @@
   max-height: 90vh;
   max-width: 90vw;
   border-radius: 6px;
-  transition: transform 0.2s ease;
 }
 
 .consumer-report-fullscreen-locked {
