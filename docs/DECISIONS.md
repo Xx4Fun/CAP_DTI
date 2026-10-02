@@ -77,7 +77,7 @@ Only record choices that should constrain future work. Newest entries go first a
 - Routine monitoring is limited to one accepted visit per active establishment and monitoring period: Monday-to-Monday in `Asia/Manila` normally, or one Manila calendar day while a systemwide Price Freeze is effective.
 - A Price Freeze period requires an emergency-protocol routine visit. A standard routine visit from earlier that day does not satisfy the emergency daily requirement.
 - Complaint verification and supervisor-directed work share the Additional Visits queue and never satisfy routine coverage. DTI Admin must assign an active Field Officer; officers cannot self-claim and may return untouched assignments to Admin for reassignment.
-- The backend is authoritative for duplicate routine rejection. A rejected offline upload remains encrypted device-local work in Needs Attention; completed routine establishments remain visible but disabled in Choose Store.
+- The backend is authoritative for duplicate routine rejection. A rejected offline upload remains encrypted device-local work in Needs Attention; completed routine establishments remain visible in Choose Store but open only as a view-only copy of the period's accepted routine visit (any officer's, signature views audited); they cannot start a new routine visit.
 - This entry supersedes the 2026-09-07 weekly-only cadence and unassigned verification-queue behavior while preserving its evidence and device-local status boundaries.
 
 ## 2026-09-07 - Weekly field monitoring status

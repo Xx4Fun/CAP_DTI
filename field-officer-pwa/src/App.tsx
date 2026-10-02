@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ArrowLeft, Building2, Check, CheckCircle2, ChevronLeft, Info,
   CloudOff, LocateFixed, LockKeyhole, LogOut, MapPin,
@@ -15,6 +16,7 @@ import { formatDistance, haversineKm, HistoryPage, HomePage, MonitoringPage, Pro
 import { NotificationDrawer } from './components/NotificationDrawer'
 import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
+import { ReadOnlyVisit } from './components/ReadOnlyVisit'
 import { apiError, fieldApi } from './services/fieldApi'
 import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
 import {
@@ -26,7 +28,7 @@ import type { BiometricAvailability, VaultUnlockResult } from './app/vault'
 import {
   applyRenewedLease, canFinalizeWithLease, logoutBlock, shouldAutoRetry, shouldLockAfterBackground, shouldRetryOnReconnect, syncErrorKind,
 } from './app/sessionPolicy'
-import type { ArchivedVisit, BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, ReferenceSnapshot, StoreRecord, VisitDraft } from './types'
+import type { ArchivedVisit, BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, GeoPosition, QueuedVisit, ReferenceSnapshot, RoutineRecordView, StoreRecord, VisitDraft } from './types'
 
 type Gate = 'checking' | 'login' | 'pin' | 'biometric' | 'unlock' | 'repair-login' | 'repair-unlock' | 'migration' | 'attention' | 'recovery' | 'ready'
 type View = TopLevelView | 'visit'
@@ -82,6 +84,7 @@ export default function App() {
   const [drafts, setDrafts] = useState<VisitDraft[]>([])
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
   const [visitStep, setVisitStep] = useState(0)
+  const [viewingRecord, setViewingRecord] = useState(false)
   const [online, setOnline] = useState(navigator.onLine)
   const [syncing, setSyncing] = useState(false)
   const [notice, setNotice] = useState<FieldNotice | null>(null)
@@ -275,7 +278,7 @@ export default function App() {
 
   // Bind a background GPS fix to the active draft until the officer signs, and only when it is meaningfully more accurate.
   useEffect(() => {
-    if (!draft || !officerPosition || officerPosition.accuracy_meters > 150 || draft.signatures.officer_png_base64) return
+    if (viewingRecord || !draft || !officerPosition || officerPosition.accuracy_meters > 150 || draft.signatures.officer_png_base64) return
     if (draft.location && draft.location.accuracy_meters - officerPosition.accuracy_meters < GPS_REBIND_IMPROVEMENT_METRES) return
     setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? {
       ...item,
@@ -286,7 +289,7 @@ export default function App() {
         captured_at: new Date().toISOString(),
       },
     } : item))
-  }, [draft, officerPosition])
+  }, [draft, officerPosition, viewingRecord])
 
   useEffect(() => {
     if (tabLock !== 'owned') return
@@ -683,7 +686,7 @@ export default function App() {
           </SecurityMessage>}
         </AuthShell>
       ) : session ? (
-        <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && visitStep > 0} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={actionableDrafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>
+        <FieldAppShell activeView={shellView} fullScreenMode={view === 'visit' && (visitStep > 0 || viewingRecord)} officerName={session.user.name} online={online} queueCount={queue.length} draftCount={actionableDrafts.length} unreadCount={unreadCount} authorizationValid={leaseValid} onNavigate={navigate} onStartVisit={() => requestStartVisit()} onNotifications={() => setNotificationsOpen(true)} onHelp={() => { setGuideStep(0); setGuideOpen(true) }} onLock={() => void lockWorkspace()}>
           {notice && <FieldToast notice={notice} onDismiss={dismissNotice} />}
           {!leaseValid && <div className="authorization-warning" role="alert"><TriangleAlert size={18} /><span><strong>Offline authorization expired</strong> Existing work is preserved. Connect and unlock again before starting or finalizing an official visit.</span></div>}
           {storagePersisted === false && (queue.length > 0 || actionableDrafts.length > 0 || archivedVisits.length > 0) && (
@@ -695,7 +698,7 @@ export default function App() {
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
             : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} onViewHistory={() => setView('history')} />)}
           {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} archived={archivedVisits} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue([uuid])} onArchive={(uuid) => void archiveRejectedVisit(uuid)} onStartAssigned={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
-          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} verificationRequests={verificationRequests} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
+          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} token={session.token} onViewingChange={setViewingRecord} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             await pendingDraftFlush.current?.()
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
@@ -758,7 +761,7 @@ export default function App() {
                       </p>
                     </div>
                     <div className="field-dialog-actions">
-                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                      <button type="button" className="secondary-button" autoFocus onClick={() => setSignOutDialog(null)}>
                         Cancel
                       </button>
                       <button
@@ -788,7 +791,7 @@ export default function App() {
                       </p>
                     </div>
                     <div className="field-dialog-actions">
-                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                      <button type="button" className="secondary-button" autoFocus onClick={() => setSignOutDialog(null)}>
                         Cancel
                       </button>
                       <button
@@ -818,7 +821,7 @@ export default function App() {
                       </p>
                     </div>
                     <div className="field-dialog-actions">
-                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                      <button type="button" className="secondary-button" autoFocus onClick={() => setSignOutDialog(null)}>
                         Understood
                       </button>
                     </div>
@@ -842,7 +845,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="field-dialog-actions">
-                      <button type="button" className="secondary-button" onClick={() => setSignOutDialog(null)}>
+                      <button type="button" className="secondary-button" autoFocus onClick={() => setSignOutDialog(null)}>
                         Stay signed in
                       </button>
                       <button
@@ -1123,7 +1126,8 @@ interface VisitWizardProps {
   onStep: (step: number) => void
   draft: VisitDraft
   bootstrap: BootstrapData
-  verificationRequests: FieldVerificationRequest[]
+  token: string
+  onViewingChange: (viewing: boolean) => void
   officerPosition: GeoPosition | null
   online: boolean
   authorizationValid: boolean
@@ -1137,7 +1141,8 @@ function VisitWizard({
   onStep,
   draft,
   bootstrap,
-  verificationRequests,
+  token,
+  onViewingChange,
   officerPosition,
   online,
   authorizationValid,
@@ -1158,18 +1163,50 @@ function VisitWizard({
   const [confirmExit, setConfirmExit] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
   const [pendingFinalDraft, setPendingFinalDraft] = useState<VisitDraft | null>(null)
+  // View-only access to a store already monitored this period. Never touches the draft.
+  const [viewOnlyStore, setViewOnlyStore] = useState<StoreRecord | null>(null)
+  const [viewLoading, setViewLoading] = useState(false)
+  const [viewError, setViewError] = useState('')
+  const [viewStale, setViewStale] = useState(false)
+  const [viewRecord, setViewRecord] = useState<RoutineRecordView | null>(null)
+  const viewRequestRef = useRef(0)
+  useEffect(() => () => { viewRequestRef.current += 1 }, [])
+  useEffect(() => {
+    onViewingChange(Boolean(viewRecord))
+    return () => onViewingChange(false)
+  }, [onViewingChange, viewRecord])
+  const periodWord = cadence === 'daily' ? 'today' : 'this week'
+
+  const closeViewOnly = () => {
+    viewRequestRef.current += 1
+    setViewOnlyStore(null); setViewLoading(false); setViewError(''); setViewStale(false)
+  }
+  const proceedToViewing = async () => {
+    if (!viewOnlyStore) return
+    const requestId = ++viewRequestRef.current
+    setViewLoading(true); setViewError(''); setViewStale(false)
+    try {
+      const record = await fieldApi.currentRoutineRecord(token, viewOnlyStore.id, bootstrap.monitoring_period)
+      if (requestId !== viewRequestRef.current) return
+      if (!record) { setViewStale(true); return }
+      setViewOnlyStore(null)
+      setViewRecord(record)
+    } catch (err) {
+      if (requestId === viewRequestRef.current) setViewError(apiError(err, 'The submitted visit could not be loaded.'))
+    } finally {
+      if (requestId === viewRequestRef.current) setViewLoading(false)
+    }
+  }
 
   const steps = ['Choose Store', 'Record Prices', 'Review & Sign']
 
   const stores = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    const verificationStoreIds = new Set(verificationRequests.map((request) => request.store.id))
     return bootstrap.stores
       .filter((store) => `${store.store_name} ${store.address}`.toLowerCase().includes(normalizedQuery))
       .filter((store) => routineStatus === 'all' || routineStatusOf(store) === routineStatus)
       .map((store) => ({
         ...store,
-        verificationRequired: verificationStoreIds.has(store.id),
         distanceKm: officerPosition && Number.isFinite(store.latitude) && Number.isFinite(store.longitude)
           && (store.latitude !== 0 || store.longitude !== 0)
           ? haversineKm(officerPosition.latitude, officerPosition.longitude, store.latitude, store.longitude)
@@ -1180,7 +1217,7 @@ function VisitWizard({
         const rightRank = routineStatusOf(right) === 'due' ? 0 : 1
         return leftRank - rightRank || left.store_name.localeCompare(right.store_name)
       })
-  }, [bootstrap.stores, officerPosition, query, routineStatus, verificationRequests])
+  }, [bootstrap.stores, officerPosition, query, routineStatus])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
 
@@ -1280,6 +1317,8 @@ function VisitWizard({
       setConfirmFinalize(false)
     }
   }
+
+  if (viewRecord) return <ReadOnlyVisit record={viewRecord} onClose={() => setViewRecord(null)} />
 
   return (
     <div className="visit-page">
@@ -1396,9 +1435,9 @@ function VisitWizard({
                     type="button"
                     className="store-selection-card"
                     key={store.id}
-                    aria-label={`Choose ${store.store_name} to record prices`}
-                    disabled={routineStatusOf(store) === 'completed'}
+                    aria-label={routineStatusOf(store) === 'completed' ? `View ${store.store_name}, already monitored ${periodWord}` : `Choose ${store.store_name} to record prices`}
                     onClick={() => {
+                      if (routineStatusOf(store) === 'completed') { setViewOnlyStore(store); return }
                       onDraft({
                         ...draft,
                         store_id: store.id,
@@ -1427,7 +1466,7 @@ function VisitWizard({
                     <span className="store-card-copy">
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
-                      <span className="store-status-row"><span>{routineStatusOf(store) === 'completed' ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}</span>{store.verificationRequired && <span>Verification Required</span>}</span>
+                      <span className="store-status-row"><span>{routineStatusOf(store) === 'completed' ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}</span></span>
                       <small>{store.latest_routine_monitoring_at ? `Latest routine: ${new Date(store.latest_routine_monitoring_at).toLocaleDateString('en-PH')}` : store.has_prior_routine_monitoring === false ? 'No previous routine visits' : ''}</small>
                     </span>
                   </button>
@@ -1635,6 +1674,35 @@ function VisitWizard({
           </div>
         )}
       </section>
+      {viewOnlyStore && createPortal(
+        <div className="field-dialog-backdrop" role="presentation" onClick={closeViewOnly}>
+          <section
+            className="field-dialog field-discard-dialog field-view-only-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="field-view-only-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="field-view-only-title">Already monitored {periodWord}</h2>
+            {viewStale ? (
+              <p role="status">No visit has been submitted for <strong>{viewOnlyStore.store_name}</strong> in the current period. Your store list is out of date; it refreshes the next time the app reloads its data online.</p>
+            ) : (
+              <p><strong>{viewOnlyStore.store_name}</strong> was already monitored {periodWord}. You can open the submitted visit in view-only mode; it can't be edited.</p>
+            )}
+            {!online && !viewStale && <p className="field-view-only-note">Connect to the internet to view the submitted visit.</p>}
+            {viewError && <p className="form-error" role="alert">{viewError}</p>}
+            <div className="field-dialog-actions">
+              <button type="button" className="secondary-button" autoFocus onClick={closeViewOnly}>Go back</button>
+              {!viewStale && (
+                <button type="button" className="primary-button" disabled={!online || viewLoading} onClick={() => void proceedToViewing()}>
+                  {viewLoading ? 'Opening…' : 'Proceed to viewing'}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
       {confirmExit && (
         <div className="field-dialog-backdrop" role="presentation">
           <section className="field-dialog" role="dialog" aria-modal="true" aria-labelledby="exit-visit-title">
@@ -1644,6 +1712,7 @@ function VisitWizard({
               <button
                 type="button"
                 className="secondary-button visit-exit-continue"
+                autoFocus
                 aria-label="Continue editing"
                 onClick={() => setConfirmExit(false)}
               >
@@ -1677,7 +1746,7 @@ function VisitWizard({
             <h2 id="finalize-title">Finalize this visit?</h2>
             <p>After finalization, the signatures, recorded prices, and location cannot be edited.</p>
             <div className="field-dialog-actions">
-              <button type="button" className="secondary-button" disabled={finishing} onClick={() => setConfirmFinalize(false)}>Go back</button>
+              <button type="button" className="secondary-button" autoFocus disabled={finishing} onClick={() => setConfirmFinalize(false)}>Go back</button>
               <button type="button" className="primary-button" disabled={finishing} onClick={() => void confirmFinish()}>{finishing ? 'Finalizing…' : 'Confirm finalization'}</button>
             </div>
           </section>

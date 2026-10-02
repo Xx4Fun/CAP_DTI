@@ -85,6 +85,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-records', [FieldMonitoringController::class, 'index']);
         Route::get('/monitoring-records/{monitoringRecord}', [FieldMonitoringController::class, 'show']);
         Route::post('/monitoring-records/sync', [FieldMonitoringController::class, 'sync']);
+        Route::get('/stores/{store}/current-routine-record', [FieldMonitoringController::class, 'currentRoutineRecord']);
     });
     Route::prefix('vendor')->group(function () {
         Route::get('/session', [VendorAuthController::class, 'session']);

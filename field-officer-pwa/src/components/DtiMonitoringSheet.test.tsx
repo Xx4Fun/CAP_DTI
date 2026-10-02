@@ -305,3 +305,29 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('Argentina Corned Beef (150g)')).toBeInTheDocument()
   })
 })
+
+describe('DtiMonitoringSheet read-only', () => {
+  afterEach(cleanup)
+
+  it('locks recorded prices and labels the reference as captured', () => {
+    const onUpdatePrice = vi.fn()
+    const draft: VisitDraft = {
+      client_uuid: 'view-1', store_id: 1, offline_lease_id: '', started_at: '2026-09-01T00:00:00Z',
+      items: [{ srp_id: 1, recorded_price: 13, reference_snapshot: {
+        status: 'available', type: 'standard_srp', source_id: 1, value: 12, label: 'SRP',
+        source_reference: 'DTI SRP Bulletin 2026-08', effective_date: '2026-08-01', reference_version: '',
+      } }],
+      representative: { name: '', title: '' }, signatures: { officer_png_base64: '', representative_png_base64: '' },
+      location: null, sync_source: 'offline_queue', client_version: '',
+    }
+    render(<DtiMonitoringSheet readOnly store={mockStore} draft={draft} bulletins={[mockBulletins[0]]} onUpdatePrice={onUpdatePrice} />)
+
+    const input = screen.getByRole('spinbutton', { name: `Observed shelf price for ${mockBulletins[0].commodity_name}` })
+    expect(input).toHaveAttribute('readonly')
+    expect(input).toHaveValue(13)
+    fireEvent.change(input, { target: { value: '20' } })
+    expect(onUpdatePrice).not.toHaveBeenCalled()
+    expect(screen.getByText('CAPTURED REFERENCE')).toBeInTheDocument()
+    expect(screen.queryByText('ACTIVE REFERENCE')).not.toBeInTheDocument()
+  })
+})

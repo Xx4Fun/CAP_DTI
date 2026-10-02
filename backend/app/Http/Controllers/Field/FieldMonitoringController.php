@@ -35,7 +35,7 @@ class FieldMonitoringController extends Controller
         return response()->json(['data' => MonitoringRecord::query()
             ->where('officer_user_id', $user->id)
             ->where('status', 'accepted')
-            ->with(['store:id,store_name,address', 'items.bulletin:id,commodity_name,unit'])
+            ->with(['store:id,store_name,address', 'items.bulletin:id,commodity_name,unit,category,regulatory_classification'])
             ->withCount(['items', 'items as anomaly_count' => fn ($query) => $query->where('is_anomaly', true)])
             ->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
     }
@@ -44,9 +44,68 @@ class FieldMonitoringController extends Controller
     {
         $user = $this->fieldUser($request);
         abort_unless($monitoringRecord->officer_user_id === $user->id && $monitoringRecord->status === 'accepted', 404);
-        $monitoringRecord->load(['store:id,store_name,address,latitude,longitude', 'items.bulletin:id,commodity_name,unit']);
+        $monitoringRecord->load(['store:id,store_name,address,latitude,longitude', 'items.bulletin:id,commodity_name,unit,category,regulatory_classification']);
+
+        return response()->json(['data' => $this->detailPayload($monitoringRecord)]);
+    }
+
+    // View-only access to the routine visit that completed a store for the current period, whichever officer submitted it.
+    public function currentRoutineRecord(Request $request, Store $store, AuditTrailService $audit)
+    {
+        $this->fieldUser($request);
+        abort_unless($store->is_active, 404);
+        $claimed = $request->validate([
+            'period_starts_at' => ['nullable', 'date'],
+            'period_ends_at' => ['nullable', 'date'],
+            'period_protocol_mode' => ['nullable', 'string'],
+        ]);
+        $period = MonitoringPeriod::current();
+        // A card cached under another period (rollover, or a price freeze switching weekly to daily) must not show this period's visit.
+        $samePeriod = isset($claimed['period_starts_at'], $claimed['period_ends_at'], $claimed['period_protocol_mode'])
+            && Carbon::parse($claimed['period_starts_at'])->equalTo($period['starts_at'])
+            && Carbon::parse($claimed['period_ends_at'])->equalTo($period['ends_at'])
+            && $claimed['period_protocol_mode'] === $period['protocol_mode'];
+        if (! $samePeriod) {
+            return response()->json(['data' => null], 200, ['Cache-Control' => 'private, no-store']);
+        }
+
+        $record = MonitoringPeriod::constrainPeriod($store->routineMonitoringRecords(), $period)
+            ->latest('finalized_at')->latest('id')->first();
+        if (! $record) {
+            return response()->json(['data' => null], 200, ['Cache-Control' => 'private, no-store']);
+        }
+
+        $record->load(['store:id,store_name,address,latitude,longitude', 'items.bulletin:id,commodity_name,unit,category,regulatory_classification', 'officer:id,name']);
+        $audit->recordOrFail(
+            $request,
+            'monitoring_record.signature_viewed',
+            $record,
+            ['kind' => 'both', 'channel' => 'field'],
+            'Audit trail is unavailable. Private signature evidence cannot be accessed safely.'
+        );
 
         return response()->json(['data' => [
+            ...$this->detailPayload($record),
+            'officer' => ['name' => $record->officer?->name],
+            'signature_images' => [
+                'officer_png_base64' => $this->signatureDataUrl($record->officer_signature_disk, $record->officer_signature_path),
+                'representative_png_base64' => $this->signatureDataUrl($record->representative_signature_disk, $record->representative_signature_path),
+            ],
+        ]], 200, ['Cache-Control' => 'private, no-store']);
+    }
+
+    private function signatureDataUrl(?string $disk, ?string $path): ?string
+    {
+        if (! $disk || ! $path || ! Storage::disk($disk)->exists($path)) {
+            return null;
+        }
+
+        return 'data:image/png;base64,'.base64_encode(Storage::disk($disk)->get($path));
+    }
+
+    private function detailPayload(MonitoringRecord $monitoringRecord): array
+    {
+        return [
             'id' => $monitoringRecord->id,
             'client_uuid' => $monitoringRecord->client_uuid,
             'status' => $monitoringRecord->status,
@@ -70,6 +129,7 @@ class FieldMonitoringController extends Controller
             'items' => $monitoringRecord->items->map(fn ($item) => [
                 'id' => $item->id, 'srp_id' => $item->srp_id,
                 'commodity_name' => $item->bulletin?->commodity_name, 'unit' => $item->bulletin?->unit,
+                'category' => $item->bulletin?->category, 'regulatory_classification' => $item->bulletin?->regulatory_classification,
                 'recorded_price' => $item->recorded_price, 'previous_price' => $item->previous_price,
                 'variance_percent' => $item->variance_percent, 'is_anomaly' => $item->is_anomaly,
                 'reference_status' => $item->reference_status, 'reference_type' => $item->reference_type,
@@ -79,7 +139,7 @@ class FieldMonitoringController extends Controller
                 'reference_version' => $item->reference_version,
                 'reference_effective_date' => $item->reference_effective_date?->toDateString(),
             ])->values(),
-        ]]);
+        ];
     }
 
     public function sync(Request $request, AuditTrailService $audit, FieldReferenceResolver $references, FieldNotificationService $notifications)

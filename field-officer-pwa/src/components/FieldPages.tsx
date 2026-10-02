@@ -436,7 +436,7 @@ export function MonitoringPage({
                 The assigned visit for <strong>{confirmRelease.store.store_name}</strong> will be removed from your list and sent back to Admin for reassignment.
               </p>
               <div className="field-dialog-actions">
-                <button type="button" className="primary-button" onClick={() => setConfirmRelease(null)}>
+                <button type="button" className="primary-button" autoFocus onClick={() => setConfirmRelease(null)}>
                   Keep assignment
                 </button>
                 <button
@@ -570,7 +570,7 @@ export function MonitoringPage({
                 The unfinished monitoring visit for <strong>{storeName}</strong> will be permanently deleted from this device. Any recorded prices will be lost.
               </p>
               <div className="field-dialog-actions">
-                <button type="button" className="secondary-button" onClick={() => setConfirmDiscard(null)}>
+                <button type="button" className="secondary-button" autoFocus onClick={() => setConfirmDiscard(null)}>
                   Keep
                 </button>
                 <button

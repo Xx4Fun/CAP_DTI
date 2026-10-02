@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, MonitoringRecord, MonitoringRecordDetail, NotificationPage, OfflineLease, Page, VisitDraft } from '../types'
+import type { BootstrapData, FieldNotification, FieldSession, FieldVerificationRequest, MonitoringRecord, MonitoringPeriodInfo, MonitoringRecordDetail, NotificationPage, OfflineLease, Page, RoutineRecordView, VisitDraft } from '../types'
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api', timeout: 25_000 })
 const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } })
@@ -26,6 +26,11 @@ export const fieldApi = {
   },
   async historyDetail(token: string, id: number): Promise<MonitoringRecordDetail> {
     return (await client.get(`/field/monitoring-records/${id}`, auth(token))).data.data
+  },
+  // null: no visit for the period this device's store list was built from (the list is out of date).
+  async currentRoutineRecord(token: string, storeId: number, period?: MonitoringPeriodInfo): Promise<RoutineRecordView | null> {
+    const params = period ? { period_starts_at: period.starts_at, period_ends_at: period.ends_at, period_protocol_mode: period.protocol_mode } : {}
+    return (await client.get(`/field/stores/${storeId}/current-routine-record`, { ...auth(token), params })).data.data ?? null
   },
   async verificationRequests(token: string): Promise<FieldVerificationRequest[]> {
     return (await client.get('/field/verification-requests', auth(token))).data.data

@@ -142,6 +142,7 @@ describe('Field top-level pages', () => {
     // Test discard confirmation flow
     fireEvent.click(screen.getAllByRole('button', { name: 'Discard draft' })[0])
     expect(screen.getByText('Discard this draft?')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Keep' })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: 'Yes, discard' }))
     expect(discard).toHaveBeenCalledWith('draft-2')
 
@@ -218,6 +219,7 @@ describe('Field top-level pages', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Admin' }))
     expect(screen.getByRole('dialog', { name: 'Return this visit to Admin?' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Keep assignment' })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: 'Keep assignment' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(release).not.toHaveBeenCalled()

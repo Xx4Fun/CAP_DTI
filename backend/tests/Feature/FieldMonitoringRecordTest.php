@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\FieldOfflineLease;
+use App\Models\FieldVerificationRequest;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryEmergency;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Services\FieldReferenceResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -943,5 +945,123 @@ class FieldMonitoringRecordTest extends TestCase
             ->assertJsonPath('data.data.0.commodity_name', 'Sugar')
             ->assertJsonPath('data.data.0.recorded_price', 120)
             ->assertJsonPath('data.data.0.is_anomaly', true);
+    }
+
+    private function secondOfficerToken(): string
+    {
+        User::create([
+            'name' => 'Second Officer', 'email' => 'second-field@dti.test',
+            'password' => 'secure-password', 'role' => 'field_officer',
+        ]);
+
+        return $this->postJson('/api/field/login', ['email' => 'second-field@dti.test', 'password' => 'secure-password'])->assertOk()->json('token');
+    }
+
+    private function currentRoutineRecordUrl(Store $store, string $token): string
+    {
+        $period = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.monitoring_period');
+
+        return "/api/field/stores/{$store->id}/current-routine-record?".http_build_query([
+            'period_starts_at' => $period['starts_at'], 'period_ends_at' => $period['ends_at'], 'period_protocol_mode' => $period['protocol_mode'],
+        ]);
+    }
+
+    public function test_any_field_officer_can_view_the_current_period_routine_visit_with_signatures_and_it_is_audited(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, $bulletins))
+            ->assertCreated()->json('data.results.0.record_id');
+        $otherToken = $this->secondOfficerToken();
+
+        $response = $this->withToken($otherToken)->getJson($this->currentRoutineRecordUrl($store, $otherToken))
+            ->assertOk()
+            ->assertJsonPath('data.id', $recordId)
+            ->assertJsonPath('data.officer.name', 'Field Officer')
+            ->assertJsonPath('data.representative.name', 'Maria Santos')
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonStructure(['data' => ['items' => [['category', 'regulatory_classification']]]]);
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $this->assertSame('data:image/png;base64,'.base64_encode("\x89PNG\r\n\x1a\nofficer-signature"), $response->json('data.signature_images.officer_png_base64'));
+        $this->assertSame('data:image/png;base64,'.base64_encode("\x89PNG\r\n\x1a\nrepresentative-signature"), $response->json('data.signature_images.representative_png_base64'));
+        $this->assertDatabaseHas('audit_events', ['action' => 'monitoring_record.signature_viewed', 'subject_id' => $recordId]);
+    }
+
+    public function test_current_routine_record_refuses_inactive_stores_and_non_field_users(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, [$this->bulletin('Rice', 100)]))
+            ->assertCreated();
+        $url = $this->currentRoutineRecordUrl($store, $token);
+
+        $store->update(['is_active' => false]);
+        $this->withToken($token)->getJson($url)->assertNotFound();
+
+        $store->update(['is_active' => true]);
+        $evaluator = User::create(['name' => 'Evaluator', 'email' => 'evaluator@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
+        $evaluatorToken = $evaluator->createToken('admin', ['*'])->plainTextToken;
+        $this->app['auth']->forgetGuards();
+        $this->withToken($evaluatorToken)->getJson($url)->assertForbidden();
+        $this->assertDatabaseMissing('audit_events', ['action' => 'monitoring_record.signature_viewed']);
+    }
+
+    public function test_current_routine_record_is_null_without_a_matching_period_or_a_current_routine_visit(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-15 02:00:00', 'UTC')); // Tuesday in Manila
+        Storage::fake('receipt_evidence');
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, [$this->bulletin('Rice', 100)]))
+            ->assertCreated()->json('data.results.0.record_id');
+        $url = $this->currentRoutineRecordUrl($store, $token);
+
+        // Missing period identity never returns the visit.
+        $this->withToken($token)->getJson("/api/field/stores/{$store->id}/current-routine-record")->assertOk()->assertJsonPath('data', null);
+
+        // A verification visit does not count as the routine visit.
+        $verification = FieldVerificationRequest::create([
+            'consumer_report_id' => null, 'source_type' => 'supervisor_directive',
+            'store_id' => $store->id, 'requested_by' => $officer->id, 'claimed_by' => $officer->id, 'status' => 'claimed',
+            'reason' => 'Directive.', 'context_json' => [], 'requested_at' => now(), 'claimed_at' => now(),
+        ]);
+        MonitoringRecord::whereKey($recordId)->update(['field_verification_request_id' => $verification->id]);
+        $this->withToken($token)->getJson($url)->assertOk()->assertJsonPath('data', null);
+        MonitoringRecord::whereKey($recordId)->update(['field_verification_request_id' => null]);
+        $this->withToken($token)->getJson($url)->assertOk()->assertJsonPath('data.id', $recordId);
+
+        // Next week: the cached period no longer matches, and the new period has no visit yet.
+        Carbon::setTestNow(Carbon::parse('2026-09-22 02:00:00', 'UTC'));
+        $this->withToken($token)->getJson($url)->assertOk()->assertJsonPath('data', null);
+        $this->withToken($token)->getJson($this->currentRoutineRecordUrl($store, $token))->assertOk()->assertJsonPath('data', null);
+        $this->assertSame(1, DB::table('audit_events')->where('action', 'monitoring_record.signature_viewed')->count());
+    }
+
+    public function test_a_weekly_period_card_does_not_receive_a_monday_price_freeze_daily_period_visit(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-13 17:00:00', 'UTC')); // Monday 01:00 Manila: weekly and daily periods start together
+        Storage::fake('receipt_evidence');
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $this->payload($store, [$this->bulletin('Rice', 100)]))
+            ->assertCreated()->json('data.results.0.record_id');
+        $weeklyUrl = $this->currentRoutineRecordUrl($store, $token);
+
+        RegulatoryEmergency::create([
+            'location' => 'Systemwide', 'starts_on' => now('Asia/Manila')->toDateString(),
+            'declaration_reference' => 'PF-MONDAY', 'status' => 'active',
+            'confirmed_at' => now(), 'responsible_admin_id' => $officer->id,
+        ]);
+        // Re-tag the visit as emergency so the new daily period has a current record.
+        MonitoringRecord::whereKey($recordId)->update(['protocol_mode' => 'emergency']);
+        $dailyUrl = $this->currentRoutineRecordUrl($store, $token);
+
+        $this->assertStringContainsString(rawurlencode(now('Asia/Manila')->startOfDay()->utc()->toIso8601String()), $weeklyUrl);
+        $this->assertNotSame($weeklyUrl, $dailyUrl);
+        $this->withToken($token)->getJson($weeklyUrl)->assertOk()->assertJsonPath('data', null);
+        $this->withToken($token)->getJson($dailyUrl)->assertOk()->assertJsonPath('data.id', $recordId);
     }
 }

@@ -89,7 +89,7 @@ class FieldDataController extends Controller
                     ->withExists([
                         'routineMonitoringRecords as has_prior_routine_monitoring',
                         'routineMonitoringRecords as monitored_this_week' => fn ($records) => MonitoringPeriod::constrainProtocol($records, 'standard')->where('finalized_at', '>=', $week['starts_at'])->where('finalized_at', '<', $week['ends_at']),
-                        'routineMonitoringRecords as routine_completed' => fn ($records) => $this->routinePeriod($records, $period),
+                        'routineMonitoringRecords as routine_completed' => fn ($records) => MonitoringPeriod::constrainPeriod($records, $period),
                     ])
                     ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
                     ->orderBy('store_name')->get()->map(fn (Store $store) => [
@@ -211,14 +211,6 @@ class FieldDataController extends Controller
             'claimed_by' => $verification->claimed_by, 'requested_at' => $verification->requested_at,
             'claimed_at' => $verification->claimed_at, 'released_at' => $verification->released_at,
         ];
-    }
-
-    private function routinePeriod($query, array $period)
-    {
-        MonitoringPeriod::constrainProtocol($query, $period['protocol_mode'])
-            ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
-
-        return $query;
     }
 
     private function periodPayload(array $period): array

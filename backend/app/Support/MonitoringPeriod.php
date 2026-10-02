@@ -37,6 +37,13 @@ final class MonitoringPeriod
         return self::for(now(MonitoringWeek::TIMEZONE));
     }
 
+    // Records that count toward a period's routine completion: same protocol, finalized inside the window.
+    public static function constrainPeriod($query, array $period)
+    {
+        return self::constrainProtocol($query, $period['protocol_mode'])
+            ->where('finalized_at', '>=', $period['starts_at'])->where('finalized_at', '<', $period['ends_at']);
+    }
+
     public static function constrainProtocol($query, string $mode)
     {
         return $mode === 'emergency'

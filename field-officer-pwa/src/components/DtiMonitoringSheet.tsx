@@ -13,6 +13,8 @@ interface DtiMonitoringSheetProps {
   onUpdatePrice: (srpId: number, price: number | null, reference?: ReferenceSnapshot) => void
   onProceedToReview?: () => void
   onPrevious?: () => void
+  // View-only: show a submitted visit; prices can't change and references are the ones captured at submission.
+  readOnly?: boolean
 }
 
 export function DtiMonitoringSheet({
@@ -25,7 +27,9 @@ export function DtiMonitoringSheet({
   onUpdatePrice,
   onProceedToReview,
   onPrevious,
+  readOnly = false,
 }: DtiMonitoringSheetProps) {
+  const referenceWord = readOnly ? 'captured' : 'active'
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
   const [filterMode, setFilterMode] = useState<'all' | 'encoded' | 'compliant' | 'anomalies'>('all')
@@ -294,7 +298,7 @@ export function DtiMonitoringSheet({
             <tr>
               <th className="col-commodity">BASIC NECESSITIES AND PRIME COMMODITIES</th>
               <th className="col-unit">UNIT</th>
-              <th className="col-srp">ACTIVE REFERENCE</th>
+              <th className="col-srp">{readOnly ? 'CAPTURED REFERENCE' : 'ACTIVE REFERENCE'}</th>
               <th className="col-price">MONITORED PRICE</th>
               <th className="col-status">VARIANCE</th>
             </tr>
@@ -370,6 +374,11 @@ export function DtiMonitoringSheet({
                               <span className={displayedReference !== null ? 'srp-value' : 'srp-none'}>
                                 {displayedReference !== null ? `₱${displayedReference.toFixed(2)}` : 'UNAVAILABLE'}
                               </span>
+                              {readOnly && recordedLine?.reference_snapshot && (
+                                <small className="dti-captured-reference">
+                                  {[recordedLine.reference_snapshot.label, recordedLine.reference_snapshot.source_reference, recordedLine.reference_snapshot.effective_date].filter(Boolean).join(' · ')}
+                                </small>
+                              )}
                             </td>
 
                             {/* Col 4: Monitored Price (Clean numeric input without accidental 'X' trigger) */}
@@ -385,7 +394,10 @@ export function DtiMonitoringSheet({
                                     placeholder="0.00"
                                     aria-label={`Observed shelf price for ${item.commodity_name}`}
                                     value={hasRecorded ? recordedPrice : ''}
+                                    readOnly={readOnly}
+                                    aria-readonly={readOnly || undefined}
                                     onChange={(e) => {
+                                      if (readOnly) return
                                       const text = e.target.value.trim()
                                       if (text === '') {
                                         onUpdatePrice(item.id, null)
@@ -413,7 +425,7 @@ export function DtiMonitoringSheet({
                               {hasRecorded && reference.status === 'unavailable' ? <span className="dti-variance-pill pill-unavailable">Reference unavailable</span> : hasRecorded && variance !== null ? (
                                 <span
                                   className={`dti-variance-pill ${isAnomaly ? 'pill-anomaly' : variance === 0 ? 'pill-exact' : variance > 0 ? 'pill-ok' : 'pill-discount'}`}
-                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the current reference and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to the active reference`}
+                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the ${readOnly ? 'reference captured at submission' : 'current reference'} and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to the ${referenceWord} reference`}
                                 >
                                   {variance > 0 ? `+${variance.toFixed(1)}%` : `${variance.toFixed(1)}%`}
                                 </span>

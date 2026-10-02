@@ -66,8 +66,9 @@ export interface BootstrapData {
   version: string; reference_version?: string; is_delta: boolean; stores: StoreRecord[]; srp_bulletins: Bulletin[]
   regulatory_prices?: RegulatoryPrice[]; monitoring_references?: MonitoringReference[]; recent_prices: RecentPrice[]; accepted_today?: number; protocol?: MonitoringProtocol
   monitoring_week?: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
-  monitoring_period?: { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
+  monitoring_period?: MonitoringPeriodInfo
 }
+export interface MonitoringPeriodInfo { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
 export interface VisitItem { srp_id: number; recorded_price: number; reference_snapshot?: ReferenceSnapshot }
 export interface VisitLocation { latitude: number; longitude: number; accuracy_meters: number; captured_at: string }
 export interface GeoPosition { latitude: number; longitude: number; accuracy_meters: number }
@@ -128,10 +129,16 @@ export interface MonitoringRecordDetail {
   representative: { name: string; title: string | null }
   signatures: { officer_present: boolean; representative_present: boolean }
   items: Array<VisitItem & {
-    id: number; commodity_name: string | null; unit: string | null; recorded_price: number; previous_price: number | null
+    id: number; commodity_name: string | null; unit: string | null; category?: string | null; regulatory_classification?: string | null
+    recorded_price: number; previous_price: number | null
     variance_percent: number | null; is_anomaly: boolean; reference_status: 'available' | 'unavailable'
     reference_type: 'standard_srp' | 'emergency_ceiling'; reference_label: string | null; reference_value: number | null
     reference_source_id: number | null; reference_source: string | null; reference_effective_date: string | null; reference_version: string | null
   }>
+}
+// The routine visit that completed a store for the current period (any officer's), opened view-only from Choose Store.
+export interface RoutineRecordView extends MonitoringRecordDetail {
+  officer: { name: string | null }
+  signature_images: { officer_png_base64: string | null; representative_png_base64: string | null }
 }
 export interface Page<T> { data: T[]; current_page: number; last_page: number; per_page: number; total: number; from: number | null; to: number | null }

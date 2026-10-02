@@ -23,7 +23,7 @@ const fixtures = vi.hoisted(() => ({
   },
   api: {
     bootstrap: vi.fn().mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }),
-    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(), verificationRequests: vi.fn(),
+    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(), verificationRequests: vi.fn(), currentRoutineRecord: vi.fn(),
   },
   draft: {
     client_uuid: '0b4cf2cf-51c9-4da4-8420-b6f271c82b8e', store_id: null, offline_lease_id: 'lease-old',
@@ -471,7 +471,7 @@ describe('field workspace security flow', () => {
     await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', []))
   })
 
-  it('keeps completed routine stores visible but disabled and keeps assigned work out of Choose Store', async () => {
+  it('keeps completed routine stores visible and view-only and keeps assigned work out of Choose Store', async () => {
     localStorage.setItem('field-guide:1:v1', 'complete')
     fixtures.vault.hasVault.mockResolvedValue(true)
     fixtures.vault.restoreVaultSession.mockResolvedValue(true)
@@ -494,13 +494,14 @@ describe('field workspace security flow', () => {
     await screen.findByRole('heading', { name: 'Good day, Ana' })
     fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
 
-    const choices = screen.getAllByRole('button', { name: /to record prices/ })
+    const choices = screen.getAllByRole('button', { name: /to record prices|already monitored/ })
     expect(choices.map((choice) => choice.getAttribute('aria-label'))).toEqual([
-      'Choose Beta Store to record prices', 'Choose Alpha Store to record prices', 'Choose Charlie Store to record prices',
+      'Choose Beta Store to record prices', 'View Alpha Store, already monitored today', 'View Charlie Store, already monitored today',
     ])
+    expect(screen.queryByText(/Verification Required/i)).not.toBeInTheDocument()
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'completed')
-    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toHaveTextContent('Monitored Today')
-    expect(screen.getByRole('button', { name: 'Choose Alpha Store to record prices' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'View Alpha Store, already monitored today' })).toHaveTextContent('Monitored Today')
+    expect(screen.getByRole('button', { name: 'View Alpha Store, already monitored today' })).toBeEnabled()
     expect(screen.queryByRole('combobox', { name: 'Additional task' })).not.toBeInTheDocument()
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Routine status' }), 'due')
@@ -508,6 +509,151 @@ describe('field workspace security flow', () => {
     await waitFor(() => {
       const persisted = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').at(-1)?.[1] as Array<{ verification_request_id?: number }>
       expect(persisted[0]?.verification_request_id).toBeUndefined()
+    })
+  })
+
+  describe('view-only access to a store already monitored this period', () => {
+    const weeklyPeriod = { cadence: 'weekly' as const, timezone: 'Asia/Manila' as const, starts_at: '2026-09-06T16:00:00+00:00', ends_at: '2026-09-13T16:00:00+00:00', protocol_mode: 'standard' as const, declaration_reference: null }
+    const record = {
+      id: 91, client_uuid: 'accepted-91', status: 'accepted', started_at: '2026-09-08T01:00:00Z', finalized_at: '2026-09-08T01:30:00Z', received_at: '2026-09-08T01:31:00Z',
+      sync_source: 'online', field_verification_request_id: null,
+      store: { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0, is_active: true },
+      location: { latitude: 10.7, longitude: 121.9, accuracy_meters: 9, captured_at: '2026-09-08T01:29:00Z' },
+      representative: { name: 'Maria Santos', title: 'Manager' },
+      signatures: { officer_present: true, representative_present: true },
+      officer: { name: 'Ben Officer' },
+      signature_images: { officer_png_base64: 'data:image/png;base64,b2ZmaWNlcg==', representative_png_base64: 'data:image/png;base64,cmVw' },
+      items: [{
+        id: 1, srp_id: 777, commodity_name: 'Retired Rice', unit: 'kg', category: 'Rice Grains', regulatory_classification: 'PRIME_COMMODITY', recorded_price: 55, previous_price: null, variance_percent: 10, is_anomaly: false,
+        reference_status: 'available', reference_type: 'standard_srp', reference_label: 'SRP', reference_value: 50, reference_source_id: 3,
+        reference_source: 'SRP-OLD', reference_effective_date: '2026-08-01', reference_version: null,
+      }],
+    }
+
+    const pickerBootstrap = {
+      version: 'v1', is_delta: false, recent_prices: [], srp_bulletins: [], monitoring_period: weeklyPeriod,
+      stores: [
+        { id: 1, store_name: 'Alpha Store', address: 'North', latitude: 0, longitude: 0, is_active: true, routine_status: 'completed' },
+        { id: 2, store_name: 'Beta Store', address: 'West', latitude: 0, longitude: 0, is_active: true, routine_status: 'due' },
+      ],
+    }
+
+    async function openPicker(online = true) {
+      Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: online })
+      localStorage.setItem('field-guide:1:v1', 'complete')
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+      fixtures.api.verificationRequests.mockResolvedValue([])
+      fixtures.api.renewLease.mockResolvedValue(fixtures.session.offline_lease)
+      fixtures.api.bootstrap.mockResolvedValue(pickerBootstrap)
+      fixtures.vault.readSecret.mockImplementation(async (key: string) => ({
+        session: fixtures.session,
+        bootstrap: pickerBootstrap,
+        drafts: [],
+      })[key])
+      const { container } = render(<App />)
+      await screen.findByRole('heading', { name: 'Good day, Ana' })
+      fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
+      fireEvent.click(await screen.findByRole('button', { name: 'View Alpha Store, already monitored this week' }))
+      return container
+    }
+
+    it('confirms first, then shows the submitted visit read-only without touching the draft', async () => {
+      let deliverFix: PositionCallback = () => {}
+      Object.defineProperty(window.navigator, 'geolocation', {
+        configurable: true,
+        value: { getCurrentPosition: vi.fn(), watchPosition: vi.fn((success: PositionCallback) => { deliverFix = success; return 1 }), clearWatch: vi.fn() } as unknown as Geolocation,
+      })
+      fixtures.api.currentRoutineRecord.mockResolvedValue(record)
+      const container = await openPicker()
+      const draftWritesBefore = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').length
+
+      expect(screen.getByRole('dialog', { name: 'Already monitored this week' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Go back' })).toHaveFocus()
+      fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(fixtures.api.currentRoutineRecord).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'View Alpha Store, already monitored this week' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Proceed to viewing' }))
+      expect(await screen.findByText('View only')).toBeInTheDocument()
+      expect(fixtures.api.currentRoutineRecord).toHaveBeenCalledWith('token', 1, weeklyPeriod)
+      await waitFor(() => expect(container.querySelector('.field-fullscreen-shell')).not.toBeNull())
+
+      // Rows come from the submitted visit even though the bulletin isn't in today's catalogue, in their saved classification.
+      expect(screen.getByText('Retired Rice')).toBeInTheDocument()
+      expect(screen.getByText('PRIME COMMODITIES')).toBeInTheDocument()
+      expect(screen.getAllByText('Rice Grains').length).toBeGreaterThan(0)
+      expect(screen.getByText('CAPTURED REFERENCE')).toBeInTheDocument()
+      expect(screen.getByText('SRP · SRP-OLD · 2026-08-01')).toBeInTheDocument()
+
+      // A background GPS fix while viewing must not rebind or persist the blank draft.
+      const draftWritesWhileViewing = fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').length
+      await act(async () => { deliverFix({ coords: { latitude: 10.74, longitude: 121.98, accuracy: 5 } } as GeolocationPosition) })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').length).toBe(draftWritesWhileViewing)
+      const price = screen.getByRole('spinbutton', { name: 'Observed shelf price for Retired Rice' })
+      expect(price).toHaveValue(55)
+      expect(price).toHaveAttribute('readonly')
+      fireEvent.change(price, { target: { value: '99' } })
+      expect(price).toHaveValue(55)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Review visit evidence' }))
+      expect(screen.getByDisplayValue('Maria Santos')).toHaveAttribute('readonly')
+      expect(screen.getByRole('img', { name: 'Store representative signature' })).toHaveAttribute('src', record.signature_images.representative_png_base64)
+      expect(screen.getByRole('img', { name: 'DTI field monitoring officer signature' })).toHaveAttribute('src', record.signature_images.officer_png_base64)
+      expect(screen.getByText(/Submitted by Ben Officer/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Finalize|Submit/ })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close view-only visit' }))
+      expect(await screen.findByRole('heading', { name: 'Choose a store' })).toBeInTheDocument()
+      expect(container.querySelector('.field-fullscreen-shell')).toBeNull()
+      expect(fixtures.vault.writeSecret.mock.calls.filter(([key]) => key === 'drafts').length).toBe(draftWritesBefore)
+    })
+
+    it('keeps viewing unavailable offline', async () => {
+      await openPicker(false)
+      expect(screen.getByRole('button', { name: 'Proceed to viewing' })).toBeDisabled()
+      expect(screen.getByText('Connect to the internet to view the submitted visit.')).toBeInTheDocument()
+    })
+
+    it('says the store list is out of date when the server has no visit for this period', async () => {
+      fixtures.api.currentRoutineRecord.mockResolvedValue(null)
+      await openPicker()
+      fireEvent.click(screen.getByRole('button', { name: 'Proceed to viewing' }))
+      expect(await screen.findByText(/Your store list is out of date/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Proceed to viewing' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Start visit' })).not.toBeInTheDocument()
+      expect(screen.queryByText('View only')).not.toBeInTheDocument()
+    })
+
+    it('shows only an inline error when the visit cannot be loaded', async () => {
+      fixtures.api.currentRoutineRecord.mockRejectedValue(Object.assign(new Error('nope'), { response: { status: 404 } }))
+      await openPicker()
+      fireEvent.click(screen.getByRole('button', { name: 'Proceed to viewing' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('The submitted visit could not be loaded.')
+      expect(screen.queryByText(/Your store list is out of date/)).not.toBeInTheDocument()
+      expect(screen.queryByText('View only')).not.toBeInTheDocument()
+    })
+
+    it('ignores a late response after the officer goes back', async () => {
+      const pending = deferred<typeof record>()
+      fixtures.api.currentRoutineRecord.mockReturnValue(pending.promise)
+      await openPicker()
+      fireEvent.click(screen.getByRole('button', { name: 'Proceed to viewing' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+      await act(async () => { pending.resolve(record); await pending.promise })
+      expect(screen.queryByText('View only')).not.toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Choose a store' })).toBeInTheDocument()
+    })
+
+    it('still sends due stores straight to Record Prices', async () => {
+      await openPicker()
+      fireEvent.click(screen.getByRole('button', { name: 'Go back' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Choose Beta Store to record prices' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Review visit evidence' })).toBeInTheDocument()
+      expect(fixtures.api.currentRoutineRecord).not.toHaveBeenCalled()
     })
   })
 
