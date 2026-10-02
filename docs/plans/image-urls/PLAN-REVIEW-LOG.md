@@ -108,3 +108,8 @@ Not exercised in the browser: the Customer recent-comparisons thumbnail after a 
 - IMG-INS2-05 (low): `.claude/launch.json` entries differ from the plan wording. → rejected. It is an untracked local harness file and not part of the shipped change; sweep entries point at the throwaway DB on purpose.
 - Proof after fixes: `PublicImageRuleTest` 12/12; full backend 720/720. Frontend code unchanged since its last green run.
 - **Unreviewed edits:** the inspection-2 fixes above (SrpCatalogService::imageResolver, SrpManagementController::index, SrpImportService::preview, PublicPwaController::scanTag, new tests) were made after the final inspection. No independent Codex inspection covers them; inspection budget (2) is exhausted.
+
+## Production bucket upload (2026-10-03, owner-approved)
+
+- Uploaded 124 objects to `commodity-images` with no overwrite: 119 `commodity_images/*.webp` + 5 `store_images/*.webp`. Result: 124 uploaded, 0 existing, 0 failed.
+- Verified before deploy: all 115 live commodity URLs + 5 store keys → 200 `image/webp` (was 114 × 400).
