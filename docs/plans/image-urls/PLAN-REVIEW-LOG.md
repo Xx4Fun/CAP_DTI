@@ -124,3 +124,8 @@ Not exercised in the browser: the Customer recent-comparisons thumbnail after a 
 - Customer PWA (fresh session, caches cleared): 168 cards, 118/118 photos load, 0 broken, 0 bundled rewrites. The reported item #338 "Spicy Noodles Beef" (admin upload `78OSzUp6…webp`) shows on the card and the detail page. Compare › store selection shows 5/5 store photos.
 - Admin, vendor and field bundles redeployed: no URL rewrite or name guessing; bundled store photos removed (`/stores/robinsons.webp` 404); admin and vendor keep the `store.webp` placeholder; field `sw.js` has the `public-images` runtime cache.
 - Not browser-checked in production: authenticated Admin, Vendor and Field screens (no signed-in session in the agent browser; production passwords are not entered by the agent). These screens use the same API URLs verified above and were browser-checked locally.
+
+## Data correction (2026-10-03, owner-approved)
+
+- Moved `commodity_images/mineralized_water_refresh_500ml.webp` from #230 Refresh (500mL) Purified Water to #242 Refresh (500mL) Mineralized Water. Each lineage has one row. The update was a single guarded transaction by id + key + expected value, applied directly in SQL (no admin audit event).
+- Live catalog: #242 shows the photo (200); #230 shows the placeholder until DTI uploads a purified-water photo.
