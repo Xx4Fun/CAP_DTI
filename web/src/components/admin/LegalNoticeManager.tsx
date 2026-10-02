@@ -119,14 +119,33 @@ export const LegalNoticeManager = () => {
     finally { setBusy(false) }
   }
 
+  const formFrom = (value: LegalNoticeRecord) => ({
+    recipient_name: value.draft_payload.recipient_name || '', recipient_title: value.draft_payload.recipient_title || '', recipient_email: value.draft_payload.recipient_email || '', address: value.draft_payload.address || '',
+    reason: value.draft_payload.reason || '', legal_bases: value.draft_payload.legal_bases ?? [], intended_delivery_method: value.intended_delivery_method || '', internal_justification: value.internal_justification || '',
+  })
+
   const openNotice = (value: LegalNoticeRecord) => {
     setNotice(value)
-    const next = {
-      recipient_name: value.draft_payload.recipient_name || '', recipient_title: value.draft_payload.recipient_title || '', recipient_email: value.draft_payload.recipient_email || '', address: value.draft_payload.address || '',
-      reason: value.draft_payload.reason || '', legal_bases: value.draft_payload.legal_bases ?? [], intended_delivery_method: value.intended_delivery_method || '', internal_justification: value.internal_justification || '',
-    }
+    const next = formFrom(value)
     setForm(next); setSavedForm(JSON.stringify(next))
     setSaved(false); setApplySignature(false); setView(value.status === 'draft' ? 'prepare' : 'issued')
+  }
+
+  // The list endpoint omits readiness, policy and attachments, so a draft opened from a list row would show
+  // done items unticked and Issue turned off. Open the row at once, then swap in the full record.
+  const openedId = useRef<number | null>(null)
+  useEffect(() => { openedId.current = notice?.id ?? null }, [notice])
+  const openDraft = (value: LegalNoticeRecord) => {
+    openNotice(value)
+    const listForm = JSON.stringify(formFrom(value))
+    void adminApi.getLegalNotice(value.id).then((detail) => {
+      if (openedId.current !== value.id) return
+      const detailForm = formFrom(detail)
+      setNotice(detail)
+      setSavedForm(JSON.stringify(detailForm))
+      // Keep anything typed while the detail was loading.
+      setForm((current) => JSON.stringify(current) === listForm ? detailForm : current)
+    }).catch((reason) => { if (openedId.current === value.id) setError(messageOf(reason, 'The draft details could not be loaded.')) })
   }
 
   const edit = (changes: Partial<typeof form>) => { setSaved(false); setForm({ ...form, ...changes }) }
@@ -142,7 +161,7 @@ export const LegalNoticeManager = () => {
         : undefined
       if (existing) {
         replaceInList(existing)
-        if (existing.status === 'draft') openNotice(existing); else reviewIssued(existing)
+        if (existing.status === 'draft') openDraft(existing); else reviewIssued(existing)
         toast.info(`This visit already has an open ${existing.notice_type}; it is opened here.`)
       } else setError(messageOf(reason, 'The draft could not be created.'))
     }
@@ -169,6 +188,9 @@ export const LegalNoticeManager = () => {
     const basesRequired = notice.policy?.required_fields?.includes('legal_bases') ?? notice.notice_type === 'SCO'
     return {
       ...saved,
+      // Same facts the server checks; known from any record, so they never flicker off while details load.
+      case_reference: !!notice.monitoring_record_id,
+      evidence_and_attachments: (notice.source_snapshot?.items?.length ?? 0) > 0,
       notice_type_and_basis: !!form.reason && (!basesRequired || form.legal_bases.length > 0),
       recipient_and_delivery: !!form.recipient_name.trim() && !!form.address.trim() && !!form.intended_delivery_method,
       internal_justification: !!form.internal_justification.trim(),
@@ -388,7 +410,7 @@ export const LegalNoticeManager = () => {
 
     {error && <div className="legal-alert" role="alert"><ShieldAlert size={18}/><span>{error}</span></div>}
     {loading ? <div className="legal-loading" aria-label="Loading legal actions"/>
-      : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openNotice} onDiscard={cancelNotice} onStart={() => { setNotice(null); if (!sourceId) setRecord(null); setView('prepare') }}/>
+      : view === 'queue' ? <Queue notices={notices.filter((item) => item.status === 'draft')} onOpen={openDraft} onDiscard={cancelNotice} onStart={() => { setNotice(null); if (!sourceId) setRecord(null); setView('prepare') }}/>
       : view === 'issued' ? <>
         <Queue notices={notices.filter((item) => item.status !== 'draft')} onOpen={reviewIssued} issued/>
         {notice && notice.status !== 'draft' && <section className="legal-issued-detail">
@@ -418,7 +440,7 @@ export const LegalNoticeManager = () => {
           {!['closed', 'cancelled'].includes(notice.status) && <div className="legal-delivery-controls">{notice.can_escalate && <button type="button" className="admin-button primary" disabled={busy} onClick={escalate}>Escalate to SCO</button>}<button type="button" className="admin-button secondary" disabled={busy} onClick={closeNotice}>Close notice</button><button type="button" className="admin-button secondary legal-danger-button" disabled={busy} onClick={() => cancelNotice(notice)}>Cancel notice</button></div>}
         </section>}
       </>
-      : choosingVisit ? <VisitPicker page={visits} search={visitSearch} busy={busy} openNoticeFor={openNoticeFor} onSearch={setVisitSearch} onChoose={(id) => void chooseVisit(id)} onOpenExisting={(existing) => existing.status === 'draft' ? openNotice(existing) : reviewIssued(existing)}/>
+      : choosingVisit ? <VisitPicker page={visits} search={visitSearch} busy={busy} openNoticeFor={openNoticeFor} onSearch={setVisitSearch} onChoose={(id) => void chooseVisit(id)} onOpenExisting={(existing) => existing.status === 'draft' ? openDraft(existing) : reviewIssued(existing)}/>
       : <div className="legal-editor-layout">
         <main className="legal-form-stack">
           <header className="legal-view-heading"><div><h2>Prepare Notice</h2><p>Build one evidence-backed notice for one accepted monitoring visit.</p></div><span className="legal-protocol">Evaluator review required</span></header>

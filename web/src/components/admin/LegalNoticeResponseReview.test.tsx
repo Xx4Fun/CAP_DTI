@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -27,7 +27,7 @@ vi.mock('../../services/adminApi', () => ({
 const listRecord = {
   id: 1, monitoring_record_id: 1, notice_type: 'LOI', status: 'response_received', control_number: 'PM-2026-LOI-000001',
   delivery_state: 'received', due_date_timestamp: '2026-09-17T02:47:02Z', issued_at: '2026-09-14T01:47:02Z', updated_at: '2026-09-14T02:51:50Z',
-  source_snapshot: { items: [] }, draft_payload: {}, store: { id: 1, store_name: 'Robinsons Supermarket Corp.', address: 'San Angel' },
+  source_snapshot: { items: [{ id: 9, commodity_name: 'Rice', observed_price: 62, reference_value: 50 }] }, draft_payload: {}, store: { id: 1, store_name: 'Robinsons Supermarket Corp.', address: 'San Angel' },
   response_received_at: '2026-09-14T02:51:50Z',
 } as unknown as LegalNoticeRecord
 
@@ -153,6 +153,7 @@ describe('Legal Actions vendor response review', () => {
   it('discards a draft from the queue after confirmation, keeping it as cancelled', async () => {
     const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null } as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
@@ -174,6 +175,7 @@ describe('Legal Actions vendor response review', () => {
     const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null, readiness: complete, attachments: [],
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: [], legal_bases: [] }, draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
@@ -210,6 +212,7 @@ describe('Legal Actions vendor response review', () => {
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'], required_fields: ['recipient_name', 'address', 'reason'] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', address: 'San Angel' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
@@ -233,6 +236,7 @@ describe('Legal Actions vendor response review', () => {
     const draft = { ...detailRecord, status: 'draft', control_number: null, attachments: [], readiness: complete, signatory: { name: null, office: null, has_signature: false },
       policy: { status: 'LEGAL_POLICY_UNAVAILABLE', policy_version: null, reasons: [], legal_bases: [] }, draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
@@ -241,11 +245,44 @@ describe('Legal Actions vendor response review', () => {
     expect(screen.getByText('Issuing needs a LOI signatory. Set the name in Settings → Legal Signatories.')).toBeInTheDocument()
   })
 
+  it('loads full draft details when opened from the queue, keeping done items ticked', async () => {
+    // The list row has no readiness or policy, like the real list endpoint.
+    const listRow = { ...listRecord, id: 3, status: 'draft', control_number: null, monitoring_record_id: 14,
+      source_snapshot: { items: [{ id: 9, commodity_name: 'Rice', observed_price: 62, reference_value: 50 }] },
+      draft_payload: { recipient_name: 'Maria Santos', address: 'San Angel', legal_bases: [] } } as unknown as LegalNoticeRecord
+    const detail = { ...listRow, readiness: { ...complete, notice_type_and_basis: false, recipient_and_delivery: false, internal_justification: false }, attachments: [],
+      policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'], required_fields: ['recipient_name', 'address', 'reason'] },
+      signatory: { name: 'Atty. Ana Reyes', office: 'Provincial Director', has_signature: false } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [listRow], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    let resolveDetail: (value: LegalNoticeRecord) => void = () => {}
+    vi.mocked(adminApi.getLegalNotice).mockImplementation(() => new Promise((resolve) => { resolveDetail = resolve }))
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    expect(adminApi.getLegalNotice).toHaveBeenCalledWith(3)
+    const checklist = screen.getByText('Checklist').nextElementSibling as HTMLElement
+    // Known from the list row itself, so never shown as undone while the detail loads.
+    expect(within(checklist).queryByRole('button', { name: 'Case reference' })).not.toBeInTheDocument()
+    expect(within(checklist).queryByRole('button', { name: 'Evidence' })).not.toBeInTheDocument()
+
+    // Text typed before the detail arrives survives it.
+    await user.type(screen.getByLabelText('Internal justification'), 'Rice above SRP.')
+    await act(async () => { resolveDetail(detail) })
+
+    expect(screen.getByLabelText('Internal justification')).toHaveValue('Rice above SRP.')
+    expect(screen.getByRole('option', { name: 'Prices above SRP' })).toBeInTheDocument()
+    expect(screen.queryByText(/Issuing (is turned off|needs a)/)).not.toBeInTheDocument()
+    expect(within(checklist).queryByRole('button', { name: 'Case reference' })).not.toBeInTheDocument()
+    expect(within(checklist).queryByRole('button', { name: 'Evidence' })).not.toBeInTheDocument()
+  })
+
   it('saves unsaved edits automatically before the preview', async () => {
     const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [],
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: ['RA 7581 (Price Act)'] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: ['RA 7581 (Price Act)'] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     vi.mocked(adminApi.updateLegalNotice).mockImplementation(async (_id, payload) => ({ ...draft, draft_payload: { ...draft.draft_payload, ...(payload as object) } }))
     vi.mocked(adminApi.previewLegalNotice).mockResolvedValue('<p>draft</p>')
     const user = userEvent.setup()
@@ -266,6 +303,7 @@ describe('Legal Actions vendor response review', () => {
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', address: 'San Angel' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     // scrollIntoView would also scroll the clipped shell and body, pushing the whole layout up; only the panel may scroll.
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
@@ -294,6 +332,7 @@ describe('Legal Actions vendor response review', () => {
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [] } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
@@ -336,6 +375,7 @@ describe('Legal Actions vendor response review', () => {
       signatory: { name: 'Atty. Ana Reyes', office: 'Provincial Director, DTI Antique', has_signature: true },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', recipient_email: 'maria@shop.test' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     vi.mocked(adminApi.issueLegalNotice).mockResolvedValue({ ...draft, status: 'issued', delivery_state: 'not_recorded', response_received_at: null, vendor_user_id: 12, notification: 'queued' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)

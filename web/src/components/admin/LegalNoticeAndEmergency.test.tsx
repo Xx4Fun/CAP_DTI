@@ -9,6 +9,7 @@ import { AdminToastHost } from './AdminToastHost'
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getLegalNotices: vi.fn(),
+    getLegalNotice: vi.fn(),
     createLegalNotice: vi.fn(),
     updateLegalNotice: vi.fn(),
     previewLegalNotice: vi.fn(),
@@ -99,6 +100,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   it('offers the existing open draft instead of starting a duplicate for the same visit', async () => {
     const draft = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9, commodity_name: 'Rice', observed_price: 62, reference_value: 50 }] }, draft_payload: { legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [{
       id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
       officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' }, items: [],
@@ -123,6 +125,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     const existing = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Maria', legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
     vi.mocked(adminApi.createLegalNotice).mockRejectedValue({ response: { status: 409, data: { message: 'An open notice already exists for this monitoring visit.' } } })
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [existing], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(existing)
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 

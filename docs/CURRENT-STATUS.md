@@ -29,6 +29,7 @@ This page records boundaries for interpreting project status. Keep task-specific
 - Preserve receipt, signature, location, audit, and regulatory evidence integrity.
 - Do not treat an anomaly, OCR uncertainty, or technical processing failure as a legal finding.
 - Do not place secrets, report tracking tokens, customer evidence, or production credentials in documentation.
+- Production legal documents (issued notice PDFs, attachments, e-signatures) share the private Supabase `receipt-evidence` bucket through the `legal_documents` disk. That bucket's allowed MIME types must include `application/pdf`; it was added 2026-10-02 after issuing failed with "Private document storage is unavailable". Bucket settings live in Supabase, not in this repository.
 
 ## Updating this page
 
