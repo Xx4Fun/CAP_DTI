@@ -1917,12 +1917,13 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
               <h3>Recorded commodity prices</h3>
               <p>{itemCount} item{itemCount === 1 ? '' : 's'} captured in the finalized record.</p>
             </div>
-            {affected.length > 0 && (
-              <span className="visit-review-flag">
-                <TriangleAlert size={16} aria-hidden="true" />
-                {affected.length} item{affected.length === 1 ? ' requires' : 's require'} regulatory review
-              </span>
-            )}
+            <dl className="visit-items-stats">
+              <div><dt>Total items</dt><dd>{record.items.length}</dd></div>
+              <div className="attention"><dt>With observations</dt><dd>{affected.length}</dd></div>
+              {tolerated > 0 && <div className="tolerance"><dt>Within tolerance</dt><dd>{tolerated}</dd></div>}
+              <div className="compliant"><dt>Within reference</dt><dd>{withReference}</dd></div>
+              {unavailable > 0 && <div><dt>Reference unavailable</dt><dd>{unavailable}</dd></div>}
+            </dl>
           </div>
           <div className="admin-table-wrap">
             <table className="admin-data-table visit-items-table">
@@ -1953,25 +1954,6 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="visit-items-summary">
-            <ChartColumn size={28} className="visit-items-summary-icon" aria-hidden="true" />
-            <div className="visit-items-summary-copy">
-              <strong>{record.items.length} commodit{record.items.length === 1 ? 'y' : 'ies'} recorded</strong>
-              <span>
-                {affected.length} flagged for regulatory review
-                {tolerated > 0 && ` · ${tolerated} above SRP within the 10% tolerance`}
-                {` · ${withReference} within reference`}
-                {unavailable > 0 && ` · ${unavailable} reference unavailable`}
-              </span>
-            </div>
-            <dl className="visit-items-stats">
-              <div><dt>Total items</dt><dd>{record.items.length}</dd></div>
-              <div className="attention"><dt>With observations</dt><dd>{affected.length}</dd></div>
-              {tolerated > 0 && <div className="tolerance"><dt>Within tolerance</dt><dd>{tolerated}</dd></div>}
-              <div className="compliant"><dt>Within reference</dt><dd>{withReference}</dd></div>
-              {unavailable > 0 && <div><dt>Reference unavailable</dt><dd>{unavailable}</dd></div>}
-            </dl>
           </div>
         </section>
 
