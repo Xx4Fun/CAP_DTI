@@ -9,6 +9,14 @@ import { MAP_LAYERS, STATUS_STYLE, VISITS_UNLOADED, weekLabel, type LayerId, typ
 const StoreDetailOverlay = lazy(() => import('./StoreDetailOverlay').then((module) => ({ default: module.StoreDetailOverlay })))
 
 const NO_STORES: GisStoreRecord[] = []
+
+// What the map can still show from the plain store list when the API predates the GIS endpoint.
+const fromStoreList = (stores: StoreRecord[]): GisMonitoringPayload => ({
+  week: { key: '', ends_on: '', starts_at: '', ends_at: '', timezone: 'Asia/Manila', is_current: false },
+  locations: false,
+  weeks: [],
+  stores: stores.map((store) => ({ ...store, has_prior_routine_visit: false, verification_required: false, visits: [], prices: [] })),
+})
 const peso = (value: number) => `₱${value.toFixed(2)}`
 
 export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate }) => {
@@ -28,6 +36,8 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  // The web app can be deployed before the API. An API without the GIS endpoint still serves Compliance from the store list.
+  const [apiBehind, setApiBehind] = useState(false)
   const hasLoaded = useRef(false)
 
   // Visit coordinates are audited evidence: ask for them only while the Visit check layer is open.
@@ -42,12 +52,29 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
       adminApi.getGisMonitoring(targetWeek, wantLocations).then((data) => {
         if (cancelled) return
         hasLoaded.current = true
+        setApiBehind(false)
         setPayload(data)
         setLoading(false)
-      }).catch(() => {
+      }).catch((reason: { response?: { status?: number } }) => {
         if (cancelled) return
-        setLoadError(true)
-        setLoading(false)
+        if (reason?.response?.status !== 404) {
+          setLoadError(true)
+          setLoading(false)
+          return
+        }
+        // 404: this API has no GIS endpoint yet. Fall back to the store list it does have.
+        adminApi.getStores().then((list) => {
+          if (cancelled) return
+          setApiBehind(true)
+          setLayerId('compliance')
+          setCategoryFilter('all')
+          setPayload(fromStoreList(list))
+          setLoading(false)
+        }).catch(() => {
+          if (cancelled) return
+          setLoadError(true)
+          setLoading(false)
+        })
       })
     }, hasLoaded.current ? 300 : 0)
     return () => {
@@ -184,6 +211,7 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
               key={option.id}
               type="button"
               aria-pressed={option.id === layerId}
+              disabled={apiBehind && option.id !== 'compliance'}
               onClick={() => {
                 setLayerId(option.id)
                 setCategoryFilter('all')
@@ -193,6 +221,12 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
             </button>
           ))}
         </div>
+
+        {apiBehind && (
+          <p role="status" className="gis-note">
+            Coverage, Prices and Visit check need a server update that has not reached this environment yet. <button type="button" onClick={retry}>Check again</button>
+          </p>
+        )}
 
         {layerId !== 'compliance' && payload && (
           <div className="gis-week">

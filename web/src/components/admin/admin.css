@@ -6184,6 +6184,7 @@ button.regulatory-chip { cursor: pointer; }
 @container (max-width: 300px) { .gis-layer-switch { grid-template-columns: repeat(2, 1fr); } }
 .gis-layer-switch button { min-height: 44px; padding: 0.25rem; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 0.74rem; font-weight: 600; cursor: pointer; }
 .gis-layer-switch button[aria-pressed='true'] { border-color: #1e3a8a; background: #1e3a8a; color: #fff; }
+.gis-layer-switch button:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
 .gis-week { display: flex; flex-direction: column; gap: 0.25rem; }
 .gis-week label { font-weight: 700; }
 .gis-week input[type='range'] { width: 100%; min-height: 44px; accent-color: #1e3a8a; }

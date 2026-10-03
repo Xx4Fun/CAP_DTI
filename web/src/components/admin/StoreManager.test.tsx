@@ -137,6 +137,40 @@ describe('StoreManager GIS layers', () => {
     expect(screen.getByRole('list', { name: 'Map legend' })).not.toHaveTextContent('Verification required')
   })
 
+  it('keeps Compliance working from the store list when the API has no GIS endpoint yet', async () => {
+    let gisDeployed = false
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (url === '/admin/stores') return { data: { data: [store(1, 'Alpha Mart'), store(2, 'Bravo Store', { is_verified: false })] } }
+      if (!gisDeployed) throw { response: { status: 404 } }
+      return { data: { data: currentWeek() } }
+    })
+    const user = userEvent.setup()
+    render(<StoreManager />)
+
+    expect(await screen.findByText('All (2)')).toBeInTheDocument()
+    expect(chips()).toEqual(['All (2)', 'No findings (1)', 'Pending (1)', 'Findings (0)'])
+    expect(screen.getByTestId('map')).toHaveTextContent('Bravo Store | Verification Pending')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('need a server update that has not reached this environment yet')
+    expect(screen.getByRole('button', { name: 'Compliance' })).toBeEnabled()
+    for (const name of ['Coverage', 'Prices', 'Visit check']) expect(screen.getByRole('button', { name })).toBeDisabled()
+
+    // Once the API is updated, checking again brings the other layers back.
+    gisDeployed = true
+    await user.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(await screen.findByText('All (4)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Coverage' })).toBeEnabled()
+    expect(screen.queryByText(/need a server update/)).not.toBeInTheDocument()
+  })
+
+  it('reports a failed load that is not a missing endpoint as an error', async () => {
+    vi.mocked(api.get).mockRejectedValue({ response: { status: 500 } })
+    render(<StoreManager />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Establishments could not be loaded.')
+    expect(api.get).not.toHaveBeenCalledWith('/admin/stores')
+  })
+
   it('keeps the chosen commodity when a week has no price for it', async () => {
     const rice = { commodity: 'rice|1kg', commodity_name: 'Rice', unit: '1kg' }
     vi.mocked(api.get).mockImplementation(async (_url, config) => ({
