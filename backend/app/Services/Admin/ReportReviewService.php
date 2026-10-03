@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\ConsumerReport;
 use App\Models\ConsumerReportItem;
+use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryFinding;
 use App\Models\ReportStatusHistory;
 use App\Models\Store;
@@ -16,6 +17,11 @@ class ReportReviewService
 {
     /** Outcomes that assert a price determination, and therefore must cite a real reference. */
     private const FINDING_OUTCOMES = ['confirmed_violation', 'no_violation'];
+
+    /** States a report may be decided from. Anything else is still being captured or extracted. */
+    public const DECIDABLE_STATUSES = [
+        'Submitted', 'Under initial evaluation', 'Under regulatory review', 'Resolved', 'Closed',
+    ];
 
     public function __construct(
         private readonly AuditTrailService $audit,
@@ -65,9 +71,25 @@ class ReportReviewService
         ];
     }
 
+    /**
+     * Locks in the order every finding writer uses (store, then report; field sync and verification requests
+     * lock the store first too), then re-checks what the controller checked before the transaction.
+     */
+    private function lockForDecision(ConsumerReport $report): ConsumerReport
+    {
+        if ($report->store_id) Store::whereKey($report->store_id)->lockForUpdate()->first();
+        $locked = ConsumerReport::query()->lockForUpdate()->findOrFail($report->id);
+        abort_unless((int) $locked->store_id === (int) $report->store_id, 409, 'This report changed while it was being decided. Reload it and decide again.');
+        abort_unless(in_array($locked->status, self::DECIDABLE_STATUSES, true), 422, 'This report is still being processed and cannot be decided yet.');
+        abort_if($locked->activeVerificationRequest()->exists(), 409, 'An open field verification request must be resolved first.');
+
+        return $locked;
+    }
+
     public function decide(ConsumerReport $report, string $action, array $corrected, string $reason, User $actor, Request $request): ConsumerReport
     {
         return DB::transaction(function () use ($report, $action, $corrected, $reason, $actor, $request) {
+            $report = $this->lockForDecision($report);
             $previous = $report->status;
             $reviewed = in_array($action, ['validate', 'correct'], true);
             $confirmedViolation = $reviewed && ($corrected['regulatory_finding'] ?? null) === 'confirmed_violation';
@@ -110,24 +132,42 @@ class ReportReviewService
         });
     }
 
+    /** Callers hold the store row lock (store-first order), so concurrent decisions cannot each miss the other. */
     public function recalculateRecidivism(Store $store): int
     {
-        $findings = RegulatoryFinding::where('store_id', $store->id)->where('decision', 'confirmed')->get();
+        $count = self::confirmedCaseCount($store->id);
+        $store->update(['recidivism_index' => $count]);
+        return $count;
+    }
+
+    /**
+     * Distinct confirmed cases for a store: one consumer report, or one monitoring visit, counts once however many
+     * of its lines were confirmed. Analytics uses the same count so the two never disagree.
+     */
+    public static function confirmedCaseCount(int $storeId): int
+    {
+        $findings = RegulatoryFinding::where('store_id', $storeId)->where('decision', 'confirmed')->get();
         $itemReportIds = ConsumerReportItem::whereIn(
             'id',
             $findings->where('source_type', 'consumer_report_item')->pluck('source_id')
         )->pluck('consumer_report_id', 'id');
-        $count = $findings->map(function (RegulatoryFinding $finding) use ($itemReportIds) {
+        $itemVisitIds = MonitoringRecordItem::whereIn(
+            'id',
+            $findings->where('source_type', MonitoringRecordItem::FINDING_SOURCE)->pluck('source_id')
+        )->pluck('monitoring_record_id', 'id');
+
+        return $findings->map(function (RegulatoryFinding $finding) use ($itemReportIds, $itemVisitIds) {
             if ($finding->source_type === 'consumer_report_item') {
                 return 'consumer-report:'.($itemReportIds[$finding->source_id] ?? 'missing-'.$finding->source_id);
             }
             if ($finding->source_type === 'consumer_report') {
                 return 'consumer-report:'.$finding->source_id;
             }
+            if ($finding->source_type === MonitoringRecordItem::FINDING_SOURCE) {
+                return 'monitoring-record:'.($itemVisitIds[$finding->source_id] ?? 'missing-'.$finding->source_id);
+            }
             return $finding->source_type.':'.$finding->source_id;
         })->unique()->count();
-        $store->update(['recidivism_index' => $count]);
-        return $count;
     }
 
     public function decideItems(
@@ -139,6 +179,7 @@ class ReportReviewService
         Request $request
     ): ConsumerReport {
         return DB::transaction(function () use ($report, $action, $itemDecisions, $reason, $actor, $request) {
+            $report = $this->lockForDecision($report);
             $previous = $report->status;
             $hasConfirmedViolation = collect($itemDecisions)
                 ->contains(fn ($decision) => $decision['regulatory_finding'] === 'confirmed_violation');

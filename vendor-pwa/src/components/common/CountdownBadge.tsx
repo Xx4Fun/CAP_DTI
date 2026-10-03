@@ -3,9 +3,11 @@ import { Clock, AlertCircle, Hourglass } from 'lucide-react';
 
 interface CountdownBadgeProps {
   dueAt: string | null;
+  /** A portal notice starts its period when the vendor opens it, not when DTI records delivery. */
+  portal?: boolean;
 }
 
-export const CountdownBadge: React.FC<CountdownBadgeProps> = ({ dueAt }) => {
+export const CountdownBadge: React.FC<CountdownBadgeProps> = ({ dueAt, portal = false }) => {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export const CountdownBadge: React.FC<CountdownBadgeProps> = ({ dueAt }) => {
     return (
       <span className="countdown-badge pending">
         <Hourglass size={14} />
-        <span>Deadline starts after delivery</span>
+        <span>{portal ? 'Open the official document to start your response period' : 'Deadline starts after delivery'}</span>
       </span>
     );
   }

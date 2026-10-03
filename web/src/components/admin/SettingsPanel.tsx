@@ -160,7 +160,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ user, onUserUpdate
           <section className="settings-form-section" aria-labelledby="unavailable-settings-title">
             <div className="settings-section-header">
               <h3 id="unavailable-settings-title">Unavailable settings</h3>
-              <p>Notifications, display density, inactivity timeout, GIS defaults, and regulatory thresholds are unavailable until they are connected to runtime behavior.</p>
+              <p>Notifications, display density, inactivity timeout, and GIS defaults are unavailable until they are connected to runtime behavior.</p>
+            </div>
+          </section>
+
+          <section className="settings-form-section" aria-labelledby="review-threshold-title">
+            <div className="settings-section-header">
+              <h3 id="review-threshold-title">Price review threshold</h3>
+              <p>Fixed by policy and not editable here: a field price is flagged for DTI review when it is more than 10% above the SRP, or above the price ceiling during a price freeze. A flag is an observation for review, not a legal finding.</p>
             </div>
           </section>
           </>}

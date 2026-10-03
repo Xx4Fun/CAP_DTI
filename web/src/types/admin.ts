@@ -78,6 +78,8 @@ export interface MonitoringRecordItem {
   reference_source?: string | null
   reference_effective_date?: string | null
   bulletin?: { id: number; commodity_name: string; unit: string | null; baseline_price: number | string }
+  /** Detail only: DTI's decision on this product (no action, or a notice closure). */
+  finding?: ItemFinding | null
 }
 
 export interface MonitoringRecordRecord {
@@ -104,6 +106,12 @@ export interface MonitoringRecordRecord {
   officer: { id: number; name: string; email: string }
   store: { id: number; store_name: string; address: string; dti_sec_number?: string | null }
   items: MonitoringRecordItem[]
+  /** Flagged products with an available reference that DTI has not decided yet. */
+  undecided_item_ids?: number[]
+  /** The visit's draft, issued, or answered notice, if any (one at a time). */
+  open_notice?: NoticeSummary | null
+  /** Detail only: notices from this visit that left DTI or are still open. */
+  notices?: NoticeSummary[]
   verification_request?: {
     id: number
     status: string
@@ -189,6 +197,8 @@ export interface MonitoringEstablishmentProfile {
   latest_record: MonitoringRecordRecord | null
   period_completed_records_count?: number
   period_records_with_observations_count?: number
+  /** Items captured with no available reference in the selected period (never flagged). */
+  period_unavailable_reference_count?: number
   period_commodities_count?: number
   monitored_commodities: Array<{
     selector: `key:${string}` | `srp:${number}`
@@ -250,6 +260,13 @@ export interface MonitoringFindingItem {
   protocol_mode?: 'standard' | 'emergency' | null
   reference_label?: string | null
   reference_source?: string | null
+  /** DTI's decision on this product, if any. */
+  decision?: 'no_action' | ItemDecision | null
+  decision_reason?: string | null
+  decided_by_name?: string | null
+  decided_at?: string | null
+  /** The newest notice citing this product that left DTI or is open. */
+  notice?: NoticeSummary | null
 }
 
 export interface MonitoringFindingsPage {
@@ -549,8 +566,12 @@ export interface LegalNoticeRecord {
   updated_at: string
   intended_delivery_method?: 'portal' | 'email_and_hand_copy' | 'hand_copy' | null
   internal_justification?: string | null
-  source_snapshot: { monitoring_record_number?: string; monitoring_date?: string; store?: { store_name?: string; address?: string }; items: Array<Record<string, unknown>> }
-  draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[]; linked_vendor_user_id?: number | null }
+  source_snapshot: {
+    monitoring_record_number?: string; monitoring_date?: string; store?: { store_name?: string; address?: string; owner_name?: string | null }; items: Array<Record<string, unknown>>
+    /** No-action triage on cited items before this notice, frozen when it was drafted. */
+    prior_triage?: Array<{ item_id: number; reason: string | null; decided_by: number | null; decided_by_name: string | null; decided_at: string | null }>
+  }
+  draft_payload: { recipient_name?: string | null; recipient_title?: string | null; recipient_email?: string | null; address?: string | null; reason?: string | null; legal_bases?: string[]; linked_vendor_user_id?: number | null; registered_owner_name?: string | null }
   store?: { id: number; store_name: string; address: string }
   preparer?: { id: number; name: string } | null
   attachments?: Array<{ id: number; kind: string; category?: string | null; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
@@ -577,7 +598,22 @@ export interface LegalNoticeRecord {
   signatory_snapshot?: { name: string | null; office: string | null; signature_applied: boolean; signature_sha256: string | null } | null
   /** Issue response only: whether the vendor email notification was queued. */
   notification?: 'queued' | 'failed' | 'not_applicable'
+  /** DTI's recorded result when the notice was closed or withdrawn. */
+  outcome?: LegalNoticeOutcome | null
+  outcome_reason?: string | null
+  /** An unanswered portal notice that is unopened or past its deadline can be followed up with a reminder. */
+  can_remind?: boolean
+  /** The store's current registered owner (the addressee rule). */
+  registered_owner_name?: string | null
+  /** The store's current linked vendor account; portal issue needs one. */
+  linked_vendor_user_id?: number | null
 }
+
+export type LegalNoticeOutcome = 'explanation_accepted' | 'no_violation' | 'violation_confirmed' | 'partially_confirmed' | 'escalated_to_sco' | 'withdrawn'
+export type ItemDecision = 'confirmed' | 'not_confirmed'
+/** A notice summary shown read-only next to a monitoring visit or observation. */
+export interface NoticeSummary { id: number; notice_type: 'LOI' | 'SCO'; status: LegalNoticeState; control_number?: string | null; outcome?: LegalNoticeOutcome | null }
+export interface ItemFinding { decision: 'no_action' | ItemDecision; reason: string | null; decided_at: string | null; decider?: { id: number; name: string } | null }
 
 export interface LegalSignatoryRecord {
   name: string | null

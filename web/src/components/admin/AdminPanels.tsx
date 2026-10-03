@@ -46,14 +46,21 @@ function formatSubjectType(type?: string): string {
   return name.replace(/([A-Z])/g, ' $1').trim()
 }
 
-export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }) {
+export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
   const [summary, setSummary] = useState<AdminOverviewRecord | null>(null)
   const [reportsList, setReportsList] = useState<ConsumerReportRecord[]>([])
   const [error, setError] = useState(false)
+  // Totals from the Legal Actions list endpoint; null while loading, 'unavailable' if it cannot be read.
+  const [legalCounts, setLegalCounts] = useState<{ status: string; label: string; view: string; total: number }[] | null | 'unavailable'>(null)
 
   useEffect(() => {
     void adminApi.getOverview().then(setSummary).catch(() => setError(true))
     void adminApi.getReportPage?.({ page: 1, per_page: 4 }).then((page) => setReportsList(page?.data ?? [])).catch(() => {})
+    const statuses = [{ status: 'draft', label: 'Drafts to finish', view: 'queue' }, { status: 'issued', label: 'Issued, awaiting response', view: 'issued' }, { status: 'response_received', label: 'Responses to review', view: 'issued' }]
+    // Each count opens its own list: drafts in the queue, the others on the issued list filtered to that status.
+    if (!adminApi.getLegalNotices) { setLegalCounts('unavailable'); return }
+    void Promise.all(statuses.map(async (item) => ({ ...item, total: (await adminApi.getLegalNotices({ status: item.status, page: 1 })).total })))
+      .then(setLegalCounts).catch(() => setLegalCounts('unavailable'))
   }, [])
 
   if (error) return <p role="alert" className="admin-inline-alert">The regulatory overview could not load. Refresh or try again later.</p>
@@ -304,13 +311,21 @@ export function OverviewPanel(props: { onNavigate?: (module: ModuleId) => void }
                 onClick={() => props.onNavigate?.('legal_actions')}
                 style={{ background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
               >
-                View Engine
+                Open Legal Actions
               </button>
             </div>
 
-            <div role="status" style={{ padding: '1rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
-              No legal action records are available from an authoritative source. The legal engine remains preview-only until approved policy rules are configured.
-            </div>
+            {legalCounts === null ? <div className="admin-skeleton-block" style={{ height: '120px' }} role="status" aria-label="Loading legal action counts" />
+              : legalCounts === 'unavailable' ? <div role="status" style={{ padding: '1rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
+                Legal action counts could not be loaded. Open Legal Actions to review notices.
+              </div>
+              : <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
+                {legalCounts.map((item) => <li key={item.status}>
+                  <button type="button" onClick={() => props.onNavigate?.('legal_actions', item.view === 'issued' ? { view: item.view, status: item.status } : { view: item.view })} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '44px', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', cursor: 'pointer', fontSize: '0.88rem' }}>
+                    <span>{item.label}</span><strong style={{ color: '#0052cc', fontSize: '1.05rem' }}>{item.total}</strong>
+                  </button>
+                </li>)}
+              </ul>}
           </div>
         </div>
       </div>
@@ -338,8 +353,8 @@ export function StoreRegistrationPanel(props: { onNavigate?: (module: ModuleId) 
   )
 }
 
-export function StoreMonitoringPanel() {
-  return <Suspense fallback={<PanelLoader />}><StoreManager /></Suspense>
+export function StoreMonitoringPanel(props: { onNavigate?: NavigateTo }) {
+  return <Suspense fallback={<PanelLoader />}><StoreManager onNavigate={props.onNavigate} /></Suspense>
 }
 
 export function EstablishmentsAccessPanel(props: { onNavigate?: (module: ModuleId) => void }) {
@@ -362,8 +377,8 @@ export function EmergencyPanel() {
   return <Suspense fallback={<PanelLoader />}><EmergencyToggle /></Suspense>
 }
 
-export function LegalDraftPanel() {
-  return <Suspense fallback={<PanelLoader />}><LegalNoticeManager /></Suspense>
+export function LegalDraftPanel(props: { onNavigate?: NavigateTo }) {
+  return <Suspense fallback={<PanelLoader />}><LegalNoticeManager onNavigate={props.onNavigate} /></Suspense>
 }
 
 export function AuditPanel() {

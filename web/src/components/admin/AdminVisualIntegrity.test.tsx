@@ -8,6 +8,7 @@ vi.mock('../../services/adminApi', () => ({
     getOverview: vi.fn().mockResolvedValue({ stores: 12, pending_reports: 3, active_emergencies: 0 }),
     getEmergencies: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
+    getLegalNotices: vi.fn(async ({ status }: { status?: string } = {}) => ({ total: ({ draft: 2, issued: 5, response_received: 1 } as Record<string, number>)[status ?? ''] ?? 0 })),
   },
 }))
 
@@ -34,5 +35,13 @@ describe('Admin visual integrity', () => {
     expect(screen.getByText('Store registry status')).toBeInTheDocument()
     expect(screen.getByText('Monitoring Activity')).toBeInTheDocument()
     expect(screen.getByText('Active Legal Actions')).toBeInTheDocument()
+  })
+
+  it('shows live legal action counts from the notice list', async () => {
+    render(<OverviewPanel />)
+    expect(await screen.findByRole('button', { name: /Drafts to finish\s*2/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Issued, awaiting response\s*5/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Responses to review\s*1/ })).toBeInTheDocument()
+    expect(screen.queryByText(/preview-only/i)).not.toBeInTheDocument()
   })
 })

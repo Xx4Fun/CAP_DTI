@@ -20,7 +20,7 @@ class LegalNotice extends Model
         'pdf_disk', 'pdf_file_path', 'pdf_sha256', 'status', 'issued_at', 'intended_delivery_method',
         'delivery_state', 'delivery_details', 'delivered_at', 'due_date_timestamp', 'response_text',
         'response_reason_category', 'response_certified_at', 'response_received_at', 'closed_at', 'cancelled_at',
-        'vendor_user_id', 'deadline_rules', 'response_channel', 'signatory_snapshot',
+        'vendor_user_id', 'deadline_rules', 'response_channel', 'signatory_snapshot', 'outcome', 'outcome_reason',
     ];
 
     protected $hidden = ['pdf_disk', 'pdf_file_path'];

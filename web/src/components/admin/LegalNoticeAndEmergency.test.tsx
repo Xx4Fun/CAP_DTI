@@ -30,7 +30,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [], current_page: 1, last_page: 1, per_page: 20, total: 0, from: null, to: null })
-    window.history.replaceState({}, '', '/?module=legal_actions')
+    window.history.replaceState({}, '', '/?module=legal_actions&view=queue')
   })
 
   it('opens the queue by default and deep links to read-only captured evidence', async () => {
@@ -78,7 +78,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     expect(await screen.findByText('All changes saved')).toBeInTheDocument()
   })
 
-  it('lets the evaluator pick a visit when Prepare Notice opens without one', async () => {
+  it('lists visits that need review and starts a notice from one', async () => {
     const visit = {
       id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online' as const, representative_name: 'Maria', items_count: 1, anomaly_count: 1,
       officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
@@ -90,8 +90,9 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: 'New notice' }))
-    await user.click(await screen.findByRole('button', { name: 'Use this visit' }))
-    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ anomaly: 'yes' }))
+    expect(await screen.findByRole('heading', { name: 'Needs review' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Start notice' }))
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ review: 'pending' }))
     expect(adminApi.getMonitoringRecord).toHaveBeenCalledWith(14)
     expect(await screen.findByRole('checkbox', { name: /Rice/ })).toBeChecked()
     expect(screen.getAllByRole('button', { name: 'Start LOI draft' })[0]).toBeEnabled()
@@ -104,13 +105,14 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [{
       id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
       officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' }, items: [],
+      undecided_item_ids: [9], open_notice: { id: 3, notice_type: 'LOI', status: 'draft', control_number: null },
     }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: 'New notice' }))
-    expect(screen.queryByRole('button', { name: 'Use this visit' })).not.toBeInTheDocument()
-    await user.click(await screen.findByRole('button', { name: 'Open existing LOI draft' }))
+    expect(screen.queryByRole('button', { name: 'Start notice' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Waiting on LOI draft' }))
     expect(adminApi.createLegalNotice).not.toHaveBeenCalled()
     expect(await screen.findByRole('button', { name: 'Discard draft' })).toBeInTheDocument()
   })
@@ -132,8 +134,98 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     await screen.findByText('Rice')
     await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
 
-    expect(await screen.findByLabelText('Representative / contact person')).toHaveValue('Maria')
+    expect(await screen.findByLabelText('Addressee (registered owner)')).toHaveValue('Maria')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('opens the notice the server names when the visit already has one', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const existing = { id: 31, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Registered Owner', legal_bases: [] }, updated_at: '2026-09-07T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.createLegalNotice).mockRejectedValue({ response: { status: 409, data: { message: 'An open notice already exists for this monitoring visit.', existing_notice_id: 31 } } })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(existing)
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await screen.findByText('Rice')
+    await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
+    expect(await screen.findByLabelText('Addressee (registered owner)')).toHaveValue('Registered Owner')
+    expect(adminApi.getLegalNotice).toHaveBeenCalledWith(31)
+    expect(adminApi.getLegalNotices).not.toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
+  })
+
+  it('finds the existing open notice on a later page of that store when the server reports one', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const other = { id: 8, monitoring_record_id: 99, notice_type: 'LOI' as const, status: 'issued' as const, delivery_state: 'received' as const, source_snapshot: { items: [] }, draft_payload: { legal_bases: [] }, updated_at: '2026-09-09T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    const existing = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [{ id: 9 }] }, draft_payload: { recipient_name: 'Maria', legal_bases: [] }, updated_at: '2026-09-01T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.createLegalNotice).mockRejectedValue({ response: { status: 409, data: { message: 'An open notice already exists for this monitoring visit.' } } })
+    vi.mocked(adminApi.getLegalNotices).mockImplementation(async ({ page = 1 } = {}) => ({ data: [page === 1 ? other : existing], current_page: page, last_page: 2, per_page: 20, total: 2, from: page, to: page }))
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(existing)
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await screen.findByText('Rice')
+    await user.click(screen.getAllByRole('button', { name: 'Start LOI draft' })[0])
+
+    expect(await screen.findByLabelText('Addressee (registered owner)')).toHaveValue('Maria')
+    expect(adminApi.getLegalNotices).toHaveBeenCalledWith({ store_id: 2, page: 1 })
+    expect(adminApi.getLegalNotices).toHaveBeenCalledWith({ store_id: 2, page: 2 })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('pages the queue on the server and filters issued notices by status', async () => {
+    const draft = { id: 3, monitoring_record_id: 14, notice_type: 'LOI' as const, status: 'draft' as const, delivery_state: 'not_recorded' as const, source_snapshot: { items: [] }, draft_payload: { legal_bases: [] }, updated_at: '2026-09-01T00:00:00Z', readiness: {}, policy: { status: 'LEGAL_POLICY_UNAVAILABLE' as const, policy_version: null } }
+    vi.mocked(adminApi.getLegalNotices).mockImplementation(async ({ page = 1 } = {}) => ({ data: [draft], current_page: page, last_page: 3, per_page: 20, total: 41, from: 1, to: 1 }))
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    expect(await screen.findByText('Page 1 of 3 · 41 notices')).toBeInTheDocument()
+    expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'draft', page: 1, search: undefined, store_id: undefined })
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByText('Page 2 of 3 · 41 notices')).toBeInTheDocument()
+    expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'draft', page: 2, search: undefined, store_id: undefined })
+
+    await user.click(screen.getByRole('button', { name: /Issued & Responses/ }))
+    // "All issued notices" pages over non-draft notices on the server, so no page is filled with hidden drafts.
+    await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: undefined, page: 1, search: undefined, store_id: undefined, exclude_drafts: 1 }))
+    await user.selectOptions(screen.getByLabelText('Status'), 'response_received')
+    await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'response_received', page: 1, search: undefined, store_id: undefined }))
+    // Drafts never appear among issued notices, even on an unfiltered page.
+    expect(screen.queryByRole('cell', { name: /Draft #3/ })).not.toBeInTheDocument()
+  })
+
+  it('limits the lists to the store it was opened for until cleared', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&view=queue&source_store=2')
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'draft', page: 1, search: undefined, store_id: 2 }))
+    await user.click(await screen.findByRole('button', { name: 'Show all' }))
+    await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'draft', page: 1, search: undefined, store_id: undefined }))
+  })
+
+  it('links the case reference back to the monitoring visit', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
+      id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' },
+      items: [{ id: 9, srp_id: 3, recorded_price: 62, baseline_price: 50, reference_status: 'available', reference_value: 50, is_anomaly: true, variance_percent: 24, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 } }],
+    })
+    const onNavigate = vi.fn()
+    const user = userEvent.setup()
+    render(<LegalNoticeManager onNavigate={onNavigate} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Open visit #14 in Field Monitoring' }))
+    expect(onNavigate).toHaveBeenCalledWith('field_monitoring', { record: 14 })
   })
 
   it('keeps official dispatch unavailable and sandboxes draft HTML', async () => {

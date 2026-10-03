@@ -115,6 +115,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/monitoring-records-matrix', [MonitoringRecordController::class, 'matrix']);
         Route::get('/monitoring-records/{monitoringRecord}', [MonitoringRecordController::class, 'show']);
         Route::get('/monitoring-records/{monitoringRecord}/signatures/{kind}', [MonitoringRecordController::class, 'signature']);
+        Route::post('/monitoring-records/{monitoringRecord}/no-action', [MonitoringRecordController::class, 'noAction']);
         Route::get('/monitoring-establishments', [MonitoringRecordController::class, 'establishments']);
         Route::get('/monitoring-establishments/{store}', [MonitoringRecordController::class, 'establishment']);
         Route::post('/monitoring-establishments/{store}/additional-visits', [MonitoringRecordController::class, 'additionalVisit']);
@@ -172,6 +173,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/legal-notices/{legalNotice}/cancel', [AdminLegalNoticeController::class, 'cancel']);
         Route::post('/legal-notices/{legalNotice}/escalate', [AdminLegalNoticeController::class, 'escalate']);
         Route::post('/legal-notices/{legalNotice}/offline-response', [AdminLegalNoticeController::class, 'offlineResponse']);
+        Route::post('/legal-notices/{legalNotice}/reminder', [AdminLegalNoticeController::class, 'reminder']);
         Route::get('/legal-signatories', [LegalSignatoryController::class, 'index']);
         Route::put('/legal-signatories/{type}', [LegalSignatoryController::class, 'update']);
         Route::get('/legal-signatories/{type}/signature', [LegalSignatoryController::class, 'signature']);

@@ -20,6 +20,9 @@ vi.mock('../../services/adminApi', () => ({
     recordOfflineResponse: vi.fn(),
     recordLegalDelivery: vi.fn(),
     getMonitoringRecord: vi.fn(),
+    getMonitoringRecords: vi.fn(),
+    remindLegalNotice: vi.fn(),
+    recordNoAction: vi.fn(),
   },
 }))
 
@@ -43,10 +46,20 @@ const detailRecord: LegalNoticeRecord = {
 
 const complete = { case_reference: true, notice_type_and_basis: true, recipient_and_delivery: true, evidence_and_attachments: true, internal_justification: true }
 
+/** Serves one notice the way the API does: filtered by status, and cancelled once cancelLegalNotice runs. */
+const serveNotices = (notice: LegalNoticeRecord) => {
+  let current = notice
+  vi.mocked(adminApi.getLegalNotices).mockImplementation(async ({ status } = {}) => {
+    const data = !status || current.status === status ? [current] : []
+    return { data, current_page: 1, last_page: 1, per_page: 20, total: data.length, from: data.length ? 1 : null, to: data.length ? 1 : null }
+  })
+  vi.mocked(adminApi.cancelLegalNotice).mockImplementation(async () => (current = { ...current, status: 'cancelled' }))
+}
+
 describe('Legal Actions vendor response review', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    window.history.replaceState({}, '', '/?module=legal_actions')
+    window.history.replaceState({}, '', '/?module=legal_actions&view=queue')
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [listRecord], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getLegalNotice).mockResolvedValue(detailRecord)
   })
@@ -146,15 +159,43 @@ describe('Legal Actions vendor response review', () => {
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
     await user.click(await screen.findByRole('button', { name: 'Open' }))
     await user.click(await screen.findByRole('button', { name: 'Close notice' }))
-    await user.click(within(screen.getByRole('dialog', { name: 'Close this notice?' })).getByRole('button', { name: 'Close notice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Close this notice' })
+    await user.selectOptions(within(dialog).getByLabelText('Outcome'), 'violation_confirmed')
+    await user.type(within(dialog).getByLabelText('Reason shown to the vendor'), 'Prices were not corrected.')
+    await user.click(within(dialog).getByRole('button', { name: 'Close notice' }))
+    expect(adminApi.closeLegalNotice).toHaveBeenCalledWith(1, { outcome: 'violation_confirmed', outcome_reason: 'Prices were not corrected.', item_decisions: [{ item_id: 9, decision: 'confirmed' }] })
     expect(await screen.findByRole('alert')).toHaveTextContent('Close is not allowed now.')
+  })
+
+  it('closes with a decision for each product, switching to partly confirmed when one differs', async () => {
+    const twoItems = { ...detailRecord, source_snapshot: { items: [{ id: 9, commodity_name: 'Rice' }, { id: 10, commodity_name: 'Milk' }] } } as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [twoItems], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(twoItems)
+    vi.mocked(adminApi.closeLegalNotice).mockResolvedValue({ ...twoItems, status: 'closed', outcome: 'partially_confirmed', outcome_reason: 'Rice corrected; milk not.' })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
+    await user.click(await screen.findByRole('button', { name: 'Close notice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Close this notice' })
+    const submit = within(dialog).getByRole('button', { name: 'Close notice' })
+    await user.selectOptions(within(dialog).getByLabelText('Outcome'), 'explanation_accepted')
+    await user.type(within(dialog).getByLabelText('Reason shown to the vendor'), 'Rice corrected; milk not.')
+    expect(submit).toBeEnabled()
+    // Deciding one product differently makes the outcome a partial confirmation.
+    await user.click(within(dialog).getAllByRole('radio', { name: 'Confirmed' })[1])
+    expect(within(dialog).getByLabelText('Outcome')).toHaveValue('partially_confirmed')
+    await user.click(submit)
+    expect(adminApi.closeLegalNotice).toHaveBeenCalledWith(1, { outcome: 'partially_confirmed', outcome_reason: 'Rice corrected; milk not.',
+      item_decisions: [{ item_id: 9, decision: 'not_confirmed' }, { item_id: 10, decision: 'confirmed' }] })
+    expect(await screen.findByText('Partly confirmed')).toBeInTheDocument()
   })
 
   it('discards a draft from the queue after confirmation, keeping it as cancelled', async () => {
     const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null } as LegalNoticeRecord
-    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    serveNotices(draft)
     vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
-    vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
@@ -174,9 +215,8 @@ describe('Legal Actions vendor response review', () => {
   it('discards the draft being edited and returns to the queue', async () => {
     const draft = { ...detailRecord, id: 3, status: 'draft', control_number: null, readiness: complete, attachments: [],
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: [], legal_bases: [] }, draft_payload: { legal_bases: [] } } as unknown as LegalNoticeRecord
-    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    serveNotices(draft)
     vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
-    vi.mocked(adminApi.cancelLegalNotice).mockResolvedValue({ ...draft, status: 'cancelled' })
     const user = userEvent.setup()
     render(<LegalNoticeManager />)
 
@@ -197,11 +237,14 @@ describe('Legal Actions vendor response review', () => {
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
     await user.click(await screen.findByRole('button', { name: 'Open' }))
     await user.click(await screen.findByRole('button', { name: 'Cancel notice' }))
-    const dialog = screen.getByRole('dialog', { name: 'Cancel this issued notice?' })
+    const dialog = screen.getByRole('dialog', { name: 'Withdraw this issued notice?' })
     expect(dialog).toHaveTextContent('The vendor may already have this notice')
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel notice' }))
+    // A notice that left DTI is withdrawn only with a reason the vendor will see.
+    expect(within(dialog).getByRole('button', { name: 'Withdraw notice' })).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Reason shown to the vendor'), 'Issued to the wrong branch.')
+    await user.click(within(dialog).getByRole('button', { name: 'Withdraw notice' }))
 
-    expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(1)
+    expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(1, 'Issued to the wrong branch.')
     expect(await screen.findByText('LOI · Cancelled')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Close notice' })).not.toBeInTheDocument()
   })
@@ -223,7 +266,7 @@ describe('Legal Actions vendor response review', () => {
     // LOI does not require a legal basis; the reason alone completes this item.
     expect(within(checklist).queryByRole('button', { name: 'Reason and legal basis' })).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('How the vendor receives it'), 'hand_copy')
+    await user.selectOptions(screen.getByLabelText('How the vendor receives it'), 'portal')
     await user.type(screen.getByLabelText('Internal justification'), 'Rice observed above SRP.')
 
     expect(within(checklist).queryByRole('button')).not.toBeInTheDocument()
@@ -299,7 +342,7 @@ describe('Legal Actions vendor response review', () => {
   })
 
   it('points to the first missing checklist item instead of issuing', async () => {
-    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { ...complete, internal_justification: false }, attachments: [], intended_delivery_method: 'hand_copy',
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: { ...complete, internal_justification: false }, attachments: [], intended_delivery_method: 'portal',
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', address: 'San Angel' } } as unknown as LegalNoticeRecord
     vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
@@ -370,7 +413,7 @@ describe('Legal Actions vendor response review', () => {
   })
 
   it('stamps the e-signature only when the evaluator ticks it at issue', async () => {
-    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [], intended_delivery_method: 'email_and_hand_copy',
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [], intended_delivery_method: 'portal',
       policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: ['Prices above SRP'], legal_bases: [] },
       signatory: { name: 'Atty. Ana Reyes', office: 'Provincial Director, DTI Antique', has_signature: true },
       draft_payload: { reason: 'Prices above SRP', legal_bases: [], recipient_name: 'Maria Santos', recipient_email: 'maria@shop.test' } } as unknown as LegalNoticeRecord
@@ -387,15 +430,88 @@ describe('Legal Actions vendor response review', () => {
     const dialog = screen.getByRole('dialog', { name: 'Issue this Letter of Inquiry?' })
     expect(dialog).toHaveTextContent('e-signature of Atty. Ana Reyes')
     expect(dialog).toHaveTextContent('Maria Santos · maria@shop.test')
-    expect(dialog).toHaveTextContent('Portal + email + printed copy')
+    expect(dialog).toHaveTextContent('Vendor portal')
     expect(adminApi.issueLegalNotice).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Issue notice' }))
     expect(adminApi.issueLegalNotice).toHaveBeenCalledWith(1, true)
 
     const result = await screen.findByText('Notice issued. How it reaches the vendor:')
     expect(result.parentElement).toHaveTextContent('Visible in the linked vendor’s portal.')
-    expect(result.parentElement).toHaveTextContent('Email notification queued to the vendor.')
-    await user.click(screen.getByRole('button', { name: 'Next: record when the vendor received it' }))
-    expect(screen.getByRole('combobox', { name: 'Record delivery state' })).toHaveFocus()
+    expect(result.parentElement).toHaveTextContent('No email is sent; delivery is through the portal.')
+    // A portal notice is received by the vendor's own first open; staff are not offered a delivery control.
+    expect(screen.queryByRole('button', { name: 'Next: record when the vendor received it' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Record delivery state' })).not.toBeInTheDocument()
+  })
+
+  it('sends a reminder only after confirmation, without touching the notice', async () => {
+    const unopened = { ...detailRecord, status: 'issued', intended_delivery_method: 'portal', delivery_state: 'not_recorded', due_date_timestamp: null, response_received_at: null, can_remind: true } as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [unopened], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(unopened)
+    vi.mocked(adminApi.remindLegalNotice).mockResolvedValue({})
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
+    await user.click(await screen.findByRole('button', { name: /Send reminder/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Send a reminder to the vendor?' })
+    expect(dialog).toHaveTextContent('does not change the notice or its deadline')
+    expect(adminApi.remindLegalNotice).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Send reminder' }))
+    expect(adminApi.remindLegalNotice).toHaveBeenCalledWith(1)
+    // A portal notice's receipt is the vendor's own open: no manual delivery control is offered.
+    expect(screen.queryByRole('combobox', { name: 'Record delivery state' })).not.toBeInTheDocument()
+  })
+
+  it('records no action for a visit in Needs review with a required reason', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions')
+    const visit = { id: 14, client_uuid: 'visit-14', status: 'accepted', finalized_at: '2026-08-24T08:00:00Z', received_at: '2026-08-24T08:02:00Z', sync_source: 'online', representative_name: 'Maria', anomaly_count: 1,
+      officer: { id: 7, name: 'Ana', email: 'ana@dti.gov.ph' }, store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose' }, items: [], undecided_item_ids: [9], open_notice: null }
+    vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [visit], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 } as never)
+    vi.mocked(adminApi.recordNoAction).mockResolvedValue({ monitoring_record_id: 14, item_ids: [9] })
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    // Needs review is the first view, listing visits whose flagged products DTI has not decided.
+    expect(await screen.findByRole('heading', { name: 'Needs review' })).toBeInTheDocument()
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ review: 'pending' }))
+    await user.click(await screen.findByRole('button', { name: 'No action needed' }))
+    const dialog = screen.getByRole('dialog', { name: 'No action for visit #14?' })
+    expect(within(dialog).getByRole('button', { name: 'Record no action' })).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Why no regulatory action is needed'), 'Shelf tag error corrected on site.')
+    await user.click(within(dialog).getByRole('button', { name: 'Record no action' }))
+    expect(adminApi.recordNoAction).toHaveBeenCalledWith(14, 'Shelf tag error corrected on site.')
+  })
+
+  it('survives clearing the outcome back to blank and opens the issued list on a status from the URL', async () => {
+    window.history.replaceState({}, '', '/?module=legal_actions&view=issued&status=response_received')
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'response_received', page: 1, search: undefined, store_id: undefined }))
+    expect(screen.getByLabelText('Status')).toHaveValue('response_received')
+    await user.click(await screen.findByRole('button', { name: 'Open' }))
+    await user.click(await screen.findByRole('button', { name: 'Close notice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Close this notice' })
+    await user.selectOptions(within(dialog).getByLabelText('Outcome'), 'violation_confirmed')
+    await user.selectOptions(within(dialog).getByLabelText('Outcome'), '')
+    expect(within(dialog).getByLabelText('Outcome')).toHaveValue('')
+    expect(within(dialog).getByRole('button', { name: 'Close notice' })).toBeDisabled()
+  })
+
+  it('flags an addressee too long for the printed form before saving', async () => {
+    const draft = { ...detailRecord, status: 'draft', control_number: null, readiness: complete, attachments: [], intended_delivery_method: 'portal', linked_vendor_user_id: 4,
+      registered_owner_name: 'N'.repeat(80), policy: { status: 'LEGAL_POLICY_AVAILABLE', policy_version: 'v', reasons: [], legal_bases: [] },
+      draft_payload: { recipient_name: 'N'.repeat(80), legal_bases: [] } } as unknown as LegalNoticeRecord
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue({ data: [draft], current_page: 1, last_page: 1, per_page: 20, total: 1, from: 1, to: 1 })
+    vi.mocked(adminApi.getLegalNotice).mockResolvedValue(draft)
+    const user = userEvent.setup()
+    render(<LegalNoticeManager />)
+
+    await user.click(await screen.findByRole('button', { name: 'Continue draft' }))
+    expect(await screen.findByText('Too long for the printed form')).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Addressee (registered owner)'))
+    await user.type(screen.getByLabelText('Addressee (registered owner)'), 'N. Owner')
+    expect(screen.queryByText('Too long for the printed form')).not.toBeInTheDocument()
   })
 })

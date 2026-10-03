@@ -8,6 +8,34 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-03 — Regulatory decisions are recorded; notices are portal-only
+
+- **Owner rules.**
+  1. An SCO starts by escalating an LOI. A direct SCO is allowed only for a price-freeze visit citing price ceilings; the rule is enforced at create and at issue.
+  2. The response period still runs from receipt. For a portal notice, receipt is the vendor's first open, matching the printed "upon receipt" form. Staff cannot record delivery of a portal notice (`PORTAL_RECEIPT_ONLY`).
+  3. New notices are delivered **only through the vendor portal**. Issue needs an active linked vendor, and it prints that account's email. Hand-copy and email delivery, and manual delivery recording, remain only for notices issued before this rule. No email is sent at issue.
+  4. The addressee is the store's registered owner (`stores.owner_name`). The name is never invented, and issue refuses if the owner changed after drafting until the evaluator confirms the recipient.
+  5. Closing a notice records an outcome and a decision for each cited product. "Explanation accepted" is not a confirmed finding.
+  6. DTI may send a reminder for an unanswered portal notice. A reminder is a message only; it creates no document and changes no deadline.
+  7. A DTI Admin can record "no action needed", with a reason, for a visit's undecided flagged products.
+  8. The review tolerance is unchanged: SRP +10%, price ceiling 0%.
+- **Decisions are findings.**
+  - A closure writes one `regulatory_findings` row per cited product, with `source_type=monitoring_record_item` and the reference copied from the notice snapshot, using `confirmed` or `not_confirmed`.
+  - No-action writes `no_action`. A later notice may cite such an item, and its triage history is frozen into the notice snapshot (`prior_triage`) and the audit log.
+  - An item with a final decision cannot be cited again (`ITEM_ALREADY_DECIDED`).
+  - The recidivism index and analytics count one confirmed visit once (`ReportReviewService::confirmedCaseCount`). A confirmed field product is plotted once, as its inspection.
+- **Integrity.**
+  - Draft snapshots carry the reference version, source id and previous price.
+  - Escalation copies the LOI snapshot rather than rebuilding it from live data.
+  - Closing a notice drafted before full snapshots existed reads the missing fields from the immutable visit item, and only when the values it does hold agree (`SNAPSHOT_REVIEW_REQUIRED`).
+  - Every finding writer locks the store first: legal close, no-action, draft creation, consumer-report decisions and verification requests, in the same order as field sync.
+- **Where it lives.**
+  - Legal Actions › Needs review lists visits with undecided products. A visit with an open notice waits on it.
+  - Field Monitoring shows notices and decisions read-only, with links into Legal Actions.
+  - The vendor portal shows the outcome, a decision per product, and the LOI an SCO follows.
+- This supersedes the 2026-09-28 entry's hand-copy and email delivery for new notices.
+- Evidence: `docs/plans/regulatory-actions/PLAN.md` (revision 7, built by explicit owner override after 6 Codex review rounds), `PLAN-REVIEW-LOG.md`, `backend/tests/Feature/RegulatoryDecisionsTest.php`, `LegalNoticeLifecycleTest.php`.
+
 ## 2026-10-03 — One rule for public images
 
 - **Why.** An item photo added in DTI Admin › Price Regulation showed in Admin but not in the Customer PWA. The customer app rewrote every URL containing `commodity_images/` to a copy bundled in the app, and uploads are never bundled. That rewrite existed because the 114 seeded product photos were never uploaded to the production bucket, so both apps hid the gap with bundled copies. Store photos had a third arrangement: copies bundled into all four apps, and the vendor app guessed photos from store names.

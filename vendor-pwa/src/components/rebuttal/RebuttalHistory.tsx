@@ -1,7 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Clock, Paperclip, FileCheck, Eye } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
-import { attachmentCategoryLabel, canRespond, formatDate, isFinished, reasonLabel } from '../../app/rules';
+import { OUTCOME_LABELS, attachmentCategoryLabel, canRespond, formatDate, isFinished, reasonLabel } from '../../app/rules';
 
 interface RebuttalHistoryProps {
   notices: LegalNotice[];
@@ -68,15 +68,19 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
                   <strong style={{ fontSize: '0.95rem', color: 'var(--dti-navy)' }}>{notice.control_number ?? `Notice #${notice.id}`}</strong>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>Submitted {formatDate(notice.response_received_at, true)}</div>
                 </div>
-                {isFinished(notice) ? (
-                  <span className="badge badge-success"><CheckCircle2 size={13} /><span>Notice closed</span></span>
+                {notice.status === 'cancelled' ? (
+                  <span className="badge badge-navy"><CheckCircle2 size={13} /><span>Withdrawn by DTI</span></span>
+                ) : isFinished(notice) ? (
+                  <span className="badge badge-success"><CheckCircle2 size={13} /><span>{notice.outcome ? OUTCOME_LABELS[notice.outcome] : 'Notice closed'}</span></span>
                 ) : (
                   <span className="badge badge-warning"><Clock size={13} /><span>Under DTI review</span></span>
                 )}
               </div>
 
               <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '12px' }}>
-                <strong style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Reason: {reasonLabel(notice.response_reason_category)}</strong>
+                {notice.response_reason_category
+                  ? <strong style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Reason: {reasonLabel(notice.response_reason_category)}</strong>
+                  : notice.response_channel && notice.response_channel !== 'portal' && <strong style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Your {notice.response_channel} reply, as recorded by DTI</strong>}
                 {notice.response_text && <p style={{ fontSize: '0.82rem', color: 'var(--text-primary)', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{notice.response_text}</p>}
               </div>
 

@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import type { StoreRecord } from '../../types/admin'
+import type { NavigateTo } from './AdminShell'
 import { StoreMap } from './StoreMap'
 import { getStoreStatusInfo } from './storeMapUtils'
 
@@ -9,7 +10,7 @@ const StoreDetailOverlay = lazy(() => import('./StoreDetailOverlay').then((modul
 
 type StatusFilter = 'all' | 'no-findings' | 'pending' | 'findings'
 
-export const StoreManager: React.FC = () => {
+export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate }) => {
   const [stores, setStores] = useState<StoreRecord[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -209,6 +210,7 @@ export const StoreManager: React.FC = () => {
                 store={detailStore}
                 onClose={() => setDetailStore(null)}
                 onCenterMap={() => handleCenterStore(detailStore.id)}
+                onOpenNotice={onNavigate ? (noticeId) => onNavigate('legal_actions', { source_notice: noticeId }) : undefined}
               />
             </Suspense>
           ) : isSidebarOpen ? (

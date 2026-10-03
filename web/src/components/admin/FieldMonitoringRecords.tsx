@@ -8,7 +8,7 @@ import { adminApi } from '../../services/adminApi'
 import type {
   FieldVerificationRequestPage, MonitoringEstablishmentProfile, MonitoringEstablishmentSummary,
   ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringPeriodPreset,
-  MonitoringPriceHistoryPage, MonitoringPriceHistoryRow, MonitoringRecordItem, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace,
+  MonitoringPriceHistoryPage, MonitoringPriceHistoryRow, MonitoringRecordItem, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, NoticeSummary,
 } from '../../types/admin'
 
 type Tab = 'establishments' | 'records' | 'verification'
@@ -389,6 +389,8 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   const handleRegulatoryAction = (storeId: number, recordId?: number) => {
     onNavigate?.('legal_actions', recordId ? { source_record: recordId, source_store: storeId } : { source_store: storeId })
   }
+  // Field Monitoring only links to a notice; every action on it happens in Legal Actions.
+  const openNotice = (noticeId: number) => onNavigate?.('legal_actions', { source_notice: noticeId })
 
   if (selectedRecord) {
     return (
@@ -398,6 +400,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         backLabel={profile ? 'Return to establishment' : tab === 'records' ? 'Back to All Records' : 'Back to Additional Visits'}
         onBack={closeDetail}
         onRegulatoryAction={() => handleRegulatoryAction(selectedRecord.store.id, selectedRecord.id)}
+        onOpenNotice={openNotice}
       />
     )
   }
@@ -456,6 +459,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         onRecordsPage={loadProfileRecordsPage}
         onFindingsPage={loadProfileFindingsPage}
         onRegulatoryAction={handleRegulatoryAction}
+        onOpenNotice={openNotice}
         reloading={loading}
       />
     )
@@ -758,7 +762,7 @@ function EstablishmentRowCard({ store, cadence: _cadence, onOpen }: { store: Mon
         </div>
 
         <div className="status-assignment-section">
-          <span className="status-label">REGULATORY STATUS</span>
+          <span className="status-label">REVIEW STATUS</span>
           <div className="status-badges-stack">
             <Observation value={store.latest_result} />
             {store.verification_task_status !== 'none' && (
@@ -911,7 +915,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
             <thead>
               <tr>
                 <th>Establishment</th>
-                <th>Compliance status</th>
+                <th>Monitoring status</th>
                 <th>Latest visit</th>
                 <th>Total visits</th>
                 <th>Verification</th>
@@ -928,7 +932,7 @@ function EstablishmentsView({ workspace, loading, search, routineStatus, additio
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
                     </td>
-                    <td data-label="Compliance status"><Observation value={store.latest_result} /></td>
+                    <td data-label="Monitoring status"><Observation value={store.latest_result} /></td>
                     <td data-label="Latest visit">
                       <strong>{formatShortDate(store.latest_monitoring_at || store.latest_routine_monitoring_at)}</strong>
                       <small>{store.latest_officer?.name || 'Officer unavailable'}</small>
@@ -1206,9 +1210,9 @@ function PriceDeltaBanner({ row }: { row: MonitoringPriceHistoryRow }) {
       <div className="comparison-divider" aria-hidden="true" />
 
       <div className="comparison-metric evaluation">
-        <span className="metric-label">Status Under Price Act</span>
+        <span className="metric-label">Comparison with reference</span>
         <strong className={`metric-val status-text ${isAnomaly ? 'anomaly' : 'compliant'}`}>
-          {isAnomaly ? 'Exceeds Reference (For Review)' : 'Within Permissible Reference'}
+          {diff === null ? 'Reference unavailable' : isAnomaly ? 'Above review threshold (For Review)' : diff > 0 ? 'Above reference · within tolerance' : 'Within reference'}
         </strong>
         <small className="metric-sub">{row.protocol_mode === 'emergency' ? 'Emergency Protocol (0% Tolerance)' : 'Standard Market Protocol'}</small>
       </div>
@@ -1238,6 +1242,7 @@ function EstablishmentProfile({
   onRecordsPage,
   onFindingsPage,
   onRegulatoryAction,
+  onOpenNotice,
   reloading,
 }: {
   profile: MonitoringEstablishmentProfile
@@ -1261,6 +1266,7 @@ function EstablishmentProfile({
   onRecordsPage: (page: number) => void
   onFindingsPage: (page: number) => void
   onRegulatoryAction: (storeId: number, recordId?: number) => void
+  onOpenNotice: (noticeId: number) => void
   reloading: boolean
 }) {
   const latest = profile.latest_record
@@ -1275,18 +1281,24 @@ function EstablishmentProfile({
   const cadence = profile.monitoring_period?.cadence
   const routineDone = profile.routine_status === 'completed'
   const protocolMode = profile.monitoring_period?.protocol_mode
-  const regulatory = recidivism > 0
-    ? { tone: 'danger', value: `Repeat (${recidivism})`, sub: '0% tolerance on escalation' }
+  // Only facts the counts support: flagged items are above the review threshold, while unflagged prices may still be
+  // above the reference within tolerance, and items without a reference are never flagged. Legal conclusions are DTI's.
+  const latestUnavailable = latest?.unavailable_reference_count ?? 0
+  const periodUnavailable = profile.period_unavailable_reference_count
+  const regulatory = periodCompleted === 0
+    ? { tone: 'amber', value: 'Not monitored this period', sub: 'No accepted visits in the selected period' }
     : periodObservations > 0
-      ? { tone: 'amber', value: 'Observations Noted', sub: `${periodObservations} anomalous visit${periodObservations > 1 ? 's' : ''} recorded` }
-      : { tone: 'emerald', value: 'Within Reference', sub: 'Standard 10% tolerance compliant' }
+      ? { tone: 'amber', value: 'Observations Noted', sub: `${periodObservations} visit${periodObservations > 1 ? 's' : ''} with flagged items` }
+      : { tone: 'emerald', value: 'No flagged observations', sub: periodUnavailable === 0
+        ? `${periodCompleted} visit${periodCompleted > 1 ? 's' : ''} recorded · compared against available references`
+        : `${periodCompleted} visit${periodCompleted > 1 ? 's' : ''} recorded · see Price History for each comparison` }
   const latestResult = !latest
     ? { tone: 'muted', label: 'Never monitored' }
     : latest.anomaly_count
-      ? { tone: 'attention', label: 'Findings Recorded' }
-      : latest.unavailable_reference_count
+      ? { tone: 'attention', label: 'Observations recorded' }
+      : latestUnavailable
         ? { tone: 'muted', label: 'Reference Unavailable' }
-        : { tone: 'clean', label: 'Within Reference' }
+        : { tone: 'clean', label: 'No flagged observations' }
   const commoditiesChecked = latest ? (latest.items_count ?? latest.items?.length ?? 0) : 0
 
   return (
@@ -1397,7 +1409,7 @@ function EstablishmentProfile({
             onClick={() => onProfileTab('findings')}
           >
             <TriangleAlert size={17} aria-hidden="true" />
-            <span>Findings &amp; Anomalies</span>
+            <span>Observations</span>
             {findings.total > 0 && <span className="tab-count-badge danger">{findings.total}</span>}
           </button>
           <button
@@ -1492,7 +1504,7 @@ function EstablishmentProfile({
               <div className="kpi-copy">
                 <span className="kpi-label">Visits with Observations</span>
                 <strong className={`kpi-value ${periodObservations > 0 ? 'text-orange' : ''}`}>{periodObservations}</strong>
-                <small className="kpi-sub">Detected price anomalies</small>
+                <small className="kpi-sub">Items above the review threshold</small>
               </div>
             </div>
             <div className="overview-kpi-card purple">
@@ -1506,9 +1518,13 @@ function EstablishmentProfile({
             <div className={`overview-kpi-card ${regulatory.tone}`}>
               <span className="kpi-icon" aria-hidden="true"><FileText size={24} /></span>
               <div className="kpi-copy">
-                <span className="kpi-label">Regulatory Status</span>
+                <span className="kpi-label">Review Status</span>
                 <strong className={`kpi-value kpi-value-text text-${regulatory.tone}`}>{regulatory.value}</strong>
                 <small className="kpi-sub">{regulatory.sub}</small>
+                {periodUnavailable !== undefined
+                  ? periodUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {periodUnavailable} item{periodUnavailable > 1 ? 's' : ''} in this period</small>
+                  : latestUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {latestUnavailable} item{latestUnavailable > 1 ? 's' : ''} on the latest visit</small>}
+                {recidivism > 0 && <small className="kpi-sub text-danger">{recidivism} confirmed finding{recidivism > 1 ? 's' : ''} on record (decided by DTI)</small>}
               </div>
             </div>
           </div>
@@ -1622,27 +1638,27 @@ function EstablishmentProfile({
         </section>
       )}
 
-      {/* TAB 2: FINDINGS & ANOMALIES */}
+      {/* TAB 2: FLAGGED OBSERVATIONS */}
       {profileTab === 'findings' && (
         <div role="tabpanel" id="profile-panel-findings" aria-labelledby="profile-tab-findings" className="field-profile-findings">
           <section className="admin-table-card">
             <div className="field-monitor-items-heading">
               <div>
-                <h3>Flagged Price Anomalies &amp; Observations</h3>
-                <p>Commodities recorded above permissible price references in the selected period.</p>
+                <h3>Flagged Observations</h3>
+                <p>Commodities recorded above the review threshold of their captured reference in the selected period. These are observations for DTI review, not findings.</p>
               </div>
             </div>
 
             {findings.data.length === 0 ? (
               <div className="findings-empty-state">
                 <CheckCircle2 size={36} className="text-emerald" aria-hidden="true" />
-                <h4>No Price Anomalies Detected</h4>
-                <p>All recorded commodity prices for this establishment fall within permissible references in the selected period.</p>
+                <h4>No Flagged Observations</h4>
+                <p>No recorded price for this establishment was above the review threshold in the selected period. Items without an available reference are never flagged; see Price History.</p>
               </div>
             ) : (
               <div className="admin-table-wrap">
                 <table className="admin-data-table">
-                  <caption className="sr-only">Establishment price findings and anomalies</caption>
+                  <caption className="sr-only">Establishment flagged price observations</caption>
                   <thead>
                     <tr>
                       <th>Inspection Date</th>
@@ -1683,14 +1699,18 @@ function EstablishmentProfile({
                         </td>
                         <td data-label="Field Officer">{item.officer_name}</td>
                         <td data-label="Actions" className="actions-cell">
-                          <button
+                          {item.notice
+                            ? <button type="button" className="regulatory-chip" onClick={() => onOpenNotice(item.notice!.id)}>{noticeChipLabel(item.notice)}</button>
+                            : item.decision ? <span className="regulatory-chip muted" title={item.decision_reason ?? undefined}>{decisionLabel(item.decision)}{decidedBy(item.decided_by_name, item.decided_at)}{item.decision === 'no_action' && item.decision_reason ? `: ${item.decision_reason}` : ''}</span>
+                              : <span className="regulatory-chip muted">Not reviewed</span>}
+                          {!item.decision && !(item.notice && ['draft', 'issued', 'response_received'].includes(item.notice.status)) && <button
                             type="button"
                             className="admin-button small notice-action-btn"
                             onClick={() => onRegulatoryAction(profile.store.id, item.monitoring_record_id)}
                           >
                             <TriangleAlert size={13} aria-hidden="true" />
                             <span>Prepare Notice</span>
-                          </button>
+                          </button>}
                           <button
                             type="button"
                             className="text-button"
@@ -1812,8 +1832,8 @@ function EstablishmentProfile({
   )
 }
 
-function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
-  record: MonitoringRecordRecord; error: string; backLabel: string; onBack: () => void; onRegulatoryAction: () => void
+function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onOpenNotice }: {
+  record: MonitoringRecordRecord; error: string; backLabel: string; onBack: () => void; onRegulatoryAction: () => void; onOpenNotice: (noticeId: number) => void
 }) {
   const affected = record.items.filter((item) => item.is_anomaly)
   const [signatureModal, setSignatureModal] = useState<{
@@ -1869,6 +1889,13 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
   const unavailable = record.items.filter((item) => statusOf(item) === 'unavailable').length
   const itemCount = record.items_count ?? record.items.length
   const commodityName = (item: MonitoringRecordItem) => item.bulletin?.commodity_name || `SRP #${item.srp_id}`
+  // The reference captured at finalization, as stored on the line: label (or type), source, effective date.
+  const referenceDetail = (item: MonitoringRecordItem) => [
+    item.reference_type === 'emergency_ceiling' ? 'Price ceiling' : item.reference_type === 'standard_srp' ? 'SRP' : null,
+    item.reference_label,
+    // The record API serializes the date cast as a full ISO timestamp; only the date is meaningful.
+    item.reference_source, item.reference_effective_date?.slice(0, 10),
+  ].filter((part, index, parts) => part && parts.indexOf(part) === index).join(' · ')
   const differencePill = (item: MonitoringRecordItem) => {
     if (item.reference_value === null || item.reference_value === undefined) return <span className="visit-muted">Unavailable</span>
     const reference = Number(item.reference_value)
@@ -1885,8 +1912,8 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
   }
   const observationBadge = (item: MonitoringRecordItem) => {
     const status = statusOf(item)
-    if (status === 'tolerated') return <span className="monitor-observation tolerance"><CircleAlert size={13} />Above SRP · within 10%</span>
-    if (status === 'flagged') return <span className="monitor-observation danger"><TriangleAlert size={13} />With observations</span>
+    if (status === 'tolerated') return <span className="monitor-observation tolerance"><CircleAlert size={13} />Above reference · within tolerance</span>
+    if (status === 'flagged') return <span className="monitor-observation danger"><TriangleAlert size={13} />With observations{item.finding && <small className="monitor-decision">{decisionLabel(item.finding.decision)}{decidedBy(item.finding.decider?.name, item.finding.decided_at)}{item.finding.decision === 'no_action' && item.finding.reason ? `: ${item.finding.reason}` : ''}</small>}</span>
     return <Observation value={status === 'unavailable' ? 'reference_unavailable' : 'no_observations'} />
   }
 
@@ -1946,8 +1973,14 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
                       <strong>{commodityName(item)}</strong>
                       {item.bulletin?.unit && <small>{item.bulletin.unit}</small>}
                     </td>
-                    <td data-label="Applicable reference"><strong>{money(item.reference_value)}</strong></td>
-                    <td data-label="Observed price"><strong className="visit-observed">{money(item.recorded_price)}</strong></td>
+                    <td data-label="Applicable reference">
+                      <strong>{money(item.reference_value)}</strong>
+                      {referenceDetail(item) && <small>{referenceDetail(item)}</small>}
+                    </td>
+                    <td data-label="Observed price">
+                      <strong className="visit-observed">{money(item.recorded_price)}</strong>
+                      {item.previous_price != null && <small>Previous {money(item.previous_price)}</small>}
+                    </td>
                     <td data-label="Difference">{differencePill(item)}</td>
                     <td data-label="Observation">{observationBadge(item)}</td>
                   </tr>
@@ -1977,9 +2010,10 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction }: {
                 </li>
               ))}
             </ul>
+            <RegulatoryState notices={record.notices ?? []} undecided={record.undecided_item_ids?.length ?? null} waiting={!!record.open_notice} onOpenNotice={onOpenNotice}/>
             <footer>
               <button type="button" className="admin-button secondary" onClick={onBack}>{backLabel}</button>
-              <button type="button" className="admin-button primary" onClick={onRegulatoryAction}>Open Legal Actions</button>
+              {(record.undecided_item_ids === undefined || (record.undecided_item_ids.length > 0 && !record.open_notice)) && <button type="button" className="admin-button primary" onClick={onRegulatoryAction}>Open Legal Actions</button>}
             </footer>
           </section>
         )}
@@ -2071,4 +2105,19 @@ function Empty({ text }: { text: string }) {
 function Pagination({ page, onPage, disabled = false }: { page: { current_page: number; last_page: number; from: number | null; to: number | null; total: number }; onPage: (page: number) => void; disabled?: boolean }) {
   if (page.last_page <= 1) return null
   return <nav className="admin-pagination field-monitor-pagination" aria-label="Field Monitoring pagination"><span>Showing <strong>{page.from ?? 0}–{page.to ?? 0}</strong> of <strong>{page.total}</strong></span><div><button type="button" aria-label="Previous page" disabled={disabled || page.current_page <= 1} onClick={() => onPage(page.current_page - 1)}><ChevronLeft size={16} /></button><strong>Page {page.current_page} of {page.last_page}</strong><button type="button" aria-label="Next page" disabled={disabled || page.current_page >= page.last_page} onClick={() => onPage(page.current_page + 1)}><ChevronRight size={16} /></button></div></nav>
+}
+
+const humanizeStatus = (value: string) => { const text = value.replaceAll('_', ' '); return text.charAt(0).toUpperCase() + text.slice(1) }
+const decidedBy = (name?: string | null, at?: string | null) => [name, at ? new Date(at).toLocaleDateString() : null].filter(Boolean).map((part) => ` · ${part}`).join('')
+const decisionLabel = (decision: string) => decision === 'no_action' ? 'No action' : decision === 'confirmed' ? 'Confirmed by DTI' : 'Not confirmed by DTI'
+const noticeChipLabel = (notice: NoticeSummary) => `${notice.control_number || `${notice.notice_type} draft`} · ${humanizeStatus(notice.outcome ?? notice.status)}`
+
+/** Read-only regulatory state for a visit: its notices link to Legal Actions; nothing is decided here. */
+function RegulatoryState({ notices, undecided, waiting, onOpenNotice }: { notices: NoticeSummary[]; undecided: number | null; waiting: boolean; onOpenNotice: (noticeId: number) => void }) {
+  if (!notices.length && !undecided) return null
+  return <div className="field-regulatory-state" aria-label="Regulatory action">
+    <span>Regulatory action</span>
+    {notices.map((notice) => <button key={notice.id} type="button" className="regulatory-chip" onClick={() => onOpenNotice(notice.id)}>{noticeChipLabel(notice)}</button>)}
+    {!!undecided && !waiting && <span className="regulatory-chip muted">{undecided} product{undecided > 1 ? 's' : ''} not reviewed</span>}
+  </div>
 }

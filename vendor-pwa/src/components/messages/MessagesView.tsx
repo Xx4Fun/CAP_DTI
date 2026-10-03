@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, FileText, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
 import type { Conversation, ConversationNotice, StoreMessage } from '../../app/types';
-import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, formatDate } from '../../app/rules';
+import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, OUTCOME_LABELS, formatDate } from '../../app/rules';
 import { apiError, isSessionInvalid, vendorApi } from '../../services/vendorApi';
 
 const POLL_MS = 10_000;
@@ -22,7 +22,7 @@ const noticeEntries = (notice: ConversationNotice): Entry[] => [
   { at: notice.issued_at ?? '', notice },
   ...(notice.delivered_at ? [{ at: notice.delivered_at, notice, event: notice.delivery_state === 'refused' ? 'Recorded as refused' : 'Received' }] : []),
   ...(notice.response_received_at ? [{ at: notice.response_received_at, notice, event: 'Response received by DTI' }] : []),
-  ...(notice.closed_at ? [{ at: notice.closed_at, notice, event: 'Closed by DTI' }] : []),
+  ...(notice.closed_at ? [{ at: notice.closed_at, notice, event: notice.outcome === 'escalated_to_sco' ? 'Escalated to a Show Cause Order' : notice.outcome ? `Closed by DTI: ${OUTCOME_LABELS[notice.outcome]}` : 'Closed by DTI' }] : []),
   ...(notice.cancelled_at ? [{ at: notice.cancelled_at, notice, event: 'Withdrawn by DTI' }] : []),
 ];
 

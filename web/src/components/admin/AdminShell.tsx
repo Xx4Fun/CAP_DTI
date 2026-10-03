@@ -462,14 +462,15 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
               <div style={{ background: '#eff6ff', padding: '1rem', borderRadius: '10px', border: '1px solid #bfdbfe' }}>
                 <h4 style={{ margin: '0 0 0.5rem', color: '#1e3a8a' }}>Regulatory policy status</h4>
                 <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e40af' }}>
-                  Automatic legal deadlines and LOI/SCO dispatch are unavailable until DTI-approved policy rules are configured. Price comparisons are decision support only; an authorized evaluator must verify the applicable source and evidence.
+                  LOIs and SCOs are prepared and issued only by an evaluator in Legal Actions; the system never issues one on its own. Response deadlines follow the approved legal policy and start when the vendor receives the notice. Price comparisons are decision support only; an authorized evaluator must verify the applicable source and evidence.
                 </p>
               </div>
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                 <h4 style={{ margin: '0 0 0.5rem', color: '#0f172a' }}>System Quick Links</h4>
                 <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.85rem', color: '#475569' }}>
-                  <li><strong>Establishments &amp; Access:</strong> Register new establishments and review access availability.</li>
-                  <li><strong>Field Monitoring:</strong> Review temporal price volatility from verified inspections.</li>
+                  <li><strong>User Management:</strong> Register establishments and manage vendor and staff accounts.</li>
+                  <li><strong>Field Monitoring:</strong> Review establishments, accepted visits, and observed prices against the captured reference.</li>
+                  <li><strong>Legal Actions:</strong> Prepare, issue, and follow up LOIs and SCOs from an accepted visit.</li>
                   <li><strong>Consumer Reports:</strong> Inspect citizen receipt evidence and formal findings.</li>
                 </ul>
               </div>

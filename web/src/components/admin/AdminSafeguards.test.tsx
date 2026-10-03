@@ -110,7 +110,7 @@ describe('DTI Admin safeguards', () => {
     expect(screen.queryByText(/SCO-2026-0801/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/LOI-2026-0728/i)).not.toBeInTheDocument()
     expect(screen.getByText(/No authoritative trend summary is available/i)).toBeInTheDocument()
-    expect(screen.getByText(/No legal action records are available/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Legal action counts could not be loaded/i)).toBeInTheDocument()
   })
 
   it('shows a safe schema-unavailable state instead of an empty audit trail', async () => {

@@ -19,6 +19,8 @@ export interface StoreDetailOverlayProps {
   store: StoreRecord
   onClose: () => void
   onCenterMap: () => void
+  /** Opens the notice in Legal Actions; omitted where navigation is unavailable. */
+  onOpenNotice?: (noticeId: number) => void
 }
 
 type TabType = 'overview' | 'trends' | 'legal' | 'complaints'
@@ -108,6 +110,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   store,
   onClose,
   onCenterMap,
+  onOpenNotice,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
   const [trendRows, setTrendRows] = useState<TrendRow[]>([])
@@ -467,6 +470,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
                     <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{notice.status.replace(/_/g, ' ')}</span>
                   </div>
                   <span>{noticeDates(notice)}</span>
+                  {onOpenNotice && <button type="button" className="text-button" style={{ justifySelf: 'start', minHeight: '44px' }} onClick={() => onOpenNotice(notice.id)}>Open in Legal Actions</button>}
                 </div>
               )}
             />

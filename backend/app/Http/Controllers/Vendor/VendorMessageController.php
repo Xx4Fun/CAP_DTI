@@ -36,7 +36,7 @@ class VendorMessageController extends Controller
                     ...$notice->only(['id', 'notice_type', 'control_number', 'status', 'delivery_state']),
                     'issued_at' => $notice->issued_at?->toIso8601String(), 'delivered_at' => $notice->delivered_at?->toIso8601String(), 'due_date_timestamp' => $notice->due_date_timestamp?->toIso8601String(),
                     'response_received_at' => $notice->response_received_at?->toIso8601String(), 'closed_at' => $notice->closed_at?->toIso8601String(),
-                    'cancelled_at' => $notice->cancelled_at?->toIso8601String(),
+                    'cancelled_at' => $notice->cancelled_at?->toIso8601String(), 'outcome' => $notice->outcome, 'outcome_reason' => $notice->outcome_reason,
                 ])->values(),
         ]]);
     }

@@ -22,7 +22,7 @@ export const ActiveNoticeBanner: React.FC<ActiveNoticeBannerProps> = ({ notice, 
           <span className="notice-dot" />
           <span className="notice-type-name">{isSco ? 'Show Cause Order' : 'Letter of Inquiry'}</span>
         </div>
-        {notice.status === 'issued' ? <CountdownBadge dueAt={['received', 'refused'].includes(notice.delivery_state) ? notice.due_date_timestamp : null} /> : <span className="countdown-badge pending">{noticeStatusLabel(notice)}</span>}
+        {notice.status === 'issued' ? <CountdownBadge dueAt={['received', 'refused'].includes(notice.delivery_state) ? notice.due_date_timestamp : null} portal={notice.intended_delivery_method === 'portal'} /> : <span className="countdown-badge pending">{noticeStatusLabel(notice)}</span>}
       </div>
 
       <div className="notice-card-body">

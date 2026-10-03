@@ -24,7 +24,7 @@ const record = {
   officer: { id: 7, name: 'Ana Officer', email: 'ana@dti.gov.ph' },
   store: { id: 2, store_name: 'Antique Central Market', address: 'San Jose de Buenavista' },
   verification_request: { id: 301, status: 'completed', report: { id: 101, report_reference: 'RPT-101', status: 'Under regulatory review' } },
-  items: [{ id: 1, srp_id: 3, recorded_price: 62, baseline_price: 999, reference_value: 50, reference_label: 'SRP baseline', reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', variance_percent: 24, is_anomaly: true, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 999 } }],
+  items: [{ id: 1, srp_id: 3, recorded_price: 62, baseline_price: 999, previous_price: 55, reference_value: 50, reference_label: 'SRP baseline', reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', variance_percent: 24, is_anomaly: true, bulletin: { id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 999 } }],
 }
 
 const workspace = {
@@ -96,6 +96,9 @@ describe('FieldMonitoringRecords', () => {
     await user.click(await screen.findByRole('button', { name: 'View visit 14' }))
     expect(await screen.findByRole('heading', { name: 'Visit #14' })).toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Recorded commodity prices' })).toHaveTextContent('₱50.00')
+    // The captured reference and the previous verified price are shown as recorded, never recomputed.
+    expect(screen.getByRole('table', { name: 'Recorded commodity prices' })).toHaveTextContent('SRP baseline · SRP-2026-01 · 2026-08-01')
+    expect(screen.getByRole('table', { name: 'Recorded commodity prices' })).toHaveTextContent('Previous ₱55.00')
     expect(screen.getByRole('heading', { name: 'Products requiring regulatory review' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /approve|reject/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open Legal Actions' }))
@@ -221,9 +224,9 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords onNavigate={onNavigate} />)
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
 
-    // Open Findings & Anomalies tab
-    await user.click(screen.getByRole('tab', { name: /Findings & Anomalies/i }))
-    expect(await screen.findByRole('table', { name: 'Establishment price findings and anomalies' })).toBeInTheDocument()
+    // Open Observations tab
+    await user.click(screen.getByRole('tab', { name: /^Observations/i }))
+    expect(await screen.findByRole('table', { name: 'Establishment flagged price observations' })).toBeInTheDocument()
     expect(screen.getByText('₱62.00')).toBeInTheDocument()
 
     // Click Prepare Notice
@@ -310,7 +313,7 @@ describe('FieldMonitoringRecords', () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-    await user.click(await screen.findByRole('tab', { name: /Findings & Anomalies/i }))
+    await user.click(await screen.findByRole('tab', { name: /^Observations/i }))
     await user.click(screen.getByRole('button', { name: 'Back to establishments directory' }))
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
     expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
@@ -394,5 +397,25 @@ describe('FieldMonitoringRecords', () => {
     expect(exportBtn).toBeInTheDocument()
     await user.click(exportBtn)
     await waitFor(() => expect(adminApi.getMonitoringExportMatrix).toHaveBeenCalledWith({ period: 'last_4_weeks' }))
+  })
+
+  it('links a visit to its notices and shows DTI decisions without acting on them', async () => {
+    const decided = { ...record,
+      items: [{ ...record.items[0], finding: { decision: 'no_action' as const, reason: 'Tag misprint', decided_at: '2026-08-25T00:00:00Z' } }],
+      undecided_item_ids: [], open_notice: null,
+      notices: [{ id: 41, notice_type: 'LOI' as const, status: 'closed' as const, control_number: 'LOI-2026-000041', outcome: 'violation_confirmed' as const }] }
+    vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(decided)
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    render(<FieldMonitoringRecords onNavigate={onNavigate} />)
+    await user.click(screen.getByRole('tab', { name: 'All Records' }))
+    await user.click(await screen.findByRole('button', { name: 'View visit 14' }))
+
+    // The decision names when it was made, with its reason.
+    expect((await screen.findAllByText(/No action · .+: Tag misprint/)).length).toBeGreaterThan(0)
+    // Nothing is left undecided, so Field Monitoring offers no new notice; the existing one is a link only.
+    expect(screen.queryByRole('button', { name: 'Open Legal Actions' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'LOI-2026-000041 · Violation confirmed' }))
+    expect(onNavigate).toHaveBeenCalledWith('legal_actions', { source_notice: 41 })
   })
 })

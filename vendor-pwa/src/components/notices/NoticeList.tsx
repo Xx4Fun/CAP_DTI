@@ -105,7 +105,7 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
                     <strong style={{ fontSize: '0.95rem' }}>{notice.control_number ?? `Notice #${notice.id}`}</strong>
                     <span className="badge badge-navy">{noticeStatusLabel(notice)}</span>
                   </div>
-                  {notice.status === 'issued' && <CountdownBadge dueAt={notice.due_date_timestamp} />}
+                  {notice.status === 'issued' && <CountdownBadge dueAt={notice.due_date_timestamp} portal={notice.intended_delivery_method === 'portal'} />}
                 </div>
 
                 {notice.flagged_items.length > 0 && (

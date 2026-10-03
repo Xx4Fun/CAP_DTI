@@ -38,7 +38,10 @@ class TemporalAnalyticsService
         $rows = collect();
         $findings = RegulatoryFinding::where('store_id', $store->id)->where('decision', 'confirmed')
             ->whereBetween('observed_at', [$from, $asOf])->get();
-        foreach ($findings as $finding) {
+        // A confirmed field item is already plotted as its verified inspection below; it marks that row instead of
+        // adding a second point labelled as a receipt.
+        $confirmedFieldItems = $findings->where('source_type', MonitoringRecordItem::FINDING_SOURCE)->pluck('source_id')->map(fn ($id) => (int) $id)->flip();
+        foreach ($findings->where('source_type', '!=', MonitoringRecordItem::FINDING_SOURCE) as $finding) {
             $srp = $finding->srp_bulletin_id ? SrpBulletin::find($finding->srp_bulletin_id) : null;
             if ($commodityKey && $srp?->commodity_key !== $commodityKey) {
                 continue;
@@ -81,6 +84,7 @@ class TemporalAnalyticsService
                 'source' => 'Verified field inspection',
                 'reference_type' => $referenceType,
                 'reference_source' => $captured?->reference_source,
+                'confirmed' => $captured !== null && $confirmedFieldItems->has($captured->id),
                 'commodity_key' => $inspection->bulletin?->commodity_key,
                 'commodity_name' => $inspection->bulletin?->commodity_name,
             ]);
@@ -90,7 +94,7 @@ class TemporalAnalyticsService
         return [
             'labels' => $rows->pluck('date'), 'price_series' => $rows->pluck('price'),
             'srp_series' => $rows->pluck('srp'), 'table_rows' => $rows,
-            'recidivism_count' => RegulatoryFinding::where('store_id', $store->id)->where('decision', 'confirmed')->count(),
+            'recidivism_count' => ReportReviewService::confirmedCaseCount($store->id),
         ];
     }
 }
