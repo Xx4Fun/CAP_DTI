@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, LogOut, Store as StoreIcon, Home, FileText, MessageSquare, Send, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
+import { Bell, LogOut, Store as StoreIcon, Home, FileText, MessageSquare, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
 import type { ActiveTab, VendorStore } from '../../app/types';
 
 interface VendorNavbarProps {
@@ -60,7 +60,7 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
 
             <button
               type="button"
-              className={`desktop-nav-link ${activeTab === 'notices' ? 'active' : ''}`}
+              className={`desktop-nav-link ${activeTab === 'notices' || activeTab === 'rebuttals' ? 'active' : ''}`}
               onClick={() => onTabChange('notices')}
             >
               <FileText size={16} />
@@ -80,15 +80,6 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
               {unreadMessageCount > 0 && (
                 <span className="desktop-nav-badge">{unreadMessageCount}</span>
               )}
-            </button>
-
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'rebuttals' ? 'active' : ''}`}
-              onClick={() => onTabChange('rebuttals')}
-            >
-              <Send size={16} />
-              <span>Rebuttals</span>
             </button>
 
             <button

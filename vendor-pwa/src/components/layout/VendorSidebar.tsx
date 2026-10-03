@@ -3,7 +3,6 @@ import {
   Home,
   FileText,
   MessageSquare,
-  Send,
   BookOpen,
   Megaphone,
   Store as StoreIcon,
@@ -104,7 +103,7 @@ export const VendorSidebar: React.FC<VendorSidebarProps> = ({
 
         <button
           type="button"
-          className={`sidebar-nav-item ${activeTab === 'notices' ? 'active' : ''}`}
+          className={`sidebar-nav-item ${activeTab === 'notices' || activeTab === 'rebuttals' ? 'active' : ''}`}
           onClick={() => onTabChange('notices')}
         >
           <div className="nav-item-content">
@@ -130,18 +129,6 @@ export const VendorSidebar: React.FC<VendorSidebarProps> = ({
           {unreadMessageCount > 0 && (
             <span className="sidebar-nav-badge badge-info">{unreadMessageCount}</span>
           )}
-        </button>
-
-        <button
-          type="button"
-          className={`sidebar-nav-item ${activeTab === 'rebuttals' ? 'active' : ''}`}
-          onClick={() => onTabChange('rebuttals')}
-        >
-          <div className="nav-item-content">
-            <Send size={19} />
-            <span className="nav-text-full">Response & Rebuttal</span>
-            <span className="nav-text-short">Rebuttals</span>
-          </div>
         </button>
 
         <div className="sidebar-nav-divider" />

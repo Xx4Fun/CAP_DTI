@@ -36,6 +36,8 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   it('opens the queue by default and deep links to read-only captured evidence', async () => {
     const first = render(<LegalNoticeManager />)
     expect(await screen.findByRole('heading', { name: 'Action Queue' })).toBeInTheDocument()
+    // Prepare Notice is not a way in: the tab only marks an open editor.
+    expect(screen.queryByRole('button', { name: 'Prepare Notice' })).not.toBeInTheDocument()
     first.unmount()
     window.history.replaceState({}, '', '/?module=legal_actions&source_record=14')
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue({
@@ -49,6 +51,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     render(<LegalNoticeManager />)
 
     expect(await screen.findByRole('heading', { name: 'Prepare Notice' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Prepare Notice' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByText('Antique Central Market')).toBeInTheDocument()
     expect(screen.queryByLabelText('Target Establishment')).not.toBeInTheDocument()
     expect(screen.getByText(/Evaluator review required; this is not an automatic legal finding/i)).toBeInTheDocument()

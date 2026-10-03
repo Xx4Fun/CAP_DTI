@@ -508,8 +508,6 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
 
   const goTo = (next: View) => {
     if (next === view) return
-    // Prepare edits drafts only; leaving an issued notice selected would show it as an editable form.
-    if (next === 'prepare' && notice && notice.status !== 'draft') setNotice(null)
     if (!dirty) { setView(next); return }
     setConfirmation({
       title: 'Discard unsaved changes?', body: <p>Your latest edits to this draft have not been saved.</p>, confirmLabel: 'Discard changes',
@@ -525,9 +523,10 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
 
   return <div className="legal-workspace">
     <nav className="legal-tabs" aria-label="Legal Actions views">
-      <button type="button" aria-current={view === 'review' ? 'page' : undefined} onClick={() => goTo('review')}><FileSearch size={18}/>Needs Review</button>
+      <button type="button" aria-current={choosingVisit ? 'page' : undefined} onClick={() => goTo('review')}><FileSearch size={18}/>Needs Review</button>
       <button type="button" aria-current={view === 'queue' ? 'page' : undefined} onClick={() => goTo('queue')}><ClipboardList size={18}/>Action Queue</button>
-      <button type="button" aria-current={view === 'prepare' ? 'page' : undefined} onClick={() => goTo('prepare')}><FilePenLine size={18}/>Prepare Notice</button>
+      {/* A notice is prepared for one visit or draft, so this tab only marks the open editor; it is not a way in. */}
+      {view === 'prepare' && !choosingVisit && <button type="button" aria-current="page"><FilePenLine size={18}/>Prepare Notice</button>}
       <button type="button" aria-current={view === 'issued' ? 'page' : undefined} onClick={() => goTo('issued')}><FileText size={18}/>Issued & Responses</button>
     </nav>
 
