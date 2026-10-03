@@ -170,7 +170,9 @@ describe('DTI Admin application session', () => {
     vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
     render(<><App /><AdminToastHost /></>)
-    await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
+    // The heading is in the DOM before App's effect subscribes to this event. Dashboard data
+    // only renders after that effect pass, so wait for it or the event can be dispatched unheard.
+    await screen.findByText('REGISTERED STORES')
     await act(async () => {
       window.dispatchEvent(new CustomEvent('admin-auth-expired', { detail: { reason: 'inactivity' } }))
     })
@@ -192,7 +194,9 @@ describe('DTI Admin application session', () => {
     vi.mocked(api.post).mockResolvedValue({ data: { message: 'Logged out successfully' } })
 
     render(<><App /><AdminToastHost /></>)
-    await screen.findByRole('heading', { level: 1, name: /^dashboard$/i })
+    // The heading is in the DOM before App's effect subscribes to this event. Dashboard data
+    // only renders after that effect pass, so wait for it or the event can be dispatched unheard.
+    await screen.findByText('REGISTERED STORES')
     await act(async () => {
       window.dispatchEvent(new Event('admin-auth-expired'))
       window.dispatchEvent(new Event('admin-auth-expired'))
