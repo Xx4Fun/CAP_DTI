@@ -3,6 +3,7 @@ export interface OfflineLease { id: string; expires_at: string }
 export interface FieldSession { token: string; user: FieldUser; offline_lease: OfflineLease }
 export interface StoreRecord {
   id: number; store_name: string; address: string; latitude: number; longitude: number; is_active: boolean; image_path?: string | null
+  owner_name?: string | null
   weekly_routine_status?: 'not_yet_monitored' | 'monitored_this_week'
   routine_status?: 'due' | 'completed'
   has_prior_routine_monitoring?: boolean

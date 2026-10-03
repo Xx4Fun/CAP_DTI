@@ -1,4 +1,10 @@
-import type { BootstrapData, Bulletin, MonitoringReference, RegulatoryPrice, VisitDraft, VisitItem } from '../types'
+import type { BootstrapData, Bulletin, MonitoringReference, RegulatoryPrice, StoreRecord, VisitDraft, VisitItem } from '../types'
+
+// Prefill the signatory with the store's registered owner; never overwrite a name the officer already typed.
+export function prefillRepresentative(draft: VisitDraft, store: StoreRecord): VisitDraft['representative'] {
+  const owner = store.owner_name?.trim()
+  return owner && !draft.representative.name.trim() ? { name: owner, title: draft.representative.title || 'Owner' } : draft.representative
+}
 
 // A delta response means nothing reference-related changed since `cached.version`; keep the cached lists, take the fresh envelope.
 export function mergeBootstrapDelta(cached: BootstrapData | undefined, fresh: BootstrapData): BootstrapData {

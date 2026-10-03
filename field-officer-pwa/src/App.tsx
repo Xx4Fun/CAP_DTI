@@ -18,7 +18,7 @@ import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
 import { ReadOnlyVisit } from './components/ReadOnlyVisit'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
+import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative } from './app/workflow'
 import {
   archiveUnreadableDrafts, archiveUnreadableQueue, changeVaultPin, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
@@ -516,6 +516,7 @@ export default function App() {
       if (store) {
         next.store_name = store.store_name
         next.store_address = store.address
+        next.representative = prefillRepresentative(next, store)
       }
       next.current_step = 1
     } else {
@@ -1443,6 +1444,7 @@ function VisitWizard({
                         store_id: store.id,
                         store_name: store.store_name,
                         store_address: store.address,
+                        representative: prefillRepresentative(draft, store),
                         current_step: 1,
                       })
                       setError('')

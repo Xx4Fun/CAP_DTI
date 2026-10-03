@@ -93,7 +93,7 @@ class FieldDataController extends Controller
                     ])
                     ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
                     ->orderBy('store_name')->get()->map(fn (Store $store) => [
-                        ...$store->only(['id', 'store_name', 'address', 'latitude', 'longitude', 'is_active', 'image_path']),
+                        ...$store->only(['id', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'image_path']),
                         'routine_status' => $store->routine_completed ? 'completed' : 'due',
                         'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
                         'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,

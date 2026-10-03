@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, resolveClientReference } from './workflow'
+import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative, resolveClientReference } from './workflow'
 
 describe('field visit workflow', () => {
   it('keeps cached reference lists when bootstrap returns an unchanged delta', () => {
@@ -9,6 +9,14 @@ describe('field visit workflow', () => {
     expect(mergeBootstrapDelta(cached, delta)).toMatchObject({ is_delta: true, stores: [store], srp_bulletins: cached.srp_bulletins, accepted_today: 4 })
     const full = { ...delta, is_delta: false, version: 'v2' }
     expect(mergeBootstrapDelta(cached, full)).toBe(full)
+  })
+
+  it('prefills the representative with the registered owner without overwriting a typed name', () => {
+    const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true, owner_name: ' Maria Santos ' }
+    const draft = createDraft('lease-1')
+    expect(prefillRepresentative(draft, store)).toEqual({ name: 'Maria Santos', title: 'Owner' })
+    expect(prefillRepresentative({ ...draft, representative: { name: 'Ben', title: '' } }, store)).toEqual({ name: 'Ben', title: '' })
+    expect(prefillRepresentative(draft, { ...store, owner_name: null })).toEqual({ name: '', title: '' })
   })
 
   it('stamps new drafts with the built app version', () => {

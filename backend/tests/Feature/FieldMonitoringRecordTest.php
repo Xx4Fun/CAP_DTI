@@ -230,6 +230,7 @@ class FieldMonitoringRecordTest extends TestCase
         $full = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()
             ->assertJsonPath('data.is_delta', false)
             ->assertJsonPath('data.stores.0.id', $store->id)
+            ->assertJsonPath('data.stores.0.owner_name', $store->owner_name)
             ->assertJsonPath('data.stores.0.image_path', Storage::disk('public')->url('store_images/gaisano-grand.webp'))
             ->assertJsonPath('data.srp_bulletins.0.id', $bulletin->id)
             ->assertJsonPath('data.monitoring_references.0.srp_id', $bulletin->id)
