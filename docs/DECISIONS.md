@@ -8,6 +8,16 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-03 — Temporal analytics is the time dimension of GIS Monitoring
+
+- **One feature, not two.** GIS Monitoring carries the layers Compliance, Coverage, Prices and Visit check, with a week slider over Manila monitoring weeks. There is no separate Temporal Analytics module; the store drawer keeps the per-store price history (4, 12 or 26 weeks).
+- **A week is its Manila Monday.** `GET /admin/gis/monitoring` identifies a week by `week.key` (`Y-m-d`). Clients compare and label weeks by that string and never convert the UTC bounds in the browser.
+- **Coverage counts accepted routine visits of any protocol** finalized in the week; verification visits never count. Field Monitoring's weekly counter counts standard-protocol visits only, so the two differ during Price Freeze weeks by design.
+- **Prices show the reference captured on the visit item.** Nothing is re-resolved against a later SRP.
+- **Visit coordinates are audited evidence.** They leave the API only with `locations=1` (sent by the Visit check layer), each response writes `gis.visit_locations_viewed`, carries `Cache-Control: private, no-store`, and is refused when the audit trail is unavailable.
+- **"Location to review" is not a finding.** It means a visit was signed more than 150 m from the registered pin after subtracting its GPS accuracy. Registered pins are placed by hand, so the pin may be the one that is wrong.
+- Plan and review record: `plans/gis-monitoring/`.
+
 ## 2026-10-03 — Regulatory decisions are recorded; notices are portal-only
 
 - **Owner rules.**

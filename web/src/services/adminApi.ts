@@ -1,6 +1,6 @@
 import api from './api'
 import { cached } from './responseCache'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, LegalNoticeOutcome, ItemDecision, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, GisMonitoringPayload, LegalNoticePage, LegalNoticeRecord, LegalNoticeOutcome, ItemDecision, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -86,6 +86,11 @@ export const adminApi = {
   },
   getStores(): Promise<StoreRecord[]> {
     return cached('stores', 60_000, async () => data<StoreRecord[]>(await api.get('/admin/stores')))
+  },
+  // Not cached: with `locations` the response carries visit coordinates, which are audited per request.
+  // The flag travels as 1; Axios would send `true` as the string "true", which the API rejects.
+  async getGisMonitoring(week?: string, locations?: boolean): Promise<GisMonitoringPayload> {
+    return data(await api.get('/admin/gis/monitoring', { params: { week, locations: locations ? 1 : undefined } }))
   },
   async updateStore(id: number, changes: Partial<StoreRecord>): Promise<StoreRecord> {
     return data(await api.patch(`/admin/stores/${id}`, changes))
@@ -292,8 +297,8 @@ export const adminApi = {
   async getAuditEvents(): Promise<AuditRecord[]> {
     return data(await api.get('/admin/audit-events'))
   },
-  async getAnalytics(storeId: number, commodityKey?: string) {
-    return data(await api.get(`/admin/analytics/stores/${storeId}`, { params: { commodity_key: commodityKey } }))
+  async getAnalytics(storeId: number, commodityKey?: string, weeks?: 4 | 12 | 26) {
+    return data(await api.get(`/admin/analytics/stores/${storeId}`, { params: { commodity_key: commodityKey, weeks } }))
   },
   async getSettings() {
     const response = await api.get('/admin/settings')

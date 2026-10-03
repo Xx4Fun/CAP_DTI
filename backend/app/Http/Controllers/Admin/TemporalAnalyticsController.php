@@ -8,6 +8,7 @@ use App\Models\SrpBulletin;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\TemporalAnalyticsService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TemporalAnalyticsController extends Controller
 {
@@ -31,6 +32,8 @@ class TemporalAnalyticsController extends Controller
     public function show(Request $request, Store $store, AdminAuthorizationService $auth, TemporalAnalyticsService $service)
     {
         abort_unless($auth->canViewAnalytics($request->user()), 403);
-        return response()->json(['data' => $service->forStore($store, $request->query('commodity_key'), now())]);
+        $filters = $request->validate(['weeks' => ['nullable', Rule::in([4, 12, 26])]]);
+
+        return response()->json(['data' => $service->forStore($store, $request->query('commodity_key'), now(), (int) ($filters['weeks'] ?? 4))]);
     }
 }

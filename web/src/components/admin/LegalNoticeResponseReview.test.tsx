@@ -489,7 +489,8 @@ describe('Legal Actions vendor response review', () => {
     render(<LegalNoticeManager />)
 
     await vi.waitFor(() => expect(adminApi.getLegalNotices).toHaveBeenLastCalledWith({ status: 'response_received', page: 1, search: undefined, store_id: undefined }))
-    expect(screen.getByLabelText('Status')).toHaveValue('response_received')
+    // The list and its filters replace the loading placeholder only once that request has resolved.
+    expect(await screen.findByLabelText('Status')).toHaveValue('response_received')
     await user.click(await screen.findByRole('button', { name: 'Open' }))
     await user.click(await screen.findByRole('button', { name: 'Close notice' }))
     const dialog = screen.getByRole('dialog', { name: 'Close this notice' })

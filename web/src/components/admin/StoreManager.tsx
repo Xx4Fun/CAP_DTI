@@ -1,42 +1,89 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
-import type { StoreRecord } from '../../types/admin'
+import type { GisMonitoringPayload, GisStoreRecord, StoreRecord } from '../../types/admin'
 import type { NavigateTo } from './AdminShell'
 import { StoreMap } from './StoreMap'
-import { getStoreStatusInfo } from './storeMapUtils'
+import { MAP_LAYERS, STATUS_STYLE, VISITS_UNLOADED, weekLabel, type LayerId, type PinStatus } from './storeMapUtils'
 
 // chart.js lives in the detail overlay; keep it out of the map's first load.
 const StoreDetailOverlay = lazy(() => import('./StoreDetailOverlay').then((module) => ({ default: module.StoreDetailOverlay })))
 
-type StatusFilter = 'all' | 'no-findings' | 'pending' | 'findings'
+const NO_STORES: GisStoreRecord[] = []
+
+// What the map can still show from the plain store list when the API predates the GIS endpoint.
+const fromStoreList = (stores: StoreRecord[]): GisMonitoringPayload => ({
+  week: { key: '', ends_on: '', starts_at: '', ends_at: '', timezone: 'Asia/Manila', is_current: false },
+  locations: false,
+  weeks: [],
+  stores: stores.map((store) => ({ ...store, has_prior_routine_visit: false, verification_required: false, visits: [], prices: [] })),
+})
+const peso = (value: number) => `₱${value.toFixed(2)}`
 
 export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate }) => {
-  const [stores, setStores] = useState<StoreRecord[]>([])
+  // Everything drawn (pins, legend, counts, week label) comes from this loaded payload, never from the slider position.
+  const [payload, setPayload] = useState<GisMonitoringPayload | null>(null)
+  // The week the slider points at; undefined until the user moves it, which means the current week.
+  const [targetWeek, setTargetWeek] = useState<string | undefined>()
+  const [layerId, setLayerId] = useState<LayerId>('compliance')
+  // Kept with its label so it stays selectable in a week that recorded no price for it.
+  const [commodity, setCommodity] = useState<{ key: string; label: string } | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null)
   const [detailStore, setDetailStore] = useState<StoreRecord | null>(null)
   const [centerTrigger, setCenterTrigger] = useState<{ storeId: number; timestamp: number } | null>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  // The web app can be deployed before the API. An API without the GIS endpoint still serves Compliance from the store list.
+  const [apiBehind, setApiBehind] = useState(false)
+  const hasLoaded = useRef(false)
 
-  const loadStores = () => {
-    setLoading(true)
-    setLoadError(null)
-    void adminApi.getStores().then((data) => {
-      setStores(data)
-      setLoading(false)
-    }).catch(() => {
-      setStores([])
-      setLoadError('Establishments could not be loaded. Retry when the Admin API is available.')
-      setLoading(false)
-    })
-  }
+  // Visit coordinates are audited evidence: ask for them only while the Visit check layer is open.
+  const wantLocations = layerId === 'visit_check'
 
   useEffect(() => {
-    loadStores()
-  }, [])
+    let cancelled = false
+    setLoading(true)
+    setLoadError(false)
+    // A dragged slider settles into one request; a response for a week the user has left is dropped.
+    const timer = setTimeout(() => {
+      adminApi.getGisMonitoring(targetWeek, wantLocations).then((data) => {
+        if (cancelled) return
+        hasLoaded.current = true
+        setApiBehind(false)
+        setPayload(data)
+        setLoading(false)
+      }).catch((reason: { response?: { status?: number } }) => {
+        if (cancelled) return
+        if (reason?.response?.status !== 404) {
+          setLoadError(true)
+          setLoading(false)
+          return
+        }
+        // 404: this API has no GIS endpoint yet. Fall back to the store list it does have.
+        adminApi.getStores().then((list) => {
+          if (cancelled) return
+          setApiBehind(true)
+          setLayerId('compliance')
+          setCategoryFilter('all')
+          setPayload(fromStoreList(list))
+          setLoading(false)
+        }).catch(() => {
+          if (cancelled) return
+          setLoadError(true)
+          setLoading(false)
+        })
+      })
+    }, hasLoaded.current ? 300 : 0)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [targetWeek, wantLocations, attempt])
+
+  const retry = () => setAttempt((n) => n + 1)
 
   const handleCenterStore = (storeId: number) => {
     setSelectedStoreId(storeId)
@@ -57,32 +104,71 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
     }, 300)
   }
 
-  const counts = {
-    all: stores.length,
-    noFindings: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && s.is_verified).length,
-    pending: stores.filter((s) => (s.recidivism_index || 0) === 0 && s.is_active && !s.is_verified).length,
-    findings: stores.filter((s) => (s.recidivism_index || 0) > 0).length,
+  const stores = payload?.stores ?? NO_STORES
+  const layer = MAP_LAYERS[layerId]
+  // Visit check uses coordinates only when they are current: not while a request is in flight, and not after one failed,
+  // even if an earlier load for the same week is still in memory.
+  const locationsReady = payload?.locations === true && !loading && !loadError
+
+  const weekCommodities = useMemo<[string, string][]>(() => [...new Map(
+    stores.flatMap((store) => store.prices).map((price): [string, string] => [
+      price.commodity,
+      // Some SRP names already carry their unit ("Absolute (1L)").
+      price.unit && !price.commodity_name.toLowerCase().includes(price.unit.toLowerCase()) ? `${price.commodity_name} · ${price.unit}` : price.commodity_name,
+    ]),
+  )].sort((a, b) => a[1].localeCompare(b[1])), [stores])
+  // A week without the chosen commodity still shows that commodity (grey pins, no summary), never another one.
+  const commodityOptions: [string, string][] = commodity && !weekCommodities.some(([key]) => key === commodity.key)
+    ? [...weekCommodities, [commodity.key, commodity.label]]
+    : weekCommodities
+  const activeCommodity = commodity?.key ?? commodityOptions[0]?.[0] ?? ''
+  const chooseCommodity = (key: string) => {
+    const option = commodityOptions.find(([candidate]) => candidate === key)
+    if (option) setCommodity({ key: option[0], label: option[1] })
   }
+
+  // Stable until the layer, commodity, or loaded payload changes, so StoreMap redraws its pins exactly then.
+  const pinOf = useCallback((store: StoreRecord) => layer.pinOf(store as GisStoreRecord, {
+    commodity: activeCommodity,
+    week: payload?.week ?? { is_current: false },
+    locations: locationsReady,
+  }), [layer, activeCommodity, payload, locationsReady])
+
+  const counts = useMemo(() => stores.reduce<Record<string, number>>((tally, store) => {
+    const { category } = pinOf(store)
+    tally[category] = (tally[category] ?? 0) + 1
+    return tally
+  }, {}), [stores, pinOf])
 
   // Memoized so StoreMap keeps the same array and does not rebuild every marker on unrelated renders.
   const filteredStores = useMemo(() => stores.filter((s) => {
+    const term = searchTerm.toLowerCase()
     const matchesSearch =
-      s.store_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.dti_sec_number || '').toLowerCase().includes(searchTerm.toLowerCase())
+      s.store_name.toLowerCase().includes(term) ||
+      s.address.toLowerCase().includes(term) ||
+      (s.dti_sec_number || '').toLowerCase().includes(term)
 
-    if (!matchesSearch) return false
+    return matchesSearch && (categoryFilter === 'all' || pinOf(s).category === categoryFilter)
+  }), [stores, searchTerm, categoryFilter, pinOf])
 
-    const recidivism = s.recidivism_index || 0
-    if (statusFilter === 'no-findings') return recidivism === 0 && s.is_active && s.is_verified
-    if (statusFilter === 'pending') return recidivism === 0 && s.is_active && !s.is_verified
-    if (statusFilter === 'findings') return recidivism > 0
+  const categories = counts[VISITS_UNLOADED.id] ? [VISITS_UNLOADED] : layer.categories
 
-    return true
-  }), [stores, searchTerm, statusFilter])
+  const weeks = payload?.weeks ?? []
+  const sliderWeek = targetWeek ?? payload?.week.key
+  const weekPending = payload !== null && targetWeek !== undefined && targetWeek !== payload.week.key
+  const verificationCount = stores.filter((store) => pinOf(store).badge).length
+
+  const priced = stores.flatMap((store) => {
+    const price = store.prices.find((row) => row.commodity === activeCommodity)
+    return price ? [{ name: store.store_name, price: Number(price.recorded_price) }] : []
+  }).sort((a, b) => a.price - b.price)
+  const lowest = priced[0]
+  const highest = priced[priced.length - 1]
 
   return (
     <div
+      className="gis-monitor"
+      data-sidebar={isSidebarOpen ? 'open' : 'closed'}
       style={{
         position: 'relative',
         width: '100%',
@@ -99,6 +185,8 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
       {/* Full-Screen GIS Monitor Canvas */}
       <StoreMap
         stores={filteredStores}
+        pinOf={pinOf}
+        visitLinks={layerId === 'visit_check' && locationsReady}
         selectedStoreId={selectedStoreId}
         centerTrigger={centerTrigger}
         onSelectStore={(store) => {
@@ -111,43 +199,99 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
         title="Full-Screen GIS Store Monitoring Canvas"
       />
 
-      {/* Floating Map Info Legend (Top Right) */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '12px',
-          right: '12px',
-          zIndex: 500,
-          background: 'rgba(255, 255, 255, 0.92)',
-          backdropFilter: 'blur(10px)',
-          padding: '0.4rem 0.85rem',
-          borderRadius: '8px',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.85rem',
-          fontSize: '0.78rem',
-          color: '#0f172a',
-          fontWeight: 600,
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#1e3a8a' }}>
+      {/* Floating layer controls and legend (Top Right) */}
+      <div className="gis-control-panel">
+        <span className="gis-panel-title">
           <i className="fa-solid fa-layer-group" aria-hidden="true" /> CartoDB GIS Monitor
         </span>
-        <span style={{ height: '14px', width: '1px', background: '#cbd5e1' }} />
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#059669' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} /> {counts.noFindings} No findings
-        </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#d97706' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b' }} /> {counts.pending} Pending verification
-        </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#dc2626' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} /> {counts.findings} Confirmed findings
-        </span>
+
+        <div role="group" aria-label="Map layer" className="gis-layer-switch">
+          {Object.values(MAP_LAYERS).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={option.id === layerId}
+              disabled={apiBehind && option.id !== 'compliance'}
+              onClick={() => {
+                setLayerId(option.id)
+                setCategoryFilter('all')
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {apiBehind && (
+          <p role="status" className="gis-note">
+            Coverage, Prices and Visit check need a server update that has not reached this environment yet. <button type="button" onClick={retry}>Check again</button>
+          </p>
+        )}
+
+        {layerId !== 'compliance' && payload && (
+          <div className="gis-week">
+            <label htmlFor="gis-week-slider">Week of {weekLabel(payload.week.key, payload.week.ends_on)}</label>
+            {weeks.length > 1 && sliderWeek && (
+              <input
+                id="gis-week-slider"
+                type="range"
+                min={0}
+                max={weeks.length - 1}
+                step={1}
+                value={Math.max(0, weeks.indexOf(sliderWeek))}
+                aria-valuetext={weekLabel(sliderWeek)}
+                onChange={(e) => {
+                  // Hold the commodity on screen, even if it was only the default, so weeks compare like with like.
+                  if (activeCommodity) chooseCommodity(activeCommodity)
+                  setTargetWeek(weeks[Number(e.target.value)])
+                }}
+              />
+            )}
+            {weekPending && targetWeek && (loadError
+              ? <p role="alert" className="gis-note error">Week of {weekLabel(targetWeek)} could not be loaded. <button type="button" onClick={retry}>Retry</button></p>
+              : <p role="status" className="gis-note">Loading week of {weekLabel(targetWeek)}…</p>)}
+          </div>
+        )}
+
+        {layerId === 'prices' && payload && (
+          commodityOptions.length === 0
+            ? <p role="status" className="gis-note">No prices were recorded in this week.</p>
+            : (
+              <>
+                <label className="gis-field">
+                  Commodity
+                  <select value={activeCommodity} onChange={(e) => chooseCommodity(e.target.value)}>
+                    {commodityOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+                  </select>
+                </label>
+                {lowest && highest ? (
+                  <p className="gis-note" data-testid="gis-price-summary">
+                    Lowest {peso(lowest.price)} at {lowest.name} · Highest {peso(highest.price)} at {highest.name} · Spread {peso(highest.price - lowest.price)}
+                  </p>
+                ) : <p role="status" className="gis-note">No price was recorded for this commodity in this week.</p>}
+              </>
+            )
+        )}
+
+        {layerId === 'visit_check' && payload && !locationsReady && !weekPending && (loadError
+          ? <p role="alert" className="gis-note error">Visit locations unavailable. <button type="button" onClick={retry}>Retry</button></p>
+          : <p role="status" className="gis-note">Loading visit locations…</p>)}
+
+        <ul className="gis-legend" aria-label="Map legend">
+          {categories.map((category) => (
+            <li key={category.id} style={{ color: STATUS_STYLE[category.status].color }}>
+              <span className="gis-legend-dot" style={{ background: STATUS_STYLE[category.status].dot }} /> {counts[category.id] ?? 0} {category.label}
+            </li>
+          ))}
+          {verificationCount > 0 && (
+            <li>
+              <span className="store-pin-badge gis-legend-badge" aria-hidden="true">!</span> {verificationCount} Verification required
+            </li>
+          )}
+        </ul>
       </div>
 
-      {/* Collapsible Overlay Sidebar Panel (Left Side) */}
+
       <div
         style={{
           position: 'absolute',
@@ -282,85 +426,40 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
                 </div>
 
                 {/* Status Filter Chips */}
-                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'nowrap', overflowX: 'auto' }}>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('all')}
-                    style={{
-                      padding: '0.3rem 0.5rem',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      borderRadius: '6px',
-                      border: statusFilter === 'all' ? '1px solid #1e3a8a' : '1px solid #e2e8f0',
-                      background: statusFilter === 'all' ? '#eff6ff' : '#ffffff',
-                      color: statusFilter === 'all' ? '#1e3a8a' : '#64748b',
-                      fontSize: '0.76rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    All ({counts.all})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('no-findings')}
-                    style={{
-                      padding: '0.3rem 0.5rem',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      borderRadius: '6px',
-                      border: statusFilter === 'no-findings' ? '1px solid #059669' : '1px solid #e2e8f0',
-                      background: statusFilter === 'no-findings' ? '#ecfdf5' : '#ffffff',
-                      color: statusFilter === 'no-findings' ? '#059669' : '#64748b',
-                      fontSize: '0.76rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    No findings ({counts.noFindings})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('pending')}
-                    style={{
-                      padding: '0.3rem 0.5rem',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      borderRadius: '6px',
-                      border: statusFilter === 'pending' ? '1px solid #d97706' : '1px solid #e2e8f0',
-                      background: statusFilter === 'pending' ? '#fffbeb' : '#ffffff',
-                      color: statusFilter === 'pending' ? '#d97706' : '#64748b',
-                      fontSize: '0.76rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Pending ({counts.pending})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('findings')}
-                    style={{
-                      padding: '0.3rem 0.5rem',
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      borderRadius: '6px',
-                      border: statusFilter === 'findings' ? '1px solid #dc2626' : '1px solid #e2e8f0',
-                      background: statusFilter === 'findings' ? '#fef2f2' : '#ffffff',
-                      color: statusFilter === 'findings' ? '#dc2626' : '#64748b',
-                      fontSize: '0.76rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Findings ({counts.findings})
-                  </button>
+                <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                  {[{ id: 'all', label: 'All', status: 'blue' as PinStatus, chip: undefined }, ...categories].map((category) => {
+                    const active = categoryFilter === category.id
+                    const tone = STATUS_STYLE[category.status]
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setCategoryFilter(category.id)}
+                        style={{
+                          minHeight: '44px',
+                          padding: '0.3rem 0.5rem',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                          borderRadius: '6px',
+                          border: active ? `1px solid ${tone.color}` : '1px solid #e2e8f0',
+                          background: active ? tone.bg : '#ffffff',
+                          color: active ? tone.color : '#64748b',
+                          fontSize: '0.76rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {category.chip ?? category.label} ({category.id === 'all' ? stores.length : counts[category.id] ?? 0})
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
               {/* Scrollable Store Cards List */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '0.65rem 0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {loading && (
+                {loading && !payload && (
                   <div className="store-sidebar-skeleton-list" aria-label="Loading establishments" role="status">
                     <span className="sr-only">Loading establishments...</span>
                     {Array.from({ length: 4 }, (_, idx) => (
@@ -376,20 +475,21 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
                   </div>
                 )}
 
-                {loadError && (
+                {loadError && !payload && (
                   <div role="alert" style={{ padding: '1rem', color: '#991b1b', background: '#fef2f2', borderRadius: '8px', fontSize: '0.82rem' }}>
-                    {loadError} <button type="button" onClick={loadStores}>Retry</button>
+                    Establishments could not be loaded. Retry when the Admin API is available. <button type="button" onClick={retry}>Retry</button>
                   </div>
                 )}
 
-                {!loading && filteredStores.length === 0 && (
+                {payload && filteredStores.length === 0 && (
                   <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
                     No establishments found matching search criteria.
                   </div>
                 )}
 
                 {filteredStores.map((store) => {
-                  const statusInfo = getStoreStatusInfo(store)
+                  const statusInfo = pinOf(store)
+                  const tone = STATUS_STYLE[statusInfo.status]
                   const isSelected = store.id === selectedStoreId
 
                   return (
@@ -417,14 +517,14 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
                             borderRadius: '10px',
                             fontSize: '0.7rem',
                             fontWeight: 700,
-                            background: statusInfo.bg,
-                            color: statusInfo.color,
-                            border: `1px solid ${statusInfo.border}`,
+                            background: tone.bg,
+                            color: tone.color,
+                            border: `1px solid ${tone.border}`,
                             whiteSpace: 'nowrap',
                             flexShrink: 0,
                           }}
                         >
-                          {statusInfo.label}
+                          {statusInfo.label}{statusInfo.text ? ` · ${statusInfo.text}` : ''}
                         </span>
                       </div>
 
@@ -436,6 +536,7 @@ export const StoreManager: React.FC<{ onNavigate?: NavigateTo }> = ({ onNavigate
                           <i className="fa-solid fa-location-dot" style={{ color: '#94a3b8', marginRight: '0.3rem' }} aria-hidden="true" />
                           {store.address}
                         </span>
+                        {statusInfo.badge && <strong style={{ color: '#6d28d9' }}>{statusInfo.badge}</strong>}
                       </div>
 
                       <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.2rem' }}>

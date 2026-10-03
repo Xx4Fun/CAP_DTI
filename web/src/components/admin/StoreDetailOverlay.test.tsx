@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreDetailOverlay } from './StoreDetailOverlay'
@@ -139,7 +139,7 @@ describe('StoreDetailOverlay regulatory integrity', () => {
     ] } as any)
     const user = userEvent.setup()
     renderOverlay()
-    expect(adminApi.getAnalytics).toHaveBeenCalledWith(9)
+    expect(adminApi.getAnalytics).toHaveBeenCalledWith(9, undefined, 4)
 
     await user.click(screen.getByRole('button', { name: /Price Trends/i }))
     const select = await screen.findByRole('combobox', { name: /Commodity/i })
@@ -153,6 +153,69 @@ describe('StoreDetailOverlay regulatory integrity', () => {
     expect(datasets[0].data).toEqual([105])
     // Emergency ceiling: no 10% allowance, so 105 sits above the 100 threshold.
     expect(datasets[1].data).toEqual([100])
+  })
+})
+
+describe('StoreDetailOverlay price history range', () => {
+  it('reloads the price history for 12 or 26 weeks', async () => {
+    vi.mocked(adminApi.getReportPage).mockResolvedValue(reportPage([]) as any)
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue(noticePage([]) as any)
+    vi.mocked(adminApi.getAnalytics).mockResolvedValue({ table_rows: [] } as any)
+    const user = userEvent.setup()
+    renderOverlay()
+
+    await user.click(screen.getByRole('button', { name: /Price Trends/i }))
+    expect(screen.getByRole('heading', { name: '4-Week Price History' })).toBeInTheDocument()
+    // The range stays available when the default window is empty, so the reader can widen it.
+    const range = screen.getByRole('combobox', { name: 'Range' })
+    expect(within(range).getAllByRole('option').map((option) => option.textContent)).toEqual(['Last 4 weeks', 'Last 12 weeks', 'Last 26 weeks'])
+
+    await user.selectOptions(range, '12')
+    expect(adminApi.getAnalytics).toHaveBeenLastCalledWith(9, undefined, 12)
+    expect(screen.getByRole('heading', { name: '12-Week Price History' })).toBeInTheDocument()
+  })
+
+  const row = (key: string, name: string, price: number) => ({ date: '2026-09-20', price, srp: 48, source: 'Verified field inspection', reference_type: 'standard_srp', commodity_key: key, commodity_name: name })
+
+  it('never leaves the previous range\'s chart under a range that failed to load', async () => {
+    vi.mocked(adminApi.getReportPage).mockResolvedValue(reportPage([]) as any)
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue(noticePage([]) as any)
+    vi.mocked(adminApi.getAnalytics).mockImplementation(async (_storeId, _commodity, weeks) => {
+      if (weeks === 12) throw new Error('500')
+      return { table_rows: [row('rice', 'Rice 1kg', 52)] } as any
+    })
+    const user = userEvent.setup()
+    renderOverlay()
+
+    await user.click(screen.getByRole('button', { name: /Price Trends/i }))
+    expect(await screen.findByTestId('chart')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Range' }), '12')
+    expect(await screen.findByText('Price history could not be loaded.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '12-Week Price History' })).toBeInTheDocument()
+    expect(screen.queryByTestId('chart')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No temporal price records/i)).not.toBeInTheDocument()
+  })
+
+  it('falls back to a commodity with data when the chosen one is outside a narrower range', async () => {
+    vi.mocked(adminApi.getReportPage).mockResolvedValue(reportPage([]) as any)
+    vi.mocked(adminApi.getLegalNotices).mockResolvedValue(noticePage([]) as any)
+    vi.mocked(adminApi.getAnalytics).mockImplementation(async (_storeId, _commodity, weeks) => ({
+      // Sardines was last recorded ten weeks ago: only the wider range has it.
+      table_rows: weeks === 12 ? [row('rice', 'Rice 1kg', 52), row('sardines', 'Sardines 155g', 30)] : [row('rice', 'Rice 1kg', 52)],
+    }) as any)
+    const user = userEvent.setup()
+    renderOverlay()
+
+    await user.click(screen.getByRole('button', { name: /Price Trends/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Range' }), '12')
+    await user.selectOptions(await screen.findByRole('combobox', { name: /Commodity/i }), 'sardines')
+    expect(JSON.parse(screen.getByTestId('chart').textContent!).datasets[0].data).toEqual([30])
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Range' }), '4')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /Commodity/i })).toHaveValue('rice'))
+    expect(JSON.parse(screen.getByTestId('chart').textContent!).datasets[0].data).toEqual([52])
+    expect(screen.queryByText(/No temporal price records/i)).not.toBeInTheDocument()
   })
 })
 

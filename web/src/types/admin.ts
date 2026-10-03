@@ -33,6 +33,47 @@ export interface StoreRecord {
   image_path?: string | null
 }
 
+/** An accepted visit in the selected monitoring week. Coordinates are present only when the payload says `locations`. */
+export interface GisVisit {
+  id: number
+  finalized_at: string
+  officer_name: string | null
+  is_routine: boolean
+  protocol_mode: string | null
+  latitude?: number
+  longitude?: number
+  accuracy_meters?: number
+}
+
+/** A commodity's price at one store in the selected week, with the reference captured on that visit. */
+export interface GisPrice {
+  commodity: string
+  commodity_name: string
+  unit: string | null
+  monitoring_record_id: number
+  recorded_price: number
+  reference_value: number | null
+  reference_type: string | null
+  reference_status: string | null
+  variance_percent: number | null
+  is_anomaly: boolean
+}
+
+export interface GisStoreRecord extends StoreRecord {
+  has_prior_routine_visit: boolean
+  verification_required: boolean
+  visits: GisVisit[]
+  prices: GisPrice[]
+}
+
+export interface GisMonitoringPayload {
+  /** `key` is the week's Manila Monday and `ends_on` its Sunday, both YYYY-MM-DD; compare and label weeks by these. */
+  week: { key: string; ends_on: string; starts_at: string; ends_at: string; timezone: string; is_current: boolean }
+  locations: boolean
+  weeks: string[]
+  stores: GisStoreRecord[]
+}
+
 export type ManagedUserRole = 'field_officer' | 'vendor'
 
 export interface ManagedUserRecord {

@@ -1,14 +1,20 @@
 import React, { useEffect, useRef } from 'react'
 import L from 'leaflet'
-import type { StoreRecord } from '../../types/admin'
-import { buildStorePopupContent, getStoreStatusInfo } from './storeMapUtils'
+import type { GisVisit, StoreRecord } from '../../types/admin'
+import { STATUS_STYLE, buildStorePopupContent, buildVisitPopupContent, getStoreStatusInfo, visitNeedsReview, type PinInfo } from './storeMapUtils'
+
+type MapStore = StoreRecord & { visits?: GisVisit[] }
 
 export interface StoreMapProps {
   latitude?: number
   longitude?: number
   onLocationChange?: (lat: number, lng: number) => void
   readOnly?: boolean
-  stores?: StoreRecord[]
+  stores?: MapStore[]
+  /** What each pin shows on the active layer. Must be stable between renders: a new function redraws every pin. */
+  pinOf?: (store: StoreRecord) => PinInfo
+  /** Draw each visit that carries coordinates: its GPS point, accuracy circle, and a line to the registered pin. */
+  visitLinks?: boolean
   selectedStoreId?: number | null
   centerTrigger?: { storeId: number; timestamp: number } | null
   onSelectStore?: (store: StoreRecord) => void
@@ -51,7 +57,7 @@ function createCustomPinIcon(status: 'green' | 'yellow' | 'red', isSelected: boo
   })
 }
 
-function createStorePhotoPinIcon(store: StoreRecord, status: 'green' | 'yellow' | 'red', isSelected: boolean): L.DivIcon {
+function createStorePhotoPinIcon(store: StoreRecord, info: PinInfo, isSelected: boolean): L.DivIcon {
   const pin = document.createElement('div')
   pin.className = 'store-photo-pin'
   const photo = document.createElement('img')
@@ -64,9 +70,24 @@ function createStorePhotoPinIcon(store: StoreRecord, status: 'green' | 'yellow' 
     else photo.style.display = 'none'
   }
   pin.append(photo)
+  if (info.badge) {
+    const badge = document.createElement('span')
+    badge.className = 'store-pin-badge'
+    badge.title = info.badge
+    badge.setAttribute('role', 'img')
+    badge.setAttribute('aria-label', info.badge)
+    badge.textContent = '!'
+    pin.append(badge)
+  }
+  if (info.text) {
+    const text = document.createElement('span')
+    text.className = 'store-pin-text'
+    text.textContent = info.text
+    pin.append(text)
+  }
 
   return L.divIcon({
-    className: `store-photo-pin-container status-${status} ${isSelected ? 'selected' : ''}`,
+    className: `store-photo-pin-container status-${info.status} ${isSelected ? 'selected' : ''}`,
     html: pin,
     iconSize: [42, 52],
     iconAnchor: [21, 52],
@@ -80,6 +101,8 @@ export const StoreMap: React.FC<StoreMapProps> = ({
   onLocationChange,
   readOnly = false,
   stores,
+  pinOf = getStoreStatusInfo,
+  visitLinks = false,
   selectedStoreId,
   centerTrigger,
   onSelectStore,
@@ -92,6 +115,7 @@ export const StoreMap: React.FC<StoreMapProps> = ({
   const mapInstance = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
   const storeMarkersRef = useRef<Map<number, L.Marker>>(new Map())
+  const visitLayersRef = useRef<L.Layer[]>([])
   const hasFittedBoundsRef = useRef(false)
 
   const storesRef = useRef(stores)
@@ -122,6 +146,11 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       })
 
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstance.current)
+      // Visit points sit above the store pins, so a visit signed at the registered pin stays clickable, and below popups.
+      // admin.css flattens every Leaflet pane to one z-index, so the order in the document decides: place it after the markers.
+      const visitPane = mapInstance.current.createPane('gis-visits')
+      visitPane.style.zIndex = '620'
+      mapInstance.current.getPane('markerPane')!.after(visitPane)
 
       L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(import.meta.env.VITE_CARTO_BASEMAP_KEY ?? '')}`, {
         attribution:
@@ -178,6 +207,8 @@ export const StoreMap: React.FC<StoreMapProps> = ({
     // Clear existing multi-store markers
     storeMarkersRef.current.forEach((marker) => marker.remove())
     storeMarkersRef.current.clear()
+    visitLayersRef.current.forEach((layer) => layer.remove())
+    visitLayersRef.current = []
 
     const bounds = L.latLngBounds([])
 
@@ -187,8 +218,8 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       if (isNaN(lat) || isNaN(lng)) return
 
       const isSelected = store.id === selectedStoreId
-      const statusInfo = getStoreStatusInfo(store)
-      const pinIcon = createStorePhotoPinIcon(store, statusInfo.status, isSelected)
+      const statusInfo = pinOf(store)
+      const pinIcon = createStorePhotoPinIcon(store, statusInfo, isSelected)
 
       const marker = L.marker([lat, lng], { icon: pinIcon, title: store.store_name }).addTo(mapInstance.current!)
 
@@ -205,6 +236,26 @@ export const StoreMap: React.FC<StoreMapProps> = ({
 
       storeMarkersRef.current.set(store.id, marker)
       bounds.extend([lat, lng])
+
+      if (!visitLinks) return
+      // One point per captured location: visits signed at the same spot share it and its popup, so none is hidden under another.
+      const points = new Map<string, GisVisit[]>()
+      for (const visit of store.visits ?? []) {
+        if (visit.latitude === undefined || visit.longitude === undefined) continue
+        const key = `${Number(visit.latitude).toFixed(6)},${Number(visit.longitude).toFixed(6)}`
+        points.set(key, [...(points.get(key) ?? []), visit])
+      }
+      for (const visits of points.values()) {
+        const at: L.LatLngTuple = [Number(visits[0].latitude), Number(visits[0].longitude)]
+        const color = STATUS_STYLE[visits.some((visit) => visitNeedsReview(store, visit)) ? 'yellow' : 'green'].dot
+        const accuracy = Math.max(...visits.map((visit) => Number(visit.accuracy_meters ?? 0)))
+        visitLayersRef.current.push(
+          L.polyline([[lat, lng], at], { color, weight: 2, dashArray: '4 4', interactive: false, className: 'gis-visit-link' }).addTo(mapInstance.current!),
+          L.circle(at, { radius: accuracy, color, weight: 1, fillOpacity: 0.12, interactive: false, className: 'gis-visit-accuracy' }).addTo(mapInstance.current!),
+          L.circleMarker(at, { pane: 'gis-visits', radius: 7, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 1, className: 'gis-visit-point' })
+            .bindPopup(buildVisitPopupContent(store, visits)).addTo(mapInstance.current!),
+        )
+      }
     })
 
     // Fit bounds ONLY once on initial store dataset load
@@ -212,7 +263,7 @@ export const StoreMap: React.FC<StoreMapProps> = ({
       mapInstance.current.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 })
       hasFittedBoundsRef.current = true
     }
-  }, [stores, selectedStoreId])
+  }, [stores, selectedStoreId, pinOf, visitLinks])
 
   // Explicit Center Map trigger handling (runs whenever centerTrigger is updated)
   useEffect(() => {

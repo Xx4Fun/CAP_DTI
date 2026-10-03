@@ -105,6 +105,23 @@ class GisStoreDetailTest extends TestCase
         $this->assertEquals(90, $row['srp']);
     }
 
+    public function test_the_price_history_range_is_4_12_or_26_weeks(): void
+    {
+        $store = $this->store('Gaisano Grand Mall');
+        $srp = SrpBulletin::create(['commodity_name' => 'Saba Sardines', 'unit' => '155g', 'commodity_key' => 'saba-sardines-155g', 'baseline_price' => 21.50, 'effective_date' => '2026-01-01', 'is_active' => true]);
+        TemporalInspection::create([
+            'store_id' => $store->id, 'srp_id' => $srp->id, 'recorded_price' => 25.00, 'is_flagged' => true,
+            'inspection_timestamp' => now()->subWeeks(10), 'officer_signature' => 'signed', 'validation_status' => 'verified',
+            'validated_by' => $this->admin->id, 'validated_at' => now(),
+        ]);
+
+        $this->getJson("/api/admin/analytics/stores/{$store->id}")->assertOk()->assertJsonCount(0, 'data.table_rows');
+        $this->getJson("/api/admin/analytics/stores/{$store->id}?weeks=4")->assertOk()->assertJsonCount(0, 'data.table_rows');
+        $this->getJson("/api/admin/analytics/stores/{$store->id}?weeks=12")->assertOk()->assertJsonCount(1, 'data.table_rows');
+        $this->getJson("/api/admin/analytics/stores/{$store->id}?weeks=26")->assertOk()->assertJsonCount(1, 'data.table_rows');
+        $this->getJson("/api/admin/analytics/stores/{$store->id}?weeks=5")->assertUnprocessable();
+    }
+
     public function test_an_inspection_without_a_captured_reference_uses_the_srp_revision_then_in_effect(): void
     {
         $store = $this->store('Gaisano Grand Mall');

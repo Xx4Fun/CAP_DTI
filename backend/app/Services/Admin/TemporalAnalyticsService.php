@@ -32,9 +32,9 @@ class TemporalAnalyticsService
             : [$reference['value'] ?? $srp, 'standard_srp'];
     }
 
-    public function forStore(Store $store, ?string $commodityKey, \DateTimeInterface $asOf): array
+    public function forStore(Store $store, ?string $commodityKey, \DateTimeInterface $asOf, int $weeks = 4): array
     {
-        $from = (clone $asOf)->modify('-4 weeks');
+        $from = (clone $asOf)->modify("-{$weeks} weeks");
         $rows = collect();
         $findings = RegulatoryFinding::where('store_id', $store->id)->where('decision', 'confirmed')
             ->whereBetween('observed_at', [$from, $asOf])->get();

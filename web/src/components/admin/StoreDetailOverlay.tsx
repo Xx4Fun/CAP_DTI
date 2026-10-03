@@ -117,6 +117,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   const [loadingAnalytics, setLoadingAnalytics] = useState(true)
   const [analyticsError, setAnalyticsError] = useState(false)
   const [selectedCommodity, setSelectedCommodity] = useState('')
+  const [weeks, setWeeks] = useState<4 | 12 | 26>(4)
   const statusInfo = getStoreStatusInfo(store)
   const storeId = store.id
   const reports = useStorePages(storeId, loadReports)
@@ -126,8 +127,10 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
     let cancelled = false
     setLoadingAnalytics(true)
     setAnalyticsError(false)
+    // Rows belong to the range they were loaded for: a slow or failed reload must not leave the old chart under the new heading.
+    setTrendRows([])
     // No commodity filter: every commodity this store has data for, so the tab can offer a choice.
-    adminApi.getAnalytics(storeId).then((res: any) => {
+    adminApi.getAnalytics(storeId, undefined, weeks).then((res: any) => {
       if (cancelled) return
       setTrendRows(res?.table_rows ?? [])
       setLoadingAnalytics(false)
@@ -137,7 +140,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
       setLoadingAnalytics(false)
     })
     return () => { cancelled = true }
-  }, [storeId])
+  }, [storeId, weeks])
 
   const recidivism = store.recidivism_index || 0
 
@@ -146,7 +149,8 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
   const commodityOptions = [...new Map(
     trendRows.map((r) => [keyOf(r), r.commodity_key ? r.commodity_name || r.commodity_key : 'Unidentified commodity']),
   )]
-  const commodityKey = selectedCommodity || commodityOptions[0]?.[0] || ''
+  // A commodity chosen in a wider range may be absent from a narrower one; fall back to one that has data.
+  const commodityKey = commodityOptions.some(([key]) => key === selectedCommodity) ? selectedCommodity : commodityOptions[0]?.[0] || ''
   const activeRows = trendRows.filter((r) => keyOf(r) === commodityKey)
   const labels = activeRows.map((r) => r.date)
   const priceSeries = activeRows.map((r) => Number(r.price))
@@ -408,12 +412,23 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-                4-Week Price History
+                {weeks}-Week Price History
               </h4>
               <span style={{ fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 600, background: '#eff6ff', padding: '0.2rem 0.5rem', borderRadius: '6px' }}>
                 Temporal Matrix
               </span>
             </div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
+              Range
+              <select
+                value={weeks}
+                onChange={(e) => setWeeks(Number(e.target.value) as 4 | 12 | 26)}
+                style={{ minHeight: '44px', padding: '0.4rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', color: '#0f172a', background: '#ffffff' }}
+              >
+                {[4, 12, 26].map((option) => <option key={option} value={option}>Last {option} weeks</option>)}
+              </select>
+            </label>
 
             {!loadingAnalytics && commodityOptions.length > 0 && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
@@ -434,7 +449,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
               </div>
             )}
 
-            {!loadingAnalytics && chartData && (
+            {!loadingAnalytics && !analyticsError && chartData && (
               <div style={{ height: '200px', width: '100%', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.5rem' }}>
                 <Line data={chartData} options={chartOptions as any} />
               </div>
