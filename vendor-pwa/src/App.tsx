@@ -24,7 +24,7 @@ const TAB_TITLES: Record<ActiveTab, string> = {
   overview: 'Dashboard',
   notices: 'Legal Notices',
   messages: 'Communications',
-  rebuttals: 'Response & Rebuttal',
+  rebuttals: 'Legal Notices',
   srp: 'Official SRP Catalog',
   advisories: 'DTI Bulletins',
 };

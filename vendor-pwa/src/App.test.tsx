@@ -104,6 +104,21 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(title()).toBe('Communications');
   });
 
+  it('keeps submitted responses under the single Legal Notices menu entry', async () => {
+    signedIn();
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await screen.findByRole('heading', { name: 'Antique Grocery Mart' });
+    expect(screen.queryByRole('button', { name: /Rebuttal/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Notices Tab' }));
+    await user.click(screen.getByRole('button', { name: /Response History/ }));
+
+    expect(screen.getByRole('heading', { name: 'Submitted Responses & Explanations' })).toBeInTheDocument();
+    expect(container.querySelector('.sidebar-nav-item.active')).toHaveTextContent('Legal Notices');
+    expect(container.querySelector('.vendor-content-toolbar strong')).toHaveTextContent('Legal Notices');
+  });
+
   it('signs out locally even when server token revocation is still pending', async () => {
     signedIn();
     api.logout.mockImplementation(() => new Promise<void>(() => {}));
