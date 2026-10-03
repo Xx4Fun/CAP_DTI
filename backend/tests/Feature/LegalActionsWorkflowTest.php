@@ -9,7 +9,6 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
 use App\Http\Controllers\Vendor\VendorAuthController;
-use App\Mail\LegalNoticeAvailableMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
@@ -32,7 +31,10 @@ class LegalActionsWorkflowTest extends TestCase
         $notice = LegalNotice::findOrFail($response->json('data.id'));
         $this->assertSame($record->id, $notice->monitoring_record_id);
         $this->assertSame(2, count($notice->source_snapshot['items']));
-        $this->assertSame('Vendor Representative', $notice->draft_payload['recipient_name']);
+        // The addressee is the registered owner, not whoever represented the store at the visit.
+        $this->assertSame('Registered Owner', $notice->draft_payload['recipient_name']);
+        $this->assertSame('Registered Owner', $notice->draft_payload['registered_owner_name']);
+        $this->assertSame('Vendor Representative', $notice->source_snapshot['representative_name']);
         $this->assertSame($vendor->email, $notice->draft_payload['recipient_email']);
         $this->assertDatabaseHas('audit_events', ['action' => 'legal.draft_created', 'subject_id' => $notice->id]);
 
@@ -94,7 +96,7 @@ class LegalActionsWorkflowTest extends TestCase
             ],
         ]);
         $draft = $this->actingAs($manager, 'sanctum')->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $record->id, 'notice_type' => 'LOI', 'item_ids' => [$items[0]->id]])->json('data');
-        $this->patchJson("/api/admin/legal-notices/{$draft['id']}", ['reason' => 'Request explanation', 'legal_bases' => ['RA 7581'], 'intended_delivery_method' => 'email_and_hand_copy', 'internal_justification' => 'Evaluator review completed.'])->assertOk();
+        $this->patchJson("/api/admin/legal-notices/{$draft['id']}", ['reason' => 'Request explanation', 'legal_bases' => ['RA 7581'], 'intended_delivery_method' => 'portal', 'internal_justification' => 'Evaluator review completed.'])->assertOk();
 
         $issued = $this->postJson("/api/admin/legal-notices/{$draft['id']}/issue", ['confirmed' => true])->assertOk()->json('data');
         $this->assertSame('issued', $issued['status']);
@@ -103,7 +105,9 @@ class LegalActionsWorkflowTest extends TestCase
         $this->assertSame(LegalNotice::DOCUMENT_DISK, $stored->pdf_disk);
         Storage::disk(LegalNotice::DOCUMENT_DISK)->assertExists($stored->pdf_file_path);
         $this->assertSame(hash('sha256', Storage::disk(LegalNotice::DOCUMENT_DISK)->get($stored->pdf_file_path)), $stored->pdf_sha256);
-        Mail::assertQueued(LegalNoticeAvailableMail::class, fn ($mail) => $mail->noticeId === $issued['id'] && count($mail->attachments) === 0);
+        // Portal-only delivery sends no email.
+        Mail::assertNothingQueued();
+        $this->assertSame('not_applicable', $issued['notification']);
         $this->postJson("/api/admin/legal-notices/{$draft['id']}/issue", ['confirmed' => true])->assertConflict();
     }
 
@@ -111,7 +115,7 @@ class LegalActionsWorkflowTest extends TestCase
     {
         $manager = User::create(['name' => 'DTI Evaluator', 'email' => 'manager@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
         $vendor = User::create(['name' => 'Vendor', 'email' => 'vendor@example.test', 'password' => 'password', 'role' => 'vendor']);
-        $store = Store::create(['store_name' => 'Captured Store', 'address' => 'San Jose, Antique', 'latitude' => 10, 'longitude' => 121, 'vendor_user_id' => $vendor->id]);
+        $store = Store::create(['store_name' => 'Captured Store', 'owner_name' => 'Registered Owner', 'address' => 'San Jose, Antique', 'latitude' => 10, 'longitude' => 121, 'vendor_user_id' => $vendor->id]);
         $record = MonitoringRecord::create([
             'client_uuid' => '10000000-0000-4000-8000-000000000100', 'officer_user_id' => $manager->id, 'store_id' => $store->id,
             'status' => 'accepted', 'started_at' => now()->subHour(), 'finalized_at' => now(), 'received_at' => now(),

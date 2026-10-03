@@ -111,7 +111,9 @@ class LegalSignatoryTest extends TestCase
     {
         static $seed = 0;
         $seed++;
-        $store = Store::create(['store_name' => "Store $seed", 'address' => 'San Jose, Antique', 'latitude' => 10, 'longitude' => 121]);
+        // Notices are issued through the portal only, so each store has an active linked vendor and a registered owner.
+        $vendor = User::create(['name' => "Vendor $seed", 'email' => "vendor$seed@shop.test", 'password' => 'password', 'role' => 'vendor']);
+        $store = Store::create(['store_name' => "Store $seed", 'owner_name' => "Owner $seed", 'address' => 'San Jose, Antique', 'latitude' => 10, 'longitude' => 121, 'vendor_user_id' => $vendor->id]);
         $record = MonitoringRecord::create([
             'client_uuid' => sprintf('20000000-0000-4000-8000-%012d', $seed), 'officer_user_id' => $this->evaluator->id, 'store_id' => $store->id,
             'status' => 'accepted', 'started_at' => now()->subHour(), 'finalized_at' => now(), 'received_at' => now(),
@@ -128,7 +130,7 @@ class LegalSignatoryTest extends TestCase
             'reference_value' => 50, 'reference_source' => 'DTI', 'reference_effective_date' => '2026-01-01',
         ]);
         $id = $this->actingAs($this->evaluator, 'sanctum')->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $record->id, 'notice_type' => 'LOI', 'item_ids' => [$item->id]])->assertCreated()->json('data.id');
-        $this->actingAs($this->evaluator, 'sanctum')->patchJson("/api/admin/legal-notices/$id", ['intended_delivery_method' => 'hand_copy', 'internal_justification' => 'Reviewed.'])->assertOk();
+        $this->actingAs($this->evaluator, 'sanctum')->patchJson("/api/admin/legal-notices/$id", ['intended_delivery_method' => 'portal', 'internal_justification' => 'Reviewed.'])->assertOk();
         return $id;
     }
 }

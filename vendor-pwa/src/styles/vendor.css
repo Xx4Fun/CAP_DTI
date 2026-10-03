@@ -3517,6 +3517,8 @@ button.upload-dropzone:focus-visible { outline: 3px solid var(--dti-navy); outli
   .vendor-messages-row .btn span { display: none; }
   .vendor-bubble { max-width: 90%; }
 }
+.notice-outcome { display: grid; gap: 4px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--border-color); border-left: 3px solid var(--dti-navy); border-radius: var(--radius-sm); background: #F8FAFC; font-size: 0.82rem; }
+.notice-outcome strong { color: var(--dti-navy); }
 .notice-receipt-warning { flex-basis: 100%; margin: 0 0 4px; color: #92400E; font-size: 0.78rem; font-weight: 600; }
 .vendor-messages-more { align-self: center; }
 .vendor-notice-event { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px; border: 1px solid #E2E8F0; border-radius: var(--radius-full); background: #fff; color: var(--text-muted); font: inherit; font-size: 0.75rem; cursor: pointer; }

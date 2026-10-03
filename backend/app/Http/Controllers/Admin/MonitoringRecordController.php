@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\FieldVerificationRequest;
+use App\Models\LegalNotice;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryFinding;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
@@ -85,6 +87,8 @@ class MonitoringRecordController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
+            // Needs review: visits with a flagged product DTI has not decided yet (no action, or a closed notice).
+            'review' => ['nullable', Rule::in(['pending'])],
         ]);
         $query = MonitoringRecord::query()->where('status', 'accepted')
             ->with(['officer:id,name,email', 'store:id,store_name,address'])
@@ -100,10 +104,14 @@ class MonitoringRecordController extends Controller
         if (isset($filters['store_id'])) {
             $query->where('store_id', $filters['store_id']);
         }
+        if (($filters['review'] ?? null) === 'pending') $query->hasUndecidedItems();
         $dates = $this->parsePeriodDates($request);
         $this->applyPeriodConstraint($query, $dates, 'finalized_at');
 
-        return response()->json(['data' => $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10)]);
+        $page = $query->latest('finalized_at')->paginate($filters['per_page'] ?? 10);
+        $this->attachReviewState($page->getCollection());
+
+        return response()->json(['data' => $page]);
     }
 
     public function matrix(Request $request, AdminAuthorizationService $auth, SrpCatalogService $catalog)
@@ -363,6 +371,8 @@ class MonitoringRecordController extends Controller
             'records_with_observations_count' => $store->records_with_observations_count,
             'period_completed_records_count' => $store->period_completed_records_count ?? $store->completed_records_count,
             'period_records_with_observations_count' => $store->period_records_with_observations_count ?? $store->records_with_observations_count,
+            'period_unavailable_reference_count' => MonitoringRecordItem::where('reference_status', 'unavailable')
+                ->whereHas('record', fn ($records) => $this->applyPeriodConstraint($records->where('store_id', $store->id)->where('status', 'accepted'), $dates, 'finalized_at'))->count(),
             'period_commodities_count' => $commodities->count(),
             'open_verification_requests_count' => $store->open_verification_requests_count,
             'latest_record' => $store->latestMonitoringRecord,
@@ -464,11 +474,66 @@ class MonitoringRecordController extends Controller
     public function show(Request $request, MonitoringRecord $monitoringRecord, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-
-        return response()->json(['data' => $monitoringRecord->load([
-            'officer:id,name,email', 'store', 'items.bulletin',
+        $monitoringRecord->load([
+            'officer:id,name,email', 'store', 'items.bulletin', 'items.finding.decider:id,name',
             'verificationRequest.report:id,report_reference,status',
-        ])]);
+        ]);
+        $this->attachReviewState(collect([$monitoringRecord]));
+
+        return response()->json(['data' => $monitoringRecord->toArray() + [
+            // Read-only links to Legal Actions: Field Monitoring shows the regulatory state but never acts on it.
+            'notices' => $monitoringRecord->legalNotices()->where(fn ($q) => $q->where('status', '!=', 'cancelled')->orWhereNotNull('issued_at'))
+                ->latest('id')->get(['id', 'notice_type', 'status', 'control_number', 'outcome', 'issued_at', 'preceding_notice_id']),
+        ]]);
+    }
+
+    /**
+     * Records that DTI reviewed a visit's flagged products and takes no regulatory action, with the reason (owner decision D8).
+     * It covers every undecided product, so Needs review never hides one; a later notice may still cite them.
+     */
+    public function noAction(Request $request, MonitoringRecord $monitoringRecord, AdminAuthorizationService $auth, AuditTrailService $audit)
+    {
+        $auth->requireManager($request->user());
+        $data = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:2000']]);
+        $itemIds = DB::transaction(function () use ($request, $monitoringRecord, $data, $audit) {
+            // Lock order: store, then visit, as createDraft() and the legal notice actions.
+            Store::whereKey($monitoringRecord->store_id)->lockForUpdate()->first();
+            $record = MonitoringRecord::whereKey($monitoringRecord->id)->lockForUpdate()->firstOrFail();
+            abort_unless($record->status === 'accepted', 409, 'Only an accepted visit can be reviewed.');
+            abort_if(LegalNotice::where('monitoring_record_id', $record->id)->whereIn('status', ['draft', 'issued', 'response_received'])->exists(), 409, 'This visit has an open notice. Close or cancel it first.');
+            $items = MonitoringRecordItem::where('monitoring_record_id', $record->id)->undecidedEligible()->get();
+            abort_if($items->isEmpty(), 409, 'Every flagged product on this visit already has a DTI decision.');
+            $decidedAt = now();
+            foreach ($items as $item) {
+                RegulatoryFinding::create([
+                    'source_type' => MonitoringRecordItem::FINDING_SOURCE, 'source_id' => $item->id, 'store_id' => $record->store_id,
+                    'srp_bulletin_id' => $item->srp_id, 'observed_price' => $item->recorded_price, 'observed_at' => $record->finalized_at,
+                    'decision' => 'no_action', 'reason' => $data['reason'], 'decided_by' => $request->user()->id, 'decided_at' => $decidedAt,
+                    'reference_type' => $item->reference_type, 'reference_source_id' => $item->reference_source_id, 'reference_value' => $item->reference_value,
+                    'reference_effective_date' => $item->reference_effective_date, 'reference_label' => $item->reference_label,
+                    'reference_source' => $item->reference_source, 'reference_version' => $item->reference_version,
+                ]);
+            }
+            $ids = $items->pluck('id')->all();
+            $audit->recordOrFail($request, 'monitoring.no_action_recorded', $record, ['reason' => $data['reason'], 'item_ids' => $ids, 'decided_at' => $decidedAt->toIso8601String()]);
+            return $ids;
+        });
+
+        return response()->json(['data' => ['monitoring_record_id' => $monitoringRecord->id, 'item_ids' => $itemIds]]);
+    }
+
+    /** Adds each visit's undecided product ids and its open notice: the one review rule every list shares. */
+    private function attachReviewState($records): void
+    {
+        $ids = $records->pluck('id')->all();
+        if (! $ids) return;
+        $undecided = MonitoringRecordItem::whereIn('monitoring_record_id', $ids)->undecidedEligible()->get(['id', 'monitoring_record_id'])->groupBy('monitoring_record_id');
+        $open = LegalNotice::whereIn('monitoring_record_id', $ids)->whereIn('status', ['draft', 'issued', 'response_received'])
+            ->get(['id', 'monitoring_record_id', 'notice_type', 'status', 'control_number'])->keyBy('monitoring_record_id');
+        foreach ($records as $record) {
+            $record->setAttribute('undecided_item_ids', ($undecided[$record->id] ?? collect())->pluck('id')->values()->all());
+            $record->setAttribute('open_notice', $open[$record->id] ?? null);
+        }
     }
 
     public function signature(
@@ -562,7 +627,14 @@ class MonitoringRecordController extends Controller
         $dates = $this->parsePeriodDates($request);
         $this->applyPeriodConstraint($query, $dates, 'monitoring_records.finalized_at');
 
-        $findings = $query->latest('monitoring_records.finalized_at')->paginate($filters['per_page'] ?? 10);
+        $findings = $query->with('finding.decider:id,name')->latest('monitoring_records.finalized_at')->paginate($filters['per_page'] ?? 10);
+        // For each product, the newest notice that cites it (by its frozen snapshot) and left DTI or is still open: a read-only chip.
+        $notices = LegalNotice::whereIn('monitoring_record_id', $findings->getCollection()->pluck('monitoring_record_id')->unique()->all())
+            ->where(fn ($q) => $q->where('status', '!=', 'cancelled')->orWhereNotNull('issued_at'))->latest('id')
+            ->get(['id', 'monitoring_record_id', 'notice_type', 'status', 'control_number', 'outcome', 'source_snapshot']);
+        $noticeFor = fn (MonitoringRecordItem $item) => $notices->first(fn (LegalNotice $notice) => (int) $notice->monitoring_record_id === (int) $item->monitoring_record_id
+            && collect($notice->source_snapshot['items'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->contains($item->id))
+            ?->only(['id', 'notice_type', 'status', 'control_number', 'outcome']);
 
         $findings->setCollection($findings->getCollection()->map(fn (MonitoringRecordItem $item) => [
             'id' => $item->id,
@@ -579,6 +651,11 @@ class MonitoringRecordController extends Controller
             'protocol_mode' => $item->record->protocol_mode,
             'reference_label' => $item->reference_label,
             'reference_source' => $item->reference_source,
+            'decision' => $item->finding?->decision,
+            'decision_reason' => $item->finding?->reason,
+            'decided_by_name' => $item->finding?->decider?->name,
+            'decided_at' => $item->finding?->decided_at?->toIso8601String(),
+            'notice' => $noticeFor($item),
         ]));
 
         return response()->json(['data' => $findings]);

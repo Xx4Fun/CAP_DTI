@@ -335,4 +335,14 @@ class AdminFieldVerificationRequestTest extends TestCase
         $this->getJson('/api/admin/monitoring-establishments?weekly_status=monitored_this_week')
             ->assertOk()->assertJsonPath('data.establishments.total', 1);
     }
+
+    public function test_a_report_still_processing_cannot_be_referred_for_verification(): void
+    {
+        $report = $this->report();
+        $report->update(['status' => 'Processing']);
+        $officer = User::create(['name' => 'Assigned Officer', 'email' => 'assigned@dti.test', 'password' => 'password', 'role' => 'field_officer', 'is_active' => true]);
+        $this->postJson("/api/admin/reports/{$report->id}/verification-request", ['reason' => 'Verify the shelf price in person.', 'field_officer_id' => $officer->id])
+            ->assertConflict();
+        $this->assertSame(0, \App\Models\FieldVerificationRequest::count());
+    }
 }

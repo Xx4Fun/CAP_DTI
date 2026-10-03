@@ -106,14 +106,17 @@ class StoreConversationController extends Controller
         return $message->attachmentResponse();
     }
 
-    /** Accepted visits with notice-eligible observations and no open notice: the starting points for an LOI/SCO. */
+    /**
+     * Accepted visits with flagged products DTI has not decided and no open notice: the starting points for an LOI/SCO.
+     * Same rule as Legal Actions › Needs review (MonitoringRecordItem::scopeUndecidedEligible).
+     */
     private function eligibleRecords(Store $store): array
     {
         return MonitoringRecord::query()->where('store_id', $store->id)->where('status', 'accepted')
-            ->whereHas('items', fn ($i) => $i->where('is_anomaly', true)->where('reference_status', 'available')->whereNotNull('reference_value'))
+            ->hasUndecidedItems()
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('legal_notices')->whereColumn('legal_notices.monitoring_record_id', 'monitoring_records.id')
                 ->whereIn('legal_notices.status', ['draft', 'issued', 'response_received']))
-            ->withCount(['items as eligible_item_count' => fn ($i) => $i->where('is_anomaly', true)->where('reference_status', 'available')->whereNotNull('reference_value')])
+            ->withCount(['items as eligible_item_count' => fn ($i) => $i->undecidedEligible()])
             ->latest('finalized_at')->limit(20)->get(['id', 'client_uuid', 'finalized_at', 'store_id'])
             ->map(fn (MonitoringRecord $record) => [
                 'id' => $record->id, 'client_uuid' => $record->client_uuid, 'finalized_at' => $record->finalized_at?->toIso8601String(),

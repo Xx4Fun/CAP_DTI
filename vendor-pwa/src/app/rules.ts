@@ -1,4 +1,4 @@
-import type { AttachmentCategory, LegalNotice, ReasonCategory, SrpReference } from './types';
+import type { AttachmentCategory, LegalNotice, NoticeOutcome, ReasonCategory, SrpReference } from './types';
 
 export const REASON_CATEGORIES: Array<{ id: ReasonCategory; label: string; hint: string }> = [
   { id: 'WHOLESALE_HIKE', label: 'Distributor / Manufacturer Wholesale Price Increase', hint: 'Attach wholesaler invoice or price adjustment memo' },
@@ -33,11 +33,26 @@ export const attachmentCategoryLabel = (id: string | null) => ATTACHMENT_CATEGOR
 /** Closed or withdrawn: nothing further is expected from the vendor. */
 export const isFinished = (notice: Pick<LegalNotice, 'status'>) => notice.status === 'closed' || notice.status === 'cancelled';
 
-export function noticeStatusLabel(notice: LegalNotice): string {
+export const OUTCOME_LABELS: Record<NoticeOutcome, string> = {
+  explanation_accepted: 'Explanation accepted',
+  no_violation: 'No violation found',
+  violation_confirmed: 'Violation confirmed',
+  partially_confirmed: 'Partly confirmed',
+  escalated_to_sco: 'Escalated to a Show Cause Order',
+  withdrawn: 'Withdrawn by DTI',
+};
+
+export function noticeStatusLabel(notice: LegalNotice, now = Date.now()): string {
   if (notice.status === 'cancelled') return 'Withdrawn by DTI';
-  if (notice.status === 'closed') return 'Closed';
+  if (notice.status === 'closed') {
+    if (notice.outcome === 'escalated_to_sco') return 'Escalated to a Show Cause Order';
+    return notice.outcome ? `Closed: ${OUTCOME_LABELS[notice.outcome]}` : 'Closed';
+  }
   if (notice.status === 'response_received') return 'Under review';
-  if (!['received', 'refused'].includes(notice.delivery_state)) return 'Awaiting delivery record';
+  if (!['received', 'refused'].includes(notice.delivery_state)) {
+    return notice.intended_delivery_method === 'portal' ? 'Not yet opened' : 'Awaiting delivery record';
+  }
+  if (notice.due_date_timestamp && new Date(notice.due_date_timestamp).getTime() <= now) return 'Response period ended';
   return 'Response due';
 }
 
@@ -53,8 +68,11 @@ export function responseBlockedReason(notice: LegalNotice, now = Date.now()): st
   if (canRespond(notice, now)) return null;
   if (notice.status === 'response_received') return 'A response has already been submitted for this notice.';
   if (notice.status === 'closed') return 'This notice is closed.';
+  if (notice.status === 'cancelled') return 'This notice was withdrawn by DTI.';
   if (!['received', 'refused'].includes(notice.delivery_state) || !notice.due_date_timestamp) {
-    return 'The response period starts after DTI records delivery of this notice.';
+    return notice.intended_delivery_method === 'portal'
+      ? 'Open the official document to receive this notice; your response period starts then.'
+      : 'The response period starts after DTI records delivery of this notice.';
   }
   return 'The response period for this notice has expired.';
 }

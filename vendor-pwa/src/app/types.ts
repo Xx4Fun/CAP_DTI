@@ -42,13 +42,19 @@ export type NoticeStatus = 'issued' | 'response_received' | 'closed' | 'cancelle
 export type DeliveryState = 'not_recorded' | 'received' | 'refused' | 'failed';
 
 export interface FlaggedItem {
+  id?: number;
   commodity_name: string | null;
   unit: string | null;
   observed_price: number | string | null;
   reference_value: number | string | null;
   reference_label: string | null;
   variance_percent: number | string | null;
+  /** DTI's decision on this product, shown once the notice is closed with it. */
+  decision?: 'confirmed' | 'not_confirmed' | null;
 }
+
+/** DTI's recorded result when it closed or withdrew a notice. */
+export type NoticeOutcome = 'explanation_accepted' | 'no_violation' | 'violation_confirmed' | 'partially_confirmed' | 'escalated_to_sco' | 'withdrawn';
 
 export type ReasonCategory = 'WHOLESALE_HIKE' | 'FREIGHT_SURCHARGE' | 'ENCODING_ERROR' | 'PACKAGING_DISCREPANCY' | 'FORCE_MAJEURE';
 export type AttachmentCategory = 'DELIVERY_RECEIPT' | 'WHOLESALER_INVOICE' | 'FREIGHT_BILL' | 'SHELF_TAG' | 'OTHER';
@@ -88,6 +94,10 @@ export interface LegalNotice {
   legal_bases?: string[];
   flagged_items: FlaggedItem[];
   attachments: NoticeAttachment[];
+  outcome?: NoticeOutcome | null;
+  outcome_reason?: string | null;
+  /** The LOI this SCO was escalated from. */
+  preceding_control_number?: string | null;
 }
 
 export interface ResponseDraft {
@@ -174,6 +184,8 @@ export interface ConversationNotice {
   response_received_at: string | null;
   closed_at: string | null;
   cancelled_at?: string | null;
+  outcome?: NoticeOutcome | null;
+  outcome_reason?: string | null;
 }
 
 export interface Conversation {

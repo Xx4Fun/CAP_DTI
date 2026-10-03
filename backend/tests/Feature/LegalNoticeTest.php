@@ -142,7 +142,7 @@ class LegalNoticeTest extends TestCase
         $draft = $this->notice(['status' => 'draft', 'issued_at' => null, 'delivery_state' => 'not_recorded', 'delivered_at' => null, 'due_date_timestamp' => null, 'control_number' => null]);
 
         Sanctum::actingAs($this->dtiUser);
-        $this->postJson("/api/admin/legal-notices/{$draft->id}/close")->assertStatus(409);
+        $this->postJson("/api/admin/legal-notices/{$draft->id}/close", ['outcome' => 'explanation_accepted', 'outcome_reason' => 'Explanation reviewed and accepted.'])->assertStatus(409);
         $this->assertSame('draft', $draft->fresh()->status);
 
         // A closed record that was never issued (e.g. legacy data) is not shown to the vendor either.
@@ -197,7 +197,7 @@ class LegalNoticeTest extends TestCase
     {
         $notice = $this->notice();
         Sanctum::actingAs($this->dtiUser);
-        $this->postJson("/api/admin/legal-notices/{$notice->id}/close")->assertOk();
+        $this->postJson("/api/admin/legal-notices/{$notice->id}/close", ['outcome' => 'explanation_accepted', 'outcome_reason' => 'Explanation reviewed and accepted.'])->assertOk();
 
         $this->asVendor($this->vendorUser)->postJson("/api/vendor/notices/{$notice->id}/response", $this->payload())
             ->assertStatus(409)->assertJsonPath('status', 'NOTICE_NOT_RESPONDABLE');
@@ -212,8 +212,8 @@ class LegalNoticeTest extends TestCase
 
         $this->app['auth']->forgetGuards();
         Sanctum::actingAs($this->dtiUser);
-        $this->postJson("/api/admin/legal-notices/{$notice->id}/close")->assertOk();
-        $this->postJson("/api/admin/legal-notices/{$notice->id}/close")->assertStatus(409);
+        $this->postJson("/api/admin/legal-notices/{$notice->id}/close", ['outcome' => 'explanation_accepted', 'outcome_reason' => 'Explanation reviewed and accepted.'])->assertOk();
+        $this->postJson("/api/admin/legal-notices/{$notice->id}/close", ['outcome' => 'explanation_accepted', 'outcome_reason' => 'Explanation reviewed and accepted.'])->assertStatus(409);
 
         $notice->refresh();
         $this->assertSame('closed', $notice->status);

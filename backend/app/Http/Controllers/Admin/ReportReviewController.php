@@ -273,10 +273,14 @@ class ReportReviewController extends Controller
         ]);
 
         $verification = DB::transaction(function () use ($request, $report, $data, $audit, $notifications) {
+            // Store before report: field sync, report decisions and legal notices lock the store first too.
+            $store = $report->store_id ? Store::query()->whereKey($report->store_id)->lockForUpdate()->first() : null;
             $report = ConsumerReport::query()->lockForUpdate()->findOrFail($report->id);
+            abort_unless((int) $store?->id === (int) $report->store_id, 409, 'This report changed. Reload it and try again.');
             abort_if($report->verificationRequest()->exists(), 409, 'This report already has a field verification request.');
-            $store = Store::query()->whereKey($report->store_id)->where('is_active', true)->first();
-            abort_unless($store, 422, 'An active linked store is required for field verification.');
+            // Re-checked on the locked row: a report still capturing or extracting its receipt cannot be referred.
+            abort_unless(in_array($report->status, ReportReviewService::DECIDABLE_STATUSES, true), 409, 'This report is still being processed and cannot be referred yet.');
+            abort_unless($store?->is_active, 422, 'An active linked store is required for field verification.');
             $officer = User::findOrFail($data['field_officer_id']);
 
             $previous = $report->status;
@@ -324,6 +328,8 @@ class ReportReviewController extends Controller
     {
         $auth->requireManager($request->user());
         DB::transaction(function () use ($request, $verificationRequest, $audit) {
+            // Store, then verification, then report: the order field sync uses.
+            Store::query()->whereKey($verificationRequest->store_id)->lockForUpdate()->first();
             $verificationRequest = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($verificationRequest->id);
             abort_unless($verificationRequest->status === 'open', 422, 'Only an open verification request can be cancelled.');
             $verificationRequest->update(['status' => 'cancelled', 'cancelled_at' => now()]);
@@ -349,6 +355,8 @@ class ReportReviewController extends Controller
     {
         $auth->requireManager($request->user());
         DB::transaction(function () use ($request, $verificationRequest, $audit) {
+            // Store, then verification, then report: the order field sync uses.
+            Store::query()->whereKey($verificationRequest->store_id)->lockForUpdate()->first();
             $verificationRequest = FieldVerificationRequest::query()->lockForUpdate()->findOrFail($verificationRequest->id);
             abort_unless($verificationRequest->status === 'cancelled', 422, 'Only a cancelled verification request can be reopened. Claimed work must be released by the assigned officer.');
             $verificationRequest->update([
@@ -371,10 +379,7 @@ class ReportReviewController extends Controller
 
         return response()->json(['data' => $verificationRequest->fresh()]);
     }
-    /** States a report may be decided from. Anything else is still being captured or extracted. */
-    private const DECIDABLE_STATUSES = [
-        'Submitted', 'Under initial evaluation', 'Under regulatory review', 'Resolved', 'Closed',
-    ];
+    private const DECIDABLE_STATUSES = ReportReviewService::DECIDABLE_STATUSES;
 
     public function decision(Request $request, ConsumerReport $report, AdminAuthorizationService $auth, ReportReviewService $service, ReceiptPriceComparison $comparison)
     {

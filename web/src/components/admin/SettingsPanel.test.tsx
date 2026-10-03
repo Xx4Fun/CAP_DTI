@@ -49,7 +49,11 @@ describe('Admin settings feedback', () => {
     render(<SettingsPanel user={evaluator} />)
 
     expect(screen.getByRole('heading', { name: 'Unavailable settings' })).toBeInTheDocument()
-    expect(screen.getByText(/Notifications, display density, inactivity timeout, GIS defaults, and regulatory thresholds/i)).toBeInTheDocument()
+    expect(screen.getByText(/Notifications, display density, inactivity timeout, and GIS defaults/i)).toBeInTheDocument()
+    // The review threshold is fixed by policy: explained read-only, never offered as an editable setting.
+    expect(screen.getByRole('heading', { name: 'Price review threshold' })).toBeInTheDocument()
+    expect(screen.getByText(/more than 10% above the SRP, or above the price ceiling during a price freeze/i)).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Save Notification Preferences/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Save System Parameters/i })).not.toBeInTheDocument()
     expect(adminApi.updatePreferences).not.toHaveBeenCalled()

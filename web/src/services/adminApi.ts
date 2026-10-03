@@ -1,6 +1,6 @@
 import api from './api'
 import { cached } from './responseCache'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, LegalNoticePage, LegalNoticeRecord, LegalNoticeOutcome, ItemDecision, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -8,7 +8,7 @@ const data = <T>(response: { data: { data: T } }): T => response.data.data
 export type VendorInvitationDeliveryStatus = 'queued' | 'unavailable'
 
 export const adminApi = {
-  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
+  async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; review?: 'pending'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
   },
   async getMonitoringExportMatrix(filters: { period?: MonitoringPeriodPreset; date_from?: string; date_to?: string } = {}): Promise<MonitoringMatrixData> {
@@ -203,7 +203,7 @@ export const adminApi = {
   async updateEmergency(id: number, payload: unknown): Promise<RegulatoryEmergencyRecord> {
     return data(await api.patch(`/admin/emergencies/${id}`, payload))
   },
-  async getLegalNotices(params: { search?: string; status?: string; store_id?: number; page?: number } = {}): Promise<LegalNoticePage> {
+  async getLegalNotices(params: { search?: string; status?: string; store_id?: number; page?: number; exclude_drafts?: 1 } = {}): Promise<LegalNoticePage> {
     return data(await api.get('/admin/legal-notices', { params }))
   },
   async getLegalNotice(id: number): Promise<LegalNoticeRecord> {
@@ -231,8 +231,14 @@ export const adminApi = {
   async getLegalDocument(id: number): Promise<Blob> {
     return (await api.get(`/admin/legal-notices/${id}/document`, { responseType: 'blob' })).data
   },
-  async closeLegalNotice(id: number): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/close`))
+  async closeLegalNotice(id: number, payload: { outcome: Exclude<LegalNoticeOutcome, 'escalated_to_sco' | 'withdrawn'>; outcome_reason: string; item_decisions: Array<{ item_id: number; decision: ItemDecision }> }): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/close`, payload))
+  },
+  async remindLegalNotice(id: number): Promise<unknown> {
+    return data(await api.post(`/admin/legal-notices/${id}/reminder`))
+  },
+  async recordNoAction(recordId: number, reason: string): Promise<{ monitoring_record_id: number; item_ids: number[] }> {
+    return data(await api.post(`/admin/monitoring-records/${recordId}/no-action`, { reason }))
   },
   async recordOfflineResponse(id: number, payload: { channel: 'email' | 'paper'; received_at: string; response_text: string; evidence: File }): Promise<LegalNoticeRecord> {
     const body = new FormData()
@@ -273,8 +279,8 @@ export const adminApi = {
   async getMessageAttachment(storeId: number, messageId: number): Promise<Blob> {
     return (await api.get(`/admin/conversations/${storeId}/messages/${messageId}/attachment`, { responseType: 'blob' })).data
   },
-  async cancelLegalNotice(id: number): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/cancel`))
+  async cancelLegalNotice(id: number, outcomeReason?: string): Promise<LegalNoticeRecord> {
+    return data(await api.post(`/admin/legal-notices/${id}/cancel`, outcomeReason ? { outcome_reason: outcomeReason } : {}))
   },
   async addLegalAttachment(id: number, file: File): Promise<NonNullable<LegalNoticeRecord['attachments']>[number]> {
     const body = new FormData(); body.append('file', file)

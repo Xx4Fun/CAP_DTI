@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Vendor\ResolvesVendor;
 use App\Models\LegalNotice;
+use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryFinding;
 use App\Models\Store;
 use App\Models\User;
 use App\Services\Admin\AuditTrailService;
@@ -61,7 +63,11 @@ class LegalNoticeController extends Controller
                 if (! $this->awaitsPortalReceipt($locked)) return;
                 $now = now();
                 try { $due = $policy->deadlineFrom($now, $locked->deadline_rules); }
-                catch (CalendarNotCoveredException) { Log::warning('Portal receipt not recorded: holiday calendar does not cover the response period.', ['legal_notice_id' => $locked->id]); return; }
+                catch (CalendarNotCoveredException) {
+                    // Serving it unreceived would leave a notice nobody can answer (staff cannot record portal receipt).
+                    Log::warning('Portal receipt deferred: holiday calendar does not cover the response period.', ['legal_notice_id' => $locked->id]);
+                    $this->vendorError(409, 'CALENDAR_REVIEW_REQUIRED', 'This notice cannot be opened yet because DTI must update its holiday calendar first. Please contact DTI Antique.');
+                }
                 $locked->update(['delivery_state' => 'received', 'delivered_at' => $now, 'due_date_timestamp' => $due]);
                 $audit->recordOrFail($request, 'legal.delivery_recorded', $locked, ['state' => 'received', 'via' => 'portal_open']);
             });
@@ -158,17 +164,27 @@ class LegalNoticeController extends Controller
     private function vendorData(LegalNotice $notice): array
     {
         $snapshot = $notice->source_snapshot ?? [];
+        $decisions = $notice->status === 'closed' && $notice->outcome && $notice->outcome !== 'escalated_to_sco'
+            ? RegulatoryFinding::where('source_type', MonitoringRecordItem::FINDING_SOURCE)
+                ->whereIn('source_id', collect($snapshot['items'] ?? [])->pluck('id')->map(fn ($id) => (int) $id)->all())
+                ->whereIn('decision', ['confirmed', 'not_confirmed'])->pluck('decision', 'source_id')
+            : collect();
 
         return $notice->only([
             'id', 'store_id', 'control_number', 'notice_type', 'status', 'issued_at', 'intended_delivery_method', 'delivery_state', 'delivered_at', 'due_date_timestamp',
             'response_text', 'response_reason_category', 'response_channel', 'response_certified_at', 'response_received_at', 'closed_at', 'cancelled_at',
+            'outcome', 'outcome_reason',
         ]) + [
+            // An SCO escalated from an LOI names it; both are issued to this same vendor.
+            'preceding_control_number' => $notice->preceding_notice_id ? LegalNotice::whereKey($notice->preceding_notice_id)->value('control_number') : null,
             'store' => $notice->store,
             'monitoring_date' => $snapshot['monitoring_date'] ?? null,
             'reason' => $notice->draft_payload['reason'] ?? null,
             'legal_bases' => array_values($notice->draft_payload['legal_bases'] ?? []),
             'flagged_items' => collect($snapshot['items'] ?? [])
-                ->map(fn ($item) => Arr::only($item, ['commodity_name', 'unit', 'observed_price', 'reference_value', 'reference_label', 'variance_percent']))
+                ->map(fn ($item) => Arr::only($item, ['id', 'commodity_name', 'unit', 'observed_price', 'reference_value', 'reference_label', 'variance_percent'])
+                    // DTI's decision on each product is shown only once the notice is closed with it.
+                    + ['decision' => $notice->status === 'closed' ? ($decisions[(int) ($item['id'] ?? 0)] ?? null) : null])
                 ->values()->all(),
             'attachments' => $notice->relationLoaded('attachments')
                 ? $notice->attachments->map(fn ($attachment) => $attachment->only(['id', 'original_name', 'mime_type', 'size_bytes', 'category', 'created_at']))->values()->all()

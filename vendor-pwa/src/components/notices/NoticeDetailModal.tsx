@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Download, Send, FileText, AlertTriangle } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
-import { attachmentCategoryLabel, canRespond, formatDate, formatPeso, noticeStatusLabel, reasonLabel, responseBlockedReason, toNumber } from '../../app/rules';
+import { OUTCOME_LABELS, attachmentCategoryLabel, canRespond, formatDate, formatPeso, noticeStatusLabel, reasonLabel, responseBlockedReason, toNumber } from '../../app/rules';
 import { CountdownBadge } from '../common/CountdownBadge';
 
 interface NoticeDetailModalProps {
@@ -62,7 +62,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
               <span className={`badge ${isSco ? 'badge-danger' : 'badge-warning'}`}>{noticeStatusLabel(notice)}</span>
               <strong style={{ fontSize: '0.84rem' }}>{notice.control_number ?? `Notice #${notice.id}`}</strong>
             </div>
-            {notice.status === 'issued' && <CountdownBadge dueAt={notice.due_date_timestamp} />}
+            {notice.status === 'issued' && <CountdownBadge dueAt={notice.due_date_timestamp} portal={notice.intended_delivery_method === 'portal'} />}
           </div>
 
           <div className="dti-doc-container">
@@ -70,11 +70,20 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
               <p><strong>Establishment:</strong> {notice.store?.store_name ?? 'Not recorded'}</p>
               <p><strong>Address:</strong> {notice.store?.address ?? 'Not recorded'}</p>
               <p><strong>Issued:</strong> {formatDate(notice.issued_at, true)}</p>
-              <p><strong>Delivery:</strong> {notice.delivery_state === 'not_recorded' ? 'Not yet recorded' : `${notice.delivery_state} ${notice.delivered_at ? `on ${formatDate(notice.delivered_at, true)}` : ''}`}</p>
+              <p><strong>Delivery:</strong> {notice.delivery_state === 'not_recorded' ? (notice.intended_delivery_method === 'portal' ? 'Not yet opened by you' : 'Not yet recorded') : `${notice.delivery_state} ${notice.delivered_at ? `on ${formatDate(notice.delivered_at, true)}` : ''}`}</p>
               <p><strong>Response deadline:</strong> {notice.due_date_timestamp ? formatDate(notice.due_date_timestamp, true) : notice.intended_delivery_method === 'portal' ? 'Starts when you open the official document' : 'Starts after DTI records delivery'}</p>
+              {notice.preceding_control_number && <p><strong>Follows:</strong> Letter of Inquiry {notice.preceding_control_number}</p>}
               {notice.reason && <p><strong>Reason:</strong> {notice.reason}</p>}
               {notice.legal_bases && notice.legal_bases.length > 0 && <p><strong>Legal basis:</strong> {notice.legal_bases.join('; ')}</p>}
             </div>
+
+            {notice.outcome && (
+              <div className="notice-outcome" role="status">
+                <strong>{notice.outcome === 'withdrawn' ? 'Withdrawn by DTI' : `DTI decision: ${OUTCOME_LABELS[notice.outcome]}`}</strong>
+                {notice.outcome === 'escalated_to_sco' && <span>DTI followed this letter with a Show Cause Order, which appears as a separate notice.</span>}
+                {notice.outcome_reason && <span>{notice.outcome_reason}</span>}
+              </div>
+            )}
 
             <p style={{ marginBottom: '14px' }}>
               During price monitoring on <strong>{formatDate(notice.monitoring_date)}</strong>, the following commodities were recorded above the captured price reference. This summary is for convenience; the signed PDF is the official notice.
@@ -91,6 +100,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
                       <th>Reference</th>
                       <th>Observed price</th>
                       <th>Variance</th>
+                      {notice.flagged_items.some((item) => item.decision) && <th>DTI decision</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -106,6 +116,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
                           <td>{formatPeso(item.reference_value)}</td>
                           <td style={{ color: 'var(--danger-color)', fontWeight: 700 }}>{formatPeso(item.observed_price)}</td>
                           <td>{variance !== null ? <span className="badge badge-danger">{variance > 0 ? '+' : ''}{variance.toFixed(1)}%</span> : '—'}</td>
+                          {notice.flagged_items.some((entry) => entry.decision) && <td>{item.decision === 'confirmed' ? 'Confirmed' : item.decision === 'not_confirmed' ? 'Not confirmed' : '—'}</td>}
                         </tr>
                       );
                     })}

@@ -35,4 +35,11 @@ class MonitoringRecord extends Model
     public function items(): HasMany { return $this->hasMany(MonitoringRecordItem::class); }
     public function lease(): BelongsTo { return $this->belongsTo(FieldOfflineLease::class, 'offline_lease_id'); }
     public function verificationRequest(): BelongsTo { return $this->belongsTo(FieldVerificationRequest::class, 'field_verification_request_id'); }
+    public function legalNotices(): HasMany { return $this->hasMany(LegalNotice::class); }
+
+    /** Visits with at least one flagged item that DTI has not yet decided (see MonitoringRecordItem::scopeUndecidedEligible). */
+    public function scopeHasUndecidedItems($query)
+    {
+        return $query->whereHas('items', fn ($items) => $items->undecidedEligible());
+    }
 }
