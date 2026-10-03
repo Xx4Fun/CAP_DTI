@@ -93,7 +93,7 @@ const panels: Record<ModuleId, { title: string; description: string; component: 
   consumer_reports: { title: 'Consumer Reports', description: 'Review consumer-submitted formal receipts only. Shelf-tag scans are excluded.', component: ReportReviewPanel },
   field_monitoring: { title: 'Field Monitoring', description: 'Review accepted officer visits and their validation evidence.', component: FieldMonitoringPanel },
   establishments_access: { title: 'User Management', description: 'Manage vendor and DTI Field Monitoring accounts, credentials, and access status.', component: EstablishmentsAccessPanel },
-  gis_monitoring: { title: 'GIS Monitoring', description: 'Map registered establishments, compliance findings, and vendor access.', component: StoreMonitoringPanel },
+  gis_monitoring: { title: 'GIS Monitoring', description: 'Map establishments by compliance, weekly coverage, commodity prices, and visit location.', component: StoreMonitoringPanel },
   communications: { title: 'Store Communications', description: 'Message linked vendors and follow each store’s LOI/SCO notices in one thread.', component: CommunicationsPanel },
   price_regulation: { title: 'Price Regulation', description: 'Preview and append dated SRP versions. Existing versions remain unchanged.', component: SrpManagementPanel },
   legal_actions: { title: 'Legal Actions', description: 'Prepare regulatory notices under the currently configured policy safeguards.', component: LegalDraftPanel },
@@ -105,7 +105,7 @@ const panels: Record<ModuleId, { title: string; description: string; component: 
 const allowedModules = new Set<ModuleId>(Object.keys(panels) as ModuleId[])
 const legacyModuleAliases: Record<string, ModuleId> = {
   reports: 'consumer_reports',
-  analytics: 'field_monitoring',
+  analytics: 'gis_monitoring',
   stores: 'establishments_access',
   store_registration: 'establishments_access',
   store_monitoring: 'gis_monitoring',

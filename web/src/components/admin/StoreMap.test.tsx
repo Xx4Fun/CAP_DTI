@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { StoreMap } from './StoreMap'
-import { buildStorePopupContent, getStoreStatusInfo } from './storeMapUtils'
+import { buildStorePopupContent, buildVisitPopupContent, getStoreStatusInfo } from './storeMapUtils'
 import { StoreManager } from './StoreManager'
 import { StoreOnboarding } from '../StoreOnboarding'
 import type { StoreRecord } from '../../types/admin'
@@ -14,9 +14,16 @@ vi.mock('../../services/api', () => ({
   },
 }))
 
+// What the GIS endpoint adds to a store when it has no visits in the week.
+const noVisits = { has_prior_routine_visit: false, verification_required: false, visits: [], prices: [] }
+
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
-    getStores: vi.fn().mockResolvedValue([
+    getGisMonitoring: vi.fn().mockImplementation(async () => ({
+      week: { key: '2026-09-28', ends_on: '2026-10-04', starts_at: '2026-09-27T16:00:00+00:00', ends_at: '2026-10-04T16:00:00+00:00', timezone: 'Asia/Manila', is_current: true },
+      locations: false,
+      weeks: ['2026-09-28'],
+      stores: [
       {
         id: 1,
         store_name: 'San Jose Supermarket',
@@ -65,7 +72,8 @@ vi.mock('../../services/adminApi', () => ({
         is_public: false,
         recidivism_index: 0,
       },
-    ]),
+      ].map((store) => ({ ...store, ...noVisits })),
+    })),
     updateStore: vi.fn().mockImplementation((id, data) => Promise.resolve({ id, ...data })),
     inviteVendor: vi.fn().mockResolvedValue({ invitation_url: 'http://test/invite' }),
   },
@@ -146,7 +154,7 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
 
     expect(await screen.findByText('Store Monitoring')).toBeInTheDocument()
     expect(screen.getByText(/CartoDB GIS Monitor/i)).toBeInTheDocument()
-    expect(screen.getByText('All (4)')).toBeInTheDocument()
+    expect(await screen.findByText('All (4)')).toBeInTheDocument()
     expect(screen.getByText('No findings (1)')).toBeInTheDocument()
     expect(screen.getByText('Pending (1)')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Inactive \(/i })).not.toBeInTheDocument()
@@ -175,6 +183,85 @@ describe('CartoDB Light StoreMap and StoreManager', () => {
     fireEvent.error(photos[1])
     expect(photos[1].getAttribute('src')).toBe('/stores/store.webp')
     expect(photos[2].getAttribute('src')).toBe('/stores/store.webp')
+  })
+
+  it('redraws pins and popups when the layer changes and clears visit links on leaving Visit check', () => {
+    const stores = [{
+      id: 1, store_name: 'Layered Store', address: 'San Jose', latitude: 10.7424, longitude: 121.9406, is_active: true, is_verified: true, is_public: true,
+      visits: [{ id: 5, finalized_at: '2026-09-29T02:00:00+00:00', officer_name: 'Officer <b>A</b>', is_routine: true, protocol_mode: 'standard', latitude: 10.7426, longitude: 121.9408, accuracy_meters: 8 }],
+    }]
+    const coverage = () => ({ status: 'green' as const, label: 'Monitored', badge: 'Verification required' })
+    const prices = () => ({ status: 'blue' as const, label: 'Reference unavailable', text: '₱60.00' })
+    const visits = () => ({ status: 'grey' as const, label: 'No visit' })
+    const pin = () => container.querySelector('.store-photo-pin-container')!
+
+    // The store array never changes: only the layer does.
+    const { container, rerender } = render(<StoreMap stores={stores} selectedStoreId={1} pinOf={coverage} />)
+    expect(pin()).toHaveClass('status-green')
+    expect(container.querySelector('.store-pin-badge')).toHaveAccessibleName('Verification required')
+    expect(container.querySelector('.store-pin-text')).toBeNull()
+    expect(container.querySelector('.leaflet-store-status')).toHaveTextContent('Monitored')
+
+    rerender(<StoreMap stores={stores} selectedStoreId={1} pinOf={prices} />)
+    expect(pin()).toHaveClass('status-blue')
+    expect(container.querySelector('.store-pin-text')).toHaveTextContent('₱60.00')
+    expect(container.querySelector('.store-pin-badge')).toBeNull()
+    expect(container.querySelector('.leaflet-store-status')).toHaveTextContent('Reference unavailable')
+    expect(container.querySelector('.leaflet-store-status')).toHaveClass('status-blue')
+    expect(container.querySelector('.gis-visit-link')).toBeNull()
+
+    rerender(<StoreMap stores={stores} selectedStoreId={1} pinOf={visits} visitLinks />)
+    expect(pin()).toHaveClass('status-grey')
+    expect(container.querySelectorAll('.gis-visit-link')).toHaveLength(1)
+    expect(container.querySelectorAll('.gis-visit-accuracy')).toHaveLength(1)
+    expect(container.querySelectorAll('.gis-visit-point')).toHaveLength(1)
+
+    rerender(<StoreMap stores={stores} selectedStoreId={1} pinOf={coverage} />)
+    expect(container.querySelector('.gis-visit-link')).toBeNull()
+    expect(container.querySelector('.gis-visit-accuracy')).toBeNull()
+    expect(container.querySelector('.gis-visit-point')).toBeNull()
+  })
+
+  it('states each visit\'s own distance, accuracy and result as text', () => {
+    const store = { id: 1, store_name: 'Layered Store', address: 'San Jose', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }
+    const visit = { id: 5, finalized_at: '2026-09-29T02:00:00+00:00', officer_name: '<img src=x onerror="alert(1)">', is_routine: false, protocol_mode: 'standard', latitude: 10.745, longitude: 121.94, accuracy_meters: 12 }
+
+    const popup = buildVisitPopupContent(store, [visit])
+
+    expect(popup.querySelector('h4')).toHaveTextContent('Visit at Layered Store')
+    expect(popup.querySelector('.leaflet-store-status')).toHaveTextContent('Location to review')
+    expect(popup.textContent).toMatch(/55\d m from registered pin · GPS accuracy ±12 m/)
+    expect(popup.textContent).toContain('Verification visit')
+    expect(popup.textContent).toContain('<img src=x onerror="alert(1)">')
+    expect(popup.querySelector('img')).toBeNull()
+  })
+
+  it('keeps visits signed at the same point reachable through one point above the store pins', () => {
+    const at = { latitude: 10.7424, longitude: 121.9406, accuracy_meters: 6 }
+    const visit = (id: number, overrides = {}) => ({ id, finalized_at: `2026-09-2${id}T02:00:00+00:00`, officer_name: `Officer ${id}`, is_routine: true, protocol_mode: 'standard', ...at, ...overrides })
+    const stores = [{
+      id: 1, store_name: 'Shared Point Store', address: 'San Jose', latitude: 10.7424, longitude: 121.9406, is_active: true, is_verified: true, is_public: true,
+      // A routine and a verification visit at the registered pin, and a third visit somewhere else.
+      visits: [visit(8), visit(9, { is_routine: false, accuracy_meters: 20 }), visit(7, { latitude: 10.75 })],
+    }]
+
+    const { container } = render(<StoreMap stores={stores} visitLinks />)
+
+    const points = container.querySelectorAll('.gis-visit-point')
+    expect(points).toHaveLength(2)
+    expect(container.querySelectorAll('.gis-visit-accuracy')).toHaveLength(2)
+    // Above the store pins, so the point at the registered pin is not buried under the pin itself, and below popups.
+    // The app's stylesheet gives every Leaflet pane the same z-index, so document order is what stacks them.
+    const pane = container.querySelector<HTMLElement>('.leaflet-gis-visits-pane')!
+    expect(pane.contains(points[0])).toBe(true)
+    expect(pane.previousElementSibling).toHaveClass('leaflet-marker-pane')
+    expect(pane.compareDocumentPosition(container.querySelector('.leaflet-popup-pane')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    const shared = buildVisitPopupContent(stores[0], stores[0].visits.slice(0, 2))
+    expect(shared.querySelector('h4')).toHaveTextContent('2 visits at Shared Point Store')
+    expect(shared.textContent).toContain('Officer 8')
+    expect(shared.textContent).toContain('Officer 9 · Verification visit')
+    expect(shared.querySelectorAll('.leaflet-store-status')).toHaveLength(2)
   })
 
   it('renders redesigned StoreOnboarding with light map, synchronized coordinates, and creates establishment', async () => {

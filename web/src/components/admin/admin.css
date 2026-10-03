@@ -6137,6 +6137,10 @@ button.regulatory-chip { cursor: pointer; }
 .store-photo-pin-container.status-green { --pin-color: #10b981; }
 .store-photo-pin-container.status-yellow { --pin-color: #f59e0b; }
 .store-photo-pin-container.status-red { --pin-color: #ef4444; }
+.store-photo-pin-container.status-blue { --pin-color: #3b82f6; }
+.store-photo-pin-container.status-grey { --pin-color: #94a3b8; }
+.store-pin-text { position: absolute; z-index: 2; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); padding: 1px 7px; border-radius: 999px; background: #0f172a; color: #fff; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.store-pin-badge { position: absolute; z-index: 2; top: -4px; right: -4px; box-sizing: border-box; width: 18px; height: 18px; border: 2px solid #fff; border-radius: 50%; background: #6d28d9; color: #fff; font-size: 0.7rem; font-weight: 800; line-height: 14px; text-align: center; }
 .store-photo-pin { position: relative; width: 42px; height: 52px; filter: drop-shadow(0 3px 3px rgba(15, 23, 42, .3)); }
 .store-photo-pin::before { content: ''; position: absolute; inset: 0 auto auto 0; box-sizing: border-box; width: 42px; height: 42px; border: 3px solid #fff; border-radius: 50%; background: var(--pin-color); }
 .store-photo-pin::after { content: ''; position: absolute; top: 35px; left: 11px; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 17px solid var(--pin-color); }
@@ -6168,6 +6172,30 @@ button.regulatory-chip { cursor: pointer; }
 .leaflet-store-status.status-green { background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; }
 .leaflet-store-status.status-yellow { background: #fffbeb; border: 1px solid #fde68a; color: #b45309; }
 .leaflet-store-status.status-red { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.leaflet-store-status.status-blue { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+.leaflet-store-status.status-grey { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; }
+
+/* GIS Monitoring: floating layer switch, week slider and legend */
+.gis-control-panel { container-type: inline-size; position: absolute; top: 12px; right: 12px; z-index: 510; display: flex; flex-direction: column; gap: 0.55rem; width: min(340px, calc(100% - 24px)); padding: 0.7rem 0.85rem; border: 1px solid #e2e8f0; border-radius: 10px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); color: #0f172a; font-size: 0.78rem; }
+.gis-panel-title { display: inline-flex; align-items: center; gap: 0.4rem; color: #1e3a8a; font-weight: 700; }
+/* Beside the 390px sidebar when there is room; otherwise above it, so the layer switch and slider stay reachable. */
+.gis-monitor[data-sidebar='open'] .gis-control-panel { max-width: max(240px, calc(100% - 426px)); }
+.gis-layer-switch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.25rem; }
+@container (max-width: 300px) { .gis-layer-switch { grid-template-columns: repeat(2, 1fr); } }
+.gis-layer-switch button { min-height: 44px; padding: 0.25rem; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 0.74rem; font-weight: 600; cursor: pointer; }
+.gis-layer-switch button[aria-pressed='true'] { border-color: #1e3a8a; background: #1e3a8a; color: #fff; }
+.gis-week { display: flex; flex-direction: column; gap: 0.25rem; }
+.gis-week label { font-weight: 700; }
+.gis-week input[type='range'] { width: 100%; min-height: 44px; accent-color: #1e3a8a; }
+.gis-field { display: flex; flex-direction: column; gap: 0.2rem; color: #475569; font-weight: 600; }
+.gis-field select { min-height: 44px; padding: 0.35rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 0.8rem; }
+.gis-note { margin: 0; color: #475569; line-height: 1.4; }
+.gis-note.error { color: #991b1b; }
+.gis-note button { min-width: 44px; min-height: 44px; }
+.gis-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 0.85rem; margin: 0; padding: 0.5rem 0 0; border-top: 1px solid #e2e8f0; list-style: none; font-weight: 600; }
+.gis-legend li { display: inline-flex; align-items: center; gap: 0.3rem; }
+.gis-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.gis-legend-badge { position: static; }
 
 .leaflet-store-coordinates { font-family: monospace; }
 

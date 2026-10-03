@@ -278,20 +278,20 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
 
             <div className="chart-preview-container">
               <div className="chart-stats-summary" role="status">
-                <p>No authoritative trend summary is available on the dashboard. Open Temporal Analytics to select a store and commodity.</p>
+                <p>No authoritative trend summary is available on the dashboard. Open GIS Monitoring to follow prices by store and week.</p>
               </div>
               <div className="chart-placeholder-box">
                 <div className="chart-placeholder-content">
                   <Activity size={32} className="chart-icon" aria-hidden="true" />
-                  <p>Temporal analytics</p>
-                  <small>Choose a store and commodity before interpreting price history.</small>
+                  <p>Prices over time</p>
+                  <small>Pick a week and commodity on the map, or open a store for its price history.</small>
                 </div>
                 <button
                   type="button"
                   className="admin-button secondary launch-analytics-btn"
-                  onClick={() => props.onNavigate?.('field_monitoring')}
+                  onClick={() => props.onNavigate?.('gis_monitoring')}
                 >
-                  View 4-Week Temporal Chart <ArrowRight size={16} aria-hidden="true" />
+                  Open GIS Monitoring <ArrowRight size={16} aria-hidden="true" />
                 </button>
               </div>
             </div>

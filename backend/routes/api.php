@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\ReportReviewController;
 use App\Http\Controllers\Admin\SrpAdminController;
 use App\Http\Controllers\Admin\SrpManagementController;
 use App\Http\Controllers\Admin\StoreAdminController;
+use App\Http\Controllers\Admin\GisMonitoringController;
 use App\Http\Controllers\Admin\TemporalAnalyticsController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\LegalSignatoryController;
@@ -151,6 +152,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports/{report}/evidence-assets/{asset}', [ReportReviewController::class, 'evidenceAsset']);
         Route::get('/analytics/options', [TemporalAnalyticsController::class, 'options']);
         Route::get('/analytics/stores/{store}', [TemporalAnalyticsController::class, 'show']);
+        Route::get('/gis/monitoring', [GisMonitoringController::class, 'show']);
         Route::get('/emergencies', [EmergencyAdminController::class, 'index']);
         Route::post('/emergencies', [EmergencyAdminController::class, 'store']);
         Route::get('/emergencies/{emergency}', [EmergencyAdminController::class, 'show']);
