@@ -64,6 +64,16 @@ export function canRespond(notice: LegalNotice, now = Date.now()): boolean {
     && new Date(notice.due_date_timestamp).getTime() > now;
 }
 
+/**
+ * Something the vendor still has to do: respond before the deadline, or open a portal notice to receive it.
+ * A portal notice has no receipt and no deadline until its document is first opened, and no email is sent at issue.
+ */
+export function needsVendorAction(notice: LegalNotice, now = Date.now()): boolean {
+  if (notice.status !== 'issued') return false;
+  if (canRespond(notice, now)) return true;
+  return notice.intended_delivery_method === 'portal' && !['received', 'refused'].includes(notice.delivery_state);
+}
+
 export function responseBlockedReason(notice: LegalNotice, now = Date.now()): string | null {
   if (canRespond(notice, now)) return null;
   if (notice.status === 'response_received') return 'A response has already been submitted for this notice.';
@@ -76,6 +86,8 @@ export function responseBlockedReason(notice: LegalNotice, now = Date.now()): st
   }
   return 'The response period for this notice has expired.';
 }
+
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
 export const toNumber = (value: number | string | null | undefined): number | null => {
   if (value === null || value === undefined || value === '') return null;

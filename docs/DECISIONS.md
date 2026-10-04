@@ -8,6 +8,14 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-04 — Vendor Portal shell follows the Field Officer shell
+
+- **One shell pattern.** The Vendor PWA uses the Field Officer layout on every width: a sidebar that ends with an account block (76px rail on tablets), a sticky header carrying the online indicator and the bell, and a phone header with a five-tab bottom bar. On phones Profile opens from the header avatar, not a sixth tab.
+- **Profile owns the account.** Sign out, notification settings and change password live in Profile. Profile renders even when no establishment is linked, because it is the only sign-out control.
+- **The bell is derived, not stored.** Alerts list notices that still need the vendor (`needsVendorAction`: an unopened portal notice or a response that is due) and unread DTI messages, across every linked establishment. There are no stored notifications or read receipts; a row goes when the underlying fact changes.
+- **Changing establishment never carries thread state.** `MessagesView` is keyed by store, and a notice alert leaves Communications before switching establishment, because loading a thread marks its DTI messages read.
+- Plan and review record: `plans/vendor-shell/`.
+
 ## 2026-10-03 — Temporal analytics is the time dimension of GIS Monitoring
 
 - **One feature, not two.** GIS Monitoring carries the layers Compliance, Coverage, Prices and Visit check, with a week slider over Manila monitoring weeks. There is no separate Temporal Analytics module; the store drawer keeps the per-store price history (4, 12 or 26 weeks).

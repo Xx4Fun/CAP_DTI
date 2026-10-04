@@ -160,7 +160,7 @@ export interface NotificationSettings {
   alert_srp_bulletin: boolean;
 }
 
-export type ActiveTab = 'overview' | 'notices' | 'messages' | 'rebuttals' | 'srp' | 'advisories';
+export type ActiveTab = 'overview' | 'notices' | 'messages' | 'rebuttals' | 'srp' | 'advisories' | 'profile';
 
 export interface StoreMessage {
   id: number;

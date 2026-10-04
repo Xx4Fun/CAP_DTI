@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Download, Send, FileText, AlertTriangle } from 'lucide-react';
 import type { LegalNotice } from '../../app/types';
 import { OUTCOME_LABELS, attachmentCategoryLabel, canRespond, formatDate, formatPeso, noticeStatusLabel, reasonLabel, responseBlockedReason, toNumber } from '../../app/rules';
 import { CountdownBadge } from '../common/CountdownBadge';
+import { trapTabKey } from '../common/focus';
 
 interface NoticeDetailModalProps {
   notice: LegalNotice | null;
@@ -14,6 +15,24 @@ interface NoticeDetailModalProps {
 export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, onClose, onStartRebuttal, onOpenDocument }) => {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const noticeId = notice?.id ?? null;
+
+  // Keep keyboard focus in the dialog while it is open, and put it back somewhere useful when it closes.
+  useEffect(() => {
+    if (noticeId === null) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const onKeyDown = (event: KeyboardEvent) => trapTabKey(event, dialogRef.current);
+    document.addEventListener('keydown', onKeyDown);
+    closeRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      // An alert row or a list on another tab no longer exists by now; fall back to the page content.
+      if (opener && opener.isConnected && opener !== document.body) opener.focus();
+      else document.querySelector<HTMLElement>('main')?.focus({ preventScroll: true });
+    };
+  }, [noticeId]);
 
   if (!notice) return null;
 
@@ -34,13 +53,13 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="notice-detail-title" onClick={onClose}>
-      <div className="modal-dialog" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '720px' }}>
+      <div ref={dialogRef} className="modal-dialog" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '720px' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FileText size={20} color="var(--dti-navy)" />
             <h2 id="notice-detail-title">{isSco ? 'Show Cause Order' : 'Letter of Inquiry'}</h2>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
+          <button ref={closeRef} type="button" className="modal-close-btn" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>

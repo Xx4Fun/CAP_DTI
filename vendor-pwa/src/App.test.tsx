@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -60,6 +60,7 @@ describe('PRICE-Watch Vendor Portal', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     cleanup();
   });
@@ -125,7 +126,8 @@ describe('PRICE-Watch Vendor Portal', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Log out' }));
+    await user.click((await screen.findAllByRole('button', { name: 'Open profile' }))[0]);
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(screen.getByLabelText('Business email')).toBeInTheDocument();
     expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
     expect(api.logout).toHaveBeenCalledWith('vendor-token');
@@ -544,5 +546,265 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(within(tab).getByText('2')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Notices Tab' }));
     expect(await screen.findByText('Withdrawn by DTI')).toBeInTheDocument();
+  });
+
+  describe('shell: account block, alerts and profile', () => {
+    const secondStore = { ...overview.stores[0], id: 2, store_name: 'Second Branch', open_notice_count: 0 };
+    const emptyThread = (store = overview.stores[0]) => ({ store: { id: store.id, store_name: store.store_name, address: store.address }, messages: [], has_more: false, notices: [] });
+    const dtiMessage = (id: number) => ({ id, sender_side: 'dti' as const, sender_name: 'DTI', body: `Message ${id}`, read_at: null, created_at: '2026-09-28T01:00:00Z', attachment: null });
+    const bell = async (name: string | RegExp = /^Alerts/) => (await screen.findAllByRole('button', { name }))[0];
+
+    it('ends the sidebar with the account block instead of status, alerts and log out', async () => {
+      signedIn();
+      const { container } = render(<App />);
+
+      await screen.findByRole('heading', { name: 'Antique Grocery Mart' });
+      const sidebar = within(container.querySelector('.vendor-sidebar') as HTMLElement);
+      expect(sidebar.queryByText(/System Online|Offline Mode/)).not.toBeInTheDocument();
+      expect(sidebar.queryByRole('button', { name: /Alerts|Notification settings|Sign out|Log out/i })).not.toBeInTheDocument();
+      expect(sidebar.getByRole('button', { name: 'Open profile' })).toHaveTextContent('Maria Clara');
+      // The bell lives in both sticky headers: the content toolbar (tablet, desktop) and the phone header.
+      expect(within(container.querySelector('.vendor-content-toolbar') as HTMLElement).getByRole('button', { name: 'Alerts, 1 new' })).toBeInTheDocument();
+      expect(within(container.querySelector('.vendor-header') as HTMLElement).getByRole('button', { name: 'Alerts, 1 new' })).toBeInTheDocument();
+    });
+
+    it('counts unopened portal notices, due responses and unread messages, and opens a notice from the drawer', async () => {
+      signedIn();
+      api.overview.mockResolvedValue({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 2 }] });
+      api.notices.mockResolvedValue([
+        notice(),
+        notice({ id: 12, control_number: 'PM-2026-LOI-000012', intended_delivery_method: 'portal', delivery_state: 'not_recorded', delivered_at: null, due_date_timestamp: null }),
+        notice({ id: 13, control_number: 'PM-2026-LOI-000013', status: 'response_received' }),
+      ]);
+      const user = userEvent.setup();
+      const { container } = render(<App />);
+
+      const opener = await bell('Alerts, 4 new');
+      await user.click(opener);
+      const drawer = within(screen.getByRole('dialog', { name: 'Alerts' }));
+      expect(drawer.getByRole('button', { name: /PM-2026-LOI-000011.*Response due/ })).toBeInTheDocument();
+      expect(drawer.getByRole('button', { name: /PM-2026-LOI-000012.*Not yet opened.*Open the official document/ })).toBeInTheDocument();
+      expect(drawer.queryByRole('button', { name: /PM-2026-LOI-000013/ })).not.toBeInTheDocument();
+      expect(drawer.getByRole('button', { name: /2 new messages from DTI/ })).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog', { name: 'Alerts' })).not.toBeInTheDocument();
+      expect(opener).toHaveFocus();
+
+      await user.click(opener);
+      await user.click(within(screen.getByRole('dialog', { name: 'Alerts' })).getByRole('button', { name: /PM-2026-LOI-000012/ }));
+      expect(screen.queryByRole('dialog', { name: 'Alerts' })).not.toBeInTheDocument();
+      const detail = screen.getByRole('dialog', { name: 'Letter of Inquiry' });
+      expect(detail).toContainElement(document.activeElement as HTMLElement);
+
+      // Tab stays in the notice dialog, and closing it lands on the page content rather than nowhere.
+      await user.tab({ shift: true });
+      expect(detail).toContainElement(document.activeElement as HTMLElement);
+      await user.click(within(detail).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByRole('dialog', { name: 'Letter of Inquiry' })).not.toBeInTheDocument();
+      expect(container.querySelector('main')).toHaveFocus();
+    });
+
+    it('keeps Tab inside the alerts drawer', async () => {
+      signedIn();
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await bell());
+      const drawer = within(screen.getByRole('dialog', { name: 'Alerts' }));
+      const close = drawer.getByRole('button', { name: 'Close alerts' });
+      const row = drawer.getByRole('button', { name: /PM-2026-LOI-000011/ });
+      expect(close).toHaveFocus();
+      await user.tab();
+      expect(row).toHaveFocus();
+      await user.tab();
+      expect(close).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(row).toHaveFocus();
+    });
+
+    it('shows the account in Profile and changes the password there', async () => {
+      signedIn();
+      api.changePassword
+        .mockRejectedValueOnce({ response: { status: 422, data: { errors: { current_password: ['The current password is incorrect.'] } } } })
+        .mockResolvedValueOnce();
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click((await screen.findAllByRole('button', { name: 'Open profile' }))[0]);
+      expect(screen.getByRole('region', { name: 'Account' })).toHaveTextContent('Maria Clara');
+      expect(screen.getByRole('region', { name: 'Account' })).toHaveTextContent('vendor@grocery.com');
+      expect(screen.getByRole('region', { name: 'Establishment' })).toHaveTextContent('Antique Grocery Mart');
+
+      await user.type(screen.getByLabelText('Current password'), 'wrong-password');
+      await user.type(screen.getByLabelText('New password'), 'short');
+      await user.type(screen.getByLabelText('Confirm new password'), 'short');
+      await user.click(screen.getByRole('button', { name: 'Change password' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('at least 12 characters');
+      expect(api.changePassword).not.toHaveBeenCalled();
+
+      await user.clear(screen.getByLabelText('New password'));
+      await user.type(screen.getByLabelText('New password'), 'a-new-long-password');
+      await user.clear(screen.getByLabelText('Confirm new password'));
+      await user.type(screen.getByLabelText('Confirm new password'), 'a-new-long-password');
+      await user.click(screen.getByRole('button', { name: 'Change password' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('The current password is incorrect.');
+      expect(api.changePassword).toHaveBeenCalledWith('vendor-token', 'wrong-password', 'a-new-long-password');
+
+      await user.click(screen.getByRole('button', { name: 'Change password' }));
+      expect(await screen.findByText('Password changed.')).toBeInTheDocument();
+      expect(screen.getByLabelText('Current password')).toHaveValue('');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('opens Notification Settings from Profile', async () => {
+      signedIn();
+      api.preferences.mockResolvedValue({ sms_enabled: false, sms_mobile_number: '', email_enabled: false, email_address: '', alert_on_loi: true, alert_on_sco: true, alert_deadline_24h: true, alert_price_freeze: true, alert_srp_bulletin: true });
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click((await screen.findAllByRole('button', { name: 'Open profile' }))[0]);
+      await user.click(screen.getByRole('button', { name: 'Manage notification settings' }));
+      expect(screen.getByRole('dialog', { name: 'Notification Settings' })).toBeInTheDocument();
+    });
+
+    it('lets an account with no linked establishment open Profile and sign out', async () => {
+      signedIn();
+      api.overview.mockResolvedValue({ ...overview, stores: [] });
+      api.notices.mockResolvedValue([]);
+      const user = userEvent.setup();
+      render(<App />);
+
+      expect(await screen.findByText('No establishment is linked to this account.')).toBeInTheDocument();
+      await user.click(screen.getAllByRole('button', { name: 'Open profile' })[0]);
+      expect(screen.getByRole('region', { name: 'Establishment' })).toHaveTextContent('No establishment is linked to this account.');
+      await user.click(screen.getByRole('button', { name: 'Sign out' }));
+      expect(screen.getByLabelText('Business email')).toBeInTheDocument();
+      expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
+    });
+
+    it('keeps refreshing every linked store while Communications is open', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      signedIn();
+      api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], secondStore] });
+      api.conversation.mockResolvedValue(emptyThread());
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<App />);
+
+      await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+      // Initial load, then the refresh the thread asks for once it has been read.
+      await waitFor(() => expect(api.overview).toHaveBeenCalledTimes(2));
+      await bell('Alerts, 1 new');
+
+      api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], { ...secondStore, unread_messages: 3 }] });
+      await act(async () => { vi.advanceTimersByTime(30_000); });
+      expect(api.overview).toHaveBeenCalledTimes(3);
+      expect(await bell('Alerts, 4 new')).toBeInTheDocument();
+    });
+
+    it('opens another establishment\'s notice from Communications without reading that establishment\'s messages', async () => {
+      signedIn();
+      api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], { ...secondStore, unread_messages: 2 }] });
+      api.notices.mockResolvedValue([notice({ id: 21, store_id: 2, control_number: 'PM-2026-LOI-000021', store: { id: 2, store_name: 'Second Branch', address: 'San Jose, Antique' } })]);
+      api.conversation.mockResolvedValue(emptyThread());
+      const user = userEvent.setup();
+      const { container } = render(<App />);
+
+      await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+      await waitFor(() => expect(api.conversation).toHaveBeenCalledWith('vendor-token', 1));
+      await user.click(await bell('Alerts, 3 new'));
+      await user.click(within(screen.getByRole('dialog', { name: 'Alerts' })).getByRole('button', { name: /PM-2026-LOI-000021/ }));
+
+      expect(screen.getByRole('dialog', { name: 'Letter of Inquiry' })).toBeInTheDocument();
+      expect(container.querySelector('.vendor-content-toolbar strong')).toHaveTextContent('Legal Notices');
+      expect(api.conversation.mock.calls.every(([, storeId]) => storeId === 1)).toBe(true);
+      expect(await bell('Alerts, 3 new')).toBeInTheDocument();
+    });
+
+    it('drops an expired notice from the bell at its deadline while offline', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      signedIn();
+      api.notices.mockResolvedValue([notice({ due_date_timestamp: new Date(Date.now() + 60_000).toISOString() })]);
+      render(<App />);
+
+      await bell('Alerts, 1 new');
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      act(() => { window.dispatchEvent(new Event('offline')); });
+      const requests = api.overview.mock.calls.length + api.notices.mock.calls.length;
+
+      await act(async () => { vi.advanceTimersByTime(61_000); });
+      expect(screen.queryByRole('button', { name: /^Alerts, / })).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Alerts' }).length).toBeGreaterThan(0);
+      expect(api.overview.mock.calls.length + api.notices.mock.calls.length).toBe(requests);
+    });
+
+    it('keeps focus inside the open drawer when the focused notice expires', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      signedIn();
+      api.notices.mockResolvedValue([notice({ due_date_timestamp: new Date(Date.now() + 60_000).toISOString() })]);
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<App />);
+
+      await user.click(await bell('Alerts, 1 new'));
+      const drawer = screen.getByRole('dialog', { name: 'Alerts' });
+      await user.tab();
+      expect(within(drawer).getByRole('button', { name: /PM-2026-LOI-000011/ })).toHaveFocus();
+
+      await act(async () => { vi.advanceTimersByTime(61_000); });
+      expect(within(drawer).queryByRole('button', { name: /PM-2026-LOI-000011/ })).not.toBeInTheDocument();
+      expect(within(drawer).getByText('Nothing needs your attention')).toBeInTheDocument();
+      expect(within(drawer).getByRole('button', { name: 'Close alerts' })).toHaveFocus();
+    });
+
+    it('starts an empty composer when an alert switches the open thread to another establishment', async () => {
+      signedIn();
+      api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], { ...secondStore, unread_messages: 1 }] });
+      api.notices.mockResolvedValue([]);
+      api.conversation.mockImplementation(async (_token, storeId) => emptyThread(storeId === 2 ? secondStore : overview.stores[0]));
+      api.sendMessage.mockResolvedValue({ id: 9, sender_side: 'vendor', sender_name: 'Maria Clara', body: 'For the second branch.', read_at: null, created_at: '2026-09-28T02:00:00Z', attachment: null });
+      const user = userEvent.setup();
+      const { container } = render(<App />);
+
+      await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+      await screen.findByText('No messages yet. DTI Antique will reply here.');
+      await user.type(screen.getByLabelText('Message'), 'Invoice for the main store.');
+      await user.upload(container.querySelector('.vendor-attach input') as HTMLInputElement, new File(['%PDF'], 'main-store-invoice.pdf', { type: 'application/pdf' }));
+      expect(screen.getByText('main-store-invoice.pdf')).toBeInTheDocument();
+
+      await user.click(await bell('Alerts, 1 new'));
+      await user.click(within(screen.getByRole('dialog', { name: 'Alerts' })).getByRole('button', { name: /1 new message from DTI/ }));
+      await waitFor(() => expect(api.conversation).toHaveBeenCalledWith('vendor-token', 2));
+      expect(container.querySelector('main')).toHaveFocus();
+      expect(screen.getByLabelText('Message')).toHaveValue('');
+      expect(screen.queryByText('main-store-invoice.pdf')).not.toBeInTheDocument();
+
+      await screen.findByText('No messages yet. DTI Antique will reply here.');
+      await user.type(screen.getByLabelText('Message'), 'For the second branch.');
+      await user.click(screen.getByRole('button', { name: 'Send' }));
+      expect(api.sendMessage).toHaveBeenCalledTimes(1);
+      expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 2, { body: 'For the second branch.', attachment: undefined });
+    });
+
+    it('refreshes the bell after loading earlier messages marks them read', async () => {
+      signedIn();
+      api.overview
+        .mockResolvedValueOnce({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 101 }] })
+        .mockResolvedValueOnce({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 1 }] })
+        .mockResolvedValue({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 0 }] });
+      api.notices.mockResolvedValue([]);
+      api.conversation
+        .mockResolvedValueOnce({ ...emptyThread(), messages: [dtiMessage(2)], has_more: true })
+        .mockResolvedValue({ ...emptyThread(), messages: [dtiMessage(1)], has_more: false });
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+      await bell('Alerts, 1 new');
+      await user.click(await screen.findByRole('button', { name: 'Load earlier messages' }));
+
+      expect(await screen.findByText('Message 1')).toBeInTheDocument();
+      expect(api.conversation).toHaveBeenLastCalledWith('vendor-token', 1, 2);
+      await waitFor(() => expect(screen.queryByRole('button', { name: /^Alerts, / })).not.toBeInTheDocument());
+    });
   });
 });

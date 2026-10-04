@@ -1,36 +1,32 @@
 import React from 'react';
-import { Bell, LogOut, Store as StoreIcon, Home, FileText, MessageSquare, BookOpen, Megaphone, Wifi, WifiOff } from 'lucide-react';
-import type { ActiveTab, VendorStore } from '../../app/types';
+import { Bell, Wifi, WifiOff } from 'lucide-react';
+import type { VendorStore } from '../../app/types';
+import { initials } from '../../app/rules';
 
 interface VendorNavbarProps {
   stores: VendorStore[];
   activeStoreId: number | null;
-  hasPendingNotices: boolean;
-  activeTab?: ActiveTab;
-  onTabChange?: (tab: ActiveTab) => void;
-  pendingNoticeCount?: number;
-  unreadMessageCount?: number;
   online?: boolean;
+  alertCount: number;
+  userName: string;
+  profileActive: boolean;
   onSelectStore: (storeId: number) => void;
-  onOpenNotifications: () => void;
-  onLogout: () => void;
+  onOpenAlerts: () => void;
+  onOpenProfile: () => void;
 }
 
+/** Phone header. From 600px up the sidebar and the content toolbar take over. */
 export const VendorNavbar: React.FC<VendorNavbarProps> = ({
   stores,
   activeStoreId,
-  hasPendingNotices,
-  activeTab = 'overview',
-  onTabChange,
-  pendingNoticeCount = 0,
-  unreadMessageCount = 0,
   online = true,
+  alertCount,
+  userName,
+  profileActive,
   onSelectStore,
-  onOpenNotifications,
-  onLogout,
+  onOpenAlerts,
+  onOpenProfile,
 }) => {
-  const activeStore = stores.find((store) => store.id === activeStoreId);
-
   return (
     <header className="vendor-header">
       <div className="vendor-header-top">
@@ -46,61 +42,6 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             <small className="brand-sub">Vendor Portal</small>
           </div>
         </div>
-
-        {onTabChange && (
-          <nav className="vendor-desktop-nav" aria-label="Desktop Navigation">
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'overview' ? 'active' : ''}`}
-              onClick={() => onTabChange('overview')}
-            >
-              <Home size={16} />
-              <span>Dashboard</span>
-            </button>
-
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'notices' || activeTab === 'rebuttals' ? 'active' : ''}`}
-              onClick={() => onTabChange('notices')}
-            >
-              <FileText size={16} />
-              <span>Notices</span>
-              {pendingNoticeCount > 0 && (
-                <span className="desktop-nav-badge">{pendingNoticeCount}</span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'messages' ? 'active' : ''}`}
-              onClick={() => onTabChange('messages')}
-            >
-              <MessageSquare size={16} />
-              <span>Messages</span>
-              {unreadMessageCount > 0 && (
-                <span className="desktop-nav-badge">{unreadMessageCount}</span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'srp' ? 'active' : ''}`}
-              onClick={() => onTabChange('srp')}
-            >
-              <BookOpen size={16} />
-              <span>SRP Guide</span>
-            </button>
-
-            <button
-              type="button"
-              className={`desktop-nav-link ${activeTab === 'advisories' ? 'active' : ''}`}
-              onClick={() => onTabChange('advisories')}
-            >
-              <Megaphone size={16} />
-              <span>Advisories</span>
-            </button>
-          </nav>
-        )}
 
         <div className="vendor-header-actions">
           <span
@@ -126,22 +67,21 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
           <button
             type="button"
             className="header-icon-btn"
-            onClick={onOpenNotifications}
-            aria-label="Notification settings"
-            title="Notification settings"
+            onClick={onOpenAlerts}
+            aria-label={alertCount > 0 ? `Alerts, ${alertCount} new` : 'Alerts'}
           >
             <Bell size={18} />
-            {hasPendingNotices && <span className="header-badge-dot" />}
+            {alertCount > 0 && <span className="icon-count" aria-hidden="true">{alertCount}</span>}
           </button>
 
           <button
             type="button"
-            className="header-icon-btn"
-            onClick={onLogout}
-            aria-label="Log out"
-            title="Log out"
+            className={`header-icon-btn header-avatar ${profileActive ? 'active' : ''}`}
+            onClick={onOpenProfile}
+            aria-current={profileActive ? 'page' : undefined}
+            aria-label="Open profile"
           >
-            <LogOut size={18} />
+            <span aria-hidden="true">{initials(userName)}</span>
           </button>
         </div>
       </div>
