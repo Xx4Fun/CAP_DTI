@@ -17,7 +17,10 @@ export interface AdminOverviewRecord {
   }
 }
 
+export interface CurrentRepresentative { name: string; title: 'Owner' | 'Manager'; updated_at: string }
+
 export interface StoreRecord {
+  current_representative?: CurrentRepresentative | null
   id: number
   dti_sec_number?: string | null
   store_name: string
@@ -525,6 +528,7 @@ export interface ReceiptEvidenceManifest {
 
 export interface AuditRecord {
   id: number
+  actor_id?: number | null
   action: string
   subject_type: string
   subject_id?: number

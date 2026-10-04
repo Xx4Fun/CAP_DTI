@@ -8,6 +8,14 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-04 — Vendor Portal shell follows the Field Officer shell
+
+- **One shell pattern.** The Vendor PWA uses the Field Officer layout on every width: a sidebar that ends with an account block (76px rail on tablets), a sticky header carrying the online indicator and the bell, and a phone header with a five-tab bottom bar. On phones Profile opens from the header avatar, not a sixth tab.
+- **Profile owns the account.** Sign out, notification settings and change password live in Profile. Profile renders even when no establishment is linked, because it is the only sign-out control.
+- **The bell is derived, not stored.** Alerts list notices that still need the vendor (`needsVendorAction`: an unopened portal notice or a response that is due) and unread DTI messages, across every linked establishment. There are no stored notifications or read receipts; a row goes when the underlying fact changes.
+- **Changing establishment never carries thread state.** `MessagesView` is keyed by store, and a notice alert leaves Communications before switching establishment, because loading a thread marks its DTI messages read.
+- Plan and review record: `plans/vendor-shell/`.
+
 ## 2026-10-03 — Temporal analytics is the time dimension of GIS Monitoring
 
 - **One feature, not two.** GIS Monitoring carries the layers Compliance, Coverage, Prices and Visit check, with a week slider over Manila monitoring weeks. There is no separate Temporal Analytics module; the store drawer keeps the per-store price history (4, 12 or 26 weeks).
@@ -212,3 +220,11 @@ Only record choices that should constrain future work. Newest entries go first a
 - The legacy Flutter client remains out of normal feature scope unless the user explicitly includes it.
 
 See `../PRODUCT.md` for the fuller product contract.
+
+## 2026-10-04 - Current establishment monitoring representative
+
+- Linked active vendors can immediately save an Owner or Manager for each establishment from Vendor Profile. The transaction rechecks the vendor link and rolls back if the existing audit service cannot record the previous and new details.
+- This operational contact is private: authorized Vendor, Field and Admin APIs expose it explicitly; public payloads and generic Store serialization omit it. Registered owners, legal addressees and account links remain separate.
+- Field visits prefill the configured contact, then the registered owner as Owner, then empty details. Review and Sign checks the current contact online and stores it in the encrypted establishment cache. Only untouched unsigned prefills refresh automatically; manual and legacy drafts require an explicit choice. Officers confirm the actual signer, and approved identity changes clear both signatures. Finalized evidence never follows subsequent profile changes.
+- Source: `backend/tests/Feature/StoreRepresentativeTest.php`, `field-officer-pwa/src/components/RepresentativeReview.test.tsx`, `vendor-pwa/src/components/profile/RepresentativeCard.test.tsx`.
+- Delivery boundary: additive migration `2026_10_04_000001_add_current_representative_to_stores` and Field bootstrap schema 3 are prepared locally. Backend migration/release must precede client releases when authorized; this entry does not claim deployment.

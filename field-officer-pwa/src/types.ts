@@ -1,7 +1,9 @@
 export interface FieldUser { id: number; name: string; email: string; role: 'field_officer'; must_change_password?: boolean }
 export interface OfflineLease { id: string; expires_at: string }
 export interface FieldSession { token: string; user: FieldUser; offline_lease: OfflineLease }
-export interface StoreRecord {
+export interface CurrentRepresentative { name: string; title: 'Owner' | 'Manager'; updated_at: string }
+export interface RepresentativeStore { id: number; owner_name?: string | null; current_representative?: CurrentRepresentative | null }
+export interface StoreRecord extends RepresentativeStore {
   id: number; store_name: string; address: string; latitude: number; longitude: number; is_active: boolean; image_path?: string | null
   owner_name?: string | null
   weekly_routine_status?: 'not_yet_monitored' | 'monitored_this_week'
@@ -84,6 +86,9 @@ export interface VisitDraft {
   finalized_at?: string
   items: VisitItem[]
   representative: { name: string; title: string }
+  // Absent on legacy drafts: never infer that an older signer name is an untouched prefill.
+  representative_prefill?: { name: string; title: string }
+  representative_confirmed?: boolean
   signatures: { officer_png_base64: string; representative_png_base64: string }
   location: VisitLocation | null
   current_step?: number

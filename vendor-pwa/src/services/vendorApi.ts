@@ -21,6 +21,9 @@ export const vendorApi = {
   async overview(token: string): Promise<VendorOverview> {
     return (await client.get('/vendor/overview', auth(token))).data.data;
   },
+  async saveRepresentative(token: string, storeId: number, details: { name: string; title: 'Owner' | 'Manager' }): Promise<import('../app/types').CurrentRepresentative> {
+    return (await client.put(`/vendor/stores/${storeId}/representative`, details, auth(token))).data.data;
+  },
   async notices(token: string): Promise<LegalNotice[]> {
     return (await client.get('/vendor/notices', auth(token))).data;
   },

@@ -17,6 +17,9 @@ export const fieldApi = {
   async bootstrap(token: string, since?: string): Promise<BootstrapData> {
     return (await client.get('/field/bootstrap', { ...auth(token), params: since ? { since } : undefined })).data.data
   },
+  async representative(token: string, storeId: number): Promise<import('../types').RepresentativeStore> {
+    return (await client.get(`/field/stores/${storeId}/representative`, auth(token))).data.data
+  },
   async sync(token: string, records: VisitDraft[]) {
     // A sleeping free-tier server can take longer than the default to wake; a premature timeout forces a needless resend.
     return (await client.post('/field/monitoring-records/sync', { records }, { ...auth(token), timeout: 60_000 })).data.data.results

@@ -23,7 +23,7 @@ const fixtures = vi.hoisted(() => ({
   },
   api: {
     bootstrap: vi.fn().mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }),
-    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(), verificationRequests: vi.fn(), currentRoutineRecord: vi.fn(),
+    history: vi.fn(), login: vi.fn(), logout: vi.fn(), renewLease: vi.fn(), sync: vi.fn(), verificationRequests: vi.fn(), currentRoutineRecord: vi.fn(), representative: vi.fn(),
   },
   draft: {
     client_uuid: '0b4cf2cf-51c9-4da4-8420-b6f271c82b8e', store_id: null, offline_lease_id: 'lease-old',
@@ -96,6 +96,7 @@ describe('field workspace security flow', () => {
     fixtures.vault.writeSecret.mockResolvedValue(undefined)
     fixtures.api.bootstrap.mockResolvedValue({ version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] })
     fixtures.api.verificationRequests.mockResolvedValue([])
+    fixtures.api.representative.mockRejectedValue(new Error('No connection'))
     fixtures.api.sync.mockResolvedValue([])
     fixtures.api.renewLease.mockResolvedValue({ id: 'lease-new', expires_at: '2099-08-30T00:00:00Z' })
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
@@ -105,6 +106,36 @@ describe('field workspace security flow', () => {
   })
 
   afterEach(() => { cleanup(); vi.useRealTimers() })
+
+  it.each(['directory', 'home', 'assigned'] as const)('prefills the configured Manager through the %s entry path', async (entry) => {
+    const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true, owner_name: 'Registered Owner', current_representative: { name: 'Maria Manager', title: 'Manager', updated_at: '2026-10-04T01:00:00Z' } }
+    const bootstrap = { version: 'cached', is_delta: false, stores: [store], srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }], recent_prices: [] }
+    const requests = [{ id: 44, source_type: 'complaint', status: 'claimed', reason: 'Verify price', requested_at: '2026-09-07T00:00:00Z', claimed_at: '2026-09-07T00:05:00Z', claimed_by: 1, store }]
+    if (entry === 'home') Object.defineProperty(window.navigator, 'geolocation', { configurable: true, value: {
+      watchPosition: vi.fn((success: PositionCallback) => { success({ coords: { latitude: 10.74, longitude: 121.98, accuracy: 10 } } as GeolocationPosition); return 1 }), clearWatch: vi.fn(),
+    } })
+    fixtures.vault.hasVault.mockResolvedValue(true)
+    fixtures.vault.restoreVaultSession.mockResolvedValue(true)
+    localStorage.setItem('field-guide:1:v1', 'complete')
+    fixtures.vault.readSecret.mockImplementation(async (key: string) => ({ session: fixtures.session, bootstrap, drafts: [], 'verification-requests': requests })[key])
+    render(<App />)
+    await screen.findByText(/Good day, Ana/)
+    if (entry === 'assigned') {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Monitoring' })[0])
+      fireEvent.click(screen.getByRole('tab', { name: /Assigned Visits/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Start assigned visit' }))
+    } else if (entry === 'home') {
+      fireEvent.click(await screen.findByRole('button', { name: 'Start visit' }))
+    } else {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Start a new monitoring visit' })[0])
+      fireEvent.click(screen.getByRole('button', { name: 'Choose Market One to record prices' }))
+    }
+    fireEvent.change(await screen.findByLabelText('Observed shelf price for Rice'), { target: { value: '52' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review visit evidence' }))
+    expect(screen.getByLabelText('Store representative name')).toHaveValue('Maria Manager')
+    expect(screen.getByLabelText('Position / Title')).toHaveValue('Manager')
+    expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).not.toBeChecked()
+  })
 
   it('uses severity-based toast timing and keeps actionable notices persistent', () => {
     expect(fieldNoticeDuration('success')).toBe(4_000)
@@ -257,6 +288,8 @@ describe('field workspace security flow', () => {
     resumeOnlyDraft()
     fixtures.vault.writeSecret.mockImplementation((key: string) => key === 'queue' ? queueWrite.promise : Promise.resolve())
 
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
 
@@ -288,6 +321,8 @@ describe('field workspace security flow', () => {
       return Promise.resolve()
     })
 
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
 
@@ -315,6 +350,8 @@ describe('field workspace security flow', () => {
     resumeOnlyDraft()
     fixtures.vault.writeSecret.mockImplementation((key: string) => key === 'queue' ? Promise.reject(new Error('quota')) : Promise.resolve())
 
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Finalize and save offline' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
 
@@ -726,6 +763,8 @@ describe('field workspace security flow', () => {
     expect(screen.getByText('Dual signatures secured')).toBeInTheDocument()
     expect(screen.getByText(/GPS Location locked/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /(?:Capture|Retry) location/i })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Finalize and save offline' }))
     expect(screen.getByRole('heading', { name: 'Finalize this visit?' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
@@ -775,6 +814,8 @@ describe('field workspace security flow', () => {
     resumeOnlyDraft()
     expect(screen.queryByRole('button', { name: 'Redo GPS scan' })).not.toBeInTheDocument()
 
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+    fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Finalize and save offline' }))
     const retry = await screen.findByRole('button', { name: 'Redo GPS scan' })
     expect(screen.queryByRole('heading', { name: 'Finalize this visit?' })).not.toBeInTheDocument()
@@ -1395,6 +1436,32 @@ describe('field workspace security flow', () => {
       await screen.findByText(/Good day, Ana/i)
     }
     const sentUuids = () => fixtures.api.sync.mock.calls.map(([, records]) => records[0].client_uuid)
+
+    it('refreshes an untouched unsigned draft on Review and Sign and writes the current establishment to the encrypted cache', async () => {
+      const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }
+      const bootstrap = { version: 'cached', is_delta: false, stores: [store], srp_bulletins: [], recent_prices: [] }
+      fixtures.api.bootstrap.mockResolvedValue(bootstrap)
+      fixtures.api.representative.mockResolvedValue({ id: 7, owner_name: 'Registered Owner', current_representative: { name: 'Current Manager', title: 'Manager', updated_at: '2026-10-04T01:00:00Z' } })
+      const draft = { ...completeDraft(), representative_prefill: { name: 'Ben Santos', title: 'Manager' }, signatures: { officer_png_base64: '', representative_png_base64: '' } }
+      await unlockOnlineWith({ bootstrap, drafts: [draft] })
+      resumeOnlyDraft()
+      await waitFor(() => expect(screen.getByLabelText('Store representative name')).toHaveValue('Current Manager'))
+      expect(fixtures.api.representative).toHaveBeenCalledWith('token', 7)
+      expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('bootstrap', expect.objectContaining({ stores: [expect.objectContaining({ current_representative: expect.objectContaining({ name: 'Current Manager', title: 'Manager' }) })] }))
+      expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).not.toBeChecked()
+    })
+
+    it('uploads immutable queued signer details after the establishment representative changes', async () => {
+      const queued = { ...completeDraft(), finalized_at: '2026-10-03T02:00:00Z', sync_source: 'offline_queue' }
+      const fresh = { version: 'fresh', is_delta: false, stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true, current_representative: { name: 'Different Manager', title: 'Manager', updated_at: '2026-10-04T01:00:00Z' } }], srp_bulletins: [], recent_prices: [] }
+      fixtures.api.bootstrap.mockResolvedValue(fresh)
+      await unlockOnlineWith({ queue: [queued] })
+      await waitFor(() => expect(fixtures.api.sync).toHaveBeenCalled())
+      const sent = fixtures.api.sync.mock.calls[0][1][0]
+      expect(sent.representative).toEqual(queued.representative)
+      expect(sent.signatures).toEqual(queued.signatures)
+      expect(sent.finalized_at).toBe(queued.finalized_at)
+    })
     const openSyncQueue = () => {
       fireEvent.click(screen.getAllByRole('button', { name: 'Monitoring' })[0])
       fireEvent.click(screen.getByRole('tab', { name: /Sync Queue/ }))
@@ -1609,6 +1676,8 @@ describe('field workspace security flow', () => {
       resumeOnlyDraft()
       fixtures.vault.writeSecret.mockClear()
 
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+      fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
       fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
 
       expect(await screen.findByText(/Re-enter each recorded price so it carries the current monitoring reference/)).toBeInTheDocument()
@@ -1625,6 +1694,8 @@ describe('field workspace security flow', () => {
       await unlockOnlineWith({ bootstrap: marketBootstrap, drafts: [completeDraft()] })
       resumeOnlyDraft()
 
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+      fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
       fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
       fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
 
@@ -1674,6 +1745,8 @@ describe('field workspace security flow', () => {
       await unlockOnlineWith({ bootstrap: marketBootstrap, drafts: [completeDraft()] })
       resumeOnlyDraft()
 
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: /I confirm this name and role/ })).toBeEnabled())
+      fireEvent.click(screen.getByRole('checkbox', { name: /I confirm this name and role/ }))
       fireEvent.click(screen.getByRole('button', { name: 'Finalize and submit' }))
       fireEvent.click(screen.getByRole('button', { name: 'Confirm finalization' }))
 

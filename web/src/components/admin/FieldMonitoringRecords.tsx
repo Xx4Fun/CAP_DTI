@@ -1,3 +1,4 @@
+import { CurrentRepresentativeDetails } from './CurrentRepresentativeDetails'
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, Boxes, Building2, Calendar, ChartColumn, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
@@ -1305,6 +1306,10 @@ function EstablishmentProfile({
     <article className="field-monitor-profile">
       {error && <div className="admin-feedback error" role="alert">{error}</div>}
 
+      <section className="admin-card">
+        <p><strong>Registered owner:</strong> {profile.store.owner_name || 'Not recorded'}</p>
+        <CurrentRepresentativeDetails representative={profile.store.current_representative} />
+      </section>
       <header className="field-monitor-profile-hero">
         <img
           src={getStoreImageUrl(profile.store)}
@@ -2042,7 +2047,7 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onO
               <strong>{record.protocol_mode ? `${record.protocol_mode === 'emergency' ? 'Emergency' : 'Standard'} protocol` : 'Not captured'}</strong>
               {record.protocol_reference && <small>{record.protocol_reference}</small>}
             </div>
-            <div><span>Store representative</span><strong>{record.representative_name}</strong></div>
+            <div><span>Store representative</span><strong>{record.representative_name}{record.representative_title ? ` · ${record.representative_title}` : ''}</strong></div>
           </div>
         </section>
         <section className="visit-info-card">

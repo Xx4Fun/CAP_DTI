@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeReference, noticeStatusLabel, responseBlockedReason } from './rules';
+import { analyzeReference, initials, needsVendorAction, noticeStatusLabel, responseBlockedReason } from './rules';
 import type { LegalNotice, SrpReference } from './types';
 
 const reference = (type: SrpReference['type'], value: number): SrpReference => ({
@@ -49,5 +49,34 @@ describe('notice status wording', () => {
     // A portal notice starts on the vendor's own open; DTI never records its delivery.
     expect(responseBlockedReason(notice({ delivery_state: 'not_recorded', delivered_at: null, due_date_timestamp: null }), now))
       .toBe('Open the official document to receive this notice; your response period starts then.');
+  });
+});
+
+describe('notices that still need the vendor', () => {
+  const now = Date.parse('2026-09-29T00:00:00Z');
+  const later = Date.parse('2026-10-02T00:00:00Z');
+  const unopened = { delivery_state: 'not_recorded' as const, delivered_at: null, due_date_timestamp: null };
+
+  it('counts a response that is due and a portal notice that has not been opened', () => {
+    expect(needsVendorAction(notice({}), now)).toBe(true);
+    expect(needsVendorAction(notice(unopened), now)).toBe(true);
+  });
+
+  it('leaves out notices the vendor can no longer act on', () => {
+    expect(needsVendorAction(notice({}), later)).toBe(false);
+    expect(needsVendorAction(notice({ status: 'response_received' }), now)).toBe(false);
+    expect(needsVendorAction(notice({ status: 'closed' }), now)).toBe(false);
+    expect(needsVendorAction(notice({ status: 'cancelled' }), now)).toBe(false);
+    // Hand delivery is recorded by DTI; the vendor has nothing to open in the portal.
+    expect(needsVendorAction(notice({ ...unopened, intended_delivery_method: 'hand_copy' }), now)).toBe(false);
+  });
+});
+
+describe('initials', () => {
+  it('uses the first two words and ignores extra spacing', () => {
+    expect(initials('Maria Clara')).toBe('MC');
+    expect(initials('  maria  clara  delos santos ')).toBe('MC');
+    expect(initials('Maria')).toBe('M');
+    expect(initials('')).toBe('');
   });
 });

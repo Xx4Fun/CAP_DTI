@@ -12,7 +12,10 @@ export interface VendorSession {
   user: VendorUser;
 }
 
+export interface CurrentRepresentative { name: string; title: 'Owner' | 'Manager'; updated_at: string }
+
 export interface VendorStore {
+  current_representative?: CurrentRepresentative | null;
   id: number;
   store_name: string;
   address: string;
@@ -160,7 +163,7 @@ export interface NotificationSettings {
   alert_srp_bulletin: boolean;
 }
 
-export type ActiveTab = 'overview' | 'notices' | 'messages' | 'rebuttals' | 'srp' | 'advisories';
+export type ActiveTab = 'overview' | 'notices' | 'messages' | 'rebuttals' | 'srp' | 'advisories' | 'profile';
 
 export interface StoreMessage {
   id: number;

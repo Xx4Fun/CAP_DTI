@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
+import { representativeAuditDetails } from '../../utils/representativeAudit'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
 import type { AdminUser } from '../../types/admin'
 
@@ -414,12 +415,12 @@ export function AuditPanel() {
             {events.map((event) => (
               <tr key={event.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#64748b' }}>{new Date(event.created_at).toLocaleString()}</td>
-                <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#1e3a8a', fontSize: '0.85rem' }}>{event.action}</td>
+                <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#1e3a8a', fontSize: '0.85rem' }}>{event.action === 'store.representative_changed' ? 'Current representative changed' : event.action}</td>
                 <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#0f172a' }}>
                   {formatSubjectType(event.subject_type)}{event.subject_id ? ` #${event.subject_id}` : ''}
                 </td>
                 <td style={{ padding: '0.75rem 1rem' }}>
-                  <code>{JSON.stringify(event.metadata)}</code>
+                  {event.action === 'store.representative_changed' ? <span>Account #{event.actor_id ?? 'unknown'} · {representativeAuditDetails(event.metadata)}</span> : <code>{JSON.stringify(event.metadata)}</code>}
                 </td>
               </tr>
             ))}

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, RotateCw, Wifi, WifiOff } from 'lucide-react';
+import { AlertCircle, Bell, CheckCircle2, RotateCw, Wifi, WifiOff } from 'lucide-react';
 import type { ActiveTab, Advisory, LegalNotice, NotificationSettings, ResponseDraft, SrpCatalog, VendorOverview, VendorSession } from './app/types';
-import { canRespond, isFinished } from './app/rules';
+import { canRespond, isFinished, needsVendorAction } from './app/rules';
 import { clearSession, loadSession, saveSession } from './app/session';
 import { apiError, isSessionInvalid, vendorApi } from './services/vendorApi';
 import { VendorNavbar } from './components/layout/VendorNavbar';
@@ -19,6 +19,8 @@ import { InvitationAccept } from './components/auth/InvitationAccept';
 import { NotificationSettingsModal } from './components/settings/NotificationSettingsModal';
 import { PwaUpdatePrompt } from './components/common/PwaUpdatePrompt';
 import { MessagesView } from './components/messages/MessagesView';
+import { AlertsDrawer } from './components/alerts/AlertsDrawer';
+import { VendorProfile } from './components/profile/VendorProfile';
 
 const TAB_TITLES: Record<ActiveTab, string> = {
   overview: 'Dashboard',
@@ -27,6 +29,7 @@ const TAB_TITLES: Record<ActiveTab, string> = {
   rebuttals: 'Legal Notices',
   srp: 'Official SRP Catalog',
   advisories: 'DTI Bulletins',
+  profile: 'Profile',
 };
 
 const invitationTokenFromUrl = () => window.location.pathname === '/vendor-invitation'
@@ -86,6 +89,9 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   const [selectedNoticeId, setSelectedNoticeId] = useState<number | null>(null);
   const [respondingToId, setRespondingToId] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [clock, setClock] = useState(0);
+  const mainRef = useRef<HTMLElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   // Refreshes overlap (foreground, reconnect, tab entry, after submitting); only each resource's newest request may apply.
@@ -152,13 +158,27 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   }, [token, onSignOut]);
 
   useEffect(() => { void loadCore(); }, [loadCore]);
-  // New DTI messages and notices surface on every tab, not only Messages (which polls its own thread).
+  // New DTI messages and notices surface on every tab. Messages polls only its open thread, so the bell
+  // would miss another linked store's notices and messages if this stopped there.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && navigator.onLine && activeTab !== 'messages') void loadCore();
+      if (document.visibilityState === 'visible' && navigator.onLine) void loadCore();
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [activeTab, loadCore]);
+  }, [loadCore]);
+  // canRespond depends on the clock, and the poll above does not run offline: re-render at the nearest
+  // response deadline so the bell, the alerts and the respond actions drop an expired notice on time.
+  useEffect(() => {
+    const now = Date.now();
+    const next = Math.min(...notices
+      .filter((notice) => notice.status === 'issued' && notice.due_date_timestamp)
+      .map((notice) => new Date(notice.due_date_timestamp as string).getTime())
+      .filter((due) => due > now));
+    if (!Number.isFinite(next)) return;
+    // setTimeout overflows past 2^31-1 ms; a clamped timer fires early and this effect schedules the rest.
+    const timer = window.setTimeout(() => setClock((tick) => tick + 1), Math.min(next - now, 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [notices, clock]);
   // Revalidate on every tab entry; the last loaded data stays visible while the refresh runs.
   useEffect(() => { if (activeTab === 'srp') void loadSrp(); }, [activeTab, loadSrp]);
   useEffect(() => { if (activeTab === 'advisories') void loadAdvisories(); }, [activeTab, loadAdvisories]);
@@ -240,12 +260,42 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     }
   };
 
+  const changePassword = async (currentPassword: string, password: string) => {
+    try {
+      await vendorApi.changePassword(token, currentPassword, password);
+      showToast('Password changed.');
+    } catch (error) {
+      guard(error);
+    }
+  };
+
+  const closeAlerts = useCallback(() => setAlertsOpen(false), []);
   const endSession = useCallback(() => onSignOut('Your session ended. Sign in again to continue.'), [onSignOut]);
   const refreshAfterRead = useCallback(() => { void loadCore(); }, [loadCore]);
 
   const startResponse = (notice: LegalNotice) => {
     setRespondingTo(notice);
     setActiveTab('rebuttals');
+  };
+
+  const changeTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (tab !== 'rebuttals') setRespondingTo(null);
+  };
+
+  const openAlertNotice = (notice: LegalNotice) => {
+    // Leave Communications before changing the store: its thread fetch marks that store's DTI messages read.
+    changeTab('notices');
+    setStoreId(notice.store_id);
+    setSelectedNotice(notice);
+    setAlertsOpen(false);
+  };
+
+  const openAlertMessages = (id: number) => {
+    setStoreId(id);
+    changeTab('messages');
+    setAlertsOpen(false);
+    mainRef.current?.focus();
   };
 
   if (!overview) {
@@ -289,23 +339,22 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     );
   }
 
+  // Alerts cover every linked store, unlike the tab badges, which follow the active store.
+  const alertNotices = notices.filter((notice) => needsVendorAction(notice) && overview.stores.some((item) => item.id === notice.store_id));
+  const alertCount = alertNotices.length + unreadMessages;
+  const alertsLabel = alertCount > 0 ? `Alerts, ${alertCount} new` : 'Alerts';
+
   return (
     <div className="vendor-app">
       <VendorSidebar
         stores={overview.stores}
         activeStoreId={storeId}
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          if (tab !== 'rebuttals') setRespondingTo(null);
-        }}
+        onTabChange={changeTab}
         pendingNoticeCount={openNotices.length}
         unreadMessageCount={unreadMessages}
-        online={online}
-        hasPendingNotices={openNotices.length > 0}
+        userName={overview.user.name}
         onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
-        onOpenNotifications={() => setSettingsOpen(true)}
-        onLogout={() => void logout()}
       />
 
       <div className="vendor-main-wrapper">
@@ -327,18 +376,13 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         <VendorNavbar
           stores={overview.stores}
           activeStoreId={storeId}
-          hasPendingNotices={openNotices.length > 0}
-          activeTab={activeTab}
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            if (tab !== 'rebuttals') setRespondingTo(null);
-          }}
-          pendingNoticeCount={openNotices.length}
-          unreadMessageCount={unreadMessages}
           online={online}
+          alertCount={alertCount}
+          userName={overview.user.name}
+          profileActive={activeTab === 'profile'}
           onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
-          onOpenNotifications={() => setSettingsOpen(true)}
-          onLogout={() => void logout()}
+          onOpenAlerts={() => setAlertsOpen(true)}
+          onOpenProfile={() => changeTab('profile')}
         />
 
         <header className="vendor-content-toolbar">
@@ -347,6 +391,10 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
             {online ? <Wifi size={16} /> : <WifiOff size={16} />}
             {online ? 'Online · Ready' : 'Offline · Showing saved data'}
           </span>
+          <button type="button" className="toolbar-icon-btn" aria-label={alertsLabel} onClick={() => setAlertsOpen(true)}>
+            <Bell size={19} />
+            {alertCount > 0 && <span className="icon-count" aria-hidden="true">{alertCount}</span>}
+          </button>
         </header>
 
         {toast && (
@@ -356,8 +404,25 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           </div>
         )}
 
-        <main className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''} ${activeTab === 'messages' ? 'vendor-content--messages' : ''}`}>
-          {!store ? (
+        <main ref={mainRef} tabIndex={-1} className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''} ${activeTab === 'messages' ? 'vendor-content--messages' : ''}`}>
+          {activeTab === 'profile' ? (
+            // Outside the establishment check: an account with no linked store must still reach Sign out.
+            <VendorProfile
+              user={overview.user}
+              store={store}
+              onSaveRepresentative={async (id, details) => {
+                try {
+                  const saved = await vendorApi.saveRepresentative(token, id, details);
+                  coreRequest.current++;
+                  setOverview((current) => current ? { ...current, stores: current.stores.map((item) => item.id === id ? { ...item, current_representative: saved } : item) } : current);
+                  showToast('Current establishment representative saved.');
+                } catch (error) { guard(error); }
+              }}
+              onOpenNotifications={() => setSettingsOpen(true)}
+              onChangePassword={changePassword}
+              onLogout={() => void logout()}
+            />
+          ) : !store ? (
             <div className="v-card portal-status">
               <p><strong>No establishment is linked to this account.</strong></p>
               <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>Ask DTI Antique to send an invitation for your establishment.</p>
@@ -412,7 +477,9 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
               ))}
 
               {activeTab === 'messages' && (
-                <MessagesView token={token} storeId={store.id} onSessionInvalid={endSession} onRead={refreshAfterRead} onViewNotice={(id) => {
+                // Keyed by store: an alert can change the store while this stays open, and a draft or attachment
+                // written for one establishment must never be sent to another.
+                <MessagesView key={store.id} token={token} storeId={store.id} onSessionInvalid={endSession} onRead={refreshAfterRead} onViewNotice={(id) => {
                   setSelectedNoticeId(id);
                   if (!notices.some((notice) => notice.id === id)) void loadCore();
                 }} />
@@ -432,12 +499,13 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
 
       <NotificationSettingsModal isOpen={settingsOpen} load={loadPreferences} onClose={() => setSettingsOpen(false)} onSave={savePreferences} />
 
+      {alertsOpen && (
+        <AlertsDrawer notices={alertNotices} stores={overview.stores} onClose={closeAlerts} onOpenNotice={openAlertNotice} onOpenMessages={openAlertMessages} />
+      )}
+
       <VendorBottomNav
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          if (tab !== 'rebuttals') setRespondingTo(null);
-        }}
+        onTabChange={changeTab}
         pendingNoticeCount={openNotices.length}
         unreadMessageCount={unreadMessages}
       />

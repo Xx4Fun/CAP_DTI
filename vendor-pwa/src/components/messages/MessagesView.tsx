@@ -107,7 +107,11 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     const first = conversation?.messages[0]?.id;
     if (!first) return;
     vendorApi.conversation(token, storeId, first)
-      .then((value) => setConversation((current) => current && { ...current, messages: mergeMessages(current.messages, value.messages), has_more: value.has_more }))
+      .then((value) => {
+        setConversation((current) => current && { ...current, messages: mergeMessages(current.messages, value.messages), has_more: value.has_more });
+        // The server marked this earlier page read; refresh the unread counts shown outside the thread.
+        onRead();
+      })
       .catch((reason) => fail(reason, 'Earlier messages could not load.'));
   };
 
