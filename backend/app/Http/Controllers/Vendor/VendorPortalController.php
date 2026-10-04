@@ -9,6 +9,9 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\StoreMessage;
 use App\Services\FieldReferenceResolver;
+use App\Services\Admin\AuditTrailService;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use App\Support\MonitoringPeriod;
 use Illuminate\Http\Request;
 
@@ -38,6 +41,7 @@ class VendorPortalController extends Controller
                 $types = collect($open->get($store->id, []))->pluck('notice_type');
                 return [
                     ...$store->only(['id', 'store_name', 'address', 'dti_sec_number', 'recidivism_index', 'image_path']),
+                    'current_representative' => $store->currentRepresentative(),
                     'last_inspected_at' => $store->latestMonitoringRecord?->finalized_at?->toIso8601String(),
                     'compliance_status' => $types->contains('SCO') ? 'SHOW_CAUSE_ISSUED' : ($types->contains('LOI') ? 'UNDER_INQUIRY' : 'IN_GOOD_STANDING'),
                     'open_notice_count' => $types->count(),
@@ -49,6 +53,41 @@ class VendorPortalController extends Controller
                 'starts_on' => $emergency->starts_on?->toDateString(), 'ends_on' => $emergency->ends_on?->toDateString(),
             ] : null,
         ]]);
+    }
+
+    public function updateRepresentative(Request $request, Store $store, AuditTrailService $audit)
+    {
+        $user = $this->vendorUser($request);
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'title' => ['required', 'in:Owner,Manager'],
+        ]);
+        $data['name'] = trim($data['name']);
+        if ($data['name'] === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['name' => 'Enter the representative full name.']);
+        }
+        $representative = DB::transaction(function () use ($store, $request, $user, $data, $audit) {
+            // Match the store-first lock order used by every vendor-link writer.
+            $locked = Store::query()->lockForUpdate()->findOrFail($store->id);
+            $actor = User::query()->lockForUpdate()->findOrFail($user->id);
+            if (! $actor->is_active || $actor->role !== 'vendor') {
+                $this->vendorError(403, 'VENDOR_ACCESS_REVOKED', 'Vendor Portal access has been revoked.');
+            }
+            abort_unless((int) $locked->vendor_user_id === (int) $actor->id, 403, 'This establishment is no longer linked to your account.');
+            $previous = $locked->currentRepresentative();
+            $locked->forceFill([
+                'current_representative_name' => $data['name'],
+                'current_representative_title' => $data['title'],
+                'current_representative_updated_at' => now(),
+            ])->save();
+            $current = $locked->currentRepresentative();
+            $audit->recordOrFail($request, 'store.representative_changed', $locked, [
+                'store_name' => $locked->store_name, 'previous' => $previous, 'current' => $current,
+            ]);
+            return $current;
+        });
+
+        return response()->json(['data' => $representative]);
     }
 
     public function srp(Request $request, FieldReferenceResolver $references)

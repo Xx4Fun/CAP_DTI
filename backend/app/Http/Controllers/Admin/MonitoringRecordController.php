@@ -366,7 +366,7 @@ class MonitoringRecordController extends Controller
             ])->unique('selector')->values();
 
         return response()->json(['data' => [
-            'store' => $store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public', 'recidivism_index', 'image_path']),
+            'store' => [...$store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'is_verified', 'is_public', 'recidivism_index', 'image_path']), 'current_representative' => $store->currentRepresentative()],
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
             'period_completed_records_count' => $store->period_completed_records_count ?? $store->completed_records_count,
@@ -568,6 +568,7 @@ class MonitoringRecordController extends Controller
 
         return [
             ...$store->only(['id', 'dti_sec_number', 'store_name', 'owner_name', 'address', 'is_active', 'is_verified', 'image_path']),
+            'current_representative' => $store->currentRepresentative(),
             'completed_records_count' => $store->completed_records_count,
             'records_with_observations_count' => $store->records_with_observations_count,
             'open_verification_requests_count' => $store->open_verification_requests_count,

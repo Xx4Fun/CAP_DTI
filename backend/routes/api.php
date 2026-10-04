@@ -78,6 +78,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/lease/renew', [FieldAuthController::class, 'renewLease']);
         Route::post('/logout', [FieldAuthController::class, 'logout']);
         Route::get('/bootstrap', [FieldDataController::class, 'bootstrap']);
+        Route::get('/stores/{store}/representative', [FieldDataController::class, 'representative']);
         Route::get('/verification-requests', [FieldDataController::class, 'verificationRequests']);
         Route::post('/verification-requests/{verificationRequest}/release', [FieldDataController::class, 'release']);
         Route::get('/notifications', [FieldDataController::class, 'notifications']);
@@ -93,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/password', [VendorAuthController::class, 'password']);
         Route::post('/logout', [VendorAuthController::class, 'logout']);
         Route::get('/overview', [VendorPortalController::class, 'overview']);
+        Route::put('/stores/{store}/representative', [VendorPortalController::class, 'updateRepresentative']);
         Route::get('/srp', [VendorPortalController::class, 'srp']);
         Route::get('/advisories', [VendorPortalController::class, 'advisories']);
         Route::get('/preferences', [VendorPortalController::class, 'preferences']);

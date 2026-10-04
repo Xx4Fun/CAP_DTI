@@ -21,7 +21,9 @@ class StoreAdminController extends Controller
     public function index(Request $request, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
-        return response()->json(['data' => Store::query()->orderBy('store_name')->get()]);
+        return response()->json(['data' => Store::query()->orderBy('store_name')->get()->map(fn (Store $store) => [
+            ...$store->toArray(), 'current_representative' => $store->currentRepresentative(),
+        ])]);
     }
 
     public function store(Request $request, AdminAuthorizationService $auth, AuditTrailService $audit, CommodityImageStorage $images)
@@ -72,7 +74,7 @@ class StoreAdminController extends Controller
             $this->discardImage($images, $storedImage);
             throw $exception;
         }
-        return response()->json(['data' => $store], 201);
+        return response()->json(['data' => [...$store->toArray(), 'current_representative' => $store->currentRepresentative()]], 201);
     }
 
     /** Every client renders image_path directly as an <img> src, so the disk must give an absolute URL a browser can load. */
@@ -105,7 +107,8 @@ class StoreAdminController extends Controller
             abort_if($request->input('vendor_user_id') !== null, 422, 'Vendors can only be linked through an accepted invitation.');
             abort_if(count($request->except('vendor_user_id')) > 0, 422, 'Unlink the vendor in a separate request.');
             $guard->requireRecentReauthentication($request);
-            return response()->json(['data' => $invitations->unlink($store, $request)]);
+            $unlinked = $invitations->unlink($store, $request);
+            return response()->json(['data' => [...$unlinked->toArray(), 'current_representative' => $unlinked->currentRepresentative()]]);
         }
         $data = $request->validate([
             'dti_sec_number' => ['sometimes', 'nullable', 'string', Rule::unique('stores')->ignore($store->id)],
@@ -133,6 +136,6 @@ class StoreAdminController extends Controller
             $store->forceFill($data)->save();
             $audit->recordOrFail($request, 'store.updated', $store, ['changed_fields' => array_keys($data)]);
         });
-        return response()->json(['data' => $store]);
+        return response()->json(['data' => [...$store->toArray(), 'current_representative' => $store->currentRepresentative()]]);
     }
 }
