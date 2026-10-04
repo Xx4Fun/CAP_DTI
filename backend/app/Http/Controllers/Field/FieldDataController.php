@@ -34,7 +34,7 @@ class FieldDataController extends Controller
             RegulatoryPriceRecord::max('updated_at') ?? 'none',
         ]));
         $version = hash('sha256', implode('|', [
-            'bootstrap-schema-2', // bump when the response shape changes so old caches download a full payload
+            'bootstrap-schema-3', // current monitoring representative; force old caches to download the new shape
             Store::max('updated_at') ?? 'none',
             $referenceVersion,
             TemporalInspection::where('validation_status', 'verified')->max('updated_at') ?? 'none',
@@ -94,6 +94,7 @@ class FieldDataController extends Controller
                     ->with(['latestRoutineMonitoringRecord' => fn ($record) => $record->select('monitoring_records.id', 'monitoring_records.store_id', 'monitoring_records.finalized_at')])
                     ->orderBy('store_name')->get()->map(fn (Store $store) => [
                         ...$store->only(['id', 'store_name', 'owner_name', 'address', 'latitude', 'longitude', 'is_active', 'image_path']),
+                        'current_representative' => $store->currentRepresentative(),
                         'routine_status' => $store->routine_completed ? 'completed' : 'due',
                         'weekly_routine_status' => $store->monitored_this_week ? 'monitored_this_week' : 'not_yet_monitored',
                         'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
@@ -126,6 +127,16 @@ class FieldDataController extends Controller
                     ])->count(),
             ],
         ]);
+    }
+
+    public function representative(Request $request, Store $store)
+    {
+        $this->fieldUser($request);
+        abort_unless($store->is_active, 404);
+        return response()->json(['data' => [
+            'id' => $store->id, 'owner_name' => $store->owner_name,
+            'current_representative' => $store->currentRepresentative(),
+        ]]);
     }
 
     public function verificationRequests(Request $request)

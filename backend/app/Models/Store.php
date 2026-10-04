@@ -31,7 +31,11 @@ class Store extends Model
         'verified_by',
     ];
 
+    // Operational contact details must only be exposed explicitly by authorized endpoints.
+    protected $hidden = ['current_representative_name', 'current_representative_title', 'current_representative_updated_at'];
+
     protected $casts = [
+        'current_representative_updated_at' => 'datetime',
         'latitude' => 'float',
         'longitude' => 'float',
         'recidivism_index' => 'integer',
@@ -45,6 +49,15 @@ class Store extends Model
     protected function imagePath(): Attribute
     {
         return Attribute::get(fn (?string $value) => app(CommodityImageStorage::class)->publicUrl($value));
+    }
+
+    public function currentRepresentative(): ?array
+    {
+        return $this->current_representative_name ? [
+            'name' => $this->current_representative_name,
+            'title' => $this->current_representative_title,
+            'updated_at' => $this->current_representative_updated_at?->toIso8601String(),
+        ] : null;
     }
 
     public function inspections(): HasMany
