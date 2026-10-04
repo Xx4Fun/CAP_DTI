@@ -16,6 +16,14 @@ Only record choices that should constrain future work. Newest entries go first a
 - **Changing establishment never carries thread state.** `MessagesView` is keyed by store, and a notice alert leaves Communications before switching establishment, because loading a thread marks its DTI messages read.
 - Plan and review record: `plans/vendor-shell/`.
 
+## 2026-10-04 — Current establishment monitoring representative
+
+- Linked active vendors can immediately save an Owner or Manager for each establishment from Vendor Profile. The transaction rechecks the vendor link and rolls back if the existing audit service cannot record the previous and new details.
+- This operational contact is private: authorized Vendor, Field and Admin APIs expose it explicitly; public payloads and generic Store serialization omit it. Registered owners, legal addressees and account links remain separate.
+- Field visits prefill the configured contact, then the registered owner as Owner, then empty details. Review and Sign checks the current contact online and stores it in the encrypted establishment cache. Only untouched unsigned prefills refresh automatically; manual and legacy drafts require an explicit choice. Officers confirm the actual signer, and approved identity changes clear both signatures. Finalized evidence never follows subsequent profile changes.
+- Source: `backend/tests/Feature/StoreRepresentativeTest.php`, `field-officer-pwa/src/components/RepresentativeReview.test.tsx`, `vendor-pwa/src/components/profile/RepresentativeCard.test.tsx`.
+- Delivery: released 2026-10-04, backend first. The additive migration `2026_10_04_000001_add_current_representative_to_stores` runs in the Render entrypoint on deploy (backend, PR 13); the Vendor, Field (bootstrap schema 3) and Admin clients followed in PR 14. Any later change to this contract keeps that order: backend before clients.
+
 ## 2026-10-03 — Temporal analytics is the time dimension of GIS Monitoring
 
 - **One feature, not two.** GIS Monitoring carries the layers Compliance, Coverage, Prices and Visit check, with a week slider over Manila monitoring weeks. There is no separate Temporal Analytics module; the store drawer keeps the per-store price history (4, 12 or 26 weeks).
@@ -220,11 +228,3 @@ Only record choices that should constrain future work. Newest entries go first a
 - The legacy Flutter client remains out of normal feature scope unless the user explicitly includes it.
 
 See `../PRODUCT.md` for the fuller product contract.
-
-## 2026-10-04 - Current establishment monitoring representative
-
-- Linked active vendors can immediately save an Owner or Manager for each establishment from Vendor Profile. The transaction rechecks the vendor link and rolls back if the existing audit service cannot record the previous and new details.
-- This operational contact is private: authorized Vendor, Field and Admin APIs expose it explicitly; public payloads and generic Store serialization omit it. Registered owners, legal addressees and account links remain separate.
-- Field visits prefill the configured contact, then the registered owner as Owner, then empty details. Review and Sign checks the current contact online and stores it in the encrypted establishment cache. Only untouched unsigned prefills refresh automatically; manual and legacy drafts require an explicit choice. Officers confirm the actual signer, and approved identity changes clear both signatures. Finalized evidence never follows subsequent profile changes.
-- Source: `backend/tests/Feature/StoreRepresentativeTest.php`, `field-officer-pwa/src/components/RepresentativeReview.test.tsx`, `vendor-pwa/src/components/profile/RepresentativeCard.test.tsx`.
-- Delivery boundary: additive migration `2026_10_04_000001_add_current_representative_to_stores` and Field bootstrap schema 3 are prepared locally. Backend migration/release must precede client releases when authorized; this entry does not claim deployment.

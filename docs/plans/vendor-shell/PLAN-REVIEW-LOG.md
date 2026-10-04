@@ -225,3 +225,15 @@
   Codex inspection of the shell diff.
 - Commits: backend representative; vendor shell (shared files staged without the representative
   hunks); representative clients. Backend is merged and deployed before the clients.
+
+## Released — 2026-10-04
+
+- Backend: PR 13, merge commit `30b5620`. Render deployed; `PUT /api/vendor/stores/{store}/representative`
+  answered 404 before the deploy and 401 (unauthenticated) after it; `/up` 200; the public
+  establishments payload carries no representative fields. The Render deploy log was not read; the
+  entrypoint runs `migrate --force` under `set -e` before the server starts.
+- Clients: PR 14, merge commit `4c69984` (vendor shell; representative in vendor, field and admin).
+  All five PR checks passed before the merge.
+- Not verified by the host: a signed-in save on production (no production credentials are entered
+  by the agent). Left to the user.
+- Not inspected by Codex: the round-2 shell fixes (VS-015, VS-016) and Codex's own later sidebar restyle.
