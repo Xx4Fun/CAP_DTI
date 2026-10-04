@@ -3,6 +3,7 @@ import { AlertTriangle, Bell, LockKeyhole, LogOut, Store as StoreIcon } from 'lu
 import type { VendorStore, VendorUser } from '../../app/types';
 import { formatDate, initials } from '../../app/rules';
 import { apiError, isSessionInvalid } from '../../services/vendorApi';
+import { RepresentativeCard, type SaveRepresentative } from './RepresentativeCard';
 
 // Mirrors the backend rule (VendorAuthController::password).
 const MIN_PASSWORD_LENGTH = 12;
@@ -13,9 +14,10 @@ interface VendorProfileProps {
   onOpenNotifications: () => void;
   onChangePassword: (currentPassword: string, password: string) => Promise<void>;
   onLogout: () => void;
+  onSaveRepresentative: SaveRepresentative;
 }
 
-export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpenNotifications, onChangePassword, onLogout }) => {
+export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpenNotifications, onChangePassword, onLogout, onSaveRepresentative }) => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -51,6 +53,7 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
       </section>
 
       <div className="profile-grid">
+        {store && <RepresentativeCard store={store} onSave={onSaveRepresentative} />}
         <section className="profile-card" aria-labelledby="profile-establishment-title">
           <div className="profile-card-heading">
             <span><StoreIcon size={20} /></span>

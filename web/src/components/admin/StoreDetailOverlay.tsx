@@ -1,3 +1,4 @@
+import { CurrentRepresentativeDetails } from './CurrentRepresentativeDetails'
 import React, { useState, useEffect } from 'react'
 import { Line } from 'react-chartjs-2'
 import {
@@ -359,6 +360,7 @@ export const StoreDetailOverlay: React.FC<StoreDetailOverlayProps> = ({
                 <div>
                   <strong style={{ color: '#0f172a' }}>Registered Owner:</strong> {store.owner_name || 'N/A'}
                 </div>
+                <CurrentRepresentativeDetails representative={store.current_representative} />
                 <div>
                   <strong style={{ color: '#0f172a' }}>Address:</strong> {store.address}
                 </div>

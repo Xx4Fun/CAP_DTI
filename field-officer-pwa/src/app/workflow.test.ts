@@ -52,6 +52,7 @@ describe('field visit workflow', () => {
     const snapshot = { status: 'available' as const, type: 'standard_srp' as const, source_id: 1, value: 40, label: 'SRP', source_reference: 'SRP-1', effective_date: '2026-09-01', reference_version: 'v1' }
     const complete = {
       ...createDraft('lease-1'), store_id: 2,
+      representative_confirmed: true,
       representative: { name: 'Maria Santos', title: 'Manager' },
       signatures: { officer_png_base64: 'officer', representative_png_base64: 'representative' },
       location: { latitude: 10, longitude: 122, accuracy_meters: 10, captured_at: new Date().toISOString() },

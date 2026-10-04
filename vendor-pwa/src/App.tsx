@@ -410,6 +410,14 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
             <VendorProfile
               user={overview.user}
               store={store}
+              onSaveRepresentative={async (id, details) => {
+                try {
+                  const saved = await vendorApi.saveRepresentative(token, id, details);
+                  coreRequest.current++;
+                  setOverview((current) => current ? { ...current, stores: current.stores.map((item) => item.id === id ? { ...item, current_representative: saved } : item) } : current);
+                  showToast('Current establishment representative saved.');
+                } catch (error) { guard(error); }
+              }}
               onOpenNotifications={() => setSettingsOpen(true)}
               onChangePassword={changePassword}
               onLogout={() => void logout()}

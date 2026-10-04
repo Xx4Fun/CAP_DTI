@@ -2,8 +2,11 @@ import type { BootstrapData, Bulletin, MonitoringReference, RegulatoryPrice, Sto
 
 // Prefill the signatory with the store's registered owner; never overwrite a name the officer already typed.
 export function prefillRepresentative(draft: VisitDraft, store: StoreRecord): VisitDraft['representative'] {
+  if (draft.representative.name.trim() || draft.representative.title.trim()) return draft.representative
+  const current = store.current_representative
+  if (current?.name.trim()) return { name: current.name.trim(), title: current.title }
   const owner = store.owner_name?.trim()
-  return owner && !draft.representative.name.trim() ? { name: owner, title: draft.representative.title || 'Owner' } : draft.representative
+  return owner ? { name: owner, title: 'Owner' } : draft.representative
 }
 
 // A delta response means nothing reference-related changed since `cached.version`; keep the cached lists, take the fresh envelope.
@@ -90,6 +93,8 @@ export function canFinalizeVisit(draft: VisitDraft): string[] {
   // Drafts saved before references were captured can't sync; re-entering a price attaches the current issued reference.
   else if (draft.items.some((item) => !item.reference_snapshot)) issues.push('Re-enter each recorded price so it carries the current monitoring reference.')
   if (!draft.representative.name.trim()) issues.push('Enter the store representative name.')
+  if (!draft.representative.title.trim()) issues.push('Enter the store representative role.')
+  if (!draft.finalized_at && !draft.representative_confirmed) issues.push('Confirm the name and role of the person signing.')
   if (!draft.signatures.officer_png_base64) issues.push('Capture the DTI officer signature.')
   if (!draft.signatures.representative_png_base64) issues.push('Capture the store representative signature.')
   if (!draft.location) issues.push('Capture the visit location.')

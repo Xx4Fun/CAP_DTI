@@ -12,7 +12,10 @@ export interface VendorSession {
   user: VendorUser;
 }
 
+export interface CurrentRepresentative { name: string; title: 'Owner' | 'Manager'; updated_at: string }
+
 export interface VendorStore {
+  current_representative?: CurrentRepresentative | null;
   id: number;
   store_name: string;
   address: string;

@@ -3827,3 +3827,5 @@ button.upload-dropzone:focus-visible { outline: 3px solid var(--dti-navy); outli
     min-height: 48px;
   }
 }
+/* Monitoring contact editor shares the Profile card layout. */
+.representative-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }

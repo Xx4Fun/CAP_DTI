@@ -16,9 +16,11 @@ import { formatDistance, haversineKm, HistoryPage, HomePage, MonitoringPage, Pro
 import { NotificationDrawer } from './components/NotificationDrawer'
 import { DtiMonitoringSheet } from './components/DtiMonitoringSheet'
 import { SignaturePad } from './components/SignaturePad'
+import { RepresentativeReview } from './components/RepresentativeReview'
+import { applyRepresentativePrefill } from './app/representative'
 import { ReadOnlyVisit } from './components/ReadOnlyVisit'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative } from './app/workflow'
+import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
 import {
   archiveUnreadableDrafts, archiveUnreadableQueue, changeVaultPin, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
@@ -79,6 +81,8 @@ export default function App() {
   const [recoveringDrafts, setRecoveringDrafts] = useState(false)
   const [recoveringQueue, setRecoveringQueue] = useState(false)
   const [bootstrap, setBootstrap] = useState(EMPTY_BOOTSTRAP)
+  const bootstrapRef = useRef(bootstrap)
+  bootstrapRef.current = bootstrap
   const [queue, setQueue] = useState<QueuedVisit[]>([])
   const [view, setView] = useState<View>('home')
   const [drafts, setDrafts] = useState<VisitDraft[]>([])
@@ -516,7 +520,7 @@ export default function App() {
       if (store) {
         next.store_name = store.store_name
         next.store_address = store.address
-        next.representative = prefillRepresentative(next, store)
+        Object.assign(next, applyRepresentativePrefill(next, store))
       }
       next.current_step = 1
     } else {
@@ -612,6 +616,12 @@ export default function App() {
   const updateDraft = (next: VisitDraft) => {
     setDrafts((current) => current.map((item) => item.client_uuid === next.client_uuid ? next : item))
   }
+  const cacheRepresentative = async (store: import('./types').RepresentativeStore) => {
+    if (lockingRef.current) throw new Error('Workspace is locking')
+    const next = { ...bootstrapRef.current, stores: bootstrapRef.current.stores.map((item) => item.id === store.id ? { ...item, owner_name: store.owner_name, current_representative: store.current_representative } : item) }
+    await writeSecret('bootstrap', next)
+    if (!lockingRef.current) setBootstrap(next)
+  }
   const claimVerification = async (request: FieldVerificationRequest) => {
     const existing = drafts.find((item) => item.verification_request_id === request.id)
     if (existing) { setActiveDraftId(existing.client_uuid); setVisitStep(existing.items.length ? 2 : existing.store_id ? 1 : 0); setView('visit'); return }
@@ -699,7 +709,7 @@ export default function App() {
             ? <CompletionSummary completion={completion} onViewStatus={() => { setCompletion(null); if (completion.status === 'queued') setMonitoringTab('sync'); setView(completion.status === 'accepted' ? 'history' : 'monitoring') }} onHome={() => setCompletion(null)} />
             : <HomePage name={session.user.name} bootstrap={bootstrap} queue={queue} completedToday={(bootstrap.accepted_today ?? 0) + completedToday} officerPosition={officerPosition} activeDraft={actionableDrafts[0] || null} online={online} authorizationValid={leaseValid} verificationCount={verificationRequests.length} draftCount={actionableDrafts.length} onStart={(storeId) => requestStartVisit(storeId)} onViewActivity={(tab) => { setMonitoringTab(tab); setView('monitoring') }} onViewHistory={() => setView('history')} />)}
           {view === 'monitoring' && <MonitoringPage key={monitoringTab} initialTab={monitoringTab} drafts={actionableDrafts} queue={queue} bootstrap={bootstrap} online={online} syncing={syncing} authorizationValid={leaseValid} requests={verificationRequests} requestsState={requestState} officerPosition={officerPosition} onResume={(draftId) => { const resumed = drafts.find((item) => item.client_uuid === draftId); if (!resumed) return; setActiveDraftId(draftId); const targetStep = typeof resumed.current_step === 'number' ? resumed.current_step : (resumed.signatures?.officer_png_base64 || (resumed.representative?.name && resumed.items.length > 0)) ? 2 : resumed.store_id ? 1 : 0; setVisitStep(targetStep); setView('visit') }} onStart={(storeId) => startVisit(storeId)} onDiscard={(draftId) => discardDraft(draftId)} archived={archivedVisits} onSync={() => void syncQueue()} onRetry={(uuid) => void syncQueue([uuid])} onArchive={(uuid) => void archiveRejectedVisit(uuid)} onStartAssigned={(request) => void claimVerification(request)} onRelease={(request) => void releaseVerification(request)} />}
-          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} token={session.token} onViewingChange={setViewingRecord} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
+          {view === 'visit' && draft && <VisitWizard key={draft.client_uuid} step={visitStep} onStep={(nextStep) => { setVisitStep(nextStep); setDrafts((current) => current.map((item) => item.client_uuid === draft.client_uuid ? { ...item, current_step: nextStep } : item)) }} draft={draft} bootstrap={bootstrap} token={session.token} onViewingChange={setViewingRecord} officerPosition={officerPosition} online={online} authorizationValid={leaseValid} onDraft={updateDraft} onCacheRepresentative={cacheRepresentative} onChooseStore={chooseAnotherStore} onFinish={async (finished) => {
             if (!canFinalizeWithLease(session.offline_lease)) throw new Error('Offline authorization expired. Connect before finalizing this visit.')
             await pendingDraftFlush.current?.()
             const storeName = bootstrap.stores.find((store) => store.id === finished.store_id)?.store_name || 'Completed visit'
@@ -1123,6 +1133,7 @@ function Unlock({ onUnlocked }: { onUnlocked: (result: VaultUnlockResult) => Pro
 
 function SecurityMessage({ title, detail, icon, children, hideIcon }: { title: string; detail?: string; icon: React.ReactNode; children?: React.ReactNode; hideIcon?: boolean }) { return <div className="security-content"><span className={`security-icon ${hideIcon ? 'security-icon-hidden' : ''}`} aria-hidden="true">{hideIcon ? null : icon}</span><h2>{title}</h2>{detail && <p>{detail}</p>}{children}</div> }
 interface VisitWizardProps {
+  onCacheRepresentative: (store: import('./types').RepresentativeStore) => Promise<void>
   step: number
   onStep: (step: number) => void
   draft: VisitDraft
@@ -1138,6 +1149,7 @@ interface VisitWizardProps {
 }
 
 function VisitWizard({
+  onCacheRepresentative,
   step,
   onStep,
   draft,
@@ -1160,6 +1172,7 @@ function VisitWizard({
   const [routineStatus, setRoutineStatus] = useState<'all' | 'due' | 'completed'>('all')
   const [error, setError] = useState('')
   const [finishing, setFinishing] = useState(false)
+  const [signingReady, setSigningReady] = useState(false)
   const [gpsRetryVisible, setGpsRetryVisible] = useState(false)
   const [confirmExit, setConfirmExit] = useState(false)
   const [confirmFinalize, setConfirmFinalize] = useState(false)
@@ -1275,6 +1288,7 @@ function VisitWizard({
 
   const requestFinish = async () => {
     setError('')
+    if (!signingReady) { setError('Confirm the representative name and role before signing and finalizing.'); return }
     const missing = canFinalizeVisit(draft).filter((issue) => !issue.startsWith('Capture the visit location') && !issue.startsWith('Location accuracy'))
     if (missing.length) {
       setError(missing.join(' '))
@@ -1440,11 +1454,10 @@ function VisitWizard({
                     onClick={() => {
                       if (routineStatusOf(store) === 'completed') { setViewOnlyStore(store); return }
                       onDraft({
-                        ...draft,
+                        ...applyRepresentativePrefill(draft, store),
                         store_id: store.id,
                         store_name: store.store_name,
                         store_address: store.address,
-                        representative: prefillRepresentative(draft, store),
                         current_step: 1,
                       })
                       setError('')
@@ -1529,38 +1542,12 @@ function VisitWizard({
           <div className="step-content signatures-step-content">
             <h2>Store Representative & Dual Signatures</h2>
             <p>Enter on-duty personnel details and secure dual official signatures.</p>
-            <div className="representative-fields">
-              <label>
-                Store representative name
-                <input
-                  placeholder="e.g. Juan Dela Cruz"
-                  value={draft.representative.name}
-                  onChange={(event) => {
-                    onDraft({
-                      ...draft,
-                      representative: { ...draft.representative, name: event.target.value },
-                    })
-                    setError('')
-                  }}
-                />
-              </label>
-              <label>
-                Position / Title (optional)
-                <input
-                  placeholder="e.g. Store Manager, Cashier, Owner"
-                  value={draft.representative.title}
-                  onChange={(event) =>
-                    onDraft({
-                      ...draft,
-                      representative: { ...draft.representative, title: event.target.value },
-                    })
-                  }
-                />
-              </label>
-            </div>
+            <RepresentativeReview draft={draft} store={selectedStore} token={token} online={online} onDraft={onDraft} onCache={onCacheRepresentative} onReady={setSigningReady} />
 
+            <fieldset className="signature-gate" disabled={!signingReady}>
             <div className="signature-grid">
               <SignaturePad
+                disabled={!signingReady}
                 label="Store representative signature"
                 value={draft.signatures.representative_png_base64}
                 onChange={(value) => {
@@ -1572,6 +1559,7 @@ function VisitWizard({
                 }}
               />
               <SignaturePad
+                disabled={!signingReady}
                 label="DTI field monitoring officer"
                 value={draft.signatures.officer_png_base64}
                 onChange={(value) => {
@@ -1583,6 +1571,8 @@ function VisitWizard({
                 }}
               />
             </div>
+
+            </fieldset>
 
             <div className="final-checks">
               <FinalCheck
@@ -1660,7 +1650,7 @@ function VisitWizard({
                 type="button"
                 className="primary-button proceed-review-btn"
                 aria-label={!authorizationValid ? 'Authorization expired' : finishing ? 'Securing visit…' : online ? 'Finalize and submit' : 'Finalize and save offline'}
-                disabled={finishing || !authorizationValid}
+                disabled={finishing || !authorizationValid || !signingReady}
                 onClick={() => void requestFinish()}
               >
                 <span>
