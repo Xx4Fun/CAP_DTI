@@ -8,6 +8,7 @@ use App\Models\Store;
 use App\Models\StoreMessage;
 use App\Models\User;
 use App\Services\Admin\AuditTrailService;
+use App\Services\VendorSubmissionReceipt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,8 +24,8 @@ class VendorMessageController extends Controller
         $store = $this->linkedStore($user, $store);
 
         $own = fn () => StoreMessage::where('store_id', $store->id)->where('vendor_user_id', $user->id);
-        $data = $request->validate(['before_id' => ['nullable', 'integer', 'min:1']]);
-        [$messages, $hasMore] = StoreMessage::page($own()->with('sender:id,name'), $data['before_id'] ?? null, 'dti');
+        $data = $request->validate(['before_id' => ['nullable', 'integer', 'min:1'], 'mark_read' => ['sometimes', 'boolean']]);
+        [$messages, $hasMore] = StoreMessage::page($own()->with('sender:id,name'), $data['before_id'] ?? null, 'dti', $request->boolean('mark_read', true));
 
         return response()->json(['data' => [
             'store' => $store->only(['id', 'store_name', 'address']),
@@ -45,17 +46,22 @@ class VendorMessageController extends Controller
     {
         $user = $this->vendorUser($request);
         $store = $this->linkedStore($user, $store);
-        $data = $request->validate(StoreMessage::rules());
-        $file = StoreMessage::storeUpload($request->file('attachment'), $store->id);
+        $data = $request->validate(StoreMessage::rules() + ['client_uuid' => ['nullable', 'uuid']]);
+        $hash = VendorSubmissionReceipt::fingerprint(['body' => $data['body'] ?? null], $request->hasFile('attachment') ? [$request->file('attachment')] : []);
+        $file = [];
         try {
-            $message = DB::transaction(function () use ($request, $store, $user, $data, $file, $audit) {
+            $message = DB::transaction(function () use ($request, $store, $user, $data, &$file, $audit, $hash) {
                 $locked = Store::whereKey($store->id)->lockForUpdate()->firstOrFail();
                 if ((int) $locked->vendor_user_id !== (int) $user->id) $this->denied();
+                $accepted = VendorSubmissionReceipt::reserve($user->id, $data['client_uuid'] ?? null, 'message', $store->id, $hash);
+                if ($accepted) return StoreMessage::whereKey($accepted)->where('vendor_user_id', $user->id)->where('store_id', $store->id)->firstOrFail();
+                $file = StoreMessage::storeUpload($request->file('attachment'), $store->id);
                 $message = StoreMessage::create([
                     'store_id' => $locked->id, 'vendor_user_id' => $user->id, 'sender_id' => $user->id,
                     'sender_side' => 'vendor', 'body' => $data['body'] ?? null,
                 ] + $file);
                 $audit->recordOrFail($request, 'vendor.message_sent', $message, ['store_id' => $locked->id, 'has_attachment' => (bool) $file]);
+                VendorSubmissionReceipt::accept($user->id, $data['client_uuid'] ?? null, $message->id);
                 return $message;
             });
         } catch (\Throwable $error) {

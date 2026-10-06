@@ -177,6 +177,100 @@ class VendorPortalTest extends TestCase
         $this->asVendor()->getJson('/api/vendor/srp')->assertOk()->assertJsonPath('data.items.0.commodity_key', 'rice');
     }
 
+    public function test_message_retry_is_idempotent_and_changed_content_or_target_conflicts(): void
+    {
+        $store = $this->store('Retry Store', $this->vendor);
+        $other = $this->store('Other Store', $this->vendor);
+        $payload = ['body' => 'Please review my explanation.', 'client_uuid' => 'a0000000-0000-4000-8000-000000000001'];
+        $first = $this->asVendor()->postJson("/api/vendor/conversations/{$store->id}/messages", $payload)->assertCreated();
+        $this->postJson("/api/vendor/conversations/{$store->id}/messages", $payload)->assertCreated()->assertJsonPath('data.id', $first->json('data.id'));
+        $this->postJson("/api/vendor/conversations/{$store->id}/messages", array_replace($payload, ['body' => 'Different content']))->assertConflict()->assertJsonPath('status', 'IDEMPOTENCY_CONFLICT');
+        $this->postJson("/api/vendor/conversations/{$other->id}/messages", $payload)->assertConflict()->assertJsonPath('status', 'IDEMPOTENCY_CONFLICT');
+        $this->assertDatabaseCount('store_messages', 1);
+        $this->assertDatabaseCount('vendor_submission_receipts', 1);
+        $this->assertSame(1, \App\Models\AuditEvent::where('action', 'vendor.message_sent')->count());
+    }
+
+    public function test_response_retry_recovers_acceptance_after_deadline_without_duplicate_evidence(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake(LegalNotice::DOCUMENT_DISK);
+        $store = $this->store('Response Store', $this->vendor);
+        $notice = $this->notice($store, 'LOI', 'issued');
+        $notice->update(['due_date_timestamp' => now()->addHour()]);
+        $payload = ['client_uuid' => 'a0000000-0000-4000-8000-000000000002', 'reason_category' => 'WHOLESALE_HIKE', 'response_text' => 'The distributor increased the wholesale price.', 'certified_under_oath' => true,
+            'attachments' => [\Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 2, 'application/pdf')], 'attachment_categories' => ['DELIVERY_RECEIPT']];
+        $this->asVendor()->postJson("/api/vendor/notices/{$notice->id}/response", $payload)->assertOk();
+        Carbon::setTestNow(now()->addDays(2));
+        $payload['attachments'] = [\Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 2, 'application/pdf')];
+        $this->postJson("/api/vendor/notices/{$notice->id}/response", $payload)->assertOk()->assertJsonPath('notice.status', 'response_received');
+        $this->assertSame(1, $notice->attachments()->count());
+        $this->assertSame(1, \App\Models\AuditEvent::where('action', 'vendor.response_submitted')->count());
+        $this->assertDatabaseCount('vendor_submission_receipts', 1);
+    }
+
+    public function test_retry_does_not_bypass_unlinking_or_account_deactivation(): void
+    {
+        $store = $this->store('Access Store', $this->vendor);
+        $payload = ['body' => 'A pending message.', 'client_uuid' => 'a0000000-0000-4000-8000-000000000003'];
+        $this->asVendor()->postJson("/api/vendor/conversations/{$store->id}/messages", $payload)->assertCreated();
+        $store->update(['vendor_user_id' => null]);
+        $this->postJson("/api/vendor/conversations/{$store->id}/messages", $payload)->assertForbidden();
+        $store->update(['vendor_user_id' => $this->vendor->id]);
+        $this->vendor->update(['is_active' => false]);
+        $this->app['auth']->forgetGuards();
+        $this->postJson("/api/vendor/conversations/{$store->id}/messages", $payload)->assertForbidden();
+        $this->assertDatabaseCount('store_messages', 1);
+    }
+
+    public function test_background_conversation_preparation_does_not_mark_messages_read(): void
+    {
+        $store = $this->store('Unread Store', $this->vendor);
+        $message = \App\Models\StoreMessage::create(['store_id' => $store->id, 'vendor_user_id' => $this->vendor->id, 'sender_id' => $this->admin->id, 'sender_side' => 'dti', 'body' => 'Please reply.']);
+        $this->asVendor()->getJson("/api/vendor/conversations/{$store->id}?mark_read=0")->assertOk()->assertJsonPath('data.messages.0.read_at', null);
+        $this->assertNull($message->fresh()->read_at);
+        $this->getJson("/api/vendor/conversations/{$store->id}")->assertOk();
+        $this->assertNotNull($message->fresh()->read_at);
+    }
+
+    public function test_attachment_retries_fingerprint_names_and_bytes_without_duplicate_uploads(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake(LegalNotice::DOCUMENT_DISK);
+        $store = $this->store('Attachment Store', $this->vendor);
+        $payload = ['body' => 'See this invoice.', 'client_uuid' => 'a0000000-0000-4000-8000-000000000004'];
+        $file = fn ($name, $bytes) => \Illuminate\Http\UploadedFile::fake()->createWithContent($name, "%PDF-1.4\n$bytes\n%%EOF");
+        $url = "/api/vendor/conversations/{$store->id}/messages";
+        $first = $this->asVendor()->postJson($url, $payload + ['attachment' => $file('invoice.pdf', 'original')])->assertCreated();
+        $this->postJson($url, $payload + ['attachment' => $file('invoice.pdf', 'original')])->assertCreated()->assertJsonPath('data.id', $first->json('data.id'));
+        $this->postJson($url, $payload + ['attachment' => $file('invoice.pdf', 'changed')])->assertConflict()->assertJsonPath('status', 'IDEMPOTENCY_CONFLICT');
+        $this->postJson($url, $payload + ['attachment' => $file('other-name.pdf', 'original')])->assertConflict();
+        $this->assertDatabaseCount('store_messages', 1);
+        $this->assertCount(1, \Illuminate\Support\Facades\Storage::disk(LegalNotice::DOCUMENT_DISK)->allFiles());
+    }
+
+    public function test_audit_failure_rolls_back_message_receipt_and_upload(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake(LegalNotice::DOCUMENT_DISK);
+        $store = $this->store('Audit Store', $this->vendor);
+        $this->mock(\App\Services\Admin\AuditTrailService::class, fn ($mock) => $mock->shouldReceive('recordOrFail')->once()->andThrow(new \Illuminate\Http\Exceptions\HttpResponseException(response()->json(['status' => 'AUDIT_TRAIL_UNAVAILABLE'], 503))));
+        $this->asVendor()->postJson("/api/vendor/conversations/{$store->id}/messages", [
+            'body' => 'Must not commit.', 'client_uuid' => 'a0000000-0000-4000-8000-000000000005',
+            'attachment' => \Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 2, 'application/pdf'),
+        ])->assertStatus(503);
+        $this->assertDatabaseCount('store_messages', 0);
+        $this->assertDatabaseCount('vendor_submission_receipts', 0);
+        $this->assertCount(0, \Illuminate\Support\Facades\Storage::disk(LegalNotice::DOCUMENT_DISK)->allFiles());
+    }
+
+    public function test_older_clients_can_still_submit_without_a_client_uuid(): void
+    {
+        $store = $this->store('Legacy Client Store', $this->vendor);
+        $url = "/api/vendor/conversations/{$store->id}/messages";
+        $this->asVendor()->postJson($url, ['body' => 'A legacy message.'])->assertCreated();
+        $this->postJson($url, ['body' => 'A legacy message.'])->assertCreated();
+        $this->assertDatabaseCount('store_messages', 2);
+        $this->assertDatabaseCount('vendor_submission_receipts', 0);
+    }
+
     private function asVendor(): static
     {
         $this->app['auth']->forgetGuards();

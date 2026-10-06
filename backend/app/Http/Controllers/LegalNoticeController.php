@@ -87,6 +87,7 @@ class LegalNoticeController extends Controller
     {
         $user = $this->vendorUser($request);
         $data = $request->validate([
+            'client_uuid' => ['nullable', 'uuid'],
             'reason_category' => ['required', Rule::in(self::REASON_CATEGORIES)],
             'response_text' => ['required', 'string', 'min:20', 'max:10000'],
             'certified_under_oath' => ['accepted'],
@@ -104,14 +105,19 @@ class LegalNoticeController extends Controller
         $storeId = LegalNotice::whereKey($id)->value('store_id');
         abort_unless($storeId, 404);
         $stored = [];
+        $hash = \App\Services\VendorSubmissionReceipt::fingerprint([
+            'reason_category' => $data['reason_category'], 'response_text' => $data['response_text'], 'certified_under_oath' => true,
+        ], $files, $data['attachment_categories'] ?? []);
         try {
-            $notice = DB::transaction(function () use ($request, $id, $storeId, $user, $data, $files, $audit, &$stored) {
+            $notice = DB::transaction(function () use ($request, $id, $storeId, $user, $data, $files, $audit, &$stored, $hash) {
                 // Lock order: store, then notice. Unlinking and invitations lock the store first too.
                 $store = Store::whereKey($storeId)->lockForUpdate()->first();
                 $notice = LegalNotice::whereKey($id)->lockForUpdate()->firstOrFail();
                 if (! $store || (int) $store->vendor_user_id !== (int) $user->id || (int) $notice->store_id !== (int) $store->id || (int) $notice->vendor_user_id !== (int) $user->id || ! $notice->deadline_rules) {
                     $this->vendorError(403, 'NOTICE_ACCESS_DENIED', 'You do not have access to this notice.');
                 }
+                $accepted = \App\Services\VendorSubmissionReceipt::reserve($user->id, $data['client_uuid'] ?? null, 'response', $id, $hash);
+                if ($accepted) return $notice;
                 if ($notice->status !== 'issued') {
                     $this->vendorError(409, 'NOTICE_NOT_RESPONDABLE', 'A response has already been submitted or the notice is closed.');
                 }
@@ -137,6 +143,7 @@ class LegalNoticeController extends Controller
                     'response_certified_at' => now(), 'response_received_at' => now(), 'response_channel' => 'portal', 'status' => 'response_received',
                 ]);
                 $audit->recordOrFail($request, 'vendor.response_submitted', $notice, ['attachment_count' => count($files), 'reason_category' => $data['reason_category']]);
+                \App\Services\VendorSubmissionReceipt::accept($user->id, $data['client_uuid'] ?? null, $notice->id);
                 return $notice;
             });
         } catch (\Throwable $error) {

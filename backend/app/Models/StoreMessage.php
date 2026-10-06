@@ -34,14 +34,14 @@ class StoreMessage extends Model
      * One page of a thread, oldest first: the latest page, or the page before `before_id`. Only messages from the
      * other side that are actually returned are marked read.
      */
-    public static function page($query, ?int $beforeId, string $otherSide): array
+    public static function page($query, ?int $beforeId, string $otherSide, bool $markRead = true): array
     {
         $rows = (clone $query)->when($beforeId, fn ($q) => $q->where('id', '<', $beforeId))
             ->orderByDesc('id')->limit(self::PAGE + 1)->get();
         $hasMore = $rows->count() > self::PAGE;
         $rows = $rows->take(self::PAGE)->reverse()->values();
         $unread = $rows->where('sender_side', $otherSide)->whereNull('read_at')->pluck('id');
-        if ($unread->isNotEmpty()) {
+        if ($markRead && $unread->isNotEmpty()) {
             $now = now();
             static::whereIn('id', $unread)->update(['read_at' => $now]);
             foreach ($rows as $message) {
