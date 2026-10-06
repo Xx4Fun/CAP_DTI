@@ -26,7 +26,7 @@ Backend compatibility must deploy before the Vendor client. The user authorized 
 - `vendor-pwa/tests/offline_browser.py` passed all six scenarios with no browser errors using Playwright Chromium, the production preview, and synthetic intercepted API fixtures. It verifies offline cold restart, saved tabs/profile/PDFs, blocked unopened PDF access, exact draft files/categories, certification invalidation, explicit offline queues, lost acknowledgements, reload/concurrent tabs, and absence of API responses in service-worker caches. Exactly one message and one response were accepted despite the simulated lost acknowledgement.
 - Independent review found no remaining blocking defects after atomic conversion, quota recovery, snapshot ordering, guarded navigation, and transactional attachment-read fixes.
 
-Production behavior, PostgreSQL concurrency under deployment, and installed Android/iOS airplane-mode tests remain unverified. Browser fixtures and SQLite tests do not prove those environments.
+Authenticated production API behavior, PostgreSQL concurrency under deployment, and installed Android/iOS airplane-mode tests remain unverified. Browser fixtures and SQLite tests do not prove those environments.
 
 ## Backend release evidence — 2026-10-06
 
@@ -34,5 +34,12 @@ Production behavior, PostgreSQL concurrency under deployment, and installed Andr
 - The startup log records `2026_10_06_000001_create_vendor_submission_receipts_table ... DONE` at 05:07:14 UTC. Render marked the deployment live at 05:07:26 UTC.
 - `/up` and `/api/health/ready` returned HTTP 200 at 05:08 UTC; readiness reported app and database `ok`. These checks establish backend release health, not authenticated legal-submission acceptance.
 - The clean Vendor release copy excludes the pre-existing Profile, main entrypoint, and styling edits. All 77 tests passed with a single-thread Vitest pool after Windows fork-worker startup timeouts; lint and production build passed.
+
+## Vendor release evidence — 2026-10-06
+
+- Feature commit `2c72d71b062e9d5a6c895c256fefcb14deeabbeb` reached Vercel `READY` in deployment `dpl_BS3dpW5HjYPBC9j9CjVt7zSxAMRi`, after the backend was live and healthy. Production alias: `https://vendor-pwa.vercel.app`.
+- Production JavaScript `index-peL2WFF_.js` and CSS `index-CQisYMPX.css` matched the verified clean build byte for byte. The application, manifest, and service worker returned HTTP 200.
+- All six browser scenarios also passed against the production origin with intercepted synthetic API fixtures and no browser errors. No production records were created. An earlier run failed during the lost-acknowledgement retry. The corrected cross-origin fixture explicitly permits the Authorization header, and its run passed.
+- The following test/documentation commit does not change application assets. Render's live backend tree remains identical to the backend in `main`; installed-device checks remain pending.
 
 To repeat the browser checks, install Python Playwright and its Chromium browser, start `npm.cmd run preview -- --host 127.0.0.1 --port 5177` after building Vendor, and run `python vendor-pwa/tests/offline_browser.py` from the repository root. The test never creates production records.

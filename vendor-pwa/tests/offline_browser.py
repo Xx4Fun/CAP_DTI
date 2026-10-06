@@ -63,7 +63,7 @@ def main():
             return
         path = urlparse(request.url).path
         requests.append(request.method + ' ' + path)
-        headers = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*'}
+        headers = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS'}
         if request.method == 'OPTIONS':
             route.fulfill(status=204, headers=headers)
             return
