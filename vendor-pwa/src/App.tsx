@@ -117,7 +117,6 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   const [toast, setToast] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [reachability, setReachability] = useState<'reachable' | 'unavailable' | 'authorization'>('unavailable');
-  const [savedAt, setSavedAt] = useState('');
   // Refreshes overlap (foreground, reconnect, tab entry, after submitting); only each resource's newest request may apply.
   const coreRequest = useRef(0);
   const srpRequest = useRef(0);
@@ -149,8 +148,6 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           if (request !== coreRequest.current) return;
           setOverview(nextOverview);
           setStoreId((current) => nextOverview.stores.some((store) => store.id === current) ? current : nextOverview.stores[0]?.id ?? null);
-          const saved = await snapshot<VendorOverview>(token, 'overview');
-          if (request === coreRequest.current && saved) setSavedAt(saved.downloadedAt);
         })(),
         (async () => {
           const nextNotices = await vendorApi.notices(token);
@@ -198,7 +195,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     let active = true;
     const hydrate = async () => {
       await Promise.allSettled([
-        snapshot<VendorOverview>(token, 'overview').then((saved) => { if (active && saved) { setOverview(saved.data); setSavedAt(saved.downloadedAt); setStoreId(saved.data.stores[0]?.id ?? null); } }),
+        snapshot<VendorOverview>(token, 'overview').then((saved) => { if (active && saved) { setOverview(saved.data); setStoreId(saved.data.stores[0]?.id ?? null); } }),
         snapshot<LegalNotice[]>(token, 'notices').then((saved) => { if (active && saved) setNotices(saved.data); }),
         snapshot<SrpCatalog>(token, 'srp').then((saved) => { if (active && saved) setSrp(saved.data); }),
         snapshot<Advisory[]>(token, 'advisories').then((saved) => { if (active && saved) setAdvisories(saved.data); }),
@@ -506,7 +503,6 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         )}
 
         <main ref={mainRef} tabIndex={-1} className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''} ${activeTab === 'messages' ? 'vendor-content--messages' : ''}`}>
-          {savedAt && <p role="status">Saved information: {new Date(savedAt).toLocaleString()}{!online || reachability !== 'reachable' ? ' · May be outdated' : ''}</p>}
           {(activeTab === 'profile' || activeTab === 'rebuttals' || activeTab === 'notices') && <LocalWork token={token} storeId={activeTab === 'profile' ? undefined : storeId ?? undefined} operation={activeTab === 'profile' ? undefined : 'response'} hideDraftKey={respondingToId ? `response/${respondingToId}` : undefined} onResume={(target, kind) => { void transition(() => { if (kind === 'message') { setStoreId(target); setActiveTab('messages'); } else { const notice = notices.find((item) => item.id === target); if (notice) setStoreId(notice.store_id); setRespondingToId(target); setActiveTab('rebuttals'); } }); }} />}
           {activeTab === 'profile' ? (
             // Outside the establishment check: an account with no linked store must still reach Sign out.

@@ -39,6 +39,7 @@ OUTBOX = """async () => {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base', default='http://127.0.0.1:5177')
+    parser.add_argument('--layout-only', action='store_true')
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
     iso = lambda dt: dt.isoformat()
@@ -174,6 +175,7 @@ def main():
                 page.get_by_role('button', name=tab, exact=True).click()
                 expect(page.locator('main')).to_be_visible()
                 assert page.get_by_text('Loading price references…', exact=True).count() == 0
+                assert page.get_by_text(re.compile(r'^Saved information:')).count() == 0
             page.get_by_role('button', name='View Notice', exact=True).first.click()
             # Inspect the opened blob directly; headless Chromium's PDF viewer
             # can abort navigation for our deliberately minimal synthetic PDF.
@@ -190,11 +192,33 @@ def main():
             assert counts['documents'] == 1, 'Offline access changed legal document receipt'
             page.get_by_role('button', name='Open profile', exact=True).first.click()
             expect(page.get_by_text(user['email'], exact=True).last).to_be_visible()
+            assert page.locator('.profile-grid > .profile-card h2').all_text_contents() == ['Establishment', 'Current establishment representative', 'Notification settings', 'Password']
+            for width in [1280, 820, 390]:
+                page.set_viewport_size({'width': width, 'height': 844})
+                boxes = page.locator('.profile-grid > .profile-card').evaluate_all('(cards) => cards.map(card => { const {x,y,width,height}=card.getBoundingClientRect(); return {x,y,width,height}; })')
+                assert len(boxes) == 4
+                if width >= 768:
+                    assert abs(boxes[0]['y'] - boxes[1]['y']) < 2 and abs(boxes[2]['y'] - boxes[3]['y']) < 2
+                    assert boxes[1]['x'] > boxes[0]['x'] and boxes[3]['x'] > boxes[2]['x']
+                    assert boxes[2]['y'] >= boxes[0]['y'] + boxes[0]['height']
+                    assert abs(boxes[0]['height'] - boxes[1]['height']) < 2 and abs(boxes[2]['height'] - boxes[3]['height']) < 2
+                else:
+                    assert all(abs(box['x'] - boxes[0]['x']) < 2 for box in boxes)
+                    assert all(boxes[i + 1]['y'] >= boxes[i]['y'] + boxes[i]['height'] for i in range(3))
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+                if width == 1280:
+                    page.set_viewport_size({'width': width, 'height': 1400})
+                    page.screenshot(path=str(Path(__file__).parents[2] / 'scratch' / 'vendor-profile-2x2.png'), full_page=True)
+            assert page.get_by_text(re.compile(r'^Saved information:')).count() == 0
             page.get_by_role('button', name='Manage notification settings', exact=True).click()
             expect(page.get_by_role('heading', name='Notification Settings', exact=True)).to_be_visible()
             page.get_by_role('button', name='Close', exact=True).click()
             page.get_by_role('button', name='Notices Tab', exact=True).click()
             results.append('Offline saved PDFs and profile; first unopened PDF requires connection')
+            if args.layout_only:
+                assert not errors, errors
+                print(json.dumps({'passed': ['Saved information timestamp absent on section pages', 'Profile 2x2 at 1280/820 and stacked at 390; no overflow'], 'browser_errors': errors}, indent=2))
+                return
             page.get_by_role('button', name='Submit Explanation', exact=True).first.click()
             expect(page.get_by_text(explanation, exact=True)).to_be_visible()
             expect(page.get_by_role('checkbox')).to_be_checked()

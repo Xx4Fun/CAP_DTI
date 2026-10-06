@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Bell, LockKeyhole, LogOut, Store as StoreIcon } from 'lucide-react';
+import { AlertTriangle, Bell, LockKeyhole, LogOut, Store as StoreIcon, UserRound } from 'lucide-react';
 import type { VendorStore, VendorUser } from '../../app/types';
 import { formatDate, initials } from '../../app/rules';
 import { apiError, isSessionInvalid } from '../../services/vendorApi';
@@ -53,7 +53,6 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
       </section>
 
       <div className="profile-grid">
-        {store && <RepresentativeCard store={store} onSave={onSaveRepresentative} />}
         <section className="profile-card" aria-labelledby="profile-establishment-title">
           <div className="profile-card-heading">
             <span><StoreIcon size={20} /></span>
@@ -74,6 +73,21 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
           )}
         </section>
 
+        {store ? (
+          <RepresentativeCard store={store} onSave={onSaveRepresentative} />
+        ) : (
+          <section className="profile-card" aria-labelledby="representative-title">
+            <div className="profile-card-heading">
+              <span><UserRound size={20} /></span>
+              <div>
+                <h2 id="representative-title">Current establishment representative</h2>
+                <p>Used to prefill monitoring visits. The field officer confirms who is present.</p>
+              </div>
+            </div>
+            <p className="profile-card-empty">No establishment is linked to configure a representative.</p>
+          </section>
+        )}
+
         <section className="profile-card" aria-labelledby="profile-notifications-title">
           <div className="profile-card-heading">
             <span><Bell size={20} /></span>
@@ -85,7 +99,7 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
           <button type="button" className="btn btn-secondary profile-card-action" onClick={onOpenNotifications}>Manage notification settings</button>
         </section>
 
-        <section className="profile-card profile-card--tall" aria-labelledby="profile-password-title">
+        <section className="profile-card" aria-labelledby="profile-password-title">
           <div className="profile-card-heading">
             <span><LockKeyhole size={20} /></span>
             <div>

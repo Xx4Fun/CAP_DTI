@@ -20,6 +20,7 @@ Only record choices that should constrain future work. Newest entries go first a
 
 - **One shell pattern.** The Vendor PWA uses the Field Officer layout on every width: a sidebar that ends with an account block (76px rail on tablets), a sticky header carrying the online indicator and the bell, and a phone header with a five-tab bottom bar. On phones Profile opens from the header avatar, not a sixth tab.
 - **Profile owns the account.** Sign out, notification settings and change password live in Profile. Profile renders even when no establishment is linked, because it is the only sign-out control.
+- **Profile cards use two rows.** Tablet and desktop show Establishment and Representative above Notification settings and Password in a 2x2 grid. Phones stack the four cards; an unlinked account keeps a representative placeholder.
 - **The bell is derived, not stored.** Alerts list notices that still need the vendor (`needsVendorAction`: an unopened portal notice or a response that is due) and unread DTI messages, across every linked establishment. There are no stored notifications or read receipts; a row goes when the underlying fact changes.
 - **Changing establishment never carries thread state.** `MessagesView` is keyed by store, and a notice alert leaves Communications before switching establishment, because loading a thread marks its DTI messages read.
 - Plan and review record: `plans/vendor-shell/`.
