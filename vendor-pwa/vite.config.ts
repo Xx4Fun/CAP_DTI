@@ -30,7 +30,12 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
-        globPatterns: ['**/*.{html,js,css,ico,jpg,jpeg,png,svg,webp,webmanifest,woff2}']
+        globPatterns: ['**/*.{html,js,css,ico,jpg,jpeg,png,svg,webp,webmanifest,woff2}'],
+        runtimeCaching: [{
+          urlPattern: /^https:\/\/[^/]+\/storage\/v1\/object\/public\/commodity-images\//,
+          handler: 'CacheFirst',
+          options: { cacheName: 'vendor-public-images', cacheableResponse: { statuses: [200] }, expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 } },
+        }]
       }
     })
   ],

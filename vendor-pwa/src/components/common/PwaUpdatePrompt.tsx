@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useRegisterSW } from '../../app/pwaRegistration';
+import { flushWrites, storageFailure } from '../../offline/repository';
 
 export const PwaUpdatePrompt: React.FC = () => {
   const [updating, setUpdating] = useState(false);
@@ -34,7 +35,10 @@ export const PwaUpdatePrompt: React.FC = () => {
           onClick={async () => {
             setUpdating(true);
             try {
+              await flushWrites();
               await updateServiceWorker(true);
+            } catch (error) {
+              storageFailure(error);
             } finally {
               setUpdating(false);
             }

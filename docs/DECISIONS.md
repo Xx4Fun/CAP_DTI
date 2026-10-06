@@ -8,6 +8,14 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-06 — Vendor offline work and legal delivery
+
+- Vendor saves private account-scoped resources and unfinished work in encrypted IndexedDB with an automatically restored browser key. Existing sign-in and token expiry remain; no Field PIN or offline lease is added.
+- Only explicit submissions enter the durable delivery queue. A queued response is received by DTI only after server acceptance; offline preparation never extends a deadline or records notice receipt.
+- Official PDFs are saved after explicit online access, never prefetched. Background conversation preparation opts out of marking DTI messages read.
+- Vendor message/response retries use account-scoped UUID receipts committed with business writes and audit events. Backend compatibility must precede any client release. Automatic delivery requires an open or reopened app.
+- Implementation and local-only verification: [[plans/vendor-offline/README]]. Field monitoring changes are outside this task.
+
 ## 2026-10-04 — Vendor Portal shell follows the Field Officer shell
 
 - **One shell pattern.** The Vendor PWA uses the Field Officer layout on every width: a sidebar that ends with an account block (76px rail on tablets), a sticky header carrying the online indicator and the bell, and a phone header with a five-tab bottom bar. On phones Profile opens from the header avatar, not a sixth tab.

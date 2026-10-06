@@ -5,7 +5,7 @@ import { apiError, apiStatus, vendorApi } from '../../services/vendorApi';
 
 interface VendorLoginProps {
   notice?: string | null;
-  onSignedIn: (session: VendorSession) => void;
+  onSignedIn: (session: VendorSession) => void | Promise<void>;
 }
 
 export const VendorLogin: React.FC<VendorLoginProps> = ({ notice, onSignedIn }) => {
@@ -20,7 +20,7 @@ export const VendorLogin: React.FC<VendorLoginProps> = ({ notice, onSignedIn }) 
     setSubmitting(true);
     setError('');
     try {
-      onSignedIn(await vendorApi.login(email.trim(), password));
+      await onSignedIn(await vendorApi.login(email.trim(), password));
     } catch (requestError) {
       const status = (requestError as { response?: { status?: number } }).response?.status;
       if (status === 422) setError('The email or password is incorrect.');

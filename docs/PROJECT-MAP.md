@@ -52,6 +52,7 @@ tags:
 - Start with: `vendor-pwa/src/App.tsx`, `vendor-pwa/src/services/vendorApi.ts`, `vendor-pwa/src/app/rules.ts`, `vendor-pwa/src/components/profile/`, `vendor-pwa/src/components/alerts/`; backend `backend/app/Http/Controllers/Vendor/` and `LegalNoticeController.php`.
 - Account management: DTI Admin User Management (`web/src/components/admin/UserManagementPanel.tsx`).
 - Shell: same layout as the Field Officer PWA; plan and review record in `plans/vendor-shell/`.
+- Offline workspace and local verification boundaries: [[plans/vendor-offline/README]].
 - Decisions: [[DECISIONS]] entries 2026-09-14 and 2026-10-04 (shell; current establishment representative).
 
 ## Flutter client

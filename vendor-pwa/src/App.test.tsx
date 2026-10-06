@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { LegalNotice, SrpCatalog, SrpItem, VendorOverview } from './app/types';
 import { vendorApi } from './services/vendorApi';
+import { get } from './offline/repository';
+import { waitForDeliveryIdle } from './offline/workspace';
 
 vi.mock('./app/pwaRegistration', () => ({
   useRegisterSW: () => ({ needRefresh: [false, vi.fn()], offlineReady: [false, vi.fn()], updateServiceWorker: vi.fn() }),
@@ -59,10 +61,11 @@ describe('PRICE-Watch Vendor Portal', () => {
     api.logout.mockResolvedValue();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    cleanup();
+    await waitForDeliveryIdle();
     vi.useRealTimers();
     vi.restoreAllMocks();
-    cleanup();
   });
 
   it('signs in with real credentials and shows the establishment dashboard', async () => {
@@ -70,7 +73,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.type(screen.getByLabelText('Business email'), 'vendor@grocery.com');
+    await user.type(await screen.findByLabelText('Business email'), 'vendor@grocery.com');
     await user.type(screen.getByLabelText('Password'), 'correct-password');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
@@ -79,7 +82,8 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(screen.getByText('Letter of Inquiry open')).toBeInTheDocument();
     expect(screen.getByText('Ref: PM-2026-LOI-000011')).toBeInTheDocument();
     expect(api.overview).toHaveBeenCalledWith('vendor-token');
-    expect(JSON.parse(localStorage.getItem('price-watch-vendor-session') ?? '{}').token).toBe('vendor-token');
+    expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
+    expect((await get<{ token: string }>('device', 'meta', 'session'))?.token).toBe('vendor-token');
   });
 
   it('shows sourced dashboard status without promising a fixed legal deadline or finding', async () => {
@@ -128,7 +132,7 @@ describe('PRICE-Watch Vendor Portal', () => {
 
     await user.click((await screen.findAllByRole('button', { name: 'Open profile' }))[0]);
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(screen.getByLabelText('Business email')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Business email')).toBeInTheDocument();
     expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
     expect(api.logout).toHaveBeenCalledWith('vendor-token');
   });
@@ -138,7 +142,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.type(screen.getByLabelText('Business email'), 'vendor@grocery.com');
+    await user.type(await screen.findByLabelText('Business email'), 'vendor@grocery.com');
     await user.type(screen.getByLabelText('Password'), 'wrong');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
@@ -182,8 +186,8 @@ describe('PRICE-Watch Vendor Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('radio', { name: /Freight Surcharge/i }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('radio', { name: /Freight Surcharge/i }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), 'Freight from Iloilo increased our landed cost this week.');
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
     const file = new File(['invoice'], 'invoice.pdf', { type: 'application/pdf' });
@@ -197,8 +201,8 @@ describe('PRICE-Watch Vendor Portal', () => {
       reason_category: 'FREIGHT_SURCHARGE',
       response_text: 'Freight from Iloilo increased our landed cost this week.',
       certified_under_oath: true,
-      attachments: [{ file, category: 'FREIGHT_BILL' }],
-    }));
+      attachments: [{ file: expect.any(File), category: 'FREIGHT_BILL' }],
+    }, expect.any(String)));
     expect(await screen.findByRole('heading', { name: 'Submitted Responses & Explanations' })).toBeInTheDocument();
   });
 
@@ -209,8 +213,8 @@ describe('PRICE-Watch Vendor Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('radio', { name: /Shelf Tag Clerical Error/i }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('radio', { name: /Shelf Tag Clerical Error/i }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), 'The shelf tag was misprinted; the POS price was correct.');
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
 
@@ -231,7 +235,7 @@ describe('PRICE-Watch Vendor Portal', () => {
       response_text: 'The shelf tag was misprinted; the POS price was correct.',
       certified_under_oath: true,
       attachments: [],
-    }));
+    }, expect.any(String)));
   });
 
   it('keeps the session and shows the reason when the deadline passed during submission', async () => {
@@ -241,7 +245,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), 'Our distributor raised wholesale prices this week.');
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
     await user.upload(screen.getByLabelText('Attach supporting documents'), new File(['x'], 'receipt.png', { type: 'image/png' }));
@@ -250,7 +254,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     await user.click(screen.getByRole('button', { name: 'Submit Official Response' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('The response period has expired.');
-    expect(localStorage.getItem('price-watch-vendor-session')).not.toBeNull();
+    expect((await get<{ token: string }>('device', 'meta', 'session'))?.token).toBe('vendor-token');
     expect(screen.queryByLabelText('Business email')).not.toBeInTheDocument();
   });
 
@@ -262,7 +266,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), 'Our distributor raised wholesale prices this week.');
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
     await user.click(screen.getByRole('button', { name: /Next: Certify/ }));
@@ -274,6 +278,45 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(screen.getByText('Our distributor raised wholesale prices this week.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit Official Response' })).toBeDisabled();
     expect(api.respond).not.toHaveBeenCalled();
+  });
+
+  it('retains the editor after a failed save blocks cancellation and establishment changes', async () => {
+    signedIn();
+    api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], { ...overview.stores[0], id: 2, store_name: 'Second Branch' }] });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
+    const original = IDBObjectStore.prototype.put;
+    const failure = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (value, key) {
+      if (this.name === 'drafts') throw new DOMException('No space', 'QuotaExceededError');
+      return original.call(this, value, key);
+    });
+    await user.type(screen.getByLabelText('Detailed written explanation'), 'Explanation retained in the editor.');
+    await screen.findByRole('button', { name: 'Retry saving draft' });
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByLabelText('Detailed written explanation')).toHaveValue('Explanation retained in the editor.');
+    await user.selectOptions(screen.getByLabelText('Active establishment'), '2');
+    expect(screen.getByLabelText('Detailed written explanation')).toHaveValue('Explanation retained in the editor.');
+    failure.mockRestore();
+    await user.click(screen.getByRole('button', { name: 'Retry saving draft' }));
+    await screen.findByText('Draft · Saved on this device');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByLabelText('Detailed written explanation')).not.toBeInTheDocument());
+  });
+
+  it('reports denied persistent storage while keeping the workspace available', async () => {
+    signedIn();
+    const previous = Object.getOwnPropertyDescriptor(navigator, 'storage');
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: { persist: vi.fn().mockResolvedValue(false) } });
+    try {
+      render(<App />);
+      expect(await screen.findByText('Persistent storage was not granted. This browser may remove saved data.')).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Antique Grocery Mart' })).toBeInTheDocument();
+    } finally {
+      if (previous) Object.defineProperty(navigator, 'storage', previous);
+      else Reflect.deleteProperty(navigator, 'storage');
+    }
   });
 
   it('offers no response before DTI records delivery', async () => {
@@ -375,7 +418,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.type(screen.getByLabelText('Full name'), 'New Owner');
+    await user.type(await screen.findByLabelText('Full name'), 'New Owner');
     await user.type(screen.getByLabelText('Password'), 'a-secure-password');
     await user.type(screen.getByLabelText('Confirm password'), 'a-secure-password');
     await user.click(screen.getByRole('button', { name: 'Accept invitation' }));
@@ -415,7 +458,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     api.notices.mockResolvedValue([responded]);
 
     await user.click(screen.getByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), text);
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
     await user.click(screen.getByRole('button', { name: /Next: Certify/ }));
@@ -429,7 +472,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(screen.getByText(text)).toBeInTheDocument();
-    expect(screen.queryByText('No responses submitted yet.')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('No responses submitted yet.')).not.toBeInTheDocument());
   });
 
   it('keeps the default commodity after its price is edited, even if a refresh removes its reference', async () => {
@@ -459,7 +502,7 @@ describe('PRICE-Watch Vendor Portal', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: /Submit Formal Explanation/ }));
-    await user.click(screen.getByRole('button', { name: /Next: Written Explanation/ }));
+    await user.click(await screen.findByRole('button', { name: /Next: Written Explanation/ }));
     await user.type(screen.getByLabelText('Detailed written explanation'), 'Our distributor raised wholesale prices this week.');
     await user.click(screen.getByRole('button', { name: /Next: Attach Evidence/ }));
 
@@ -510,9 +553,10 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(await screen.findByText('Please send your supplier invoice.')).toBeInTheDocument();
     expect(api.conversation).toHaveBeenCalledWith('vendor-token', 1);
 
+    await waitFor(() => expect(screen.getByLabelText('Message')).toBeEnabled());
     await user.type(screen.getByLabelText('Message'), 'Attached today.');
     await user.click(screen.getByRole('button', { name: 'Send' }));
-    expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 1, { body: 'Attached today.', attachment: undefined });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 1, { body: 'Attached today.' }, expect.any(String)));
     expect(await screen.findByText('Attached today.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Letter of Inquiry PM-2026-LOI-000011/ }));
@@ -679,7 +723,7 @@ describe('PRICE-Watch Vendor Portal', () => {
       await user.click(screen.getAllByRole('button', { name: 'Open profile' })[0]);
       expect(screen.getByRole('region', { name: 'Establishment' })).toHaveTextContent('No establishment is linked to this account.');
       await user.click(screen.getByRole('button', { name: 'Sign out' }));
-      expect(screen.getByLabelText('Business email')).toBeInTheDocument();
+      expect(await screen.findByLabelText('Business email')).toBeInTheDocument();
       expect(localStorage.getItem('price-watch-vendor-session')).toBeNull();
     });
 
@@ -717,7 +761,7 @@ describe('PRICE-Watch Vendor Portal', () => {
 
       expect(screen.getByRole('dialog', { name: 'Letter of Inquiry' })).toBeInTheDocument();
       expect(container.querySelector('.vendor-content-toolbar strong')).toHaveTextContent('Legal Notices');
-      expect(api.conversation.mock.calls.every(([, storeId]) => storeId === 1)).toBe(true);
+      expect(api.conversation.mock.calls.every(([, storeId, , markRead]) => storeId === 1 || markRead === false)).toBe(true);
       expect(await bell('Alerts, 3 new')).toBeInTheDocument();
     });
 
@@ -767,6 +811,7 @@ describe('PRICE-Watch Vendor Portal', () => {
 
       await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
       await screen.findByText('No messages yet. DTI Antique will reply here.');
+      await waitFor(() => expect(screen.getByLabelText('Message')).toBeEnabled());
       await user.type(screen.getByLabelText('Message'), 'Invoice for the main store.');
       await user.upload(container.querySelector('.vendor-attach input') as HTMLInputElement, new File(['%PDF'], 'main-store-invoice.pdf', { type: 'application/pdf' }));
       expect(screen.getByText('main-store-invoice.pdf')).toBeInTheDocument();
@@ -779,10 +824,11 @@ describe('PRICE-Watch Vendor Portal', () => {
       expect(screen.queryByText('main-store-invoice.pdf')).not.toBeInTheDocument();
 
       await screen.findByText('No messages yet. DTI Antique will reply here.');
+      await waitFor(() => expect(screen.getByLabelText('Message')).toBeEnabled());
       await user.type(screen.getByLabelText('Message'), 'For the second branch.');
       await user.click(screen.getByRole('button', { name: 'Send' }));
-      expect(api.sendMessage).toHaveBeenCalledTimes(1);
-      expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 2, { body: 'For the second branch.', attachment: undefined });
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('vendor-token', 2, { body: 'For the second branch.' }, expect.any(String)));
     });
 
     it('refreshes the bell after loading earlier messages marks them read', async () => {
@@ -793,8 +839,9 @@ describe('PRICE-Watch Vendor Portal', () => {
         .mockResolvedValue({ ...overview, stores: [{ ...overview.stores[0], unread_messages: 0 }] });
       api.notices.mockResolvedValue([]);
       api.conversation
-        .mockResolvedValueOnce({ ...emptyThread(), messages: [dtiMessage(2)], has_more: true })
-        .mockResolvedValue({ ...emptyThread(), messages: [dtiMessage(1)], has_more: false });
+        .mockImplementation(async (_token, _store, beforeId) => beforeId
+          ? { ...emptyThread(), messages: [dtiMessage(1)], has_more: false }
+          : { ...emptyThread(), messages: [dtiMessage(2)], has_more: true });
       const user = userEvent.setup();
       render(<App />);
 
@@ -803,7 +850,7 @@ describe('PRICE-Watch Vendor Portal', () => {
       await user.click(await screen.findByRole('button', { name: 'Load earlier messages' }));
 
       expect(await screen.findByText('Message 1')).toBeInTheDocument();
-      expect(api.conversation).toHaveBeenLastCalledWith('vendor-token', 1, 2);
+      expect(api.conversation).toHaveBeenCalledWith('vendor-token', 1, 2);
       await waitFor(() => expect(screen.queryByRole('button', { name: /^Alerts, / })).not.toBeInTheDocument());
     });
   });

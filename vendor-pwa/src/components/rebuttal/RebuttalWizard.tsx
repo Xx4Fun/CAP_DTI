@@ -13,21 +13,25 @@ import {
   responseBlockedReason,
 } from '../../app/rules';
 import { apiError, isSessionInvalid } from '../../services/vendorApi';
+import { useDraft } from '../../offline/useDraft';
 
 interface RebuttalWizardProps {
+  accountId: number;
   notice: LegalNotice;
   onCancel: () => void;
-  onSubmit: (draft: ResponseDraft) => Promise<void>;
+  onSubmit: (draft: ResponseDraft, revision?: string) => Promise<void>;
 }
 
 type DraftAttachment = { id: string; file: File; category: AttachmentCategory };
 
-export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel, onSubmit }) => {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [reasonCategory, setReasonCategory] = useState<ReasonCategory>(REASON_CATEGORIES[0].id);
-  const [justification, setJustification] = useState('');
-  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
-  const [certified, setCertified] = useState(false);
+export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ accountId, notice, onCancel, onSubmit }) => {
+  const saved = useDraft(accountId, `response/${notice.id}`, { storeId: notice.store_id, step: 1 as 1 | 2 | 3 | 4, reasonCategory: REASON_CATEGORIES[0].id as ReasonCategory, justification: '', attachments: [] as DraftAttachment[], certified: false }, (value) => value.step > 1 || !!value.justification || !!value.attachments.length);
+  const { step, reasonCategory, justification, attachments, certified } = saved.value;
+  const setStep = (next: 1 | 2 | 3 | 4) => saved.update((value) => ({ ...value, step: next }));
+  const setReasonCategory = (next: ReasonCategory) => saved.update((value) => ({ ...value, reasonCategory: next, certified: false }));
+  const setJustification = (next: string) => saved.update((value) => ({ ...value, justification: next, certified: false }));
+  const setAttachments = (next: React.SetStateAction<DraftAttachment[]>) => saved.update((value) => ({ ...value, attachments: typeof next === 'function' ? next(value.attachments) : next, certified: false }));
+  const setCertified = (next: boolean) => saved.update((value) => ({ ...value, certified: next }));
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -75,7 +79,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
         response_text: justification.trim(),
         certified_under_oath: certified,
         attachments: attachments.map(({ file, category }) => ({ file, category })),
-      });
+      }, saved.value.__revision);
     } catch (submitError) {
       // An ended session is handled by the portal (sign-out); every other failure stays here with the server's reason.
       if (!isSessionInvalid(submitError)) setError(apiError(submitError, 'The response could not be submitted. Check your connection and try again.'));
@@ -84,6 +88,7 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
   };
 
   // Only an untouched response shows the closed card; a started draft stays visible so the vendor can keep a copy.
+  if (!saved.ready) return <div className="v-card" role="status">{saved.status}<button className="btn btn-secondary btn-sm" onClick={onCancel}>Back to notices</button></div>;
   if (closed && !started) {
     return (
       <div className="v-card" style={{ textAlign: 'center', padding: '36px 20px' }}>
@@ -126,6 +131,8 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ notice, onCancel
         })}
       </ol>
 
+      <p role="status">{saved.status}</p>
+      {saved.status.startsWith('Save failed') && <button className="btn btn-secondary btn-sm" onClick={saved.retry}>Retry saving draft</button>}
       {closed && (
         <div role="status" className="portal-error">
           <AlertTriangle size={16} />

@@ -3,6 +3,10 @@ import { AlertTriangle, FileText, Paperclip, Send, ShieldCheck, X } from 'lucide
 import type { Conversation, ConversationNotice, StoreMessage } from '../../app/types';
 import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, OUTCOME_LABELS, formatDate } from '../../app/rules';
 import { apiError, isSessionInvalid, vendorApi } from '../../services/vendorApi';
+import { accountFor, enqueue, snapshot, synchronize } from '../../offline/workspace';
+import { useDraft } from '../../offline/useDraft';
+import { LocalWork } from '../../offline/LocalWork';
+import { storageFailure } from '../../offline/repository';
 
 const POLL_MS = 10_000;
 
@@ -39,8 +43,10 @@ const noticeSignature = (conversation: Conversation) => conversation.notices.map
 export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSessionInvalid, onViewNotice, onRead }) => {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [error, setError] = useState('');
-  const [draft, setDraft] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const composer = useDraft(accountFor(token), `message/${storeId}`, { storeId, draft: '', file: null as File | null }, (value) => !!value.draft || !!value.file);
+  const { draft, file } = composer.value;
+  const setDraft = (next: string) => composer.update((value) => ({ ...value, draft: next }));
+  const setFile = (next: File | null) => composer.update((value) => ({ ...value, file: next }));
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const latest = useRef<Conversation | null>(null);
@@ -54,11 +60,21 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
   useEffect(() => {
     let active = true;
     setConversation(null); setError('');
+    void snapshot<Conversation>(token, `conversation/${storeId}`).then((saved) => { if (active && saved) setConversation((current) => current ?? saved.data); }).catch(storageFailure);
     vendorApi.conversation(token, storeId)
       .then((value) => { if (active) { setConversation(value); onRead(); } })
       .catch((reason) => { if (active) fail(reason, 'Messages could not load. Check your connection and try again.'); });
     return () => { active = false; };
   }, [token, storeId, fail, onRead]);
+
+  useEffect(() => {
+    const delivered = (event: Event) => {
+      const detail = (event as CustomEvent<{ token: string; operation: string; target: number; result: StoreMessage }>).detail;
+      if (detail.token === token && detail.operation === 'message' && detail.target === storeId) setConversation((current) => current && { ...current, messages: mergeMessages(current.messages, [detail.result]) });
+    };
+    window.addEventListener('vendor-delivered', delivered);
+    return () => window.removeEventListener('vendor-delivered', delivered);
+  }, [token, storeId]);
 
   // Poll for new messages while the app is in the foreground.
   useEffect(() => {
@@ -96,9 +112,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     if (sending || (!draft.trim() && !file)) return;
     setSending(true); setError('');
     try {
-      const message = await vendorApi.sendMessage(token, storeId, { body: draft.trim() || undefined, attachment: file ?? undefined });
-      setConversation((current) => current && { ...current, messages: mergeMessages(current.messages, [message]) });
-      setDraft(''); setFile(null);
+      await enqueue(token, 'message', storeId, storeId, { body: draft.trim() || undefined, attachment: file ?? undefined }, composer.value.__revision);
+      composer.update({ storeId, draft: '', file: null });
+      void synchronize(token).catch(storageFailure);
     } catch (reason) { fail(reason, 'Your message could not be sent. Try again when you are online.'); }
     finally { setSending(false); }
   };
@@ -186,6 +202,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
       </div>
 
       {error && <div role="alert" className="portal-error"><AlertTriangle size={16} /><span>{error}</span></div>}
+      <LocalWork token={token} storeId={storeId} operation="message" hideDraftKey={`message/${storeId}`} />
+      <p role="status">{composer.status}</p>
+      {composer.status.startsWith('Save failed') && <button className="btn btn-secondary btn-sm" onClick={composer.retry}>Retry saving draft</button>}
 
       <form className="vendor-messages-composer" onSubmit={(event) => void send(event)}>
         {file && (
@@ -198,11 +217,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
           <label className="vendor-attach" title="Attach a photo or PDF">
             <Paperclip size={18} aria-hidden="true" />
             <span className="sr-only">Attach a photo or PDF</span>
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} />
+            <input type="file" disabled={sending || !composer.ready} accept=".pdf,.jpg,.jpeg,.png,.webp,image/*" onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} />
           </label>
           <label className="vendor-messages-input">
             <span className="sr-only">Message</span>
             <textarea
+              disabled={sending || !composer.ready}
               rows={1}
               maxLength={CHAT_MAX_BODY}
               placeholder="Write a message to DTI Antique"
@@ -216,7 +236,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
               }}
             />
           </label>
-          <button type="submit" className="btn btn-primary" aria-label={sending ? 'Sending' : 'Send'} disabled={sending || (!draft.trim() && !file)}>
+          <button type="submit" className="btn btn-primary" aria-label={sending ? 'Saving submission' : 'Send'} disabled={sending || !composer.ready || (!draft.trim() && !file)}>
             <Send size={16} aria-hidden="true" /><span>{sending ? 'Sending…' : 'Send'}</span>
           </button>
         </div>

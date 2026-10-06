@@ -21,6 +21,9 @@ import { PwaUpdatePrompt } from './components/common/PwaUpdatePrompt';
 import { MessagesView } from './components/messages/MessagesView';
 import { AlertsDrawer } from './components/alerts/AlertsDrawer';
 import { VendorProfile } from './components/profile/VendorProfile';
+import { enqueue, hasUnresolvedWork, registerSession, snapshot, synchronize } from './offline/workspace';
+import { flushWrites, hasUnsavedChanges, storageFailure } from './offline/repository';
+import { LocalWork } from './offline/LocalWork';
 
 const TAB_TITLES: Record<ActiveTab, string> = {
   overview: 'Dashboard',
@@ -38,17 +41,35 @@ const invitationTokenFromUrl = () => window.location.pathname === '/vendor-invit
 
 export const App: React.FC = () => {
   const [invitationToken, setInvitationToken] = useState(invitationTokenFromUrl);
-  const [session, setSession] = useState<VendorSession | null>(loadSession);
+  const [session, setSession] = useState<VendorSession | null>(null);
+  const [restoring, setRestoring] = useState(true);
+  const [storageError, setStorageError] = useState('');
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
 
-  const signOut = useCallback((notice: string | null) => {
-    clearSession();
-    setSession(null);
-    setLoginNotice(notice);
+  const signOut = useCallback(async (notice: string | null) => {
+    try {
+      // Even an expired session must not unmount the only copy of a failed local save.
+      await flushWrites();
+      await clearSession(session?.token);
+      setSession(null);
+      setLoginNotice(notice);
+    } catch (error) { storageFailure(error); }
+  }, [session?.token]);
+
+  useEffect(() => {
+    let active = true;
+    const failed = (event: Event) => setStorageError((event as CustomEvent<string>).detail);
+    const beforeUnload = (event: BeforeUnloadEvent) => { if (hasUnsavedChanges()) { event.preventDefault(); event.returnValue = ''; } };
+    window.addEventListener('vendor-storage-error', failed);
+    window.addEventListener('beforeunload', beforeUnload);
+    void loadSession().then((saved) => { if (active) setSession(saved); }).catch(storageFailure).finally(() => { if (active) setRestoring(false); });
+    return () => { active = false; window.removeEventListener('vendor-storage-error', failed); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
 
   let content: React.ReactNode;
-  if (invitationToken) {
+  if (restoring) {
+    content = <p role="status">Restoring saved workspace…</p>;
+  } else if (invitationToken) {
     content = (
       <InvitationAccept
         token={invitationToken}
@@ -60,13 +81,14 @@ export const App: React.FC = () => {
       />
     );
   } else if (!session) {
-    content = <VendorLogin notice={loginNotice} onSignedIn={(next) => { saveSession(next); setLoginNotice(null); setSession(next); }} />;
+    content = <VendorLogin notice={loginNotice} onSignedIn={async (next) => { await saveSession(next); setLoginNotice(null); setSession(next); }} />;
   } else {
     content = <VendorWorkspace key={session.token} session={session} onSignOut={signOut} />;
   }
 
   return (
     <>
+      {storageError && <div role="alert" className="offline-banner">Local save failed: {storageError} Keep this page open until your work is saved.<button className="btn btn-secondary btn-sm" onClick={() => setStorageError('')}>Dismiss</button></div>}
       {content}
       <PwaUpdatePrompt />
     </>
@@ -94,6 +116,8 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   const mainRef = useRef<HTMLElement>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [reachability, setReachability] = useState<'reachable' | 'unavailable' | 'authorization'>('unavailable');
+  const [savedAt, setSavedAt] = useState('');
   // Refreshes overlap (foreground, reconnect, tab entry, after submitting); only each resource's newest request may apply.
   const coreRequest = useRef(0);
   const srpRequest = useRef(0);
@@ -119,11 +143,24 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     const request = ++coreRequest.current;
     setLoadError('');
     try {
-      const [nextOverview, nextNotices] = await Promise.all([vendorApi.overview(token), vendorApi.notices(token)]);
+      const results = await Promise.allSettled([
+        (async () => {
+          const nextOverview = await vendorApi.overview(token);
+          if (request !== coreRequest.current) return;
+          setOverview(nextOverview);
+          setStoreId((current) => nextOverview.stores.some((store) => store.id === current) ? current : nextOverview.stores[0]?.id ?? null);
+          const saved = await snapshot<VendorOverview>(token, 'overview');
+          if (request === coreRequest.current && saved) setSavedAt(saved.downloadedAt);
+        })(),
+        (async () => {
+          const nextNotices = await vendorApi.notices(token);
+          if (request !== coreRequest.current) return;
+          setNotices(nextNotices);
+        })(),
+      ]);
       if (request !== coreRequest.current) return;
-      setOverview(nextOverview);
-      setNotices(nextNotices);
-      setStoreId((current) => nextOverview.stores.some((store) => store.id === current) ? current : nextOverview.stores[0]?.id ?? null);
+      const failure = results.find((result) => result.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
     } catch (error) {
       if (request !== coreRequest.current) return;
       if (isSessionInvalid(error)) return onSignOut('Your session ended. Sign in again to continue.');
@@ -157,7 +194,63 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     }
   }, [token, onSignOut]);
 
-  useEffect(() => { void loadCore(); }, [loadCore]);
+  useEffect(() => {
+    let active = true;
+    const hydrate = async () => {
+      await Promise.allSettled([
+        snapshot<VendorOverview>(token, 'overview').then((saved) => { if (active && saved) { setOverview(saved.data); setSavedAt(saved.downloadedAt); setStoreId(saved.data.stores[0]?.id ?? null); } }),
+        snapshot<LegalNotice[]>(token, 'notices').then((saved) => { if (active && saved) setNotices(saved.data); }),
+        snapshot<SrpCatalog>(token, 'srp').then((saved) => { if (active && saved) setSrp(saved.data); }),
+        snapshot<Advisory[]>(token, 'advisories').then((saved) => { if (active && saved) setAdvisories(saved.data); }),
+      ]);
+      if (active) { void loadCore(); void loadSrp(); void loadAdvisories(); }
+    };
+    void hydrate();
+    return () => { active = false; coreRequest.current++; srpRequest.current++; advisoriesRequest.current++; };
+  }, [token, loadCore, loadSrp, loadAdvisories]);
+
+  useEffect(() => {
+    const changed = (event: Event) => { const detail = (event as CustomEvent<{ token: string; state: typeof reachability }>).detail; if (detail.token === token) { setReachability(detail.state); if (detail.state === 'authorization') onSignOut('Authorization required. Your saved work is retained. Sign in to the same account.'); } };
+    window.addEventListener('vendor-connectivity', changed);
+    return () => window.removeEventListener('vendor-connectivity', changed);
+  }, [token, onSignOut]);
+
+  useEffect(() => {
+    registerSession(session);
+    void navigator.storage?.persist?.().then((granted) => { if (!granted) showToast('Persistent storage was not granted. This browser may remove saved data.'); }).catch(storageFailure);
+    const tick = () => { if (document.visibilityState === 'visible') void synchronize(token).catch(storageFailure); };
+    tick();
+    const timer = window.setInterval(tick, 5000);
+    window.addEventListener('online', tick);
+    document.addEventListener('visibilitychange', tick);
+    return () => { window.clearInterval(timer); window.removeEventListener('online', tick); document.removeEventListener('visibilitychange', tick); };
+  }, [token]);
+
+  useEffect(() => {
+    const accepted = (event: Event) => {
+      const detail = (event as CustomEvent<{ token: string; operation: string; result: LegalNotice }>).detail;
+      if (detail.token !== token) return;
+      if (detail.operation === 'response') { coreRequest.current++; setNotices((current) => current.map((notice) => notice.id === detail.result.id ? detail.result : notice)); }
+    };
+    window.addEventListener('vendor-delivered', accepted);
+    return () => window.removeEventListener('vendor-delivered', accepted);
+  }, [token]);
+
+  useEffect(() => {
+    const prepare = () => {
+      if (!navigator.onLine || document.visibilityState !== 'visible') return;
+      void Promise.allSettled([
+        loadSrp(),
+        loadAdvisories(),
+        (async () => { await vendorApi.preferences(token); })(),
+        ...(overview?.stores ?? []).map(async (item) => { await vendorApi.conversation(token, item.id, undefined, false); }),
+      ]);
+    };
+    prepare();
+    window.addEventListener('online', prepare);
+    document.addEventListener('visibilitychange', prepare);
+    return () => { window.removeEventListener('online', prepare); document.removeEventListener('visibilitychange', prepare); };
+  }, [token, overview?.stores, loadSrp, loadAdvisories]);
   // New DTI messages and notices surface on every tab. Messages polls only its open thread, so the bell
   // would miss another linked store's notices and messages if this stopped there.
   useEffect(() => {
@@ -210,7 +303,11 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   // The tab badge counts every linked store, so a message to another store is not missed.
   const unreadMessages = overview?.stores.reduce((total, item) => total + (item.unread_messages ?? 0), 0) ?? 0;
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await flushWrites();
+      if (await hasUnresolvedWork(session.user.id)) { setActiveTab('profile'); showToast('Review or explicitly discard saved drafts and pending submissions before signing out.'); return; }
+    } catch (error) { storageFailure(error); return; }
     onSignOut('You have signed out.');
     void vendorApi.logout(token).catch(() => { /* Local sign-out must not wait for network access. */ });
   };
@@ -231,16 +328,13 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
     }
   };
 
-  const submitResponse = async (notice: LegalNotice, draft: ResponseDraft) => {
+  const submitResponse = async (notice: LegalNotice, draft: ResponseDraft, revision?: string) => {
     try {
-      const updated = await vendorApi.respond(token, notice.id, draft);
-      // Any notices read started before the submission is now stale and must not overwrite this result.
-      coreRequest.current++;
-      setNotices((current) => current.map((item) => item.id === updated.id ? updated : item));
+      await enqueue(token, 'response', notice.id, notice.store_id, draft, revision);
       setRespondingTo(null);
       setActiveTab('rebuttals');
-      showToast(`Response to ${updated.control_number ?? 'the notice'} was submitted to DTI Antique.`);
-      void loadCore();
+      showToast('Response saved for delivery. It is received by DTI only after server acceptance.');
+      void synchronize(token).catch(storageFailure);
     } catch (error) {
       guard(error);
     }
@@ -273,27 +367,34 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   const endSession = useCallback(() => onSignOut('Your session ended. Sign in again to continue.'), [onSignOut]);
   const refreshAfterRead = useCallback(() => { void loadCore(); }, [loadCore]);
 
-  const startResponse = (notice: LegalNotice) => {
-    setRespondingTo(notice);
-    setActiveTab('rebuttals');
+  const transition = async (action: () => void): Promise<boolean> => {
+    try { await flushWrites(); action(); return true; }
+    catch (error) { storageFailure(error); return false; }
   };
 
-  const changeTab = (tab: ActiveTab) => {
-    setActiveTab(tab);
-    if (tab !== 'rebuttals') setRespondingTo(null);
+  const startResponse = async (notice: LegalNotice) => {
+    await transition(() => { setRespondingTo(notice); setActiveTab('rebuttals'); });
   };
 
-  const openAlertNotice = (notice: LegalNotice) => {
+  const changeStore = async (id: number) => {
+    await transition(() => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); });
+  };
+
+  const changeTab = async (tab: ActiveTab) => {
+    return transition(() => { setActiveTab(tab); if (tab !== 'rebuttals') setRespondingTo(null); });
+  };
+
+  const openAlertNotice = async (notice: LegalNotice) => {
     // Leave Communications before changing the store: its thread fetch marks that store's DTI messages read.
-    changeTab('notices');
+    if (!await changeTab('notices')) return;
     setStoreId(notice.store_id);
     setSelectedNotice(notice);
     setAlertsOpen(false);
   };
 
-  const openAlertMessages = (id: number) => {
+  const openAlertMessages = async (id: number) => {
+    if (!await changeTab('messages')) return;
     setStoreId(id);
-    changeTab('messages');
     setAlertsOpen(false);
     mainRef.current?.focus();
   };
@@ -354,14 +455,14 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         pendingNoticeCount={openNotices.length}
         unreadMessageCount={unreadMessages}
         userName={overview.user.name}
-        onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
+        onSelectStore={(id) => void changeStore(id)}
       />
 
       <div className="vendor-main-wrapper">
         {!online && (
           <div className="offline-banner" role="status">
             <WifiOff size={15} />
-            <span>You are offline. Showing the last loaded information; responses need a connection.</span>
+            <span>You are offline. Showing saved information. Explicitly submitted work will wait for delivery.</span>
           </div>
         )}
 
@@ -380,7 +481,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           alertCount={alertCount}
           userName={overview.user.name}
           profileActive={activeTab === 'profile'}
-          onSelectStore={(id) => { setStoreId(id); setRespondingTo(null); setActiveTab('overview'); }}
+          onSelectStore={(id) => void changeStore(id)}
           onOpenAlerts={() => setAlertsOpen(true)}
           onOpenProfile={() => changeTab('profile')}
         />
@@ -389,7 +490,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           <strong>{TAB_TITLES[activeTab]}</strong>
           <span className={online ? 'online' : ''}>
             {online ? <Wifi size={16} /> : <WifiOff size={16} />}
-            {online ? 'Online · Ready' : 'Offline · Showing saved data'}
+            {online ? (reachability === 'reachable' ? 'Connected to DTI' : 'Server unavailable · Showing saved data') : 'Offline · Showing saved data'}
           </span>
           <button type="button" className="toolbar-icon-btn" aria-label={alertsLabel} onClick={() => setAlertsOpen(true)}>
             <Bell size={19} />
@@ -405,6 +506,8 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
         )}
 
         <main ref={mainRef} tabIndex={-1} className={`vendor-content ${activeTab === 'overview' ? 'vendor-content--dashboard' : ''} ${activeTab === 'messages' ? 'vendor-content--messages' : ''}`}>
+          {savedAt && <p role="status">Saved information: {new Date(savedAt).toLocaleString()}{!online || reachability !== 'reachable' ? ' · May be outdated' : ''}</p>}
+          {(activeTab === 'profile' || activeTab === 'rebuttals' || activeTab === 'notices') && <LocalWork token={token} storeId={activeTab === 'profile' ? undefined : storeId ?? undefined} operation={activeTab === 'profile' ? undefined : 'response'} hideDraftKey={respondingToId ? `response/${respondingToId}` : undefined} onResume={(target, kind) => { void transition(() => { if (kind === 'message') { setStoreId(target); setActiveTab('messages'); } else { const notice = notices.find((item) => item.id === target); if (notice) setStoreId(notice.store_id); setRespondingToId(target); setActiveTab('rebuttals'); } }); }} />}
           {activeTab === 'profile' ? (
             // Outside the establishment check: an account with no linked store must still reach Sign out.
             <VendorProfile
@@ -459,9 +562,10 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
               ) : respondingTo ? (
                 <RebuttalWizard
                   key={respondingTo.id}
+                  accountId={session.user.id}
                   notice={respondingTo}
-                  onCancel={() => setRespondingTo(null)}
-                  onSubmit={(draft) => submitResponse(respondingTo, draft)}
+                  onCancel={() => { void transition(() => setRespondingTo(null)); }}
+                  onSubmit={(draft, revision) => submitResponse(respondingTo, draft, revision)}
                 />
               ) : (
                 <RebuttalHistory
