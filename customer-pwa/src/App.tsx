@@ -243,12 +243,15 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const savedConfig = readVerifiedCache<SystemConfig>(PUBLIC_CONFIG_CACHE_KEY, PUBLIC_CONFIG_MAX_AGE_MS);
+    const savedCommodities = readVerifiedCache<Commodity[]>(PUBLIC_COMMODITIES_CACHE_KEY, PUBLIC_DIRECTORY_MAX_AGE_MS);
     const refreshPublicData = async () => {
       if (!isOnline) {
         setPublicRefreshPending(false);
-        if (!initialPublicCache.config) setConfig(null);
-        if (!initialPublicCache.commodities) setBulletin({ status: 'error' });
-        setPublicDataSource(initialPublicCache.config || initialPublicCache.commodities ? 'cached' : 'unavailable');
+        if (!savedConfig) setConfig(null);
+        if (!savedCommodities) setBulletin({ status: 'error' });
+        setPublicDataSource(savedConfig || savedCommodities ? 'cached' : 'unavailable');
         return;
       }
 
@@ -259,6 +262,7 @@ export const App: React.FC = () => {
           apiClient.get('/public/config'),
           apiClient.get('/public/commodities'),
         ]);
+        if (cancelled) return;
         const nextConfig = configResponse.data?.data;
         const nextCommodities = commoditiesResponse.data?.data;
 
@@ -277,19 +281,29 @@ export const App: React.FC = () => {
         writeVerifiedCache(PUBLIC_CONFIG_CACHE_KEY, nextConfig, syncedAt);
         writeVerifiedCache(PUBLIC_COMMODITIES_CACHE_KEY, nextCommodities, syncedAt);
       } catch (error) {
+        if (cancelled) return;
         console.warn('Unable to refresh live PRICE-Watch public data:', error);
-        if (!initialPublicCache.config) setConfig(null);
-        if (!initialPublicCache.commodities) setBulletin({ status: 'error' });
+        if (!savedConfig) setConfig(null);
+        if (!savedCommodities) setBulletin({ status: 'error' });
         setPublicDataSource(
-          initialPublicCache.config || initialPublicCache.commodities ? 'cached' : 'unavailable',
+          savedConfig || savedCommodities ? 'cached' : 'unavailable',
         );
       } finally {
-        setPublicRefreshPending(false);
+        if (!cancelled) setPublicRefreshPending(false);
       }
     };
 
     void refreshPublicData();
+    return () => { cancelled = true; };
   }, [initialPublicCache, isOnline, refreshAttempt]);
+
+  useEffect(() => {
+    const refresh = () => { if (navigator.onLine && document.visibilityState === 'visible') setRefreshAttempt((value) => value + 1); };
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, []);
 
   const isScanTab = activeTab === 'scan' || activeTab === 'compare';
   const isHomeTab = activeTab === 'home';

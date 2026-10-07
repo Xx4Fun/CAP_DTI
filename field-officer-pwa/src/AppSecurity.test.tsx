@@ -1437,6 +1437,27 @@ describe('field workspace security flow', () => {
     }
     const sentUuids = () => fixtures.api.sync.mock.calls.map(([, records]) => records[0].client_uuid)
 
+    it('keeps the newest regulatory bootstrap in encrypted storage when an older save is slow', async () => {
+      const baseline = { version: 'v1', is_delta: false, stores: [], srp_bulletins: [], recent_prices: [] }
+      fixtures.api.bootstrap.mockResolvedValue(baseline)
+      await unlockOnlineWith({ bootstrap: baseline })
+      const slow = deferred<void>()
+      let saved = 'v1'
+      fixtures.vault.writeSecret.mockImplementation(async (key: string, value: { version?: string }) => {
+        if (key !== 'bootstrap') return
+        if (value.version === 'v2') await slow.promise
+        saved = value.version ?? ''
+      })
+      fixtures.api.bootstrap.mockResolvedValueOnce({ ...baseline, version: 'v2' }).mockResolvedValueOnce({ ...baseline, version: 'v3' })
+      const calls = fixtures.api.bootstrap.mock.calls.length
+      act(() => window.dispatchEvent(new Event('focus')))
+      await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('bootstrap', expect.objectContaining({ version: 'v2' })))
+      act(() => window.dispatchEvent(new Event('focus')))
+      await waitFor(() => expect(fixtures.api.bootstrap.mock.calls.length).toBe(calls + 2))
+      await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 50)); slow.resolve(); await new Promise((resolve) => window.setTimeout(resolve, 50)) })
+      expect(saved).toBe('v3')
+    })
+
     it('refreshes an untouched unsigned draft on Review and Sign and writes the current establishment to the encrypted cache', async () => {
       const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }
       const bootstrap = { version: 'cached', is_delta: false, stores: [store], srp_bulletins: [], recent_prices: [] }
@@ -1660,12 +1681,12 @@ describe('field workspace security flow', () => {
       fireEvent.change(await screen.findByLabelText('Observed shelf price for Rice'), { target: { value: '52' } })
 
       await waitFor(() => expect(fixtures.vault.writeSecret).toHaveBeenCalledWith('drafts', [expect.objectContaining({
-        items: [{ srp_id: 3, recorded_price: 52, reference_snapshot: expect.objectContaining({ reference_version: 'ref-v-rice', value: 50, source_reference: 'SRP-2026' }) }],
+        items: [{ srp_id: 3, commodity_key: 'rice', recorded_price: 52, reference_snapshot: expect.objectContaining({ reference_version: 'ref-v-rice', value: 50, source_reference: 'SRP-2026' }) }],
       })]), { timeout: 3000 })
     }, 15_000)
 
     const marketBootstrap = {
-      version: 'cached', is_delta: false, recent_prices: [], monitoring_references: [],
+      version: 'cached', is_delta: false, recent_prices: [], monitoring_references: [{ srp_id: 3, commodity_key: null, covered_by_price_freeze: false, ...riceSnapshot, source: riceSnapshot.source_reference }],
       stores: [{ id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }],
       srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }],
     }

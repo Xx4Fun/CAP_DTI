@@ -130,7 +130,7 @@ export const PRICE_ACT_REGULATIONS: ReadonlyArray<RegulationItem> = [
     id: 'price-act-freeze',
     heading: 'Automatic Price Freeze in Calamity',
     lawReference: 'R.A. 7581 §6',
-    description: 'When a State of Calamity or emergency is officially declared, prices of all basic necessities are automatically frozen at baseline SRP with 0% markup tolerance. Violators face immediate Show Cause Orders and administrative fines.',
+    description: 'When a State of Calamity or emergency is officially declared, covered basic necessities use the confirmed official APC or SRP-held ceiling with 0% markup tolerance. Violators face immediate Show Cause Orders and administrative fines.',
   },
 ];
 

@@ -22,6 +22,14 @@ vi.mock('../../services/adminApi', () => ({
 }))
 
 describe('AdminShell', () => {
+  it('refreshes the header after a declaration changes and discards the old active status', async () => {
+    vi.mocked(adminApi.getOverview).mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 1 })
+    render(<AdminShell user={{ id: 1, name: 'Evaluator', email: 'evaluator@dti.test', role: 'dti_evaluator' }} />)
+    expect(await screen.findByText('State of Calamity Active')).toBeInTheDocument()
+    vi.mocked(adminApi.getOverview).mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 0 })
+    act(() => { window.dispatchEvent(new Event('regulatory-data-changed')) })
+    expect(await screen.findByText('Normal Market Protocol')).toBeInTheDocument()
+  })
   beforeEach(() => {
     window.history.replaceState({}, '', '/')
   })

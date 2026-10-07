@@ -72,7 +72,7 @@ export interface BootstrapData {
   monitoring_period?: MonitoringPeriodInfo
 }
 export interface MonitoringPeriodInfo { cadence: 'weekly' | 'daily'; timezone: 'Asia/Manila'; starts_at: string; ends_at: string; protocol_mode: 'standard' | 'emergency'; declaration_reference: string | null }
-export interface VisitItem { srp_id: number; recorded_price: number; reference_snapshot?: ReferenceSnapshot }
+export interface VisitItem { srp_id: number; commodity_key?: string | null; recorded_price: number; reference_snapshot?: ReferenceSnapshot }
 export interface VisitLocation { latitude: number; longitude: number; accuracy_meters: number; captured_at: string }
 export interface GeoPosition { latitude: number; longitude: number; accuracy_meters: number }
 export interface VisitDraft {

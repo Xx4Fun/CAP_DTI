@@ -63,6 +63,16 @@ async function waitForInitialPricesReveal() {
 }
 
 describe('SrpSearch data source', () => {
+  it('uses a cache populated by the shell while its own initial refresh fails', async () => {
+    const pending = createDeferred<ReturnType<typeof liveResponse>>();
+    vi.spyOn(apiClient, 'get').mockReturnValue(pending.promise);
+    render(<SrpSearch initialImageWaitMs={0} />);
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalled());
+    writeVerifiedCache(PUBLIC_COMMODITIES_CACHE_KEY, liveCommodities);
+    await act(async () => { pending.reject(new Error('Refresh unavailable')); });
+    expect(await screen.findByRole('button', { name: 'View Saba Sardines price details' })).toBeInTheDocument();
+    expect(screen.getByText(/saved|cached/i)).toBeInTheDocument();
+  });
   beforeEach(() => {
     history.replaceState(null, '', '/prices');
     localStorage.clear();

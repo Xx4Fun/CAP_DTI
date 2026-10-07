@@ -1,12 +1,13 @@
 import React from 'react';
 import { resolveImageUrl, type Commodity } from '../api/client';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
-import { getPriceLabel, type PriceDataSource } from '../app/priceDataPresentation';
+import { applicablePrice, type PriceDataSource } from '../app/priceDataPresentation';
 import { ProgressiveProductImage } from './ProgressiveProductImage';
 
 interface PriceProductCardProps {
   commodity: Commodity;
   dataSource: PriceDataSource;
+  stateOfCalamity?: boolean;
   onSelect: () => void;
   prioritizeImage?: boolean;
   onImageSettled?: () => void;
@@ -14,7 +15,7 @@ interface PriceProductCardProps {
 
 export const PriceProductCard: React.FC<PriceProductCardProps> = ({
   commodity,
-  dataSource,
+  stateOfCalamity,
   onSelect,
   prioritizeImage = false,
   onImageSettled,
@@ -31,6 +32,7 @@ export const PriceProductCard: React.FC<PriceProductCardProps> = ({
     ? (parsed.unit && !isUnitInName ? `${parsed.categoryPath}, ${parsed.unit}` : parsed.categoryPath)
     : (isUnitInName ? '' : parsed.unit);
   const isBasic = commodity.regulatory_classification === 'BASIC_NECESSITY';
+  const price = applicablePrice(commodity, stateOfCalamity);
 
   return (
     <button
@@ -58,9 +60,10 @@ export const PriceProductCard: React.FC<PriceProductCardProps> = ({
       </span>
 
       <span className="price-product-price">
-        <span className="price-product-price-label">{getPriceLabel(dataSource)}</span>
+        <span className="price-product-price-label">{price.label}</span>
         <span className="price-product-price-rule" aria-hidden="true" />
-        <span className="price-product-price-value">₱{Number(commodity.baseline_price).toFixed(2)}</span>
+        <span className="price-product-price-value">{price.value === null ? 'Unavailable' : `₱${Number(price.value).toFixed(2)}`}</span>
+        {commodity.reference?.type === 'emergency_ceiling' && <span>SRP context: ₱{Number(commodity.baseline_price).toFixed(2)}</span>}
       </span>
     </button>
   );

@@ -5,6 +5,7 @@ import { analyzeReference, formatPeso } from '../../app/rules';
 
 interface SrpDirectoryProps {
   catalog: SrpCatalog | null;
+  stale?: boolean;
   error: string;
   onRetry: () => void;
 }
@@ -24,7 +25,7 @@ function formatCommodityOption(item: SrpItem) {
   return `${name} — ${formatPeso(item.reference.value)}`;
 }
 
-export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry }) => {
+export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry, stale }) => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [classificationFilter, setClassificationFilter] = useState('ALL');
@@ -44,7 +45,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
     return !query || item.commodity_name.toLowerCase().includes(query) || (item.category ?? '').toLowerCase().includes(query);
   }), [items, categoryFilter, classificationFilter, search]);
 
-  if (error) {
+  if (error && !catalog) {
     return (
       <div className="v-card portal-status" role="alert">
         <AlertTriangle size={32} color="var(--danger-color)" style={{ margin: '0 auto 10px' }} />
@@ -66,6 +67,7 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
 
   return (
     <div className="srp-directory-view">
+      {(stale || error) && <p role="status">Saved price references — current regulatory data is unavailable. {error} <button type="button" onClick={onRetry}>Refresh</button></p>}
       <div className="v-card-header" style={{ marginBottom: '16px' }}>
         <div>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>Official DTI Suggested Retail Price (SRP) Directory</h2>

@@ -203,10 +203,14 @@ export const adminApi = {
     return data(await api.post(`/admin/emergencies/${id}/prepare`))
   },
   async activateEmergency(id: number, payload: { confirmed: true; preparation_hash: string }): Promise<RegulatoryEmergencyRecord> {
-    return data(await api.post(`/admin/emergencies/${id}/activate`, payload))
+    const record = data<RegulatoryEmergencyRecord>(await api.post(`/admin/emergencies/${id}/activate`, payload))
+    window.dispatchEvent(new Event('regulatory-data-changed'))
+    return record
   },
   async updateEmergency(id: number, payload: unknown): Promise<RegulatoryEmergencyRecord> {
-    return data(await api.patch(`/admin/emergencies/${id}`, payload))
+    const record = data<RegulatoryEmergencyRecord>(await api.patch(`/admin/emergencies/${id}`, payload))
+    window.dispatchEvent(new Event('regulatory-data-changed'))
+    return record
   },
   async getLegalNotices(params: { search?: string; status?: string; store_id?: number; page?: number; exclude_drafts?: 1 } = {}): Promise<LegalNoticePage> {
     return data(await api.get('/admin/legal-notices', { params }))

@@ -130,14 +130,19 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({
 
   useEffect(() => {
     const refreshLiveBulletin = () => {
-      if (document.visibilityState !== 'hidden') {
+      if (navigator.onLine && document.visibilityState === 'visible') {
         void fetchCommodities();
       }
     };
 
+    const timer = window.setInterval(refreshLiveBulletin, 60_000);
+    window.addEventListener('online', refreshLiveBulletin);
     window.addEventListener('focus', refreshLiveBulletin);
     document.addEventListener('visibilitychange', refreshLiveBulletin);
     return () => {
+      window.clearInterval(timer);
+      requestGenerationRef.current++;
+      window.removeEventListener('online', refreshLiveBulletin);
       window.removeEventListener('focus', refreshLiveBulletin);
       document.removeEventListener('visibilitychange', refreshLiveBulletin);
     };
@@ -172,21 +177,15 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({
         setBackendUnavailable(false);
         updateAvailableCategories(liveData);
         writeVerifiedCache(PUBLIC_COMMODITIES_CACHE_KEY, liveData, fetchedAt);
-      } else {
-        if (!initialCache) {
-          setCommodities(fallbackCommodities);
-          updateAvailableCategories(fallbackCommodities);
-          setDataSource('bundled');
-        }
-        setBackendUnavailable(true);
-      }
+      } else throw new Error('Invalid commodity response');
     } catch {
       if (!isLatestRequest()) return;
-      if (!initialCache) {
-        setCommodities(fallbackCommodities);
-        updateAvailableCategories(fallbackCommodities);
-        setDataSource('bundled');
-      }
+      const saved = readVerifiedCache<Commodity[]>(PUBLIC_COMMODITIES_CACHE_KEY, PUBLIC_DIRECTORY_MAX_AGE_MS);
+      const data = saved?.data ?? fallbackCommodities;
+      setCommodities(data);
+      updateAvailableCategories(data);
+      setDataFetchedAt(saved?.fetchedAt ?? null);
+      setDataSource(saved ? 'cached' : 'bundled');
       setBackendUnavailable(true);
     } finally {
       if (isLatestRequest()) {
@@ -524,6 +523,7 @@ export const SrpSearch: React.FC<SrpSearchProps> = ({
             const prioritizeImage = index < INITIAL_IMAGE_COHORT_SIZE;
             return (
             <PriceProductCard
+              stateOfCalamity={stateOfCalamity}
               key={item.id}
               commodity={item}
               dataSource={dataSource}

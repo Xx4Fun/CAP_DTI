@@ -86,6 +86,36 @@ export function resolveVisitReference(line: VisitItem | undefined, bulletin: Bul
     : resolveClientReference(bulletin, mode, regulatoryPrices, monitoringReferences)
 }
 
+function currentVisitReference(item: VisitItem, data: BootstrapData) {
+  return data.monitoring_references?.find((reference) => item.commodity_key
+    ? reference.commodity_key === item.commodity_key
+    : reference.srp_id === item.srp_id)
+}
+
+export function changedVisitReferences(draft: VisitDraft, data: BootstrapData): boolean {
+  if (draft.finalized_at || !data.monitoring_references) return false
+  return draft.items.some((item) => {
+    if (!item.reference_snapshot) return false // canFinalizeVisit already requires re-entry for legacy prices.
+    const current = currentVisitReference(item, data)
+    return !current || current.reference_version !== item.reference_snapshot.reference_version
+  })
+}
+
+export function refreshVisitReferences(draft: VisitDraft, data: BootstrapData): VisitDraft {
+  if (draft.finalized_at) return draft
+  return {
+    ...draft,
+    items: draft.items.map((item) => {
+      const reference = currentVisitReference(item, data)
+      if (!reference) return item
+      const { srp_id, commodity_key, status, type, source_id, value, label, source, effective_date, reference_version } = reference
+      return { ...item, srp_id, commodity_key, reference_snapshot: { status, type, source_id, value, label, source_reference: source, effective_date, reference_version } }
+    }),
+    representative_confirmed: false,
+    signatures: { officer_png_base64: '', representative_png_base64: '' },
+  }
+}
+
 export function canFinalizeVisit(draft: VisitDraft): string[] {
   const issues: string[] = []
   if (!draft.store_id) issues.push('Choose a registered store.')

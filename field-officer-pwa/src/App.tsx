@@ -20,7 +20,7 @@ import { RepresentativeReview } from './components/RepresentativeReview'
 import { applyRepresentativePrefill } from './app/representative'
 import { ReadOnlyVisit } from './components/ReadOnlyVisit'
 import { apiError, fieldApi } from './services/fieldApi'
-import { canFinalizeVisit, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
+import { canFinalizeVisit, changedVisitReferences, refreshVisitReferences, createDraft, hasDraftActivity, isActionableDraft, isBlankDraft, mergeBootstrapDelta } from './app/workflow'
 import {
   archiveUnreadableDrafts, archiveUnreadableQueue, changeVaultPin, clearVault, createVault, deleteSecret, disableBiometricUnlock, enableBiometricUnlock,
   getBiometricUnlockAvailability, getVaultPinLength, hasBiometricUnlock, hasVault, lockVault, readSecret,
@@ -109,10 +109,13 @@ export default function App() {
   const [, setLeaseClock] = useState(0)
   const hiddenAt = useRef<number | null>(null)
   const previousOnline = useRef(online)
+  const regulatoryOnline = useRef(online)
   const queueRef = useRef<QueuedVisit[]>([])
   const queueWrite = useRef<Promise<void>>(Promise.resolve())
   const draftWrite = useRef<Promise<void>>(Promise.resolve())
+  const bootstrapWrite = useRef<Promise<void>>(Promise.resolve())
   const syncingRef = useRef(false)
+  const renewingLeaseRef = useRef(false)
   const lockingRef = useRef(false)
   const archivedRef = useRef<ArchivedVisit[]>([])
   const pendingDraftFlush = useRef<(() => Promise<unknown>) | null>(null)
@@ -164,6 +167,19 @@ export default function App() {
       requestsCall.then(async (data) => { setVerificationRequests(data); setRequestState('ready'); await writeSecret('verification-requests', data) }).catch(() => setRequestState('unavailable')),
       notificationsCall.then(async (page) => { setNotifications(page.data); setNotificationState('ready'); await writeSecret('notifications', page.data) }).catch(() => setNotificationState('unavailable')),
     ])
+  }, [])
+
+  const persistBootstrap = useCallback(async (update: (current: BootstrapData) => BootstrapData, valid: () => boolean) => {
+    const write = bootstrapWrite.current.catch(() => undefined).then(async () => {
+      if (!valid()) return
+      const next = update(bootstrapRef.current)
+      await writeSecret('bootstrap', next)
+      if (!valid()) return
+      bootstrapRef.current = next
+      setBootstrap(next)
+    })
+    bootstrapWrite.current = write
+    await write
   }, [])
 
   useEffect(() => {
@@ -261,15 +277,14 @@ export default function App() {
       try {
         const downloaded = mergeBootstrapDelta(cached.value, await fieldApi.bootstrap(effectiveSession.token, cached.value?.monitoring_references ? cached.value.version : undefined))
         if (lockingRef.current) return
-        setBootstrap(downloaded)
-        await writeSecret('bootstrap', downloaded)
+        await persistBootstrap(() => downloaded, () => !lockingRef.current)
       } catch {
         if (!lockingRef.current) setNotice({ kind: 'warning', title: 'Online refresh unavailable', message: 'Saved field data is open. Reconnect to refresh authorization and reference data.' })
         return
       }
       if (!lockingRef.current) await refreshOperationalData(effectiveSession.token)
     })()
-  }, [persistDrafts, refreshOperationalData])
+  }, [persistBootstrap, persistDrafts, refreshOperationalData])
 
   const showRecovery = useCallback((error: unknown) => {
     lockVault()
@@ -356,7 +371,7 @@ export default function App() {
   // Automatic callers pass only eligible UUIDs; manual "Sync all now" passes nothing and sends every queued visit.
   const syncQueue = useCallback(async (clientUuids?: string[]) => {
     const pending = clientUuids ? queueRef.current.filter((entry) => clientUuids.includes(entry.client_uuid)) : queueRef.current
-    if (!session || !navigator.onLine || !pending.length || syncingRef.current) return
+    if (!session || !navigator.onLine || !pending.length || syncingRef.current || renewingLeaseRef.current) return
     syncingRef.current = true
     setSyncing(true)
     let accepted = 0
@@ -403,12 +418,14 @@ export default function App() {
     previousOnline.current = online
     if (!online || gate !== 'ready') return
     if (reconnected && session) {
+      renewingLeaseRef.current = true
       void (async () => {
         try {
           const lease = await fieldApi.renewLease(session.token)
           const renewed = applyRenewedLease(session, drafts, lease)
           setSession(renewed.session); setDrafts(renewed.drafts)
           await writeSecret('session', renewed.session); await persistDrafts(renewed.drafts)
+          renewingLeaseRef.current = false
           await syncQueue(queueRef.current.filter((item) => shouldRetryOnReconnect(item)).map((item) => item.client_uuid))
         } catch (error) {
           const status = (error as { response?: { status?: number } }).response?.status
@@ -416,7 +433,7 @@ export default function App() {
             await writeSecret('session', session); await writeSecret('queue', queueRef.current); await persistDrafts(drafts)
             lockVault(); queueRef.current = []; setSession(null); setBootstrap(EMPTY_BOOTSTRAP); setQueue([]); setDrafts([]); setActiveDraftId(null); setGate('attention')
           }
-        }
+        } finally { renewingLeaseRef.current = false }
       })()
       return
     }
@@ -450,13 +467,39 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [session])
   useEffect(() => {
+    const reconnected = online && !regulatoryOnline.current
+    regulatoryOnline.current = online
     if (gate !== 'ready' || !session || !online) return
-    const refresh = () => { if (document.visibilityState === 'visible') void refreshOperationalData(session.token) }
+    let request = 0
+    let cancelled = false
+    let cached = bootstrap
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || lockingRef.current) return
+      const current = ++request
+      void refreshOperationalData(session.token)
+      void (async () => {
+        try {
+          const fresh = mergeBootstrapDelta(cached, await fieldApi.bootstrap(session.token, cached.version))
+          if (cancelled || current !== request || lockingRef.current) return
+          await persistBootstrap(() => fresh, () => !cancelled && current === request && !lockingRef.current)
+          if (cancelled || current !== request || lockingRef.current) return
+          const previous = cached
+          cached = fresh
+          setNotice((notice) => notice?.title === 'Regulatory data unavailable' ? null : notice)
+          // Carry identity across bulletin revisions, only for unfinished work. Captured references stay until reviewed.
+          setDrafts((drafts) => drafts.map((draft) => draft.finalized_at ? draft : { ...draft, items: draft.items.map((item) => ({ ...item, commodity_key: item.commodity_key ?? previous.srp_bulletins.find((bulletin) => bulletin.id === item.srp_id)?.commodity_key })) }))
+        } catch {
+          if (!cancelled && current === request && !lockingRef.current) setNotice({ kind: 'warning', title: 'Regulatory data unavailable', message: 'Using saved protocol, prices and monitoring period. Your saved work is retained. Reconnect to refresh.' })
+        }
+      })()
+    }
+    if (reconnected) refresh()
     window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
     document.addEventListener('visibilitychange', refresh)
     const timer = window.setInterval(refresh, 60_000)
-    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); window.clearInterval(timer) }
-  }, [gate, online, refreshOperationalData, session])
+    return () => { cancelled = true; request++; window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); window.clearInterval(timer) }
+  }, [gate, online, persistBootstrap, refreshOperationalData, session])
 
   const completeUnlock = useCallback(async (result: VaultUnlockResult) => {
     let saved: FieldSession | undefined
@@ -618,9 +661,7 @@ export default function App() {
   }
   const cacheRepresentative = async (store: import('./types').RepresentativeStore) => {
     if (lockingRef.current) throw new Error('Workspace is locking')
-    const next = { ...bootstrapRef.current, stores: bootstrapRef.current.stores.map((item) => item.id === store.id ? { ...item, owner_name: store.owner_name, current_representative: store.current_representative } : item) }
-    await writeSecret('bootstrap', next)
-    if (!lockingRef.current) setBootstrap(next)
+    await persistBootstrap((current) => ({ ...current, stores: current.stores.map((item) => item.id === store.id ? { ...item, owner_name: store.owner_name, current_representative: store.current_representative } : item) }), () => !lockingRef.current)
   }
   const claimVerification = async (request: FieldVerificationRequest) => {
     const existing = drafts.find((item) => item.verification_request_id === request.id)
@@ -1234,6 +1275,10 @@ function VisitWizard({
   }, [bootstrap.stores, officerPosition, query, routineStatus])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
   const missingRequirements = canFinalizeVisit(draft)
+  const referencesChanged = changedVisitReferences(draft, bootstrap)
+  useEffect(() => {
+    if (referencesChanged) { setSigningReady(false); setConfirmFinalize(false); setPendingFinalDraft(null) }
+  }, [referencesChanged, bootstrap])
 
   // The issued reference must travel with the price: leases require a snapshot, and sync refuses visits without one.
   const handleUpdatePrice = (srpId: number, recordedPrice: number | null, reference?: ReferenceSnapshot) => {
@@ -1246,7 +1291,7 @@ function VisitWizard({
       const without = draft.items.filter((item) => item.srp_id !== srpId)
       onDraft({
         ...draft,
-        items: [...without, { srp_id: srpId, recorded_price: recordedPrice, ...(reference ? { reference_snapshot: reference } : {}) }],
+        items: [...without, { srp_id: srpId, commodity_key: bootstrap.srp_bulletins.find((bulletin) => bulletin.id === srpId)?.commodity_key, recorded_price: recordedPrice, ...(reference ? { reference_snapshot: reference } : {}) }],
       })
     }
     setError('')
@@ -1288,6 +1333,7 @@ function VisitWizard({
 
   const requestFinish = async () => {
     setError('')
+    if (referencesChanged) { setError('Review and refresh changed monitoring references before signing.'); return }
     if (!signingReady) { setError('Confirm the representative name and role before signing and finalizing.'); return }
     const missing = canFinalizeVisit(draft).filter((issue) => !issue.startsWith('Capture the visit location') && !issue.startsWith('Location accuracy'))
     if (missing.length) {
@@ -1321,6 +1367,7 @@ function VisitWizard({
   }
 
   const confirmFinish = async () => {
+    if (referencesChanged) { setConfirmFinalize(false); setError('Review and refresh changed monitoring references before signing.'); return }
     if (!pendingFinalDraft) return
     try {
       setFinishing(true)
@@ -1337,6 +1384,11 @@ function VisitWizard({
 
   return (
     <div className="visit-page">
+      {referencesChanged && <div className="field-inline-alert" role="alert">
+        <p>Monitoring references changed or are unavailable. Review the current references below before signing. Refresh keeps entered prices and clears both signatures and signer confirmation. Products no longer listed must be reselected.</p>
+        <ul>{draft.items.map((item) => { const current = bootstrap.monitoring_references?.find((reference) => item.commodity_key ? reference.commodity_key === item.commodity_key : reference.srp_id === item.srp_id); return <li key={item.srp_id}>{bootstrap.srp_bulletins.find((bulletin) => bulletin.id === (current?.srp_id ?? item.srp_id))?.commodity_name ?? `Commodity #${item.srp_id}`}: {item.reference_snapshot?.value ?? 'Unavailable'} → {current?.value ?? 'Unavailable'} ({current?.label ?? 'Reference unavailable'})</li> })}</ul>
+        <button type="button" className="secondary-button" onClick={() => { onDraft(refreshVisitReferences(draft, bootstrap)); setSigningReady(false); setConfirmFinalize(false); setPendingFinalDraft(null); setError('') }}>Review and refresh references</button>
+      </div>}
       {step > 0 && <div className="visit-top-bar">
         <div className="visit-top-left">
           <button
@@ -1542,7 +1594,7 @@ function VisitWizard({
           <div className="step-content signatures-step-content">
             <h2>Store Representative & Dual Signatures</h2>
             <p>Enter on-duty personnel details and secure dual official signatures.</p>
-            <RepresentativeReview draft={draft} store={selectedStore} token={token} online={online} onDraft={onDraft} onCache={onCacheRepresentative} onReady={setSigningReady} />
+            <RepresentativeReview draft={draft} store={selectedStore} token={token} online={online} onDraft={onDraft} onCache={onCacheRepresentative} onReady={(ready) => setSigningReady(ready && !referencesChanged)} />
 
             <fieldset className="signature-gate" disabled={!signingReady}>
             <div className="signature-grid">

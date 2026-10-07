@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { regulatoryRefresh } from '../../services/regulatoryRefresh'
 import { Calendar, Database, MapPin, RefreshCw, Shield, ShieldAlert } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
@@ -18,12 +19,15 @@ export const EmergencyToggle: React.FC = () => {
   const [emergencies, setEmergencies] = useState<RegulatoryEmergencyRecord[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [reviewed, setReviewed] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const loadRequest = useRef(0)
   const [savingAction, setSavingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
+    loadRequest.current++
+    setLoading(false); setLoadError(null)
     setEmergencies((current) => current.some((item) => item.id === record.id)
       ? current.map((item) => item.id === record.id ? record : item)
       : [record, ...current])
@@ -31,22 +35,29 @@ export const EmergencyToggle: React.FC = () => {
   }
 
   const loadEmergencies = async () => {
+    const request = ++loadRequest.current
     setLoading(true); setLoadError(null)
     try {
       const records = await adminApi.getEmergencies()
+      if (request !== loadRequest.current) return
       setEmergencies(records)
       setSelectedId((current) => current && records.some((item) => item.id === current)
         ? current
         : records.find((item) => item.status === 'draft')?.id ?? records[0]?.id ?? null)
     } catch {
-      setEmergencies([])
+      if (request !== loadRequest.current) return
       setLoadError('Could not load emergency declarations. Current market protocol is unavailable until the connection is restored.')
-    } finally { setLoading(false) }
+    } finally { if (request === loadRequest.current) setLoading(false) }
   }
 
-  useEffect(() => { void loadEmergencies() }, [])
+  useEffect(() => {
+    void loadEmergencies()
+    const stop = regulatoryRefresh(() => { void loadEmergencies() })
+    return () => { loadRequest.current++; stop() }
+  }, [])
 
   const selected = emergencies.find((item) => item.id === selectedId) ?? null
+  useEffect(() => { setReviewed(false) }, [selected?.preparation_hash])
   const inEffect = emergencies.some((item) => item.effective_state === 'in_effect')
   const officialPrices = useMemo(() => emergencies.flatMap((item) => item.official_prices || []), [emergencies])
   const srpFallbacks = selected?.srp_fallbacks ?? []
@@ -76,7 +87,7 @@ export const EmergencyToggle: React.FC = () => {
           </div>
           <div className={`emergency-status-badge ${inEffect ? 'badge-danger' : 'badge-normal'}`}>
             <span className={`emergency-pulse-dot ${inEffect ? 'pulse-red' : 'pulse-green'}`} />
-            <span>{inEffect ? 'State of Calamity' : 'Normal SRP Protocol'}</span>
+            <span>{loadError || (loading && !emergencies.length) ? 'Emergency status unavailable' : inEffect ? 'State of Calamity' : 'Normal SRP Protocol'}</span>
           </div>
         </div>
       </section>
@@ -216,7 +227,7 @@ export const EmergencyToggle: React.FC = () => {
           {selected?.status === 'active' && (
             <section className="admin-card emergency-active-banner">
               <div className="emergency-active-banner-info">
-                <h4>Active Price Freeze In Effect</h4>
+                <h4>{selected.effective_state === 'in_effect' ? 'Active Price Freeze In Effect' : `Confirmed declaration: ${selected.effective_state.replace('_', ' ')}`}</h4>
                 <p>Declaration reference: <strong>{selected.declaration_reference}</strong> ({selected.starts_on} to {selected.ends_on || 'open'})</p>
               </div>
               <button

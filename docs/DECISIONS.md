@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-07 — Price Freeze synchronization
+
+- Public configuration, legacy calamity reads and Admin's effective-emergency indicator use `MonitoringPeriod::effectiveEmergency`; the legacy cache flag has no regulatory authority. Shelf-tag and manual comparisons use the same formal reference resolver as Field and Vendor. Missing official ceilings stay unavailable; SRP remains separately labelled context and history.
+- Visible online clients refresh regulatory data every 60 seconds, on foreground return and reconnect. Admin activation/status writes also refresh open views immediately. Request guards and serialized Field bootstrap writes prevent older data from replacing newer data.
+- Unfinished Field visits retain entered prices and captured references until explicit review. Refreshing changed references clears both signatures and signer confirmation. Finalized and queued evidence stays unchanged. Evidence and local-only release boundary: [[plans/price-freeze-sync/README]].
+
 ## 2026-10-07 — APC source lookback and SRP fallback
 
 - **Why.** Requiring every Price Freeze-covered product to have an accepted routine observation in the one completed week before the declaration made activation impossible outside the seeded week: a real week covers about five of 124 covered products.

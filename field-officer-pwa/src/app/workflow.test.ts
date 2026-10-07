@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative, resolveClientReference } from './workflow'
+import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative, resolveClientReference, changedVisitReferences, refreshVisitReferences } from './workflow'
 
 describe('field visit workflow', () => {
+  it('requires review of changed references, retains prices, clears signing and preserves finalized evidence', () => {
+    const old = { status: 'available' as const, type: 'standard_srp' as const, source_id: 3, value: 50, label: 'SRP', source_reference: 'SRP-1', effective_date: '2026-09-01', reference_version: 'old' }
+    const draft = { ...createDraft('lease-1'), items: [{ srp_id: 3, commodity_key: 'rice', recorded_price: 48, reference_snapshot: old }], representative_confirmed: true, signatures: { officer_png_base64: 'signed', representative_png_base64: 'signed' } }
+    const data = { version: 'new', is_delta: false, stores: [], recent_prices: [], srp_bulletins: [{ id: 4, commodity_key: 'rice', commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }], monitoring_references: [{ srp_id: 4, commodity_key: 'rice', covered_by_price_freeze: true, ...old, type: 'emergency_ceiling' as const, value: 45, source: 'DECL-1', reference_version: 'new' }] }
+    expect(changedVisitReferences(draft, data)).toBe(true)
+    const updated = refreshVisitReferences(draft, data)
+    expect(updated.items[0]).toMatchObject({ srp_id: 4, recorded_price: 48, reference_snapshot: { type: 'emergency_ceiling', value: 45 } })
+    expect(updated.signatures).toEqual({ officer_png_base64: '', representative_png_base64: '' })
+    expect(updated.representative_confirmed).toBe(false)
+    expect(changedVisitReferences(updated, data)).toBe(false)
+    const finalized = { ...draft, finalized_at: '2026-10-07T01:00:00Z' }
+    expect(changedVisitReferences(finalized, data)).toBe(false)
+    expect(refreshVisitReferences(finalized, data)).toBe(finalized)
+  })
   it('keeps cached reference lists when bootstrap returns an unchanged delta', () => {
     const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true }
     const cached = { version: 'v1', is_delta: false, stores: [store], srp_bulletins: [{ id: 3, commodity_name: 'Rice', unit: 'kg', baseline_price: 50 }], recent_prices: [], accepted_today: 1 }

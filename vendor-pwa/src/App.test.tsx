@@ -741,7 +741,7 @@ describe('PRICE-Watch Vendor Portal', () => {
       await bell('Alerts, 1 new');
 
       api.overview.mockResolvedValue({ ...overview, stores: [overview.stores[0], { ...secondStore, unread_messages: 3 }] });
-      await act(async () => { vi.advanceTimersByTime(30_000); });
+      await act(async () => { vi.advanceTimersByTime(60_000); });
       expect(api.overview).toHaveBeenCalledTimes(3);
       expect(await bell('Alerts, 4 new')).toBeInTheDocument();
     });

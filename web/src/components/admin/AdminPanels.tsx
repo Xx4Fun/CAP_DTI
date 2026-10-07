@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
+import { regulatoryRefresh } from '../../services/regulatoryRefresh'
 import { representativeAuditDetails } from '../../utils/representativeAudit'
 import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
 import type { AdminUser } from '../../types/admin'
@@ -55,13 +56,24 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
   const [legalCounts, setLegalCounts] = useState<{ status: string; label: string; view: string; total: number }[] | null | 'unavailable'>(null)
 
   useEffect(() => {
-    void adminApi.getOverview().then(setSummary).catch(() => setError(true))
     void adminApi.getReportPage?.({ page: 1, per_page: 4 }).then((page) => setReportsList(page?.data ?? [])).catch(() => {})
     const statuses = [{ status: 'draft', label: 'Drafts to finish', view: 'queue' }, { status: 'issued', label: 'Issued, awaiting response', view: 'issued' }, { status: 'response_received', label: 'Responses to review', view: 'issued' }]
     // Each count opens its own list: drafts in the queue, the others on the issued list filtered to that status.
     if (!adminApi.getLegalNotices) { setLegalCounts('unavailable'); return }
     void Promise.all(statuses.map(async (item) => ({ ...item, total: (await adminApi.getLegalNotices({ status: item.status, page: 1 })).total })))
       .then(setLegalCounts).catch(() => setLegalCounts('unavailable'))
+  }, [])
+
+  useEffect(() => {
+    let request = 0
+    const refresh = () => {
+      const current = ++request
+      void adminApi.getOverview().then((value) => { if (current === request) { setSummary(value); setError(false) } })
+        .catch(() => { if (current === request) setError(true) })
+    }
+    refresh()
+    const stop = regulatoryRefresh(refresh)
+    return () => { request++; stop() }
   }, [])
 
   if (error) return <p role="alert" className="admin-inline-alert">The regulatory overview could not load. Refresh or try again later.</p>

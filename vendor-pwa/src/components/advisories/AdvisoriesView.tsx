@@ -6,15 +6,17 @@ import { formatDate, formatPeso } from '../../app/rules';
 interface AdvisoriesViewProps {
   advisories: Advisory[] | null;
   emergency: EmergencyInfo | null;
+  stale?: boolean;
   error: string;
   onRetry: () => void;
 }
 
-export const AdvisoriesView: React.FC<AdvisoriesViewProps> = ({ advisories, emergency, error, onRetry }) => {
+export const AdvisoriesView: React.FC<AdvisoriesViewProps> = ({ advisories, emergency, error, onRetry, stale }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <div className="advisories-view">
+      {stale && <p role="status">Saved advisories — current regulatory status is unavailable.</p>}
       <div className="v-card-header" style={{ marginBottom: '16px' }}>
         <div>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>DTI Regulatory Advisories & Price Freezes</h2>

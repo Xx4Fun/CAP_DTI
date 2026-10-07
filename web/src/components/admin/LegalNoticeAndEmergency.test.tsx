@@ -280,6 +280,18 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     expect(screen.queryByRole('button', { name: /SCO.*Sweep/i })).not.toBeInTheDocument()
   })
 
+  it.each(['scheduled', 'expired'])('does not label a confirmed %s declaration as currently in effect', async (effectiveState) => {
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+      id: 7, location: 'San Jose', declaration_reference: 'DECL-7', starts_on: '2026-10-07', ends_on: '2026-10-07',
+      status: 'active', effective_state: effectiveState,
+      source_week: { timezone: 'Asia/Manila', starts_at: '2026-09-28T00:00:00Z', ends_at: '2026-10-05T00:00:00Z' },
+      candidates: [], official_prices: [],
+    }])
+    render(<EmergencyToggle />)
+    await screen.findByText('Normal SRP Protocol')
+    expect(screen.queryByText('Active Price Freeze In Effect')).not.toBeInTheDocument()
+  })
+
   it('keeps the inclusive end date in effect after ending without dropping emergency detail', async () => {
     const active = {
       id: 7, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-7',

@@ -344,7 +344,7 @@ export const MoreView: React.FC<MoreViewProps> = ({
               State of Calamity Active
             </div>
             <div style={{ fontSize: '0.84rem', color: '#b91c1c', lineHeight: 1.45 }}>
-              Pursuant to Section 6 of R.A. 7581, an automatic price freeze is enforced in San Jose de Buenavista. Basic necessities are locked at baseline SRP with 0% markup tolerance.
+              Pursuant to Section 6 of R.A. 7581, an automatic price freeze is enforced in San Jose de Buenavista. Covered basic necessities use the confirmed official APC or SRP-held ceiling with 0% markup tolerance.
             </div>
           </div>
         </div>

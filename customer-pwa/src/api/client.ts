@@ -90,6 +90,15 @@ export const defaultStoresList: Establishment[] = [
 ];
 
 export interface Commodity {
+  reference?: {
+    status: 'available' | 'unavailable';
+    type: 'standard_srp' | 'emergency_ceiling';
+    value: number | null;
+    label: string;
+    source: string | null;
+    effective_date: string | null;
+    source_id: number | null;
+  };
   id: number;
   commodity_name: string;
   image_path?: string | null;

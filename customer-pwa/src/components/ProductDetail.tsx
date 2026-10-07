@@ -17,7 +17,7 @@ import {
   type SrpHistoryEntry,
 } from '../api/client';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
-import { getPriceLabel, type PriceDataSource } from '../app/priceDataPresentation';
+import { applicablePrice, type PriceDataSource } from '../app/priceDataPresentation';
 import { ProductImageLightbox } from './ProductImageLightbox';
 import { ProgressiveProductImage, type ProductImageSettlement } from './ProgressiveProductImage';
 
@@ -194,7 +194,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const subtitle = formatCategoryDisplay(parsed.categoryPath || commodity.category || 'Category not provided');
   const effectiveDate = formatDate(commodity.effective_date);
   const fetchedDate = formatDate(dataFetchedAt);
-  const priceLabel = getPriceLabel(dataSource);
+  const price = applicablePrice(commodity, stateOfCalamity);
+  const priceLabel = price.label;
   const trend = useMemo(
     () => deriveTrend(commodity, history, historyStatus),
     [commodity, history, historyStatus],
@@ -276,7 +277,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           <div className="product-detail-summary-metrics">
             <div className="product-detail-metric product-detail-price-block">
               <span>{priceLabel}</span>
-              <strong className="product-detail-price">{'\u20B1'}{Number(commodity.baseline_price).toFixed(2)}</strong>
+              <strong className="product-detail-price">{price.value === null ? 'Unavailable' : `\u20B1${Number(price.value).toFixed(2)}`}</strong>
+              {commodity.reference?.type === 'emergency_ceiling' && <span>SRP context: {'\u20B1'}{Number(commodity.baseline_price).toFixed(2)}</span>}
             </div>
             <div className="product-detail-metric product-detail-trend">
               <span>Trend</span>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { regulatoryRefresh } from '../../services/regulatoryRefresh'
 import type { ReactElement } from 'react'
 import type { AdminUser } from '../../types/admin'
 import {
@@ -198,13 +199,18 @@ export function AdminShell({ user, onLogout }: { user: AdminUser; onLogout?: () 
   }, [isFieldOfficer])
 
   useEffect(() => {
-    // The overview count is enough for the badge; the full emergency list is only loaded by Emergency Protocol.
-    void adminApi.getOverview().then((overview) => {
-      if (overview.active_emergencies === null) throw new Error('Emergency records unavailable')
-      setIsCalamityActive(overview.active_emergencies > 0 || document.body.classList.contains('calamity-mode'))
-    }).catch(() => {
-      setIsCalamityActive(document.body.classList.contains('calamity-mode') ? true : null)
-    })
+    let request = 0
+    const refresh = () => {
+      const current = ++request
+      void adminApi.getOverview().then((overview) => {
+        if (current !== request) return
+        if (overview.active_emergencies === null || overview.availability?.regulatory_emergencies === false) throw new Error('Emergency records unavailable')
+        setIsCalamityActive(overview.active_emergencies > 0)
+      }).catch(() => { if (current === request) setIsCalamityActive(null) })
+    }
+    refresh()
+    const stop = regulatoryRefresh(refresh)
+    return () => { request++; stop() }
   }, [])
 
   const navigateTo: NavigateTo = (module, params = {}) => {

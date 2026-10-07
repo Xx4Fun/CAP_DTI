@@ -252,10 +252,14 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
   // would miss another linked store's notices and messages if this stopped there.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && navigator.onLine) void loadCore();
-    }, 30_000);
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void loadCore();
+        if (activeTab === 'srp') void loadSrp();
+        if (activeTab === 'advisories') void loadAdvisories();
+      }
+    }, 60_000);
     return () => window.clearInterval(timer);
-  }, [loadCore]);
+  }, [activeTab, loadCore, loadSrp, loadAdvisories]);
   // canRespond depends on the clock, and the poll above does not run offline: re-render at the nearest
   // response deadline so the bell, the alerts and the respond actions drop an expired notice on time.
   useEffect(() => {
@@ -283,10 +287,12 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
       if (activeTab === 'srp') void loadSrp();
       if (activeTab === 'advisories') void loadAdvisories();
     };
+    window.addEventListener('focus', revalidate);
     window.addEventListener('online', revalidate);
     window.addEventListener('offline', update);
     document.addEventListener('visibilitychange', revalidate);
     return () => {
+      window.removeEventListener('focus', revalidate);
       window.removeEventListener('online', revalidate);
       window.removeEventListener('offline', update);
       document.removeEventListener('visibilitychange', revalidate);
@@ -585,10 +591,10 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
                 }} />
               )}
 
-              {activeTab === 'srp' && <SrpDirectory catalog={srp} error={srpError} onRetry={() => void loadSrp()} />}
+              {activeTab === 'srp' && <SrpDirectory catalog={srp} stale={!online || reachability !== 'reachable' || Boolean(srpError)} error={srpError} onRetry={() => void loadSrp()} />}
 
               {activeTab === 'advisories' && (
-                <AdvisoriesView advisories={advisories} emergency={overview.emergency} error={advisoriesError} onRetry={() => void loadAdvisories()} />
+                <AdvisoriesView advisories={advisories} emergency={overview.emergency} stale={!online || reachability !== 'reachable' || Boolean(loadError) || Boolean(advisoriesError)} error={advisoriesError} onRetry={() => void loadAdvisories()} />
               )}
             </>
           )}

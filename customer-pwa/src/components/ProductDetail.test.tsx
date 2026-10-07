@@ -32,6 +32,13 @@ function mockHistory(history: SrpHistoryEntry[]) {
 }
 
 describe('ProductDetail', () => {
+  it('shows the official ceiling separately from SRP history', async () => {
+    render(<ProductDetail commodity={{ ...commodity, reference: { status: 'available', type: 'emergency_ceiling', value: 22, label: 'Official APC / Price Freeze reference', source: 'DECL-1', effective_date: '2026-10-07', source_id: 1 } }} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />);
+    expect(screen.getByText('Official APC / Price Freeze reference')).toBeInTheDocument();
+    expect(screen.getByText('\u20B122.00')).toBeInTheDocument();
+    expect(screen.getByText(/SRP context.*25.00/)).toBeInTheDocument();
+    expect(await screen.findByText('No past SRP')).toBeInTheDocument();
+  });
   beforeEach(() => mockHistory([currentVersion]));
   afterEach(() => vi.restoreAllMocks());
 
