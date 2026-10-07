@@ -13,6 +13,7 @@ Image fields: `image_path` in `/public/commodities`, `/public/establishments`, e
 
 ### `GET /api/public/config`
 Retrieves global application configuration and regulatory state.
+`state_of_calamity` follows a confirmed formal declaration effective at the current Manila date, including its end date. Legacy cache flags are ignored.
 * **Authentication:** None
 * **Response (200 OK):**
 ```json
@@ -50,6 +51,15 @@ Search or browse regulated commodities and active SRP bulletins.
       "package_size": "1 kg",
       "unit": "kg",
       "baseline_price": 38.00,
+      "reference": {
+        "status": "available",
+        "type": "standard_srp",
+        "value": 38.00,
+        "label": "SRP baseline (provisional)",
+        "source": "DTI SRP Bulletin",
+        "effective_date": "2026-07-15",
+        "source_id": 1
+      },
       "effective_date": "2026-07-15",
       "regulatory_state": "SRP Active",
       "is_active": true

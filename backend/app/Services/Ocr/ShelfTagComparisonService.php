@@ -6,7 +6,6 @@ use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\CommodityImageStorage;
-use Illuminate\Support\Facades\Cache;
 
 class ShelfTagComparisonService
 {
@@ -25,10 +24,11 @@ class ShelfTagComparisonService
         string $productSource,
         string $priceSource,
     ): array {
-        $regulatoryResult = $this->regulatoryPriceResolver->resolve(
-            $product,
-            (bool) Cache::get('state_of_calamity', false),
-        );
+        $product = $product->commodity_key
+            ? SrpBulletin::where('commodity_key', $product->commodity_key)->whereDate('effective_date', '<=', now('Asia/Manila'))
+                ->latest('effective_date')->latest('id')->first() ?? $product
+            : $product;
+        $regulatoryResult = $this->regulatoryPriceResolver->resolve($product);
         $historicalResult = $this->historicalPriceResolver->resolve($store, $product);
         $displayedPriceFormatted = number_format((float) $displayedPrice, 2, '.', '');
         $displayedPriceCentavos = (int) round(((float) $displayedPrice) * 100);
@@ -64,7 +64,7 @@ class ShelfTagComparisonService
             'unit' => (string) ($product->unit ?? ''),
             'displayed_price' => $displayedPriceFormatted,
             'reference_price' => $regulatoryResult['value_string'] ?? null,
-            'regulatory_label' => $regulatoryResult['label'] ?? 'Current SRP',
+            'regulatory_label' => $regulatoryResult['label'] ?? 'Reference unavailable',
             'regulatory_mode' => $regulatoryResult['regulatory_mode'] ?? 'NORMAL_SRP',
             'peso_difference' => $pesoDifference,
             'percent_difference' => $percentDifference,

@@ -14,7 +14,7 @@ use App\Services\FieldReferenceResolver;
  * The reference is resolved in two steps because the two resolvers answer different questions:
  * TemporalSrpResolver finds which bulletin revision applied on a date, FieldReferenceResolver decides
  * whether that bulletin's ordinary SRP or an emergency APC/frozen ceiling governs. Shelf-tag scanning
- * uses RegulatoryPriceResolver instead, which reads a *current* calamity flag — right for a shopper
+ * uses RegulatoryPriceResolver instead, which resolves the current formal declaration — right for a shopper
  * standing in a store, wrong for a receipt dated weeks ago.
  *
  * This states a comparison. It never decides a violation: `is_above_reference` is arithmetic, and a

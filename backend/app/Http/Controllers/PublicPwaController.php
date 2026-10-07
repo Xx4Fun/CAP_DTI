@@ -9,7 +9,7 @@ use App\Models\ReportStatusHistory;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
+use App\Support\MonitoringPeriod;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -41,7 +41,7 @@ class PublicPwaController extends Controller
 
     public function config()
     {
-        $stateOfCalamity = Cache::get('state_of_calamity', false);
+        $stateOfCalamity = MonitoringPeriod::effectiveEmergency(now('Asia/Manila')) !== null;
         return response()->json([
             'success' => true,
             'message' => 'Public configuration retrieved successfully.',
@@ -668,12 +668,7 @@ class PublicPwaController extends Controller
             : $submitted;
         $reference = $references->resolve($bulletin, $observedAt);
 
-        // The legacy calamity toggle has no price records behind it; never relabel the SRP as a frozen price.
-        $legacyFreezeWithoutRecord = (bool) Cache::get('state_of_calamity', false)
-            && $bulletin->price_freeze_applicable
-            && $reference['type'] !== 'emergency_ceiling';
-
-        if ($reference['status'] !== 'available' || $legacyFreezeWithoutRecord) {
+        if ($reference['status'] !== 'available') {
             return response()->json([
                 'success' => false,
                 'status' => 'REFERENCE_UNAVAILABLE',

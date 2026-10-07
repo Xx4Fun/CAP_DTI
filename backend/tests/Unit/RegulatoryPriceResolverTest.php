@@ -46,7 +46,12 @@ class RegulatoryPriceResolverTest extends TestCase
 
     public function test_emergency_mode_returns_regulatory_price_unavailable_and_does_not_label_srp_baseline_as_frozen(): void
     {
-        Cache::put('state_of_calamity', true);
+        $admin = \App\Models\User::factory()->create(['role' => 'dti_evaluator']);
+        \App\Models\RegulatoryEmergency::create([
+            'location' => 'Systemwide', 'starts_on' => now('Asia/Manila')->toDateString(),
+            'declaration_reference' => 'RESOLVER-TEST', 'status' => 'active',
+            'confirmed_at' => now()->subMinute(), 'responsible_admin_id' => $admin->id,
+        ]);
 
         $product = SrpBulletin::create([
             'commodity_name' => 'Saba Philippines Sardines in Tomato Sauce 155 g',
@@ -67,7 +72,7 @@ class RegulatoryPriceResolverTest extends TestCase
         $this::assertNull($resolved['value_centavos']);
         $this::assertEquals('EMERGENCY_PRICE_FREEZE', $resolved['regulatory_mode']);
         $this::assertEquals(
-            'No authoritative frozen prevailing price or APC ceiling is on record for this commodity.',
+            'No authoritative reference price is on record for this commodity.',
             $resolved['message']
         );
 
@@ -78,7 +83,7 @@ class RegulatoryPriceResolverTest extends TestCase
         $this::assertNotEquals('21.50', $resolved['value_string']);
     }
 
-    public function test_explicit_state_of_calamity_parameter_override(): void
+    public function test_legacy_cache_flag_does_not_override_formal_status(): void
     {
         Cache::put('state_of_calamity', false);
 
@@ -92,12 +97,12 @@ class RegulatoryPriceResolverTest extends TestCase
             'is_active' => true,
         ]);
 
-        // Explicitly pass true for emergency state override
-        $resolved = $this->resolver->resolve($product, true);
+        Cache::put('state_of_calamity', true);
+        $resolved = $this->resolver->resolve($product);
 
-        $this::assertEquals('REGULATORY_PRICE_UNAVAILABLE', $resolved['status']);
-        $this::assertEquals('EMERGENCY_PRICE_FREEZE', $resolved['regulatory_mode']);
-        $this::assertNull($resolved['value_string']);
+        $this::assertEquals('REGULATORY_PRICE_FOUND', $resolved['status']);
+        $this::assertEquals('NORMAL_SRP', $resolved['regulatory_mode']);
+        $this::assertEquals('21.00', $resolved['value_string']);
     }
 
     public function test_null_product_returns_regulatory_price_unavailable(): void

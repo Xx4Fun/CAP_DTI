@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SrpBulletin;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\CommodityImageStorage;
+use App\Services\FieldReferenceResolver;
 use Illuminate\Http\Request;
 
 class PublicCommodityController extends Controller
@@ -12,7 +13,8 @@ class PublicCommodityController extends Controller
     public function index(
         Request $request,
         SrpCatalogService $catalog,
-        CommodityImageStorage $imageStorage
+        CommodityImageStorage $imageStorage,
+        FieldReferenceResolver $references
     ) {
         $search = trim((string) $request->input('query', ''));
         $identityMode = $request->input('match_mode') === 'identity';
@@ -22,7 +24,8 @@ class PublicCommodityController extends Controller
 
         $imageFor = $catalog->imageResolver();
 
-        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageFor, $imageStorage, $identityMode) {
+        $observedAt = now('Asia/Manila');
+        $commodities = $currentRecords->map(function (SrpBulletin $record) use ($imageFor, $imageStorage, $identityMode, $references, $observedAt) {
             return [
                 'id' => (int) $record->id,
                 'commodity_name' => (string) $record->commodity_name,
@@ -31,6 +34,7 @@ class PublicCommodityController extends Controller
                 'unit' => $record->unit,
                 'regulatory_classification' => $record->regulatory_classification,
                 'baseline_price' => (float) $record->baseline_price,
+                'reference' => $references->resolve($record, $observedAt),
                 'effective_date' => $record->effective_date?->toDateString(),
                 'source_reference' => $record->source_reference,
                 'is_active' => (bool) $record->is_active,

@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\RegulatoryEmergency;
+use App\Support\MonitoringPeriod;
 use Illuminate\Http\Request;
 
 class CalamityController extends Controller
 {
     public function show()
     {
-        $status = RegulatoryEmergency::query()->where('status', 'active')->exists();
+        $status = MonitoringPeriod::effectiveEmergency(now('Asia/Manila')) !== null;
         return response()->json([
             'state_of_calamity' => $status
         ]);
@@ -24,7 +24,7 @@ class CalamityController extends Controller
         return response()->json([
             'status' => 'REGULATORY_EMERGENCY_RECORD_REQUIRED',
             'message' => 'Use the formal emergency declaration workflow with location, dates, and declaration reference.',
-            'state_of_calamity' => RegulatoryEmergency::query()->where('status', 'active')->exists(),
+            'state_of_calamity' => MonitoringPeriod::effectiveEmergency(now('Asia/Manila')) !== null,
         ], 422);
     }
 }

@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ConsumerReport;
-use App\Models\RegulatoryEmergency;
+use App\Support\MonitoringPeriod;
 use App\Models\Store;
 use App\Services\Admin\AdminAuthorizationService;
 use Illuminate\Http\Request;
@@ -23,7 +23,7 @@ class AdminOverviewController extends Controller
             'recent_stores' => Store::orderBy('store_name')->limit(4)->get(['id', 'store_name', 'dti_sec_number', 'address', 'is_active']),
             'pending_reports' => ConsumerReport::whereNotIn('status', ['Resolved', 'Closed'])->count(),
             'active_emergencies' => $emergencyRecordsAvailable
-                ? RegulatoryEmergency::where('status', 'active')->count()
+                ? (MonitoringPeriod::effectiveEmergency(now('Asia/Manila')) ? 1 : 0)
                 : null,
             'availability' => [
                 'regulatory_emergencies' => $emergencyRecordsAvailable,

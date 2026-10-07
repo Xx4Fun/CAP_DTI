@@ -109,7 +109,7 @@ class ComparePriceEndpointTest extends TestCase
     {
         Cache::put('state_of_calamity', true);
 
-        $this->compare(48)->assertStatus(422)->assertJsonPath('status', 'REFERENCE_UNAVAILABLE');
+        $this->compare(48)->assertOk()->assertJsonPath('data.reference_price', 50);
     }
 
     public function test_previous_price_only_uses_verified_signed_inspections(): void
