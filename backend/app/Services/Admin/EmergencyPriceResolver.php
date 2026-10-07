@@ -21,7 +21,7 @@ class EmergencyPriceResolver
         if (!$record) return ['status' => 'REGULATORY_PRICE_UNAVAILABLE', 'label' => null, 'value' => null];
         return [
             'status' => 'REGULATORY_PRICE_FOUND',
-            'label' => $record->price_type === 'APC' ? 'APC ceiling' : 'Frozen prevailing price',
+            'label' => ['APC' => 'APC ceiling', 'SRP' => 'SRP held as Price Freeze ceiling'][$record->price_type] ?? 'Frozen prevailing price',
             'value' => $record->authoritative_price, 'source_reference' => $record->source_reference,
         ];
     }

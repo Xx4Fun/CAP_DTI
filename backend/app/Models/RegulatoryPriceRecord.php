@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class RegulatoryPriceRecord extends Model
@@ -13,5 +14,12 @@ class RegulatoryPriceRecord extends Model
     public function emergency()
     {
         return $this->belongsTo(RegulatoryEmergency::class, 'regulatory_emergency_id');
+    }
+
+    /** Official references that can still apply: the declaration was confirmed and the record has not run out. */
+    public function scopeStillApplicable(Builder $query): void
+    {
+        $query->where(fn ($dates) => $dates->whereNull('effective_until')->orWhereDate('effective_until', '>=', now('Asia/Manila')->toDateString()))
+            ->whereHas('emergency', fn ($emergency) => $emergency->whereIn('status', ['active', 'ended']));
     }
 }

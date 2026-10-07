@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Models\User;
 use App\Services\FieldNotificationService;
@@ -29,6 +30,7 @@ class SrpRevisionService
                 'category' => ['Category is part of the commodity identity. Change it with Update SRP details instead of a price revision.'],
             ]);
         }
+        $this->ensureFrozenUnitKept($original, $proposed);
         $this->ensureNoConflict($original, $proposed);
 
         $changedFields = collect($proposed)
@@ -52,9 +54,12 @@ class SrpRevisionService
         User $actor,
         Request $request
     ): SrpBulletin {
-        $preview = $this->preview($original, $data);
-
-        return DB::transaction(function () use ($original, $preview, $data, $actor, $request) {
+        return DB::transaction(function () use ($original, $data, $actor, $request) {
+            // The lock makes the Price Freeze check in preview() see an activation that was in progress, and the reread
+            // makes it see a rename or unit change that committed while this request waited.
+            EmergencyApcPreparationService::lock();
+            $original->refresh();
+            $preview = $this->preview($original, $data);
             $revision = SrpBulletin::create($preview['proposed'] + ['created_by' => $actor->id]);
             $this->audit->recordOrFail($request, 'srp.revision_created', $revision, [
                 'original_id' => $original->id,
@@ -85,6 +90,29 @@ class SrpRevisionService
             'price_freeze_applicable' => (bool) $original->price_freeze_applicable,
             'price_freeze_treatment' => $original->price_freeze_treatment,
         ];
+    }
+
+    /**
+     * A revision keeps the commodity key, and an official Price Freeze reference is found by that key alone. The ceiling was
+     * confirmed for the unit in effect on the declaration date, which is not always the unit of the row being revised.
+     */
+    private function ensureFrozenUnitKept(SrpBulletin $original, array $proposed): void
+    {
+        if ($original->commodity_key === null) {
+            return;
+        }
+        $unit = fn (?string $value) => mb_strtolower(trim((string) $value));
+        $declaredOn = RegulatoryPriceRecord::query()->stillApplicable()
+            ->where('commodity_key', $original->commodity_key)->pluck('effective_from');
+        foreach ($declaredOn as $date) {
+            $confirmed = SrpBulletin::query()->where('commodity_key', $original->commodity_key)
+                ->whereDate('effective_date', '<=', $date)->latest('effective_date')->latest('id')->first() ?? $original;
+            if ($unit($confirmed->unit) !== $unit($proposed['unit'])) {
+                throw ValidationException::withMessages([
+                    'unit' => ["This commodity has an official Price Freeze reference confirmed per {$confirmed->unit}. A revision cannot use another unit until that reference ends."],
+                ]);
+            }
+        }
     }
 
     private function ensureNoConflict(SrpBulletin $original, array $proposed): void

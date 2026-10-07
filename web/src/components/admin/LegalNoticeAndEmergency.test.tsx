@@ -358,4 +358,39 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm and activate' }))
     expect(adminApi.activateEmergency).toHaveBeenCalledWith(7, { confirmed: true, preparation_hash: 'b'.repeat(64) })
   })
+
+  it('shows each candidate source week and SRP fallbacks, and lets a reviewed preparation with fallbacks activate', async () => {
+    const draft = {
+      id: 7, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-7',
+      starts_on: '2026-09-09', ends_on: null, status: 'draft' as const, effective_state: 'draft' as const,
+      preparation_hash: 'b'.repeat(64),
+      source_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-30T16:00:00Z', ends_at: '2026-09-06T16:00:00Z', starts_on: '2026-08-31', ends_on: '2026-09-06' },
+      candidates: [
+        { id: 3, commodity_key: 'rice', minimum_price: 40, maximum_price: 50, observed_average_price: 44, computed_apc_price: 45, observation_count: 3, establishment_count: 2, source_week: { starts_on: '2026-08-31', ends_on: '2026-09-06' } },
+        { id: 4, commodity_key: 'sugar', minimum_price: 60, maximum_price: 60, observed_average_price: 60, computed_apc_price: 60, observation_count: 1, establishment_count: 1, source_week: { starts_on: '2026-08-17', ends_on: '2026-08-23' } },
+      ],
+      srp_fallbacks: [{ commodity_key: 'milk', commodity_name: 'Milk', unit: 'can', srp_id: 12, srp_price: 38 }],
+      // Still sent for tabs on the previous build; this build must not let it block activation.
+      missing_commodity_keys: ['milk', 'sugar'],
+      official_prices: [],
+    }
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([draft])
+    vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect' })
+    const user = userEvent.setup()
+
+    render(<EmergencyToggle />)
+
+    expect(await screen.findByText('2026-08-17 to 2026-08-23')).toBeInTheDocument()
+    expect(screen.getByText('2026-08-31 to 2026-09-06')).toBeInTheDocument()
+    expect(screen.getAllByText('Earlier week')).toHaveLength(1)
+    expect(screen.getByText(/SRP will be held as the Price Freeze ceiling for 1 product$/)).toBeInTheDocument()
+    expect(screen.getByText('Milk')).toBeInTheDocument()
+    expect(screen.getByText(/₱38\.00/)).toBeInTheDocument()
+    expect(screen.queryByText(/Activation is blocked/i)).not.toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: 'Confirm and activate' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: /reviewed the source week/i }))
+    await user.click(screen.getByRole('button', { name: 'Confirm and activate' }))
+    expect(adminApi.activateEmergency).toHaveBeenCalledWith(7, { confirmed: true, preparation_hash: 'b'.repeat(64) })
+  })
 })

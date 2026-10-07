@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
+use App\Services\Admin\EmergencyApcPreparationService;
 use App\Services\Admin\SensitiveActionGuard;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\Admin\SrpRevisionService;
@@ -133,6 +135,8 @@ class SrpManagementController extends Controller
 
         // Sync metadata (and an explicit image change) across all revisions of this commodity lineage
         DB::transaction(function () use ($srp, $data, $imageChange, $request, $audit, $catalog) {
+            // Before any row lock: an activation in progress finishes writing its official records before the guard below reads them.
+            EmergencyApcPreparationService::lock();
             $lineage = function () use ($srp) {
                 $query = SrpBulletin::query();
 
@@ -153,6 +157,15 @@ class SrpManagementController extends Controller
             if ($targetExists || ($changesKey && $dates->unique()->count() !== $dates->count())) {
                 throw ValidationException::withMessages([
                     'commodity_name' => ['This commodity and unit already has an SRP identity or overlapping effective dates.'],
+                ]);
+            }
+
+            // Official Price Freeze references are found by commodity key, and one held at SRP has no monitoring item to
+            // trip the unit rule below. Rekeying a commodity while such a reference can still apply would orphan it.
+            if ($changesKey && RegulatoryPriceRecord::query()->stillApplicable()
+                ->whereIn('commodity_key', $lineageRows->pluck('commodity_key')->filter())->exists()) {
+                throw ValidationException::withMessages([
+                    'commodity_name' => ['This commodity has an official Price Freeze reference. Its name and unit cannot change until that reference ends.'],
                 ]);
             }
 

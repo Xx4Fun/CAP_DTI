@@ -49,9 +49,11 @@ export const EmergencyToggle: React.FC = () => {
   const selected = emergencies.find((item) => item.id === selectedId) ?? null
   const inEffect = emergencies.some((item) => item.effective_state === 'in_effect')
   const officialPrices = useMemo(() => emergencies.flatMap((item) => item.official_prices || []), [emergencies])
-  const completePreparation = !!selected?.candidates.length
+  const srpFallbacks = selected?.srp_fallbacks ?? []
+  const cutoffStartsOn = selected ? selected.source_week.starts_on || day(selected.source_week.starts_at) : null
+  const completePreparation = !!selected
+    && selected.candidates.length + srpFallbacks.length > 0
     && selected.candidates.every((candidate) => candidate.observation_count > 0)
-    && !(selected.missing_commodity_keys?.length)
 
   return (
     <div className="emergency-container">
@@ -146,7 +148,7 @@ export const EmergencyToggle: React.FC = () => {
             <div className="emergency-card-head">
               <div className="emergency-card-title-group">
                 <h3>Prepare a Price Freeze declaration</h3>
-                <p>The system uses the latest completed San Jose weekly monitoring cycle and calculates APC as (minimum + maximum) ÷ 2.</p>
+                <p>For each covered product the system uses its latest completed San Jose monitoring week with accepted routine prices and calculates APC as (minimum + maximum) ÷ 2. A product never observed keeps its SRP as the ceiling.</p>
               </div>
             </div>
 
@@ -249,8 +251,7 @@ export const EmergencyToggle: React.FC = () => {
                 <div className="emergency-card-title-group">
                   <h3>APC Preparation</h3>
                   <p>
-                    Source week: {selected.source_week.starts_on || day(selected.source_week.starts_at)} to{' '}
-                    {selected.source_week.ends_on || day(selected.source_week.ends_at)} · Asia/Manila
+                    Routine observations up to {selected.source_week.ends_on || day(selected.source_week.ends_at)} · Asia/Manila
                   </p>
                 </div>
                 <button
@@ -280,6 +281,7 @@ export const EmergencyToggle: React.FC = () => {
                   <thead>
                     <tr>
                       <th>Product</th>
+                      <th>Source week</th>
                       <th>Minimum</th>
                       <th>Maximum</th>
                       <th>Observed average</th>
@@ -293,6 +295,16 @@ export const EmergencyToggle: React.FC = () => {
                       selected.candidates.map((candidate) => (
                         <tr key={candidate.id}>
                           <td><strong>{candidate.commodity_key}</strong></td>
+                          <td>
+                            {candidate.source_week ? (
+                              <div className="apc-computed-cell">
+                                <span>{candidate.source_week.starts_on} to {candidate.source_week.ends_on}</span>
+                                {candidate.source_week.starts_on !== cutoffStartsOn && (
+                                  <small style={{ display: 'block' }}>Earlier week</small>
+                                )}
+                              </div>
+                            ) : '—'}
+                          </td>
                           <td>{money(candidate.minimum_price)}</td>
                           <td>{money(candidate.maximum_price)}</td>
                           <td>{money(candidate.observed_average_price)}</td>
@@ -308,8 +320,8 @@ export const EmergencyToggle: React.FC = () => {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={7}>
-                          No covered product has qualifying data in the selected completed week. Activation is blocked.
+                        <td colSpan={8}>
+                          No covered product has an accepted routine observation before this declaration.
                         </td>
                       </tr>
                     )}
@@ -317,10 +329,19 @@ export const EmergencyToggle: React.FC = () => {
                 </table>
               </div>
 
-              {!!selected.missing_commodity_keys?.length && (
-                <p role="alert" className="admin-inline-alert" style={{ marginTop: '0.85rem' }}>
-                  Activation is blocked: no qualifying source-week observation for {selected.missing_commodity_keys.join(', ')}.
-                </p>
+              {!!srpFallbacks.length && (
+                <details className="apc-source-details">
+                  <summary>
+                    {`No routine observation on record. SRP will be held as the Price Freeze ceiling for ${srpFallbacks.length} ${srpFallbacks.length === 1 ? 'product' : 'products'}`}
+                  </summary>
+                  <ul>
+                    {srpFallbacks.map((fallback) => (
+                      <li key={fallback.commodity_key}>
+                        <strong>{fallback.commodity_name}</strong>{fallback.unit ? ` · ${fallback.unit}` : ''} · {money(fallback.srp_price)}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
 
               {/* Source Records Expanders */}
@@ -347,7 +368,7 @@ export const EmergencyToggle: React.FC = () => {
                     checked={reviewed}
                     onChange={(event) => setReviewed(event.target.checked)}
                   />
-                  <span>I reviewed the source week, supporting statistics, and computed APC values.</span>
+                  <span>I reviewed the source week of each product, supporting statistics, computed APC values, and products held at SRP.</span>
                 </label>
 
                 <button

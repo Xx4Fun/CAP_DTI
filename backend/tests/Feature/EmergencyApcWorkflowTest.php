@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditEvent;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
@@ -83,8 +85,14 @@ class EmergencyApcWorkflowTest extends TestCase
             ->assertJsonPath('data.candidates.0.establishment_count', 2)
             ->assertJsonPath('data.candidates.0.source_observations.0.store_name', 'Market A')
             ->assertJsonPath('data.candidates.0.source_observations.1.store_name', 'Market B')
+            ->assertJsonPath('data.candidates.0.source_week.starts_on', '2026-08-31')
+            ->assertJsonPath('data.candidates.0.source_week.ends_on', '2026-09-06')
             ->assertJsonPath('data.covered_commodity_keys', ['milk', 'rice'])
             ->assertJsonPath('data.missing_commodity_keys', ['milk'])
+            ->assertJsonCount(1, 'data.srp_fallbacks')
+            ->assertJsonPath('data.srp_fallbacks.0.commodity_key', 'milk')
+            ->assertJsonPath('data.srp_fallbacks.0.commodity_name', 'Milk')
+            ->assertJsonPath('data.srp_fallbacks.0.srp_price', 40)
             ->assertJsonCount(2, 'data.candidates.0.source_item_ids');
 
         $this->assertDatabaseMissing('regulatory_emergencies', ['status' => 'active']);
@@ -168,6 +176,209 @@ class EmergencyApcWorkflowTest extends TestCase
         $resolver = app(FieldReferenceResolver::class);
         $this->assertSame('emergency_ceiling', $resolver->resolve($bulletin, '2026-09-10 23:59:59')['type']);
         $this->assertSame('standard_srp', $resolver->resolve($bulletin, '2026-09-11 00:00:00')['type']);
+    }
+
+    public function test_each_product_uses_its_own_latest_completed_week_with_observations(): void
+    {
+        [$admin, $officer] = $this->adminAndOfficer('lookback');
+        Sanctum::actingAs($admin);
+        $rice = $this->coveredBulletin('Rice', 'rice', 50);
+        $sugar = $this->coveredBulletin('Sugar', 'sugar', 70);
+        // A later revision that only changes the unit's letter case still counts as the same unit.
+        $sugarRevision = $this->coveredBulletin('Sugar', 'sugar', 72, '2026-08-25', ' KG ');
+
+        $this->acceptedObservation($officer, $rice, 'Market A', '2026-08-18 09:00:00', 30);
+        $this->acceptedObservation($officer, $rice, 'Market B', '2026-09-08 09:00:00', 99);
+        $this->acceptedObservation($officer, $sugar, 'Market C', '2026-08-18 09:00:00', 60);
+        $this->acceptedObservation($officer, $sugarRevision, 'Market D', '2026-09-01 09:00:00', 70);
+        $this->acceptedObservation($officer, $sugarRevision, 'Market E', '2026-09-02 09:00:00', 80);
+
+        $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'declaration_reference' => 'PDRRMC-2026-09',
+        ])->assertCreated()
+            ->assertJsonPath('data.source_week.starts_on', '2026-08-31')
+            ->assertJsonCount(2, 'data.candidates')
+            ->assertJsonPath('data.candidates.0.commodity_key', 'rice')
+            ->assertJsonPath('data.candidates.0.observation_count', 1)
+            ->assertJsonPath('data.candidates.0.computed_apc_price', 30)
+            ->assertJsonPath('data.candidates.0.source_week.starts_on', '2026-08-17')
+            ->assertJsonPath('data.candidates.0.source_week.ends_on', '2026-08-23')
+            ->assertJsonPath('data.candidates.1.commodity_key', 'sugar')
+            ->assertJsonPath('data.candidates.1.observation_count', 2)
+            ->assertJsonPath('data.candidates.1.minimum_price', 70)
+            ->assertJsonPath('data.candidates.1.maximum_price', 80)
+            ->assertJsonPath('data.candidates.1.computed_apc_price', 75)
+            ->assertJsonPath('data.candidates.1.source_week.starts_on', '2026-08-31')
+            ->assertJsonPath('data.srp_fallbacks', [])
+            // An admin tab on the previous build must stay blocked while any candidate comes from an earlier week.
+            ->assertJsonPath('data.missing_commodity_keys', ['rice']);
+    }
+
+    public function test_never_observed_covered_product_is_held_at_srp_on_activation(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-09-09 02:00:00');
+        [$admin, $officer] = $this->adminAndOfficer('fallback');
+        Sanctum::actingAs($admin);
+        $rice = $this->coveredBulletin('Rice', 'rice', 50);
+        $milk = $this->coveredBulletin('Milk', 'milk', 38);
+        $this->acceptedObservation($officer, $rice, 'Market A', '2026-09-01 09:00:00', 40);
+
+        $draft = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'ends_on' => '2026-09-30', 'declaration_reference' => 'PDRRMC-2026-09',
+        ])->assertCreated();
+        $emergencyId = $draft->json('data.id');
+
+        $this->postJson("/api/admin/emergencies/{$emergencyId}/activate", [
+            'confirmed' => true, 'preparation_hash' => $draft->json('data.preparation_hash'),
+        ])->assertOk()->assertJsonPath('data.status', 'active')->assertJsonCount(2, 'data.official_prices');
+
+        $this->assertDatabaseHas('regulatory_price_records', [
+            'regulatory_emergency_id' => $emergencyId, 'commodity_key' => 'rice',
+            'price_type' => 'APC', 'authoritative_price' => 40,
+        ]);
+        $this->assertDatabaseHas('regulatory_price_records', [
+            'regulatory_emergency_id' => $emergencyId, 'commodity_key' => 'milk',
+            'price_type' => 'SRP', 'authoritative_price' => 38, 'source_candidate_id' => null,
+            'source_reference' => "PDRRMC-2026-09 | SRP bulletin #{$milk->id}, no routine observation on record",
+        ]);
+        $reference = app(FieldReferenceResolver::class)->resolve($milk, '2026-09-10 12:00:00');
+        $this->assertSame(['available', 'emergency_ceiling', 38.0], [$reference['status'], $reference['type'], $reference['value']]);
+        $this->assertSame(1, AuditEvent::query()->where('action', 'emergency.confirmed')->firstOrFail()->metadata['srp_fallback_count']);
+
+        // An activated declaration can no longer be refreshed, so its confirmed candidates stay as reviewed.
+        $this->postJson("/api/admin/emergencies/{$emergencyId}/prepare")->assertUnprocessable();
+        $this->assertDatabaseCount('regulatory_price_candidates', 1);
+
+        // Milk has no monitoring item, so only the Price Freeze reference stops a rename or unit change from orphaning it.
+        $this->putJson("/api/admin/srp/{$milk->id}", ['commodity_name' => 'Milk', 'unit' => '370 ml'])
+            ->assertUnprocessable()->assertJsonValidationErrors('commodity_name');
+        $this->assertSame('milk', $milk->fresh()->commodity_key);
+        $this->assertSame('emergency_ceiling', app(FieldReferenceResolver::class)->resolve($milk->fresh(), '2026-09-10 12:00:00')['type']);
+    }
+
+    public function test_revision_cannot_change_the_unit_of_a_frozen_product(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow('2026-09-09 02:00:00');
+        [$admin] = $this->adminAndOfficer('frozen-unit');
+        Sanctum::actingAs($admin);
+        $perCan = $this->coveredBulletin('Milk', 'milk', 30, '2025-06-01', '370 ml');
+        $milk = $this->coveredBulletin('Milk', 'milk', 38);
+
+        $draft = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'ends_on' => '2026-09-30', 'declaration_reference' => 'PDRRMC-2026-09',
+        ])->assertCreated();
+        $revision = [
+            'commodity_name' => 'Milk', 'unit' => '370 ml', 'baseline_price' => 30, 'effective_date' => '2026-09-15',
+            'source_reference' => 'SRP-2026-09', 'change_reason' => 'September bulletin.',
+        ];
+        // No official reference yet: a draft declaration freezes nothing.
+        $this->postJson("/api/admin/srp/{$milk->id}/revisions/preview", $revision)->assertOk();
+
+        $this->postJson('/api/admin/emergencies/'.$draft->json('data.id').'/activate', [
+            'confirmed' => true, 'preparation_hash' => $draft->json('data.preparation_hash'),
+        ])->assertOk()->assertJsonPath('data.official_prices.0.price_type', 'SRP');
+
+        $this->postJson("/api/admin/srp/{$milk->id}/revisions/preview", $revision)
+            ->assertUnprocessable()->assertJsonValidationErrors('unit');
+        $this->postJson("/api/admin/srp/{$milk->id}/revisions", $revision)
+            ->assertUnprocessable()->assertJsonValidationErrors('unit');
+        // The ceiling was confirmed per kg, so an older per-can row cannot be republished unchanged either.
+        $this->postJson("/api/admin/srp/{$perCan->id}/revisions", $revision)
+            ->assertUnprocessable()->assertJsonValidationErrors('unit');
+        $this->assertDatabaseCount('srp_bulletins', 2);
+
+        // The unit comparison ignores case and surrounding spaces, and a price-only revision stays allowed.
+        $this->postJson("/api/admin/srp/{$milk->id}/revisions", [...$revision, 'unit' => ' KG ', 'baseline_price' => 41])
+            ->assertCreated()->assertJsonPath('data.commodity_key', 'milk');
+        $this->postJson('/api/admin/srp/batch-revisions', [
+            'effective_date' => '2026-09-20', 'source_reference' => 'SRP-2026-09B', 'change_reason' => 'Batch update.',
+            'updates' => [['id' => $milk->id, 'baseline_price' => 42]],
+        ])->assertCreated()->assertJsonPath('data.updated_count', 1);
+        $reference = app(FieldReferenceResolver::class)->resolve($milk, '2026-09-21 12:00:00');
+        $this->assertSame(['emergency_ceiling', 38.0], [$reference['type'], $reference['value']]);
+    }
+
+    public function test_revised_fallback_srp_makes_the_reviewed_preparation_stale(): void
+    {
+        [$admin] = $this->adminAndOfficer('stale-srp');
+        Sanctum::actingAs($admin);
+        $this->coveredBulletin('Milk', 'milk', 38);
+
+        $draft = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'declaration_reference' => 'PDRRMC-2026-09',
+        ])->assertCreated()->assertJsonPath('data.srp_fallbacks.0.srp_price', 38);
+        $emergencyId = $draft->json('data.id');
+
+        $this->coveredBulletin('Milk', 'milk', 45, '2026-09-05');
+
+        $this->postJson("/api/admin/emergencies/{$emergencyId}/activate", [
+            'confirmed' => true, 'preparation_hash' => $draft->json('data.preparation_hash'),
+        ])->assertConflict()->assertJsonPath('status', 'APC_PREPARATION_STALE');
+        $this->assertDatabaseCount('regulatory_price_records', 0);
+
+        $refreshed = $this->postJson("/api/admin/emergencies/{$emergencyId}/prepare")
+            ->assertOk()->assertJsonPath('data.srp_fallbacks.0.srp_price', 45);
+        $this->postJson("/api/admin/emergencies/{$emergencyId}/activate", [
+            'confirmed' => true, 'preparation_hash' => $refreshed->json('data.preparation_hash'),
+        ])->assertOk()->assertJsonPath('data.official_prices.0.authoritative_price', 45);
+    }
+
+    public function test_observations_under_a_different_unit_are_not_used(): void
+    {
+        [$admin, $officer] = $this->adminAndOfficer('unit');
+        Sanctum::actingAs($admin);
+        $perKilo = $this->coveredBulletin('Rice', 'rice', 50);
+        $this->acceptedObservation($officer, $perKilo, 'Market A', '2026-09-01 09:00:00', 48);
+        $perBag = $this->coveredBulletin('Rice', 'rice', 250, '2026-09-08', '5 kg');
+
+        $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'declaration_reference' => 'PDRRMC-2026-09',
+        ])->assertCreated()
+            ->assertJsonCount(0, 'data.candidates')
+            ->assertJsonPath('data.srp_fallbacks.0.commodity_key', 'rice')
+            ->assertJsonPath('data.srp_fallbacks.0.srp_id', $perBag->id)
+            ->assertJsonPath('data.srp_fallbacks.0.srp_price', 250);
+    }
+
+    public function test_declaration_reference_is_bounded_so_official_source_references_fit(): void
+    {
+        [$admin] = $this->adminAndOfficer('length');
+        Sanctum::actingAs($admin);
+        $this->coveredBulletin('Milk', 'milk', 38);
+        $payload = ['location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09'];
+
+        $this->postJson('/api/admin/emergencies', [...$payload, 'declaration_reference' => str_repeat('D', 151)])
+            ->assertUnprocessable()->assertJsonValidationErrors('declaration_reference');
+
+        $draft = $this->postJson('/api/admin/emergencies', [...$payload, 'declaration_reference' => str_repeat('D', 150)])
+            ->assertCreated();
+        $this->postJson('/api/admin/emergencies/'.$draft->json('data.id').'/activate', [
+            'confirmed' => true, 'preparation_hash' => $draft->json('data.preparation_hash'),
+        ])->assertOk();
+        $this->assertLessThanOrEqual(255, strlen(RegulatoryPriceRecord::query()->firstOrFail()->source_reference));
+    }
+
+    /** @return array{0: User, 1: User} */
+    private function adminAndOfficer(string $slug): array
+    {
+        return [
+            User::create(['name' => 'DTI Admin', 'email' => "{$slug}-admin@dti.test", 'password' => 'password', 'role' => 'dti_evaluator']),
+            User::create(['name' => 'Field Officer', 'email' => "{$slug}-field@dti.test", 'password' => 'password', 'role' => 'field_officer']),
+        ];
+    }
+
+    private function coveredBulletin(string $name, string $key, float $price, string $effectiveDate = '2026-01-01', string $unit = 'kg'): SrpBulletin
+    {
+        return SrpBulletin::create([
+            'commodity_name' => $name, 'unit' => $unit, 'commodity_key' => $key,
+            'baseline_price' => $price, 'effective_date' => $effectiveDate, 'is_active' => true,
+            'price_freeze_applicable' => true, 'source_reference' => 'SRP-2026',
+        ]);
     }
 
     private function acceptedObservation(User $officer, SrpBulletin $bulletin, string $storeName, string $finalizedAt, float $price): MonitoringRecordItem

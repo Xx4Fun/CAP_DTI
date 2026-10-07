@@ -8,6 +8,17 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-07 — APC source lookback and SRP fallback
+
+- **Why.** Requiring every Price Freeze-covered product to have an accepted routine observation in the one completed week before the declaration made activation impossible outside the seeded week: a real week covers about five of 124 covered products.
+- **Each product uses its own latest week.** The APC candidate of a covered product comes from its most recent completed Manila monitoring week that has accepted routine observations, at or before the cutoff week (the completed week before the declaration). This supersedes the single-week rule in the first bullet of the 2026-09-09 entry. The formula, the qualifying records and the exclusion of declaration-week and later observations are unchanged. There is no lookback age limit; the admin sees each product's source week before confirming.
+- **Units are compared, not converted.** An observation counts only when its bulletin's unit is the unit in effect on the declaration date, because a revision keeps the commodity key and may change the unit.
+- **A never-observed product is held at SRP.** On activation it gets an official price record of type `SRP` equal to its SRP in effect on the declaration date. It is therefore judged as a price ceiling (0% tolerance) during the freeze, not at SRP +10%.
+- **One reviewed snapshot.** The preparation hash covers the candidate rows and the SRP fallbacks. Activation takes one snapshot, checks the hash against it and writes official records from it.
+- **A frozen product keeps its identity.** SRP metadata edits that would change a commodity key (name or unit) are refused while an official Price Freeze reference for that product can still apply, because the reference is found by commodity key and an SRP-held product has no monitoring item to trigger the existing unit rule. For the same reason an SRP revision, which keeps the key, is refused when its unit differs (ignoring case and surrounding spaces) from the unit in effect on the declaration date; a price-only revision is still accepted. "Can still apply" is defined once, in `RegulatoryPriceRecord::scopeStillApplicable`. Preparation, activation, SRP metadata edits and SRP revisions take the same PostgreSQL advisory lock first (`EmergencyApcPreparationService::lock`), so these checks cannot interleave with an activation.
+- **Old admin tabs.** `missing_commodity_keys` is still sent, meaning "no observation in the cutoff week", only so a tab on the previous build stays unable to activate. Remove it once that build is out of use.
+- Evidence: `docs/plans/apc-lookback/PLAN.md` and its review log; `backend/tests/Feature/EmergencyApcWorkflowTest.php`.
+
 ## 2026-10-06 — Vendor offline work and legal delivery
 
 - Vendor saves private account-scoped resources and unfinished work in encrypted IndexedDB with an automatically restored browser key. Existing sign-in and token expiry remain; no Field PIN or offline lease is added.

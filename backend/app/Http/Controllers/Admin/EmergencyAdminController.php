@@ -34,7 +34,8 @@ class EmergencyAdminController extends Controller
         $auth->requireManager($request->user());
         $data = $request->validate([
             'location' => ['required', Rule::in(['San Jose de Buenavista, Antique'])], 'starts_on' => 'required|date', 'ends_on' => 'nullable|date|after_or_equal:starts_on',
-            'declaration_reference' => 'required|string',
+            // Official price records append a source note to this reference inside a 255-character column.
+            'declaration_reference' => 'required|string|max:150',
         ]);
         $emergency = DB::transaction(function () use ($data, $request, $audit, $preparations) {
             $emergency = RegulatoryEmergency::create([
@@ -54,7 +55,11 @@ class EmergencyAdminController extends Controller
     private function detailPayload(RegulatoryEmergency $emergency): array
     {
         $emergency->loadMissing(['candidates', 'priceRecords']);
-        $coveredCommodityKeys = app(EmergencyApcPreparationService::class)->coveredCommodityKeys($emergency);
+        $preparations = app(EmergencyApcPreparationService::class);
+        $coveredBulletins = $preparations->coveredBulletins($emergency);
+        $coveredCommodityKeys = $coveredBulletins->pluck('commodity_key');
+        $candidateWeeks = $preparations->candidateWeeks($emergency->candidates);
+        $cutoffStartsOn = $emergency->source_week_starts_at?->copy()->setTimezone('Asia/Manila')->toDateString();
         $sourceItems = MonitoringRecordItem::query()
             ->whereIn('id', $emergency->candidates->flatMap->source_item_ids)
             ->with('record.store:id,store_name')
@@ -64,7 +69,12 @@ class EmergencyAdminController extends Controller
             ...$emergency->toArray(),
             'effective_state' => $this->effectiveState($emergency),
             'covered_commodity_keys' => $coveredCommodityKeys,
-            'missing_commodity_keys' => $coveredCommodityKeys->diff($emergency->candidates->pluck('commodity_key'))->values(),
+            'srp_fallbacks' => $preparations->srpFallbacks($coveredBulletins, $emergency->candidates->pluck('commodity_key')),
+            // Read only by admin tabs still on the build that required every product in the cutoff week: it keeps their
+            // activate button disabled until they reload. Remove once that build is no longer in use.
+            'missing_commodity_keys' => $coveredCommodityKeys->diff($emergency->candidates
+                ->filter(fn ($candidate) => ($candidateWeeks[$candidate->id]['starts_on'] ?? null) === $cutoffStartsOn)
+                ->pluck('commodity_key'))->values(),
             'source_week' => [
                 'timezone' => 'Asia/Manila',
                 'starts_at' => $emergency->source_week_starts_at?->toIso8601String(),
@@ -77,6 +87,7 @@ class EmergencyAdminController extends Controller
                     'id', 'commodity_key', 'minimum_price', 'maximum_price', 'observed_average_price',
                     'computed_apc_price', 'observation_count', 'establishment_count', 'source_item_ids', 'dataset_hash',
                 ]),
+                'source_week' => $candidateWeeks[$candidate->id],
                 'source_observations' => collect($candidate->source_item_ids)->map(function ($id) use ($sourceItems) {
                     $item = $sourceItems->get($id);
 
@@ -123,7 +134,6 @@ class EmergencyAdminController extends Controller
     public function prepare(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, EmergencyApcPreparationService $preparations)
     {
         $auth->requireManager($request->user());
-        abort_unless($emergency->status === 'draft', 422, 'Only a draft declaration can be prepared.');
 
         return response()->json(['data' => $this->detailPayload($preparations->prepare($emergency, $request->user()))]);
     }
@@ -139,47 +149,66 @@ class EmergencyAdminController extends Controller
 
         try {
             $emergency = DB::transaction(function () use ($emergency, $data, $request, $audit, $notifications, $preparations) {
+                // Same order as prepare(): this lock, then the declaration row. An SRP rename or unit change waits here, so it
+                // cannot commit between the snapshot and the official records written from it.
+                EmergencyApcPreparationService::lock();
                 $emergency = RegulatoryEmergency::query()->lockForUpdate()->findOrFail($emergency->id);
                 abort_unless($emergency->status === 'draft', 422, 'Only a draft declaration can be activated.');
+                // One snapshot supplies both the hash check and the SRP values written below, so a revision committed during
+                // this request cannot put an unreviewed price into an official record.
+                $snapshot = $preparations->snapshot($emergency);
                 if (! hash_equals($data['preparation_hash'], $emergency->preparation_hash ?? '')
-                    || ! hash_equals($emergency->preparation_hash ?? '', $preparations->currentHash($emergency))) {
+                    || ! hash_equals($emergency->preparation_hash ?? '', $snapshot['hash'])) {
                     throw new HttpResponseException(response()->json([
                         'status' => 'APC_PREPARATION_STALE',
-                        'message' => 'Monitoring data changed. Refresh and review the APC preparation before activation.',
+                        'message' => 'Monitoring data or SRP references changed. Refresh and review the APC preparation before activation.',
                     ], 409));
                 }
 
-                $covered = $preparations->coveredCommodityKeys($emergency);
                 $candidates = $emergency->candidates()->orderBy('commodity_key')->get();
-                $missing = $covered->diff($candidates->pluck('commodity_key'))->values();
-                if ($covered->isEmpty() || $missing->isNotEmpty()) {
+                $fallbacks = $snapshot['fallbacks'];
+                $withoutReference = $fallbacks->where('srp_price', '<=', 0)->pluck('commodity_key')->values();
+                if (($candidates->isEmpty() && $fallbacks->isEmpty()) || $withoutReference->isNotEmpty()) {
                     throw new HttpResponseException(response()->json([
-                        'status' => $covered->isEmpty() ? 'APC_SOURCE_WEEK_EMPTY' : 'APC_COVERAGE_INCOMPLETE',
-                        'message' => 'Every Price Freeze-covered product needs monitoring data from the selected completed week.',
-                        'missing_commodity_keys' => $missing,
+                        'status' => $withoutReference->isEmpty() ? 'APC_SOURCE_WEEK_EMPTY' : 'APC_COVERAGE_INCOMPLETE',
+                        'message' => 'Every Price Freeze-covered product needs routine monitoring data or a valid SRP.',
+                        'missing_commodity_keys' => $withoutReference,
                     ], 422));
                 }
 
+                $official = fn (array $attributes) => RegulatoryPriceRecord::create([
+                    'regulatory_emergency_id' => $emergency->id,
+                    'effective_from' => $emergency->starts_on,
+                    'effective_until' => $emergency->ends_on,
+                    'location' => $emergency->location,
+                    'declaration_reference' => $emergency->declaration_reference,
+                    'created_by' => $request->user()->id,
+                    ...$attributes,
+                ]);
+                $weeks = $preparations->candidateWeeks($candidates);
                 foreach ($candidates as $candidate) {
-                    RegulatoryPriceRecord::create([
-                        'regulatory_emergency_id' => $emergency->id,
+                    $official([
                         'source_candidate_id' => $candidate->id,
                         'commodity_key' => $candidate->commodity_key,
                         'price_type' => 'APC',
                         'authoritative_price' => $candidate->computed_apc_price,
-                        'effective_from' => $emergency->starts_on,
-                        'effective_until' => $emergency->ends_on,
-                        'location' => $emergency->location,
-                        'declaration_reference' => $emergency->declaration_reference,
-                        'source_reference' => $emergency->declaration_reference.' | Monitoring week '.$emergency->source_week_starts_at->copy()->setTimezone('Asia/Manila')->toDateString().' to '.$emergency->source_week_ends_at->copy()->setTimezone('Asia/Manila')->subDay()->toDateString(),
-                        'created_by' => $request->user()->id,
+                        'source_reference' => $emergency->declaration_reference.' | Monitoring week '.$weeks[$candidate->id]['starts_on'].' to '.$weeks[$candidate->id]['ends_on'],
+                    ]);
+                }
+                foreach ($fallbacks as $fallback) {
+                    $official([
+                        'commodity_key' => $fallback['commodity_key'],
+                        'price_type' => 'SRP',
+                        'authoritative_price' => $fallback['srp_price'],
+                        'source_reference' => $emergency->declaration_reference." | SRP bulletin #{$fallback['srp_id']}, no routine observation on record",
                     ]);
                 }
                 $emergency->update(['status' => 'active', 'active_scope_key' => 'systemwide', 'confirmed_at' => now(), 'responsible_admin_id' => $request->user()->id]);
                 $audit->recordOrFail($request, 'emergency.confirmed', $emergency, [
                     'declaration_reference' => $emergency->declaration_reference,
                     'preparation_hash' => $emergency->preparation_hash,
-                    'official_price_count' => $candidates->count(),
+                    'official_price_count' => $candidates->count() + $fallbacks->count(),
+                    'srp_fallback_count' => $fallbacks->count(),
                 ]);
                 $notifications->broadcast('emergency_activated', ['emergency_id' => $emergency->id, 'starts_on' => $emergency->starts_on?->toDateString()]);
 

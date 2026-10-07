@@ -553,7 +553,18 @@ export interface RegulatoryEmergencyCandidate {
   computed_apc_price: number
   observation_count: number
   establishment_count: number
+  /** The candidate's own source week (inclusive Manila dates); it may be earlier than the declaration's cutoff week. */
+  source_week?: { starts_on: string; ends_on: string } | null
   source_observations?: RegulatoryEmergencyCandidateObservation[]
+}
+
+/** A covered product with no usable routine observation: its SRP is held as the Price Freeze ceiling. */
+export interface RegulatoryEmergencySrpFallback {
+  commodity_key: string
+  commodity_name: string
+  unit: string | null
+  srp_id: number
+  srp_price: number
 }
 
 export interface OfficialPriceRecord {
@@ -584,7 +595,7 @@ export interface RegulatoryEmergencyRecord {
     ends_on?: string
   }
   candidates: RegulatoryEmergencyCandidate[]
-  missing_commodity_keys?: string[]
+  srp_fallbacks?: RegulatoryEmergencySrpFallback[]
   official_prices?: OfficialPriceRecord[]
 }
 
