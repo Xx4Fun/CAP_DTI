@@ -11,7 +11,8 @@ import {
   Tag,
   ArrowLeft,
   CheckCircle2,
-  History
+  History,
+  Info
 } from 'lucide-react';
 import {
   apiClient,
@@ -1221,36 +1222,82 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
             )}
             {visibleInlineCheck?.status === 'done' && visibleInlineCheck.result && (() => {
               const result = visibleInlineCheck.result;
+              const userPrice = Number(userPriceInput);
+              const hasPrevPrice = result.previous_verified_price != null && !isNaN(Number(result.previous_verified_price));
+              const prevPrice = hasPrevPrice ? Number(result.previous_verified_price) : null;
+
+              let prevDeltaNode = null;
+              if (hasPrevPrice && prevPrice !== null) {
+                const prevDiff = Math.round((userPrice - prevPrice) * 100) / 100;
+                const absPrevDiff = Math.abs(prevDiff).toFixed(2);
+                if (prevDiff > 0) {
+                  prevDeltaNode = (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--above">
+                      <History size={15} color="#d97706" />
+                      <span>
+                        ₱{absPrevDiff} above previous price
+                        <span className="sr-only">₱{prevPrice.toFixed(2)}</span>
+                      </span>
+                    </div>
+                  );
+                } else if (prevDiff < 0) {
+                  prevDeltaNode = (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--below">
+                      <History size={15} color="#059669" />
+                      <span>
+                        ₱{absPrevDiff} below previous price
+                        <span className="sr-only">₱{prevPrice.toFixed(2)}</span>
+                      </span>
+                    </div>
+                  );
+                } else {
+                  prevDeltaNode = (
+                    <div className="shelf-compare-live-delta shelf-compare-live-delta--exact">
+                      <History size={15} color="#2563eb" />
+                      <span>
+                        Matches previous price
+                        <span className="sr-only">₱{prevPrice.toFixed(2)}</span>
+                      </span>
+                    </div>
+                  );
+                }
+              } else {
+                prevDeltaNode = (
+                  <div className="shelf-compare-live-delta shelf-compare-live-delta--neutral">
+                    <History size={15} color="#64748b" />
+                    <span>No previous price data</span>
+                  </div>
+                );
+              }
+
               return (
                 <>
-                  <div className="shelf-result-history-strip">
-                    <History size={16} />
-                    {result.previous_verified_price ? (
-                      <div>
-                        Previous verified store price was{' '}
-                        <strong style={{ color: '#0f172a' }}>
-                          ₱{Number(result.previous_verified_price).toFixed(2)}
-                        </strong>{' '}
-                        on {result.previous_recorded_date}.
-                      </div>
-                    ) : (
-                      <div>No verified historical store price is currently available.</div>
-                    )}
+                  {prevDeltaNode}
+                  <div role="status" className="sr-only">
+                    {visibleInlineCheck.saved
+                      ? 'Saved to comparison history'
+                      : "Couldn't save to this device's history"}
                   </div>
-                  <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: visibleInlineCheck.saved ? '#15803d' : '#b45309', fontSize: '0.78rem', fontWeight: 600 }}>
-                    {visibleInlineCheck.saved ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                    <span>
-                      {visibleInlineCheck.saved
-                        ? 'Saved to comparison history'
-                        : "Couldn't save to this device's history"}
-                    </span>
-                  </div>
-                  <p style={{ margin: 0, color: '#92400e', fontSize: '0.74rem', lineHeight: 1.35 }}>
-                    This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
-                  </p>
                 </>
               );
             })()}
+          </section>
+
+          {/* Price Comparison Notice Card */}
+          <section className="shelf-compare-notice-card" aria-label="Price comparison notice">
+            <div className="shelf-compare-notice-header">
+              <Info size={16} className="shelf-compare-notice-icon" aria-hidden="true" />
+              <h3 className="shelf-compare-notice-title">Price Comparison Notice</h3>
+            </div>
+            <p className="shelf-compare-notice-text">
+              Retail prices may vary depending on the product's brand, size, packaging, promotions, and applicable location-based price references. Please ensure that you are comparing the same product.
+            </p>
+            <p className="shelf-compare-notice-text">
+              This comparison is for consumer reference only. It does not automatically create a formal report or confirm a violation.
+            </p>
+            <p className="shelf-compare-notice-note">
+              <strong>Note:</strong> During a Price Freeze, covered products are subject to the applicable official Automatic Price Control (APC) reference.
+            </p>
           </section>
         </div>
       )}

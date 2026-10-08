@@ -228,6 +228,25 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
       expect(storedHistory()[0].status).toBe('BELOW_SRP');
     });
 
+    it.each([
+      { price: '37', previous: 36, label: '₱1.00 above previous price' },
+      { price: '34', previous: 36, label: '₱2.00 below previous price' },
+      { price: '36', previous: 36, label: 'Matches previous price' },
+      { price: '37', previous: null, label: 'No previous price data' },
+    ])('shows the historical comparison for $price against $previous', async ({ price, previous, label }) => {
+      vi.spyOn(apiClient, 'post').mockImplementation((_url, body: any) => {
+        const response = comparisonFor(body.displayed_price);
+        Object.assign(response.data.data, { previous_verified_price: previous });
+        return Promise.resolve(response);
+      });
+      const user = await openManualEntry();
+      await selectItem(user);
+      await user.type(priceInput(), price);
+
+      expect(await screen.findByText(label, {}, slow)).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Price comparison notice' })).toBeInTheDocument();
+    });
+
     it('does not check or save when only the item is selected', async () => {
       const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue(comparisonFor(35));
       const user = await openManualEntry();

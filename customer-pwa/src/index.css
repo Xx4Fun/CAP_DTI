@@ -6916,6 +6916,26 @@ body {
   color: #1e40af;
 }
 
+/* Neutral live delta indicator for missing historical data */
+.shelf-compare-live-delta--neutral {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 @keyframes shelfDeltaFadeIn {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
@@ -7091,6 +7111,58 @@ body {
 .shelf-result-history-strip svg {
   color: #64748b;
   flex-shrink: 0;
+}
+
+/* Dedicated Price Comparison Notice Section */
+.shelf-compare-notice-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.shelf-compare-notice-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shelf-compare-notice-icon {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.shelf-compare-notice-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 750;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.shelf-compare-notice-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.shelf-compare-notice-note {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #334155;
+  padding-top: 6px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.shelf-compare-notice-note strong {
+  color: #1e3a8a;
 }
 
 /* Item & Store Details Strip */
