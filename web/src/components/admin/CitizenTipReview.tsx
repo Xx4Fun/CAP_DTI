@@ -629,8 +629,9 @@ export const CitizenTipReview: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="admin-table-wrap">
-              <table className="admin-data-table consumer-report-table">
+            <div className="admin-table-card">
+              <div className="admin-table-wrap">
+                <table className="admin-data-table consumer-report-table">
                 <caption className="sr-only">Consumer reports awaiting or completed review</caption>
                 <thead>
                   <tr>
@@ -693,7 +694,8 @@ export const CitizenTipReview: React.FC = () => {
                     )
                   }))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
           )}
 

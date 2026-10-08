@@ -5,6 +5,12 @@
 // SCO once the SCO name is set. While a type's name is blank, that type reports the policy as unavailable.
 $reasons = ['Prices above SRP', 'Prices above price ceiling'];
 $legalBases = ['RA 7581 (Price Act)', 'RA 7394 (Consumer Act)', 'DAO No. 6, s. 2007', 'DO No. 18-122'];
+// What each kind of captured price reference supports. Monitoring records price comparisons only, so the Price Act is
+// the one law derived from them; the evaluator may add the others (owner decisions E1 and E2, 2026-10-07).
+$findings = [
+    'standard_srp' => ['reason' => 'Prices above SRP', 'legal_bases' => ['RA 7581 (Price Act)']],
+    'emergency_ceiling' => ['reason' => 'Prices above price ceiling', 'legal_bases' => ['RA 7581 (Price Act)']],
+];
 
 return [
     'approved' => (bool) env('LEGAL_POLICY_APPROVED', true),
@@ -24,6 +30,13 @@ return [
     ],
     'calendar_valid_from' => '2026-01-01',
     'calendar_valid_until' => '2027-12-31',
+    'findings' => $findings,
+    // How the Admin form groups the approved bases: the law the price comparison falls under, the fines schedule and
+    // enforcement procedure, and a law the monitoring evidence does not itself support.
+    'basis_groups' => [
+        'RA 7581 (Price Act)' => 'applicable_law', 'DAO No. 6, s. 2007' => 'penalty_procedure',
+        'DO No. 18-122' => 'penalty_procedure', 'RA 7394 (Consumer Act)' => 'other_law',
+    ],
     'rules' => [
         'LOI' => [
             'template' => 'notices.official-loi', 'reasons' => $reasons, 'legal_bases' => $legalBases,

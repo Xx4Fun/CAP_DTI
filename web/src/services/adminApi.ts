@@ -4,6 +4,8 @@ import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerRe
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
+/** Notices issued before the drafting workflow have no snapshot or payload; callers always get empty ones. */
+const notice = (value: LegalNoticeRecord): LegalNoticeRecord => ({ ...value, source_snapshot: { ...value.source_snapshot, items: value.source_snapshot?.items ?? [] }, draft_payload: value.draft_payload ?? {} })
 
 export type VendorInvitationDeliveryStatus = 'queued' | 'unavailable'
 
@@ -213,35 +215,36 @@ export const adminApi = {
     return record
   },
   async getLegalNotices(params: { search?: string; status?: string; store_id?: number; page?: number; exclude_drafts?: 1 } = {}): Promise<LegalNoticePage> {
-    return data(await api.get('/admin/legal-notices', { params }))
+    const page = data<LegalNoticePage>(await api.get('/admin/legal-notices', { params }))
+    return { ...page, data: page.data.map(notice) }
   },
   async getLegalNotice(id: number): Promise<LegalNoticeRecord> {
-    return data(await api.get(`/admin/legal-notices/${id}`))
+    return notice(data(await api.get(`/admin/legal-notices/${id}`)))
   },
   async downloadLegalAttachment(id: number, attachmentId: number): Promise<Blob> {
     return (await api.get(`/admin/legal-notices/${id}/attachments/${attachmentId}`, { responseType: 'blob' })).data
   },
   async createLegalNotice(payload: { monitoring_record_id: number; notice_type: 'LOI' | 'SCO'; item_ids: number[] }): Promise<LegalNoticeRecord> {
-    return data(await api.post('/admin/legal-notices', payload))
+    return notice(data(await api.post('/admin/legal-notices', payload)))
   },
   async updateLegalNotice(id: number, payload: Record<string, unknown>): Promise<LegalNoticeRecord> {
-    return data(await api.patch(`/admin/legal-notices/${id}`, payload))
+    return notice(data(await api.patch(`/admin/legal-notices/${id}`, payload)))
   },
   async previewLegalNotice(id: number): Promise<string> {
     const response = await api.post(`/admin/legal-notices/${id}/preview`, {}, { responseType: 'text' })
     return response.data
   },
   async issueLegalNotice(id: number, applySignature = false): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/issue`, { confirmed: true, apply_signature: applySignature }))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/issue`, { confirmed: true, apply_signature: applySignature })))
   },
   async recordLegalDelivery(id: number, payload: { state: 'received' | 'refused' | 'failed'; recorded_at: string; details?: Record<string, unknown> }): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/delivery`, payload))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/delivery`, payload)))
   },
   async getLegalDocument(id: number): Promise<Blob> {
     return (await api.get(`/admin/legal-notices/${id}/document`, { responseType: 'blob' })).data
   },
   async closeLegalNotice(id: number, payload: { outcome: Exclude<LegalNoticeOutcome, 'escalated_to_sco' | 'withdrawn'>; outcome_reason: string; item_decisions: Array<{ item_id: number; decision: ItemDecision }> }): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/close`, payload))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/close`, payload)))
   },
   async remindLegalNotice(id: number): Promise<unknown> {
     return data(await api.post(`/admin/legal-notices/${id}/reminder`))
@@ -252,10 +255,10 @@ export const adminApi = {
   async recordOfflineResponse(id: number, payload: { channel: 'email' | 'paper'; received_at: string; response_text: string; evidence: File }): Promise<LegalNoticeRecord> {
     const body = new FormData()
     body.append('channel', payload.channel); body.append('received_at', payload.received_at); body.append('response_text', payload.response_text); body.append('evidence', payload.evidence)
-    return data(await api.post(`/admin/legal-notices/${id}/offline-response`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/offline-response`, body, { headers: { 'Content-Type': 'multipart/form-data' } })))
   },
   async escalateLegalNotice(id: number): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/escalate`))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/escalate`)))
   },
   async getLegalSignatories(): Promise<Record<'LOI' | 'SCO', LegalSignatoryRecord>> {
     return data(await api.get('/admin/legal-signatories'))
@@ -289,7 +292,7 @@ export const adminApi = {
     return (await api.get(`/admin/conversations/${storeId}/messages/${messageId}/attachment`, { responseType: 'blob' })).data
   },
   async cancelLegalNotice(id: number, outcomeReason?: string): Promise<LegalNoticeRecord> {
-    return data(await api.post(`/admin/legal-notices/${id}/cancel`, outcomeReason ? { outcome_reason: outcomeReason } : {}))
+    return notice(data(await api.post(`/admin/legal-notices/${id}/cancel`, outcomeReason ? { outcome_reason: outcomeReason } : {})))
   },
   async addLegalAttachment(id: number, file: File): Promise<NonNullable<LegalNoticeRecord['attachments']>[number]> {
     const body = new FormData(); body.append('file', file)

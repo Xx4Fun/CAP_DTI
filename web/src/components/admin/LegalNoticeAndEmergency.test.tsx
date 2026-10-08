@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
@@ -20,6 +20,7 @@ vi.mock('../../services/adminApi', () => ({
     dispatchLegal: vi.fn(),
     getEmergencies: vi.fn(),
     getEmergency: vi.fn(),
+    getSrp: vi.fn(),
     createEmergency: vi.fn(),
     prepareEmergency: vi.fn(),
     activateEmergency: vi.fn(),
@@ -257,6 +258,11 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   })
 
   it('renders only API-backed emergency records and exposes no simulated SCO action', async () => {
+    vi.mocked(adminApi.getSrp).mockResolvedValue({
+      records: [{ id: 1, commodity_key: 'rice', commodity_name: 'Regular Milled Rice', unit: 'kg', baseline_price: 50, effective_date: '2026-01-01', source_reference: 'DTI' }],
+      pagination: { current_page: 1, last_page: 1, per_page: 1000, total: 1, from: 1, to: 1 },
+      capabilities: { can_publish: true, status: 'AVAILABLE' },
+    })
     vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
       id: 7,
       location: 'San Jose, Antique',
@@ -277,8 +283,31 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     expect(screen.getAllByText('PDRRMC-2026-07').length).toBeGreaterThan(0)
     expect(screen.getByText('Official APC / Price Freeze References')).toBeInTheDocument()
     expect(screen.getByText('rice')).toBeInTheDocument()
+    expect(await screen.findByText('Regular Milled Rice')).toBeInTheDocument()
     expect(screen.getByText('₱45.00')).toBeInTheDocument()
+    expect(screen.queryByText(/Days Remaining/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /SCO.*Sweep/i })).not.toBeInTheDocument()
+  })
+
+  it('counts the declared inclusive period and sets a 60-calendar-day end date', async () => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date()).map(({ type, value }) => [type, value]))
+    const today = `${parts.year}-${parts.month}-${parts.day}`
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+      id: 8, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-8',
+      starts_on: today, ends_on: tomorrow, status: 'active', effective_state: 'in_effect',
+      source_week: { timezone: 'Asia/Manila', starts_at: '2026-09-28T00:00:00Z', ends_at: '2026-10-05T00:00:00Z' },
+      candidates: [], official_prices: [],
+    }])
+    render(<EmergencyToggle />)
+
+    expect(await screen.findByText('Day 1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('1 Day Remaining')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-10-08' } })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Set 60-day end date' }))
+    expect(screen.getByLabelText('End date')).toHaveValue('2026-12-06')
   })
 
   it.each(['scheduled', 'expired'])('does not label a confirmed %s declaration as currently in effect', async (effectiveState) => {
@@ -290,6 +319,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     }])
     render(<EmergencyToggle />)
     await screen.findByText('Normal SRP Protocol')
+    expect(screen.getByText('Normal weekly SRP monitoring')).toBeInTheDocument()
     expect(screen.queryByText('Active Price Freeze In Effect')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
   })

@@ -633,7 +633,13 @@ export interface LegalNoticeRecord {
   preparer?: { id: number; name: string } | null
   attachments?: Array<{ id: number; kind: string; category?: string | null; original_name: string; mime_type: string; size_bytes: number; sha256: string }>
   readiness: Record<string, boolean>
-  policy: { status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[]; required_fields?: string[] }
+  policy: {
+    status: 'LEGAL_POLICY_AVAILABLE' | 'LEGAL_POLICY_UNAVAILABLE'; policy_version: string | null; reasons?: string[]; legal_bases?: string[]; required_fields?: string[]
+    /** The reason and legal bases the cited products support; null when they are not one known kind. */
+    derived?: { reason: string; legal_bases: string[] } | null
+    /** Each approved legal basis mapped to its group: applicable_law, penalty_procedure or other_law. */
+    basis_groups?: Record<string, string>
+  }
   overdue?: boolean
   closed_at?: string | null
   cancelled_at?: string | null

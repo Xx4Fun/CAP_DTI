@@ -1,9 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { regulatoryRefresh } from '../../services/regulatoryRefresh'
-import { Calendar, Database, MapPin, RefreshCw, Shield, ShieldAlert } from 'lucide-react'
+import {
+  Calendar,
+  Database,
+  MapPin,
+  RefreshCw,
+  Shield,
+  ShieldAlert,
+  Search,
+  Scale,
+  Clock,
+  AlertTriangle,
+  FileText,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
 import type { RegulatoryEmergencyRecord } from '../../types/admin'
+import {
+  humanizeCommoditySlug,
+  formatPstDateRange,
+} from '../../utils/commodityFormatter'
 
 const SAN_JOSE = 'San Jose de Buenavista, Antique'
 const money = (value: number) => `₱${Number(value).toFixed(2)}`
@@ -24,6 +43,51 @@ export const EmergencyToggle: React.FC = () => {
   const [savingAction, setSavingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Candidate filtering & search state
+  const [candidateSearch, setCandidateSearch] = useState('')
+  const [candidateFilter, setCandidateFilter] = useState<'all' | 'ready' | 'missing'>('all')
+
+  // Pagination state
+  const [candidatePage, setCandidatePage] = useState(1)
+  const [candidatePerPage, setCandidatePerPage] = useState(8)
+  const [refPage, setRefPage] = useState(1)
+  const [refPerPage, setRefPerPage] = useState(10)
+
+  // Reset pagination on filter or selection change
+  useEffect(() => {
+    setCandidatePage(1)
+  }, [candidateSearch, candidateFilter, selectedId])
+
+  // Form helper state for +60 days preset
+  const [formStartDate, setFormStartDate] = useState('')
+  const [formEndDate, setFormEndDate] = useState('')
+
+  // Map of commodity_key to SRP info for readable product names
+  const [srpMap, setSrpMap] = useState<Record<string, { name: string; unit?: string | null }>>({})
+
+  useEffect(() => {
+    try {
+      const maybePromise = adminApi.getSrp?.({ view: 'current', per_page: 1000 })
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        void maybePromise.then((res) => {
+          const list = Array.isArray(res) ? res : res.records
+          const map: Record<string, { name: string; unit?: string | null }> = {}
+          for (const item of list) {
+            if ('commodity_key' in item && typeof item.commodity_key === 'string' && item.commodity_key) {
+              map[item.commodity_key] = {
+                name: item.commodity_name,
+                unit: item.unit,
+              }
+            }
+          }
+          setSrpMap(map)
+        }).catch(() => {})
+      }
+    } catch {
+      // Safe fallback if unmocked
+    }
+  }, [])
 
   const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
     loadRequest.current++
@@ -66,15 +130,81 @@ export const EmergencyToggle: React.FC = () => {
     && selected.candidates.length + srpFallbacks.length > 0
     && selected.candidates.every((candidate) => candidate.observation_count > 0)
 
+  // Filtered candidate list
+  const filteredCandidates = useMemo(() => {
+    if (!selected) return []
+    return selected.candidates.filter((candidate) => {
+      const name = srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)
+      const matchesSearch = !candidateSearch.trim() ||
+        candidate.commodity_key.toLowerCase().includes(candidateSearch.toLowerCase()) ||
+        name.toLowerCase().includes(candidateSearch.toLowerCase())
+
+      if (!matchesSearch) return false
+
+      if (candidateFilter === 'ready') return candidate.observation_count > 0
+      if (candidateFilter === 'missing') return candidate.observation_count === 0
+      return true
+    })
+  }, [selected, candidateSearch, candidateFilter, srpMap])
+
+  // Paginated candidate slice & boundaries
+  const totalCandidatePages = Math.max(1, Math.ceil(filteredCandidates.length / candidatePerPage))
+  const paginatedCandidates = useMemo(() => {
+    const start = (candidatePage - 1) * candidatePerPage
+    return filteredCandidates.slice(start, start + candidatePerPage)
+  }, [filteredCandidates, candidatePage, candidatePerPage])
+  const candidateFrom = filteredCandidates.length === 0 ? 0 : (candidatePage - 1) * candidatePerPage + 1
+  const candidateTo = Math.min(candidatePage * candidatePerPage, filteredCandidates.length)
+
+  // Paginated official references slice & boundaries
+  const totalRefPages = Math.max(1, Math.ceil(officialPrices.length / refPerPage))
+  const paginatedOfficialPrices = useMemo(() => {
+    const start = (refPage - 1) * refPerPage
+    return officialPrices.slice(start, start + refPerPage)
+  }, [officialPrices, refPage, refPerPage])
+  const refFrom = officialPrices.length === 0 ? 0 : (refPage - 1) * refPerPage + 1
+  const refTo = Math.min(refPage * refPerPage, officialPrices.length)
+
+  // Missing observations list for diagnostic
+  const missingCandidates = useMemo(() => {
+    if (!selected) return []
+    return selected.candidates.filter((c) => c.observation_count === 0)
+  }, [selected])
+
+  // Show progress through the declaration's recorded inclusive dates.
+  const activeTimeline = useMemo(() => {
+    if (!selected || selected.effective_state !== 'in_effect' || !selected.starts_on || !selected.ends_on) return null
+    const dayMs = 86_400_000
+    const start = Date.parse(`${selected.starts_on.slice(0, 10)}T00:00:00Z`)
+    const end = Date.parse(`${selected.ends_on.slice(0, 10)}T00:00:00Z`)
+    const today = Date.parse(`${manilaToday()}T00:00:00Z`)
+    if (![start, end, today].every(Number.isFinite) || end < start) return null
+    const maxDays = Math.round((end - start) / dayMs) + 1
+    const daysElapsed = Math.min(maxDays, Math.max(1, Math.round((today - start) / dayMs) + 1))
+    const daysRemaining = Math.max(0, Math.round((end - today) / dayMs))
+    return { daysElapsed, maxDays, daysRemaining, percent: Math.round((daysElapsed / maxDays) * 100) }
+  }, [selected])
+
+  // The start date is day one of a 60-calendar-day period.
+  const handleApplySixtyDays = () => {
+    const baseDate = new Date(`${formStartDate || manilaToday()}T00:00:00Z`)
+    baseDate.setUTCDate(baseDate.getUTCDate() + 59)
+    setFormEndDate(baseDate.toISOString().slice(0, 10))
+  }
+
   return (
     <div className="emergency-container">
       {/* Executive Command Banner */}
       <section className={`admin-card emergency-hero-banner ${inEffect ? 'is-emergency' : 'is-normal'}`}>
         <div className="emergency-hero-left">
           <div className="emergency-hero-icon-wrap">
-            {inEffect ? <ShieldAlert size={28} /> : <Shield size={28} />}
+            {inEffect ? <ShieldAlert size={32} /> : <Shield size={32} />}
           </div>
           <div className="emergency-hero-text">
+            <div className="emergency-statutory-tag">
+              <Scale size={13} />
+              <span>Republic Act No. 7581 (Price Act) · Automatic Price Control</span>
+            </div>
             <h2>State of Calamity Regulatory Command Bar</h2>
             <p>{inEffect ? 'Confirmed APC references are in effect.' : 'Normal weekly SRP monitoring remains in effect.'}</p>
           </div>
@@ -92,6 +222,39 @@ export const EmergencyToggle: React.FC = () => {
         </div>
       </section>
 
+      {/* KPI Overview Tiles */}
+      <div className="emergency-kpi-grid">
+        <div className="emergency-kpi-card">
+          <span className="emergency-kpi-label">Active Market Protocol</span>
+          <strong className="emergency-kpi-value" style={{ color: inEffect ? '#b91c1c' : '#059669' }}>
+            {inEffect ? 'Price Freeze / APC' : 'Prevailing SRP'}
+          </strong>
+          <span className="emergency-kpi-sub">
+            {inEffect ? 'Mandatory price ceiling active' : 'Normal weekly SRP monitoring'}
+          </span>
+        </div>
+
+        <div className="emergency-kpi-card">
+          <span className="emergency-kpi-label">Surveillance Jurisdiction</span>
+          <strong className="emergency-kpi-value">San Jose</strong>
+          <span className="emergency-kpi-sub">Capital Municipality, Antique</span>
+        </div>
+
+        <div className="emergency-kpi-card">
+          <span className="emergency-kpi-label">Covered Commodities</span>
+          <strong className="emergency-kpi-value">
+            {selected ? selected.candidates.length + srpFallbacks.length : '—'}
+          </strong>
+          <span className="emergency-kpi-sub">Basic Necessities & Prime Commodities</span>
+        </div>
+
+        <div className="emergency-kpi-card">
+          <span className="emergency-kpi-label">Recorded Declarations</span>
+          <strong className="emergency-kpi-value">{emergencies.length}</strong>
+          <span className="emergency-kpi-sub">Price freeze orders & active drafts</span>
+        </div>
+      </div>
+
       {/* System Error Alerts */}
       {loadError && (
         <div role="alert" className="admin-alert admin-alert--error">
@@ -99,7 +262,15 @@ export const EmergencyToggle: React.FC = () => {
           <button type="button" onClick={() => void loadEmergencies()}>Retry</button>
         </div>
       )}
-      {actionError && <div role="alert" className="admin-alert admin-alert--error">{actionError}</div>}
+      {actionError && (
+        <div role="alert" className="admin-alert admin-alert--error">
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <strong>Action Warning</strong>
+            <p style={{ margin: '0.2rem 0 0 0' }}>{actionError}</p>
+          </div>
+        </div>
+      )}
 
       {/* 2-Column Responsive Workspace */}
       <div className="emergency-grid-workspace">
@@ -139,13 +310,17 @@ export const EmergencyToggle: React.FC = () => {
                       onClick={() => { setSelectedId(record.id); setReviewed(false) }}
                     >
                       <div className="emergency-decl-top">
-                        <strong>{record.declaration_reference}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <FileText size={15} style={{ color: record.id === selectedId ? '#2563eb' : '#64748b' }} />
+                          <strong>{record.declaration_reference}</strong>
+                        </div>
                         <span className={`emergency-status-chip ${stateClass}`}>
                           {record.effective_state.replace('_', ' ')}
                         </span>
                       </div>
                       <div className="emergency-decl-dates">
-                        <span>{record.starts_on} to {record.ends_on || 'open'}</span>
+                        <Clock size={12} />
+                        <span>{formatPstDateRange(record.starts_on, record.ends_on)}</span>
                       </div>
                     </button>
                   )
@@ -163,6 +338,19 @@ export const EmergencyToggle: React.FC = () => {
               </div>
             </div>
 
+            <div className="emergency-formula-callout">
+              <div className="emergency-formula-title">
+                <Scale size={14} />
+                <strong>R.A. 7581 Statutory Calculation Rule</strong>
+              </div>
+              <div className="emergency-formula-code">
+                <code>APC Ceiling = (Minimum Price + Maximum Price) ÷ 2</code>
+              </div>
+              <p className="emergency-formula-note">
+                Baseline computed from the latest closed weekly surveillance cycle. Products without observations retain prevailing SRP as ceiling.
+              </p>
+            </div>
+
             <form
               className="admin-form"
               onSubmit={async (event) => {
@@ -178,36 +366,60 @@ export const EmergencyToggle: React.FC = () => {
                     ends_on: form.get('ends_on') || null,
                   })
                   replaceEmergency(record); element.reset()
+                  setFormStartDate(''); setFormEndDate('')
                   adminToast.success('APC preparation created.', { id: 'emergency-declaration-created' })
                 } catch (error: any) {
                   const message = error.response?.data?.message || 'The emergency declaration could not be recorded.'
                   setActionError(message); adminToast.error(message, { id: 'emergency-declaration-error' })
                 } finally { setSavingAction(null) }
               }}
-              style={{ display: 'grid', gap: '0.85rem' }}
+              style={{ display: 'grid', gap: '0.85rem', marginTop: '0.85rem' }}
             >
-              <div className="monitor-detail-facts emergency-location-strip">
-                <div>
-                  <span>Location</span>
-                  <strong>{SAN_JOSE}</strong>
-                </div>
+              <div className="emergency-form-location-badge">
+                <MapPin size={14} />
+                <span>Jurisdiction: <strong>{SAN_JOSE}</strong></span>
               </div>
 
               <label>
                 Declaration reference
-                <input name="reference" placeholder="e.g. PDRRMC-2026-08" required />
+                <input
+                  name="reference"
+                  placeholder="e.g. PDRRMC-2026-08"
+                  required
+                />
               </label>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: '.75rem' }}>
                 <label>
                   Start date
-                  <input name="starts_on" type="date" required />
+                  <input
+                    name="starts_on"
+                    type="date"
+                    required
+                    value={formStartDate}
+                    onChange={(e) => setFormStartDate(e.target.value)}
+                  />
                 </label>
                 <label>
                   End date
-                  <input name="ends_on" type="date" />
+                  <input
+                    name="ends_on"
+                    type="date"
+                    value={formEndDate}
+                    onChange={(e) => setFormEndDate(e.target.value)}
+                  />
                 </label>
               </div>
+
+              <button
+                type="button"
+                className="emergency-quick-date-btn"
+                onClick={handleApplySixtyDays}
+                title="Fills a 60-calendar-day period, counting the start date as day one. Verify the official declaration and any statutory exceptions."
+              >
+                <Clock size={12} />
+                <span>Set 60-day end date</span>
+              </button>
 
               <button
                 className="admin-button primary"
@@ -227,12 +439,31 @@ export const EmergencyToggle: React.FC = () => {
           {selected?.effective_state === 'in_effect' && (selected.status === 'active' || (selected.status === 'ended' && !selected.ended_at)) && (
             <section className="admin-card emergency-active-banner">
               <div className="emergency-active-banner-info">
-                <h4>Active Price Freeze In Effect</h4>
-                <p>Declaration reference: <strong>{selected.declaration_reference}</strong> ({selected.starts_on} to {selected.ends_on || 'open'})</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ShieldAlert size={20} style={{ color: '#dc2626' }} />
+                  <h4>Active Price Freeze In Effect</h4>
+                </div>
+                <p>Declaration reference: <strong>{selected.declaration_reference}</strong> ({formatPstDateRange(selected.starts_on, selected.ends_on)})</p>
+
+                {activeTimeline && (
+                  <div className="emergency-timeline-box">
+                    <div className="emergency-timeline-labels">
+                      <span>Day {activeTimeline.daysElapsed} of {activeTimeline.maxDays}</span>
+                      <strong>{activeTimeline.daysRemaining === 0 ? 'Ends today' : `${activeTimeline.daysRemaining} ${activeTimeline.daysRemaining === 1 ? 'Day' : 'Days'} Remaining`}</strong>
+                    </div>
+                    <div className="emergency-timeline-bar-bg">
+                      <div
+                        className="emergency-timeline-bar-fill"
+                        style={{ width: `${activeTimeline.percent}%` }}
+                      />
+                    </div>
+                    <small>Based on the recorded declaration period; verify the official order and applicable law.</small>
+                  </div>
+                )}
               </div>
               <button
                 type="button"
-                className="admin-button secondary"
+                className="admin-button secondary emergency-end-freeze-btn"
                 disabled={savingAction !== null}
                 onClick={async () => {
                   if (!window.confirm('End the Price Freeze now?')) return
@@ -257,8 +488,13 @@ export const EmergencyToggle: React.FC = () => {
           )}
 
           {selected?.ended_at && (
-            <section className="admin-card">
-              <p>Manually ended at {new Date(selected.ended_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', hour12: true })} · Asia/Manila</p>
+            <section className="admin-card emergency-ended-banner">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                <CheckCircle2 size={18} style={{ color: '#059669' }} />
+                <p style={{ margin: 0 }}>
+                  Manually ended at {new Date(selected.ended_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', hour12: true })} · Asia/Manila
+                </p>
+              </div>
             </section>
           )}
 
@@ -289,11 +525,79 @@ export const EmergencyToggle: React.FC = () => {
                     }
                   }}
                 >
-                  <RefreshCw size={16} />
+                  <RefreshCw size={16} className={savingAction === 'prepare' ? 'spin' : ''} />
                   {savingAction === 'prepare' ? 'Refreshing…' : 'Refresh preparation'}
                 </button>
               </div>
 
+              {/* Pre-Activation Diagnostic Banner if observations are missing */}
+              {missingCandidates.length > 0 && (
+                <div className="emergency-diagnostic-card">
+                  <div className="emergency-diagnostic-header">
+                    <AlertTriangle size={18} style={{ color: '#b45309', flexShrink: 0 }} />
+                    <div>
+                      <strong>Field Monitoring Observations Required Before Activation</strong>
+                      <p>
+                        {missingCandidates.length} {missingCandidates.length === 1 ? 'commodity does' : 'commodities do'} not have accepted routine surveillance records for the cutoff week.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="emergency-diagnostic-chips">
+                    {missingCandidates.slice(0, 8).map((mc) => (
+                      <span key={mc.id} className="emergency-missing-chip">
+                        {srpMap[mc.commodity_key]?.name || humanizeCommoditySlug(mc.commodity_key)}
+                      </span>
+                    ))}
+                    {missingCandidates.length > 8 && (
+                      <span className="emergency-missing-chip is-more">
+                        +{missingCandidates.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Search & Filter Toolbar */}
+              <div className="apc-table-toolbar">
+                <div className="apc-search-wrap">
+                  <Search size={15} className="apc-search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Search commodities..."
+                    value={candidateSearch}
+                    onChange={(e) => setCandidateSearch(e.target.value)}
+                    className="apc-search-input"
+                  />
+                </div>
+
+                <div className="apc-filter-group">
+                  <button
+                    type="button"
+                    className={`apc-filter-pill ${candidateFilter === 'all' ? 'is-active' : ''}`}
+                    onClick={() => setCandidateFilter('all')}
+                  >
+                    All ({selected.candidates.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`apc-filter-pill ${candidateFilter === 'ready' ? 'is-active' : ''}`}
+                    onClick={() => setCandidateFilter('ready')}
+                  >
+                    Ready ({selected.candidates.filter(c => c.observation_count > 0).length})
+                  </button>
+                  {missingCandidates.length > 0 && (
+                    <button
+                      type="button"
+                      className={`apc-filter-pill is-missing ${candidateFilter === 'missing' ? 'is-active' : ''}`}
+                      onClick={() => setCandidateFilter('missing')}
+                    >
+                      Missing ({missingCandidates.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Candidate Table */}
               <div className="admin-table-wrap">
                 <table className="admin-data-table apc-candidate-table">
                   <thead>
@@ -309,37 +613,58 @@ export const EmergencyToggle: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selected.candidates.length ? (
-                      selected.candidates.map((candidate) => (
-                        <tr key={candidate.id}>
-                          <td><strong>{candidate.commodity_key}</strong></td>
-                          <td>
-                            {candidate.source_week ? (
-                              <div className="apc-computed-cell">
-                                <span>{candidate.source_week.starts_on} to {candidate.source_week.ends_on}</span>
-                                {candidate.source_week.starts_on !== cutoffStartsOn && (
-                                  <small style={{ display: 'block' }}>Earlier week</small>
-                                )}
+                    {filteredCandidates.length ? (
+                      paginatedCandidates.map((candidate) => {
+                        const humanName = srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)
+                        const unit = srpMap[candidate.commodity_key]?.unit
+
+                        return (
+                          <tr key={candidate.id}>
+                            <td>
+                              <div className="apc-product-cell">
+                                <strong className="apc-product-title">{humanName}</strong>
+                                <div className="apc-product-meta">
+                                  <code className="apc-slug-code">{candidate.commodity_key}</code>
+                                  {unit && <span className="apc-unit-tag">{unit}</span>}
+                                </div>
                               </div>
-                            ) : '—'}
-                          </td>
-                          <td>{money(candidate.minimum_price)}</td>
-                          <td>{money(candidate.maximum_price)}</td>
-                          <td>{money(candidate.observed_average_price)}</td>
-                          <td>
-                            <div className="apc-computed-cell">
-                              <strong>{money(candidate.computed_apc_price)}</strong>
-                              <small style={{ display: 'block' }}>(min + max) ÷ 2</small>
-                            </div>
-                          </td>
-                          <td>{candidate.observation_count}</td>
-                          <td>{candidate.establishment_count}</td>
-                        </tr>
-                      ))
+                            </td>
+                            <td>
+                              {candidate.source_week ? (
+                                <div className="apc-computed-cell">
+                                  <span>{candidate.source_week.starts_on} to {candidate.source_week.ends_on}</span>
+                                  {candidate.source_week.starts_on !== cutoffStartsOn && (
+                                    <small style={{ display: 'block' }}>Earlier week</small>
+                                  )}
+                                </div>
+                              ) : '—'}
+                            </td>
+                            <td className="tabular-num">{money(candidate.minimum_price)}</td>
+                            <td className="tabular-num">{money(candidate.maximum_price)}</td>
+                            <td className="tabular-num">{money(candidate.observed_average_price)}</td>
+                            <td>
+                              <div className="apc-computed-cell">
+                                <strong>{money(candidate.computed_apc_price)}</strong>
+                                <small style={{ display: 'block' }}>(min + max) ÷ 2</small>
+                              </div>
+                            </td>
+                            <td className="tabular-num">
+                              <span className={`emergency-count-badge ${candidate.observation_count === 0 ? 'is-zero' : ''}`}>
+                                {candidate.observation_count}
+                              </span>
+                            </td>
+                            <td className="tabular-num">
+                              <span className="emergency-count-badge">
+                                {candidate.establishment_count}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })
                     ) : (
                       <tr>
-                        <td colSpan={8}>
-                          No covered product has an accepted routine observation before this declaration.
+                        <td colSpan={8} style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+                          {candidateSearch ? 'No covered products match your search query.' : 'No covered product has an accepted routine observation before this declaration.'}
                         </td>
                       </tr>
                     )}
@@ -347,39 +672,105 @@ export const EmergencyToggle: React.FC = () => {
                 </table>
               </div>
 
+              {/* Candidate Table Pagination Footer */}
+              {filteredCandidates.length > 0 && (
+                <nav className="admin-pagination apc-pagination" aria-label="APC candidates pagination">
+                  <div className="apc-pagination-summary">
+                    Showing <strong>{candidateFrom}–{candidateTo}</strong> of <strong>{filteredCandidates.length}</strong> commodities
+                  </div>
+                  <div className="apc-pagination-controls">
+                    <div className="apc-pagination-per-page">
+                      <label htmlFor="apc-per-page-select">Per page</label>
+                      <select
+                        id="apc-per-page-select"
+                        value={candidatePerPage}
+                        onChange={(e) => {
+                          setCandidatePerPage(Number(e.target.value))
+                          setCandidatePage(1)
+                        }}
+                      >
+                        <option value={8}>8</option>
+                        <option value={12}>12</option>
+                        <option value={24}>24</option>
+                      </select>
+                    </div>
+                    <div className="apc-pagination-nav">
+                      <button
+                        type="button"
+                        aria-label="Previous page"
+                        disabled={candidatePage <= 1}
+                        onClick={() => setCandidatePage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span className="apc-page-indicator">
+                        Page <strong>{candidatePage}</strong> of <strong>{totalCandidatePages}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Next page"
+                        disabled={candidatePage >= totalCandidatePages}
+                        onClick={() => setCandidatePage((p) => Math.min(totalCandidatePages, p + 1))}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </nav>
+              )}
+
+              {/* SRP Fallbacks Accordion */}
               {!!srpFallbacks.length && (
-                <details className="apc-source-details">
+                <details className="apc-source-details apc-fallback-details">
                   <summary>
                     {`No routine observation on record. SRP will be held as the Price Freeze ceiling for ${srpFallbacks.length} ${srpFallbacks.length === 1 ? 'product' : 'products'}`}
                   </summary>
-                  <ul>
+                  <ul className="apc-fallback-list">
                     {srpFallbacks.map((fallback) => (
-                      <li key={fallback.commodity_key}>
-                        <strong>{fallback.commodity_name}</strong>{fallback.unit ? ` · ${fallback.unit}` : ''} · {money(fallback.srp_price)}
+                      <li key={fallback.commodity_key} className="apc-fallback-item">
+                        <div>
+                          <strong>{fallback.commodity_name}</strong>
+                          {fallback.unit ? <span className="apc-unit-tag" style={{ marginLeft: '0.4rem' }}>{fallback.unit}</span> : ''}
+                        </div>
+                        <span className="apc-fallback-price">{money(fallback.srp_price)}</span>
                       </li>
                     ))}
                   </ul>
                 </details>
               )}
 
-              {/* Source Records Expanders */}
-              {selected.candidates.map((candidate) =>
-                candidate.source_observations?.length ? (
-                  <details key={`source-${candidate.id}`} className="apc-source-details">
-                    <summary>Source records for {candidate.commodity_key}</summary>
-                    <ul>
-                      {candidate.source_observations.map((observation) => (
-                        <li key={observation.item_id}>
-                          <strong>{observation.store_name}</strong> · {day(observation.finalized_at)} · {money(observation.recorded_price)} · Record #{observation.monitoring_record_id}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                ) : null
+              {/* Source Records Container */}
+              {selected.candidates.some(c => c.source_observations?.length) && (
+                <div className="apc-source-records-container">
+                  <div className="apc-source-records-header">
+                    <Database size={15} />
+                    <strong>Detailed Source Monitoring Logs ({selected.candidates.filter(c => c.source_observations?.length).length} Products)</strong>
+                  </div>
+                  <div className="apc-source-records-scroll">
+                    {selected.candidates.map((candidate) =>
+                      candidate.source_observations?.length ? (
+                        <details key={`source-${candidate.id}`} className="apc-source-details">
+                          <summary>Source records for {candidate.commodity_key}</summary>
+                          <ul>
+                            {candidate.source_observations.map((observation) => (
+                              <li key={observation.item_id}>
+                                <strong>{observation.store_name}</strong> · {day(observation.finalized_at)} · {money(observation.recorded_price)} · Record #{observation.monitoring_record_id}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Compliance & Verification Box */}
               <div className="apc-verification-box">
+                <div className="apc-verification-header">
+                  <CheckCircle2 size={16} />
+                  <strong>Statutory Evaluation & Activation Confirmation</strong>
+                </div>
                 <label className="check-label">
                   <input
                     type="checkbox"
@@ -428,6 +819,9 @@ export const EmergencyToggle: React.FC = () => {
                 <h3><Database size={18} /> Official APC / Price Freeze References</h3>
                 <p>These references are separate from SRP and exist only after DTI Admin confirmation.</p>
               </div>
+              <span className="emergency-status-chip chip-draft">
+                {officialPrices.length} {officialPrices.length === 1 ? 'Reference' : 'References'}
+              </span>
             </div>
 
             <div className="admin-table-wrap">
@@ -443,23 +837,90 @@ export const EmergencyToggle: React.FC = () => {
                 </thead>
                 <tbody>
                   {officialPrices.length ? (
-                    officialPrices.map((price) => (
-                      <tr key={price.id}>
-                        <td>{price.commodity_key}</td>
-                        <td>{price.price_type}</td>
-                        <td><strong>{money(price.authoritative_price)}</strong></td>
-                        <td>{price.effective_from} to {price.effective_until || 'open'}</td>
-                        <td>{price.source_reference}</td>
-                      </tr>
-                    ))
+                    paginatedOfficialPrices.map((price) => {
+                      const humanName = srpMap[price.commodity_key]?.name || humanizeCommoditySlug(price.commodity_key)
+                      return (
+                        <tr key={price.id}>
+                          <td>
+                            <div className="apc-product-cell">
+                              <strong className="apc-product-title">{humanName}</strong>
+                              <code className="apc-slug-code">{price.commodity_key}</code>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`emergency-ref-badge ${price.price_type === 'APC' ? 'is-apc' : 'is-srp'}`}>
+                              {price.price_type}
+                            </span>
+                          </td>
+                          <td className="tabular-num">
+                            <strong style={{ color: '#1e3a8a', fontSize: '0.96rem' }}>
+                              {money(price.authoritative_price)}
+                            </strong>
+                          </td>
+                          <td>{formatPstDateRange(price.effective_from, price.effective_until)}</td>
+                          <td>
+                            <span className="emergency-source-tag">{price.source_reference}</span>
+                          </td>
+                        </tr>
+                      )
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={5}>No official APC references have been confirmed.</td>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+                        No official APC references have been confirmed.
+                      </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            {/* Official References Pagination Footer */}
+            {officialPrices.length > 0 && (
+              <nav className="admin-pagination apc-pagination" aria-label="Official APC references pagination">
+                <div className="apc-pagination-summary">
+                  Showing <strong>{refFrom}–{refTo}</strong> of <strong>{officialPrices.length}</strong> references
+                </div>
+                <div className="apc-pagination-controls">
+                  <div className="apc-pagination-per-page">
+                    <label htmlFor="ref-per-page-select">Per page</label>
+                    <select
+                      id="ref-per-page-select"
+                      value={refPerPage}
+                      onChange={(e) => {
+                        setRefPerPage(Number(e.target.value))
+                        setRefPage(1)
+                      }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                    </select>
+                  </div>
+                  <div className="apc-pagination-nav">
+                    <button
+                      type="button"
+                      aria-label="Previous references page"
+                      disabled={refPage <= 1}
+                      onClick={() => setRefPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="apc-page-indicator">
+                      Page <strong>{refPage}</strong> of <strong>{totalRefPages}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Next references page"
+                      disabled={refPage >= totalRefPages}
+                      onClick={() => setRefPage((p) => Math.min(totalRefPages, p + 1))}
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </nav>
+            )}
           </section>
         </div>
       </div>

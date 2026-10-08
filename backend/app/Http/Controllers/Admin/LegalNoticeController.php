@@ -34,8 +34,6 @@ class LegalNoticeController extends Controller
     /** Longest values the printed LOI/SCO fields can hold (see notices/_form-page.blade.php). */
     public const FORM_LIMITS = ['recipient_name' => 70, 'recipient_title' => 40, 'recipient_email' => 60, 'address' => 140];
     private const STORE_NAME_LIMIT = 75;
-    /** The reason each kind of captured reference supports; a notice covers one kind only. */
-    private const REASON_FOR_REFERENCE = ['standard_srp' => 'Prices above SRP', 'emergency_ceiling' => 'Prices above price ceiling'];
     private const OPEN_STATUSES = ['draft', 'issued', 'response_received'];
     /** Closure outcomes and the per-item decisions each one requires (D5: an accepted explanation is not a confirmed finding). */
     public const CLOSE_OUTCOMES = [
@@ -108,12 +106,13 @@ class LegalNoticeController extends Controller
             ])->all(),
         ];
         $owner = $record->store->owner_name;
+        $derived = app(LegalPolicyService::class)->derive($types->all(), $type);
         $notice = LegalNotice::create([
             'store_id' => $record->store_id, 'monitoring_record_id' => $record->id, 'preceding_notice_id' => null,
             'notice_type' => $type, 'prepared_by' => $request->user()->id, 'status' => 'draft', 'source_snapshot' => $snapshot,
             // The addressee is the registered owner (owner decision D4). linked_vendor_user_id and registered_owner_name record what the
             // store held when drafted; issue() refuses if either changed unreviewed.
-            'draft_payload' => ['recipient_name' => $owner, 'recipient_title' => null, 'recipient_email' => $record->store->vendor?->email, 'address' => $record->store->address, 'reason' => self::REASON_FOR_REFERENCE[$types->first()] ?? null, 'legal_bases' => [], 'linked_vendor_user_id' => $record->store->vendor_user_id, 'registered_owner_name' => $owner],
+            'draft_payload' => ['recipient_name' => $owner, 'recipient_title' => null, 'recipient_email' => $record->store->vendor?->email, 'address' => $record->store->address, 'reason' => $derived['reason'] ?? null, 'legal_bases' => $derived['legal_bases'] ?? [], 'linked_vendor_user_id' => $record->store->vendor_user_id, 'registered_owner_name' => $owner],
             'delivery_state' => 'not_recorded',
         ]);
         $audit->recordOrFail($request, 'legal.draft_created', $notice, ['monitoring_record_id' => $record->id, 'item_count' => $items->count()]);
@@ -148,6 +147,9 @@ class LegalNoticeController extends Controller
             'intended_delivery_method' => ['sometimes', 'nullable', Rule::in(['portal'])],
             'internal_justification' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
+        // The reason follows the evidence (issue() refuses any other), so a save cannot store a different one.
+        $expected = $this->derived($legalNotice)['reason'] ?? null;
+        abort_if($expected && filled($data['reason'] ?? null) && $data['reason'] !== $expected, 422, "The evidence supports the reason \"$expected\"; the notice cannot state a different one.");
         DB::transaction(function () use ($request, $legalNotice, $data, $audit) {
             // Recheck under the lock issue() takes, so a save cannot change a notice issued meanwhile.
             $notice = LegalNotice::whereKey($legalNotice->id)->lockForUpdate()->firstOrFail();
@@ -207,8 +209,8 @@ class LegalNoticeController extends Controller
                 abort_unless(in_array($notice->draft_payload['reason'] ?? null, $rules['reasons'], true), 422, 'Reason is not permitted by policy.');
                 $types = collect($notice->source_snapshot['items'])->pluck('reference_type')->unique()->values();
                 abort_if($types->count() !== 1 || $types->first() === null, 422, 'This draft does not record one kind of price reference; prepare a new draft.');
-                $expected = self::REASON_FOR_REFERENCE[$types->first()] ?? null;
-                abort_if($expected && in_array($expected, $rules['reasons'], true) && $notice->draft_payload['reason'] !== $expected, 422, "The evidence supports the reason \"$expected\"; the notice cannot state a different one.");
+                $expected = $policy->derive($types->all(), $notice->notice_type)['reason'] ?? null;
+                abort_if($expected && $notice->draft_payload['reason'] !== $expected, 422, "The evidence supports the reason \"$expected\"; the notice cannot state a different one.");
                 $bases = $notice->draft_payload['legal_bases'] ?? [];
                 abort_if(array_diff($bases, $rules['legal_bases']) || count($bases) !== count(array_unique($bases)) || count($bases) > 4, 422, 'Legal basis is not permitted by policy.');
                 $payload = $notice->draft_payload ?? [];
@@ -519,7 +521,7 @@ class LegalNoticeController extends Controller
                 'store_id' => $loi->store_id, 'monitoring_record_id' => $loi->monitoring_record_id, 'preceding_notice_id' => $loi->id,
                 'notice_type' => 'SCO', 'prepared_by' => $request->user()->id, 'status' => 'draft', 'source_snapshot' => $loi->source_snapshot,
                 'draft_payload' => Arr::only($loi->draft_payload ?? [], ['recipient_name', 'recipient_title', 'address', 'reason', 'registered_owner_name'])
-                    + ['recipient_email' => $store->vendor?->email, 'legal_bases' => [], 'linked_vendor_user_id' => $store->vendor_user_id],
+                    + ['recipient_email' => $store->vendor?->email, 'legal_bases' => $this->derived($loi, 'SCO')['legal_bases'] ?? [], 'linked_vendor_user_id' => $store->vendor_user_id],
                 'delivery_state' => 'not_recorded',
             ]);
             $audit->recordOrFail($request, 'legal.draft_created', $sco, ['monitoring_record_id' => $loi->monitoring_record_id, 'item_count' => count($itemIds), 'preceding_notice_id' => $loi->id]);
@@ -542,6 +544,12 @@ class LegalNoticeController extends Controller
             && $vendor && $vendor->is_active && (int) $store->vendor_user_id === (int) $vendor->id;
     }
 
+    /** The reason and legal bases this notice's cited products support (LegalPolicyService::derive). */
+    private function derived(LegalNotice $notice, ?string $noticeType = null): ?array
+    {
+        return app(LegalPolicyService::class)->derive(collect($notice->source_snapshot['items'] ?? [])->pluck('reference_type')->all(), $noticeType ?? $notice->notice_type);
+    }
+
     private function detail(LegalNotice $notice): array
     {
         $notice->loadMissing(['store:id,store_name,address', 'preparer:id,name', 'issuer:id,name', 'attachments']);
@@ -553,6 +561,8 @@ class LegalNoticeController extends Controller
             'legal_bases' => config("legal_policy.rules.{$notice->notice_type}.legal_bases", []),
             // Lets the draft form tick its checklist as the evaluator types, using the same rule as issue().
             'required_fields' => config("legal_policy.rules.{$notice->notice_type}.required_fields", []),
+            // What the cited products support, and how the form groups the approved bases.
+            'derived' => $this->derived($notice), 'basis_groups' => config('legal_policy.basis_groups', []),
         ];
         $store = Store::find($notice->store_id);
         $data['linked_vendor_user_id'] = $store?->vendor_user_id;

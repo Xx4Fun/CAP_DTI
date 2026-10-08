@@ -412,27 +412,39 @@ export function AuditPanel() {
   }
 
   return (
-    <div className="admin-card" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-      <div className="admin-table-wrap" style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: '10px', background: '#ffffff' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="admin-table-card">
+      <div className="admin-table-wrap">
+        <table className="admin-data-table">
+          <caption className="sr-only">Audit trail log records</caption>
           <thead>
-            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Time</th>
-              <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Action</th>
-              <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Subject</th>
-              <th style={{ padding: '0.75rem 1rem', fontSize: '0.76rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 600 }}>Details</th>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Subject</th>
+              <th>Details</th>
             </tr>
           </thead>
           <tbody>
             {events.map((event) => (
-              <tr key={event.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                <td style={{ padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#64748b' }}>{new Date(event.created_at).toLocaleString()}</td>
-                <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#1e3a8a', fontSize: '0.85rem' }}>{event.action === 'store.representative_changed' ? 'Current representative changed' : event.action}</td>
-                <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#0f172a' }}>
-                  {formatSubjectType(event.subject_type)}{event.subject_id ? ` #${event.subject_id}` : ''}
+              <tr key={event.id}>
+                <td style={{ whiteSpace: 'nowrap', color: '#64748b', fontSize: '0.82rem' }}>
+                  {new Date(event.created_at).toLocaleString()}
                 </td>
-                <td style={{ padding: '0.75rem 1rem' }}>
-                  {event.action === 'store.representative_changed' ? <span>Account #{event.actor_id ?? 'unknown'} · {representativeAuditDetails(event.metadata)}</span> : <code>{JSON.stringify(event.metadata)}</code>}
+                <td>
+                  <span className="admin-audit-action-badge">
+                    {event.action === 'store.representative_changed' ? 'Representative changed' : event.action}
+                  </span>
+                </td>
+                <td>
+                  <strong>{formatSubjectType(event.subject_type)}</strong>
+                  {event.subject_id != null && <small>ID #{event.subject_id}</small>}
+                </td>
+                <td>
+                  {event.action === 'store.representative_changed' ? (
+                    <span>Account #{event.actor_id ?? 'unknown'} · {representativeAuditDetails(event.metadata)}</span>
+                  ) : (
+                    <code className="admin-audit-code">{JSON.stringify(event.metadata)}</code>
+                  )}
                 </td>
               </tr>
             ))}

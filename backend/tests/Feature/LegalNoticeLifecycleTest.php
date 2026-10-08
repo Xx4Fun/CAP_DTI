@@ -276,7 +276,13 @@ class LegalNoticeLifecycleTest extends TestCase
 
     public function test_stated_reason_must_match_the_kind_of_evidence(): void
     {
-        $draft = $this->draft($this->record, $this->items, 'LOI', ['intended_delivery_method' => 'portal', 'reason' => 'Prices above price ceiling']);
+        $draft = $this->draft($this->record, $this->items, 'LOI', ['intended_delivery_method' => 'portal']);
+        // A save cannot store another reason, and clearing it is still allowed.
+        $this->asAdmin()->patchJson("/api/admin/legal-notices/$draft", ['reason' => 'Prices above price ceiling'])->assertUnprocessable();
+        $this->assertSame('Prices above SRP', LegalNotice::find($draft)->draft_payload['reason']);
+        // A draft saved before that rule can still hold one; issue refuses it.
+        $notice = LegalNotice::find($draft);
+        $notice->update(['draft_payload' => ['reason' => 'Prices above price ceiling'] + $notice->draft_payload]);
         $this->asAdmin()->postJson("/api/admin/legal-notices/$draft/issue", ['confirmed' => true])->assertUnprocessable();
         $this->assertSame('draft', LegalNotice::find($draft)->status);
 
@@ -286,6 +292,40 @@ class LegalNoticeLifecycleTest extends TestCase
         // A single-kind draft starts with the matching reason.
         $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => [$this->items[1]->id]])
             ->assertCreated()->assertJsonPath('data.draft_payload.reason', 'Prices above price ceiling');
+    }
+
+    public function test_draft_starts_with_the_reason_and_legal_basis_its_evidence_supports(): void
+    {
+        $create = fn (array $items) => $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => collect($items)->pluck('id')->all()])->assertCreated();
+        $srp = $create($this->items)
+            ->assertJsonPath('data.draft_payload.reason', 'Prices above SRP')->assertJsonPath('data.draft_payload.legal_bases', ['RA 7581 (Price Act)'])
+            ->assertJsonPath('data.policy.derived', ['reason' => 'Prices above SRP', 'legal_bases' => ['RA 7581 (Price Act)']])
+            ->assertJsonPath('data.policy.basis_groups', ['RA 7581 (Price Act)' => 'applicable_law', 'DAO No. 6, s. 2007' => 'penalty_procedure', 'DO No. 18-122' => 'penalty_procedure', 'RA 7394 (Consumer Act)' => 'other_law'])
+            ->json('data.id');
+        // The evaluator may keep, add to or clear the suggested bases.
+        foreach ([['RA 7581 (Price Act)', 'DAO No. 6, s. 2007', 'DO No. 18-122', 'RA 7394 (Consumer Act)'], ['RA 7394 (Consumer Act)'], []] as $bases) {
+            $this->asAdmin()->patchJson("/api/admin/legal-notices/$srp", ['legal_bases' => $bases])->assertOk()->assertJsonPath('data.draft_payload.legal_bases', $bases);
+        }
+
+        LegalNotice::find($srp)->update(['status' => 'cancelled']);
+        foreach ($this->items as $item) $item->update(['reference_type' => 'emergency_ceiling']);
+        $create($this->items)->assertJsonPath('data.draft_payload.reason', 'Prices above price ceiling')->assertJsonPath('data.draft_payload.legal_bases', ['RA 7581 (Price Act)'])
+            ->assertJsonPath('data.policy.derived.reason', 'Prices above price ceiling');
+    }
+
+    public function test_escalated_sco_starts_with_the_legal_basis_its_evidence_supports(): void
+    {
+        $sco = $this->escalatedSco();
+        $this->asAdmin()->getJson("/api/admin/legal-notices/$sco")->assertOk()
+            ->assertJsonPath('data.draft_payload.reason', 'Prices above SRP')->assertJsonPath('data.draft_payload.legal_bases', ['RA 7581 (Price Act)'])
+            ->assertJsonPath('data.readiness.notice_type_and_basis', true);
+    }
+
+    public function test_nothing_is_derived_when_policy_does_not_permit_the_reason(): void
+    {
+        config(['legal_policy.rules.LOI.reasons' => ['Request explanation'], 'legal_policy.rules.LOI.legal_bases' => ['RA 7581']]);
+        $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => collect($this->items)->pluck('id')->all()])
+            ->assertCreated()->assertJsonPath('data.draft_payload.reason', null)->assertJsonPath('data.draft_payload.legal_bases', [])->assertJsonPath('data.policy.derived', null);
     }
 
     public function test_legacy_notice_stays_hidden_even_with_an_audience(): void

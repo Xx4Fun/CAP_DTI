@@ -114,9 +114,10 @@ describe('Legal Actions vendor response review', () => {
     render(<LegalNoticeManager />)
 
     await user.click(await screen.findByRole('button', { name: /Issued & Responses/ }))
-    const [reviewFirst, reviewSecond] = await screen.findAllByRole('button', { name: 'Open' })
-    await user.click(reviewFirst)
-    await user.click(reviewSecond)
+    await user.click((await screen.findAllByRole('button', { name: 'Open' }))[0])
+    // The notice is its own page now: go back to the list, then open the second one.
+    await user.click(await screen.findByRole('button', { name: 'Back to Issued & Responses' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Open' }))[1])
     expect(await screen.findByRole('heading', { name: 'PM-2026-LOI-000002' })).toBeInTheDocument()
 
     resolveFirst({ ...detailRecord })
@@ -245,7 +246,7 @@ describe('Legal Actions vendor response review', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Withdraw notice' }))
 
     expect(adminApi.cancelLegalNotice).toHaveBeenCalledWith(1, 'Issued to the wrong branch.')
-    expect(await screen.findByText('LOI · Cancelled')).toBeInTheDocument()
+    expect(await within(screen.getByRole('article')).findByText('Cancelled')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Close notice' })).not.toBeInTheDocument()
   })
 

@@ -65,4 +65,17 @@ describe('adminApi', () => {
     expect(post).toHaveBeenNthCalledWith(1, '/admin/emergencies/7/prepare')
     expect(post).toHaveBeenNthCalledWith(2, '/admin/emergencies/7/activate', { confirmed: true, preparation_hash: record.preparation_hash })
   })
+
+  it('gives a legacy legal notice with no snapshot or payload empty ones', async () => {
+    const legacy = { id: 7, status: 'issued', source_snapshot: null, draft_payload: null }
+    get.mockResolvedValueOnce({ data: { data: legacy } })
+    expect(await adminApi.getLegalNotice(7)).toMatchObject({ id: 7, source_snapshot: { items: [] }, draft_payload: {} })
+
+    get.mockResolvedValueOnce({ data: { data: { data: [legacy], current_page: 1, last_page: 1, total: 1 } } })
+    expect((await adminApi.getLegalNotices()).data[0]).toMatchObject({ source_snapshot: { items: [] }, draft_payload: {} })
+
+    // A notice that has a snapshot keeps it.
+    get.mockResolvedValueOnce({ data: { data: { id: 8, source_snapshot: { store: { store_name: 'A' }, items: [{ id: 1 }] }, draft_payload: { reason: 'Prices above SRP' } } } })
+    expect(await adminApi.getLegalNotice(8)).toMatchObject({ source_snapshot: { store: { store_name: 'A' }, items: [{ id: 1 }] }, draft_payload: { reason: 'Prices above SRP' } })
+  })
 })

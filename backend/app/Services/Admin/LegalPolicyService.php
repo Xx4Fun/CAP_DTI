@@ -46,6 +46,19 @@ class LegalPolicyService
         throw new LogicException('Automatic legal notice selection is disabled.');
     }
 
+    /**
+     * The reason and legal bases the cited price references support, limited to what the notice type's policy permits.
+     * Null unless the references are one known kind. This pre-fills a draft; an evaluator still reviews and issues it.
+     */
+    public function derive(array $referenceTypes, string $noticeType): ?array
+    {
+        $types = array_values(array_unique($referenceTypes));
+        $finding = count($types) === 1 && is_string($types[0]) ? config('legal_policy.findings.'.$types[0]) : null;
+        $rule = config('legal_policy.rules.'.strtoupper($noticeType), []);
+        if (! $finding || ! in_array($finding['reason'], $rule['reasons'] ?? [], true)) return null;
+        return ['reason' => $finding['reason'], 'legal_bases' => array_values(array_intersect($finding['legal_bases'], $rule['legal_bases'] ?? []))];
+    }
+
     public function responseDeadline(CarbonInterface $from, string $noticeType): CarbonInterface
     {
         return $this->deadlineFrom($from, $this->deadlineRules($noticeType));

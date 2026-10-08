@@ -37,6 +37,18 @@ Only record choices that should constrain future work. Newest entries go first a
 - **Old admin tabs.** `missing_commodity_keys` is still sent, meaning "no observation in the cutoff week", only so a tab on the previous build stays unable to activate. Remove it once that build is out of use.
 - Evidence: `docs/plans/apc-lookback/PLAN.md` and its review log; `backend/tests/Feature/EmergencyApcWorkflowTest.php`.
 
+## 2026-10-07 — Legal notice reason and legal basis follow the evidence
+
+- **One owner for the mapping.** `backend/config/legal_policy.php` `findings` maps each captured reference kind (`standard_srp`, `emergency_ceiling`) to the reason and legal bases it supports. `LegalPolicyService::derive` reads it and returns only values the notice type's policy permits. Draft creation, escalation, save and issue all use it.
+- **The reason is locked; the bases are a suggestion.** A draft starts with the derived reason and bases. A save or an issue with any other reason is refused. The evaluator may tick, add or clear legal bases within the approved list. The system still never selects the notice type and never issues on its own.
+- **The four approved legal-basis strings are unchanged** and are shown in three groups (`basis_groups`):
+  - Applicable law: RA 7581 (Price Act). The only basis derived, because monitoring records price comparisons only.
+  - Penalty and procedure: DAO No. 6, s. 2007 (schedule of administrative fines) and DO No. 18-122 (monitoring and enforcement procedure).
+  - Other law: RA 7394 (Consumer Act). The system records no price-tag or deceptive-sale finding that would support it.
+- The grouping comes from desk research on DTI sources, not legal advice. DTI still needs to confirm what the SCO sentence should cite, whether to include "as amended by RA 10623" or section numbers, and whether RA 7394 is ever cited for a monitoring visit.
+- **An issued notice is its own page** in Legal Actions, in the Field Monitoring visit layout. The open notice is in the URL (`source_notice`), so reload and browser Back follow it. All detail fetches go through one loader with one request counter.
+- Evidence: `backend/tests/Feature/LegalNoticeLifecycleTest.php` and `web/src/components/admin/LegalNoticeBasisAndDetail.test.tsx`.
+
 ## 2026-10-06 — Vendor offline work and legal delivery
 
 - Vendor saves private account-scoped resources and unfinished work in encrypted IndexedDB with an automatically restored browser key. Existing sign-in and token expiry remain; no Field PIN or offline lease is added.
