@@ -86,8 +86,8 @@ export const RebuttalHistory: React.FC<RebuttalHistoryProps> = ({ notices, onVie
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {notice.attachments.map((attachment) => (
-                    <span key={attachment.id} className="badge badge-navy">
+                  {notice.attachments.map((attachment, index) => (
+                    <span key={attachment.id ? `att-${attachment.id}` : `${notice.id}-${index}-${attachment.original_name}`} className="badge badge-navy">
                       <Paperclip size={12} />
                       <span>{attachment.original_name} • {attachmentCategoryLabel(attachment.category)}</span>
                     </span>

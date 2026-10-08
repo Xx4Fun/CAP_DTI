@@ -464,14 +464,13 @@ describe('PRICE-Watch Vendor Portal', () => {
     await user.click(screen.getByRole('button', { name: /Next: Certify/ }));
     await user.click(screen.getByRole('checkbox', { name: /certify under oath/i }));
     await user.click(screen.getByRole('button', { name: 'Submit Official Response' }));
-    expect(await screen.findByRole('heading', { name: 'Submitted Responses & Explanations' })).toBeInTheDocument();
-    expect(await screen.findByText(text)).toBeInTheDocument();
+    const history = (await screen.findByRole('heading', { name: 'Submitted Responses & Explanations' })).closest('.rebuttals-view') as HTMLElement;
+    expect(await within(history).findByText(text, {}, { timeout: 5000 })).toBeInTheDocument();
 
     // The read that started before submitting now resolves with the old, unanswered notice.
-    resolveStale([notice()]);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await act(async () => { resolveStale([notice()]); });
 
-    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(within(history).getByText(text)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('No responses submitted yet.')).not.toBeInTheDocument());
   });
 

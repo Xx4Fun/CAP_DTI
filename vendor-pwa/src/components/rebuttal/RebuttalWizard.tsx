@@ -119,13 +119,17 @@ export const RebuttalWizard: React.FC<RebuttalWizardProps> = ({ accountId, notic
         </button>
       </div>
 
-      <ol aria-label="Response steps" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', listStyle: 'none', padding: 0 }}>
+      <ol aria-label="Response steps" className="wizard-stepper">
         {['Reason', 'Explanation', 'Evidence', 'Certify'].map((title, index) => {
           const number = index + 1;
           return (
-            <li key={title} aria-current={step === number ? 'step' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: step >= number ? 'var(--dti-navy)' : 'var(--text-muted)', fontWeight: step === number ? 700 : 500, fontSize: '0.82rem' }}>
-              <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: step >= number ? 'var(--dti-navy)' : '#E2E8F0', color: step >= number ? '#FFFFFF' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>{number}</span>
-              <span>{title}</span>
+            <li
+              key={title}
+              aria-current={step === number ? 'step' : undefined}
+              className={`wizard-step-item ${step === number ? 'active' : ''} ${step > number ? 'completed' : ''}`}
+            >
+              <span className="wizard-step-circle">{step > number ? '✓' : number}</span>
+              <span className="wizard-step-label">{title}</span>
             </li>
           );
         })}

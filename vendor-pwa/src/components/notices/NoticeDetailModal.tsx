@@ -85,15 +85,47 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = ({ notice, on
           </div>
 
           <div className="dti-doc-container">
-            <div className="dti-doc-recipient">
-              <p><strong>Establishment:</strong> {notice.store?.store_name ?? 'Not recorded'}</p>
-              <p><strong>Address:</strong> {notice.store?.address ?? 'Not recorded'}</p>
-              <p><strong>Issued:</strong> {formatDate(notice.issued_at, true)}</p>
-              <p><strong>Delivery:</strong> {notice.delivery_state === 'not_recorded' ? (notice.intended_delivery_method === 'portal' ? 'Not yet opened by you' : 'Not yet recorded') : `${notice.delivery_state} ${notice.delivered_at ? `on ${formatDate(notice.delivered_at, true)}` : ''}`}</p>
-              <p><strong>Response deadline:</strong> {notice.due_date_timestamp ? formatDate(notice.due_date_timestamp, true) : notice.intended_delivery_method === 'portal' ? 'Starts when you open the official document' : 'Starts after DTI records delivery'}</p>
-              {notice.preceding_control_number && <p><strong>Follows:</strong> Letter of Inquiry {notice.preceding_control_number}</p>}
-              {notice.reason && <p><strong>Reason:</strong> {notice.reason}</p>}
-              {notice.legal_bases && notice.legal_bases.length > 0 && <p><strong>Legal basis:</strong> {notice.legal_bases.join('; ')}</p>}
+            <div className="vp-meta-grid" style={{ marginBottom: '18px', background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+              <div className="vp-meta-item">
+                <span className="vp-meta-label">Establishment</span>
+                <span className="vp-meta-value">{notice.store?.store_name ?? 'Not recorded'}</span>
+              </div>
+              <div className="vp-meta-item">
+                <span className="vp-meta-label">Address</span>
+                <span className="vp-meta-value">{notice.store?.address ?? 'Not recorded'}</span>
+              </div>
+              <div className="vp-meta-item">
+                <span className="vp-meta-label">Date Issued</span>
+                <span className="vp-meta-value">{formatDate(notice.issued_at, true)}</span>
+              </div>
+              <div className="vp-meta-item">
+                <span className="vp-meta-label">Delivery Status</span>
+                <span className="vp-meta-value">{notice.delivery_state === 'not_recorded' ? (notice.intended_delivery_method === 'portal' ? 'Not yet opened by you' : 'Not yet recorded') : `${notice.delivery_state} ${notice.delivered_at ? `on ${formatDate(notice.delivered_at, true)}` : ''}`}</span>
+              </div>
+              <div className="vp-meta-item vp-meta-item--full">
+                <span className="vp-meta-label">Response Deadline</span>
+                <span className="vp-meta-value" style={{ color: notice.due_date_timestamp ? 'var(--dti-navy)' : 'inherit' }}>
+                  {notice.due_date_timestamp ? formatDate(notice.due_date_timestamp, true) : notice.intended_delivery_method === 'portal' ? 'Starts when you open the official document' : 'Starts after DTI records delivery'}
+                </span>
+              </div>
+              {notice.preceding_control_number && (
+                <div className="vp-meta-item vp-meta-item--full">
+                  <span className="vp-meta-label">Preceding Notice</span>
+                  <span className="vp-meta-value">Letter of Inquiry {notice.preceding_control_number}</span>
+                </div>
+              )}
+              {notice.reason && (
+                <div className="vp-meta-item vp-meta-item--full">
+                  <span className="vp-meta-label">Official Reason</span>
+                  <span className="vp-meta-value">{notice.reason}</span>
+                </div>
+              )}
+              {notice.legal_bases && notice.legal_bases.length > 0 && (
+                <div className="vp-meta-item vp-meta-item--full">
+                  <span className="vp-meta-label">Legal Basis</span>
+                  <span className="vp-meta-value">{notice.legal_bases.join('; ')}</span>
+                </div>
+              )}
             </div>
 
             {notice.outcome && (

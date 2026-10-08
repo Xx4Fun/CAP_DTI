@@ -53,6 +53,7 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
       </section>
 
       <div className="profile-grid">
+        {/* Box 1 (Row 1, Col 1): Establishment */}
         <section className="profile-card" aria-labelledby="profile-establishment-title">
           <div className="profile-card-heading">
             <span><StoreIcon size={20} /></span>
@@ -73,6 +74,7 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
           )}
         </section>
 
+        {/* Box 2 (Row 1, Col 2): Representative */}
         {store ? (
           <RepresentativeCard store={store} onSave={onSaveRepresentative} />
         ) : (
@@ -88,6 +90,7 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
           </section>
         )}
 
+        {/* Box 3 (Row 2, Col 1): Notification settings */}
         <section className="profile-card" aria-labelledby="profile-notifications-title">
           <div className="profile-card-heading">
             <span><Bell size={20} /></span>
@@ -96,9 +99,26 @@ export const VendorProfile: React.FC<VendorProfileProps> = ({ user, store, onOpe
               <p>Choose which notices, deadlines and price updates you want to be alerted about.</p>
             </div>
           </div>
-          <button type="button" className="btn btn-secondary profile-card-action" onClick={onOpenNotifications}>Manage notification settings</button>
+          <div className="profile-card-features">
+            <div className="profile-feature-badge">
+              <span className="profile-badge-dot" aria-hidden="true" />
+              <span>Official LOI &amp; SCO legal notices</span>
+            </div>
+            <div className="profile-feature-badge">
+              <span className="profile-badge-dot" aria-hidden="true" />
+              <span>Official LOI &amp; SCO response deadlines</span>
+            </div>
+            <div className="profile-feature-badge">
+              <span className="profile-badge-dot" aria-hidden="true" />
+              <span>DTI SRP bulletins &amp; price freeze advisories</span>
+            </div>
+          </div>
+          <button type="button" className="btn btn-secondary profile-card-action" onClick={onOpenNotifications}>
+            Manage notification settings
+          </button>
         </section>
 
+        {/* Box 4 (Row 2, Col 2): Password */}
         <section className="profile-card" aria-labelledby="profile-password-title">
           <div className="profile-card-heading">
             <span><LockKeyhole size={20} /></span>

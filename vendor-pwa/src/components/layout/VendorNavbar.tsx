@@ -53,17 +53,6 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
             <span>{online ? 'Online' : 'Offline'}</span>
           </span>
 
-          {stores.length > 1 && (
-            <select
-              className="header-store-select"
-              aria-label="Active establishment"
-              value={activeStoreId ?? ''}
-              onChange={(event) => onSelectStore(Number(event.target.value))}
-            >
-              {stores.map((store) => <option key={store.id} value={store.id}>{store.store_name}</option>)}
-            </select>
-          )}
-
           <button
             type="button"
             className="header-icon-btn"
@@ -85,6 +74,21 @@ export const VendorNavbar: React.FC<VendorNavbarProps> = ({
           </button>
         </div>
       </div>
+
+      {stores.length > 1 && (
+        <div className="vendor-header-subbar">
+          <label htmlFor="header-store-select" className="header-subbar-label">Branch:</label>
+          <select
+            id="header-store-select"
+            className="header-store-select header-store-select--subbar"
+            aria-label="Active establishment"
+            value={activeStoreId ?? ''}
+            onChange={(event) => onSelectStore(Number(event.target.value))}
+          >
+            {stores.map((store) => <option key={store.id} value={store.id}>{store.store_name}</option>)}
+          </select>
+        </div>
+      )}
 
       <div className="ph-flag-bar" aria-hidden="true">
         <span className="ph-flag-blue" />
