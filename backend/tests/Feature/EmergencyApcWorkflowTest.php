@@ -165,16 +165,18 @@ class EmergencyApcWorkflowTest extends TestCase
             ->assertJsonPath('data.0.candidates.0.computed_apc_price', 45)
             ->assertJsonPath('data.0.official_prices.0.authoritative_price', 45);
 
+        \Illuminate\Support\Carbon::setTestNow('2026-09-09 02:01:00');
         $this->patchJson("/api/admin/emergencies/{$emergencyId}", [
             'status' => 'ended', 'ends_on' => '2026-09-10', 'confirmed' => true,
         ])->assertOk()
-            ->assertJsonPath('data.effective_state', 'in_effect')
+            ->assertJsonPath('data.effective_state', 'ended')
             ->assertJsonPath('data.official_prices.0.effective_until', '2026-09-10');
         $this->assertDatabaseHas('regulatory_price_records', [
             'regulatory_emergency_id' => $emergencyId, 'effective_until' => '2026-09-10 00:00:00',
         ]);
         $resolver = app(FieldReferenceResolver::class);
-        $this->assertSame('emergency_ceiling', $resolver->resolve($bulletin, '2026-09-10 23:59:59')['type']);
+        $this->assertSame('emergency_ceiling', $resolver->resolve($bulletin, '2026-09-09 10:00:59')['type']);
+        $this->assertSame('standard_srp', $resolver->resolve($bulletin, '2026-09-09 10:01:00')['type']);
         $this->assertSame('standard_srp', $resolver->resolve($bulletin, '2026-09-11 00:00:00')['type']);
     }
 

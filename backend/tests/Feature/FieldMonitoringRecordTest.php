@@ -102,6 +102,33 @@ class FieldMonitoringRecordTest extends TestCase
 
     private string $leaseId;
 
+    public function test_a_signed_visit_queued_before_manual_ending_retains_its_freeze_reference_when_synced_afterward(): void
+    {
+        Storage::fake('receipt_evidence');
+        Carbon::setTestNow(Carbon::parse('2026-10-08 01:59:00', 'UTC'));
+        [$officer, $token, $this->leaseId] = $this->fieldSession();
+        $rice = $this->bulletin('Rice', 100);
+        $rice->update(['price_freeze_applicable' => true]);
+        $milk = $this->bulletin('Milk', 50);
+        $admin = User::factory()->create(['role' => 'dti_evaluator']);
+        $emergency = RegulatoryEmergency::create(['location' => 'San Jose', 'starts_on' => '2026-10-07', 'declaration_reference' => 'QUEUED-FREEZE', 'status' => 'active', 'confirmed_at' => '2026-10-07', 'responsible_admin_id' => $admin->id]);
+        RegulatoryPriceRecord::create(['regulatory_emergency_id' => $emergency->id, 'commodity_key' => 'rice', 'price_type' => 'APC', 'authoritative_price' => 90, 'effective_from' => '2026-10-07', 'location' => 'San Jose', 'declaration_reference' => 'QUEUED-FREEZE', 'source_reference' => 'Confirmed APC', 'created_by' => $admin->id]);
+        $payload = $this->payload($this->store(), [$rice, $milk]);
+        $this->assertSame('emergency_ceiling', $payload['records'][0]['items'][0]['reference_snapshot']['type']);
+        Carbon::setTestNow(Carbon::parse('2026-10-08 02:00:00.123456', 'UTC'));
+        Sanctum::actingAs($admin);
+        $this->patchJson("/api/admin/emergencies/{$emergency->id}", ['status' => 'ended', 'ends_on' => '2026-10-08', 'confirmed' => true])
+            ->assertOk()->assertJsonPath('data.effective_state', 'ended');
+        $this->app['auth']->forgetGuards();
+        Carbon::setTestNow(Carbon::parse('2026-10-08 02:05:00', 'UTC'));
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+        $this->assertDatabaseHas('monitoring_records', ['id' => $recordId, 'protocol_mode' => 'emergency', 'protocol_reference' => 'QUEUED-FREEZE']);
+        $this->assertDatabaseHas('monitoring_record_items', ['monitoring_record_id' => $recordId, 'srp_id' => $rice->id, 'reference_type' => 'emergency_ceiling', 'reference_value' => 90]);
+        $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)->assertOk()->assertJsonPath('data.results.0.status', 'duplicate');
+        $this->assertSame('standard_srp', (new FieldReferenceResolver)->resolve($rice, now())['type']);
+    }
+
     public function test_sync_accepts_one_complete_visit_exactly_once_and_projects_verified_temporal_rows(): void
     {
         Storage::fake('receipt_evidence');

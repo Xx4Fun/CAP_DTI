@@ -14,10 +14,10 @@ class FieldReferenceResolver
     /** @var array<string, RegulatoryEmergency|null> Emergency in effect, per exact instant, for this instance only. */
     private array $emergencies = [];
 
-    /** The key MonitoringPeriod::effectiveEmergency would resolve to: the exact instant, date-only read in Manila. */
+    /** Preserve microseconds so observations on either side of a manual cutoff never share a cache entry. */
     public static function instantKey(string|\DateTimeInterface $observedAt): string
     {
-        return CarbonImmutable::parse($observedAt, MonitoringWeek::TIMEZONE)->utc()->toIso8601String();
+        return CarbonImmutable::parse($observedAt, MonitoringWeek::TIMEZONE)->utc()->toISOString();
     }
 
     public function version(array $reference): string
@@ -31,9 +31,10 @@ class FieldReferenceResolver
     /** @param bool $bulletinIsEffective The caller already resolved the revision in effect on this date. */
     public function resolve(SrpBulletin $submittedBulletin, string|\DateTimeInterface $observedAt, bool $bulletinIsEffective = false): array
     {
+        $date = CarbonImmutable::parse($observedAt, MonitoringWeek::TIMEZONE)->setTimezone(MonitoringWeek::TIMEZONE)->toDateString();
         $bulletin = $submittedBulletin->commodity_key && ! $bulletinIsEffective
             ? SrpBulletin::query()->where('commodity_key', $submittedBulletin->commodity_key)
-                ->whereDate('effective_date', '<=', $observedAt)
+                ->whereDate('effective_date', '<=', $date)
                 ->latest('effective_date')->latest('id')->first()
             : $submittedBulletin;
         $emergency = $this->effectiveEmergency($observedAt);
@@ -42,8 +43,8 @@ class FieldReferenceResolver
             $record = RegulatoryPriceRecord::query()
                 ->where('regulatory_emergency_id', $emergency->id)
                 ->where('commodity_key', $submittedBulletin->commodity_key)
-                ->whereDate('effective_from', '<=', $observedAt)
-                ->where(fn ($query) => $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $observedAt))
+                ->whereDate('effective_from', '<=', $date)
+                ->where(fn ($query) => $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $date))
                 ->latest('effective_from')->latest('id')->first();
 
             return $record ? [

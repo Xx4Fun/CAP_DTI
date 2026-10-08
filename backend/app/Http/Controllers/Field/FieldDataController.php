@@ -115,10 +115,8 @@ class FieldDataController extends Controller
                 'regulatory_prices' => $isCurrent ? [] : RegulatoryPriceRecord::query()
                     ->whereDate('effective_from', '<=', $today)
                     ->where(fn ($query) => $query->whereNull('effective_until')->orWhereDate('effective_until', '>=', $today))
-                    ->whereHas('emergency', fn ($query) => $query->whereIn('status', ['active', 'ended'])
-                        ->whereDate('starts_on', '<=', $today)
-                        ->where(fn ($dates) => $dates->whereNull('ends_on')->orWhereDate('ends_on', '>=', $today)))
-                    ->with('emergency:id,location,starts_on,ends_on,declaration_reference,status')
+                    ->whereHas('emergency', fn ($query) => $query->effectiveAt(now('Asia/Manila')))
+                    ->with('emergency:id,location,starts_on,ends_on,ended_at,declaration_reference,status')
                     ->orderBy('effective_from')->get(),
                 'recent_prices' => $recentPrices,
                 'accepted_today' => MonitoringRecord::query()->where('officer_user_id', $user->id)

@@ -118,19 +118,22 @@ class VendorPortalController extends Controller
         $today = now('Asia/Manila');
         $date = $today->toDateString();
 
+        $effectiveIds = RegulatoryEmergency::query()->effectiveAt($today)->pluck('id');
         $emergencies = RegulatoryEmergency::query()->whereIn('status', ['active', 'ended'])->whereNotNull('confirmed_at')
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $today->copy()->subDays(90)->toDateString()))
             ->orderByDesc('starts_on')->get()
-            ->map(function (RegulatoryEmergency $emergency) use ($date) {
-                // Same inclusive Manila-date rule as MonitoringPeriod::effectiveEmergency (confirmed and status already filtered above).
-                $state = $emergency->starts_on && $emergency->starts_on->toDateString() > $date
-                    ? 'scheduled'
-                    : ($emergency->ends_on && $emergency->ends_on->toDateString() < $date ? 'ended' : 'in_effect');
+            ->map(function (RegulatoryEmergency $emergency) use ($date, $today, $effectiveIds) {
+                $state = $effectiveIds->contains($emergency->id) ? 'in_effect' : 'ended';
+                if ((! $emergency->ended_at || $today->lessThan($emergency->ended_at))
+                    && ($emergency->starts_on->toDateString() > $date || $emergency->confirmed_at->greaterThan($today))) {
+                    $state = 'scheduled';
+                }
 
                 return [
                     'id' => 'emergency-'.$emergency->id, 'category' => 'PRICE_FREEZE',
                     'title' => 'Price freeze — '.$emergency->location, 'reference' => $emergency->declaration_reference,
                     'published_date' => $emergency->starts_on?->toDateString(), 'ends_on' => $emergency->ends_on?->toDateString(),
+                    'ended_at' => $emergency->ended_at?->toISOString(),
                     'state' => $state, 'is_active' => $state === 'in_effect',
                     'affected_areas' => [$emergency->location], 'items' => [],
                 ];

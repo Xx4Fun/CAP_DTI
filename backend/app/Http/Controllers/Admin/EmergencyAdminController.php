@@ -113,6 +113,9 @@ class EmergencyAdminController extends Controller
         if ($emergency->status === 'cancelled' || ! $emergency->confirmed_at) {
             return $emergency->status;
         }
+        if ($emergency->ended_at && now('UTC')->greaterThanOrEqualTo($emergency->ended_at)) {
+            return 'ended';
+        }
         $today = now('Asia/Manila')->toDateString();
         if ($emergency->starts_on->toDateString() > $today) {
             return 'scheduled';
@@ -121,7 +124,7 @@ class EmergencyAdminController extends Controller
             return $emergency->status === 'active' ? 'expired' : $emergency->status;
         }
 
-        return 'in_effect';
+        return RegulatoryEmergency::query()->whereKey($emergency->id)->effectiveAt(now('UTC'))->exists() ? 'in_effect' : 'scheduled';
     }
 
     public function show(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth)
@@ -225,16 +228,24 @@ class EmergencyAdminController extends Controller
     {
         $auth->requireManager($request->user());
         $guard->requireRecentReauthentication($request);
-        abort_unless($emergency->status === 'active', 422, 'Only an active emergency can be ended or cancelled.');
         $data = $request->validate([
             'status' => 'required|in:ended,cancelled',
             'ends_on' => 'nullable|required_if:status,ended|date|after_or_equal:'.$emergency->starts_on->toDateString(),
             'confirmed' => 'required|accepted',
         ]);
-        DB::transaction(function () use ($data, $request, $audit, $emergency, $notifications) {
+        $emergency = DB::transaction(function () use ($data, $request, $audit, $emergency, $notifications) {
+            EmergencyApcPreparationService::lock();
+            $emergency = RegulatoryEmergency::query()->lockForUpdate()->findOrFail($emergency->id);
+            if ($data['status'] === 'ended' && $emergency->status === 'ended' && $emergency->ended_at) {
+                return $emergency;
+            }
+            $legacyEffective = $data['status'] === 'ended' && $emergency->status === 'ended' && ! $emergency->ended_at
+                && RegulatoryEmergency::query()->whereKey($emergency->id)->effectiveAt(now('UTC'))->exists();
+            abort_unless($emergency->status === 'active' || $legacyEffective, 422, 'Only an active or currently effective legacy emergency can be ended.');
             $previous = $emergency->status;
             $emergency->update([
                 'status' => $data['status'],
+                'ended_at' => $data['status'] === 'ended' ? now('UTC') : null,
                 'active_scope_key' => null,
                 'ends_on' => $data['ends_on'] ?? now('Asia/Manila')->toDateString(),
             ]);
@@ -243,8 +254,10 @@ class EmergencyAdminController extends Controller
                 'previous_status' => $previous,
                 'status' => $emergency->status,
                 'ends_on' => $emergency->ends_on?->toDateString(),
+                'ended_at' => $emergency->ended_at?->toISOString(),
             ]);
-            $notifications->broadcast('emergency_'.$emergency->status, ['emergency_id' => $emergency->id, 'ends_on' => $emergency->ends_on?->toDateString()]);
+            $notifications->broadcast('emergency_'.$emergency->status, ['emergency_id' => $emergency->id, 'ends_on' => $emergency->ends_on?->toDateString(), 'ended_at' => $emergency->ended_at?->toISOString()]);
+            return $emergency;
         });
 
         return response()->json(['data' => $this->detailPayload($emergency->fresh())]);

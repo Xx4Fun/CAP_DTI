@@ -53,15 +53,7 @@ final class MonitoringPeriod
 
     public static function effectiveEmergency(CarbonInterface|string $at): ?RegulatoryEmergency
     {
-        $instant = CarbonImmutable::parse($at, MonitoringWeek::TIMEZONE);
-        $date = $instant->setTimezone(MonitoringWeek::TIMEZONE)->toDateString();
-
-        return RegulatoryEmergency::query()
-            ->whereIn('status', ['active', 'ended'])
-            ->whereNotNull('confirmed_at')
-            ->where('confirmed_at', '<=', $instant->utc())
-            ->whereDate('starts_on', '<=', $date)
-            ->where(fn ($query) => $query->whereNull('ends_on')->orWhereDate('ends_on', '>=', $date))
+        return RegulatoryEmergency::query()->effectiveAt($at)
             ->latest('starts_on')->latest('id')->first();
     }
 }

@@ -20,6 +20,7 @@ class RegulatoryPriceRecord extends Model
     public function scopeStillApplicable(Builder $query): void
     {
         $query->where(fn ($dates) => $dates->whereNull('effective_until')->orWhereDate('effective_until', '>=', now('Asia/Manila')->toDateString()))
-            ->whereHas('emergency', fn ($emergency) => $emergency->whereIn('status', ['active', 'ended']));
+            ->whereHas('emergency', fn ($emergency) => $emergency->whereIn('status', ['active', 'ended'])
+                ->where(fn ($cutoff) => $cutoff->whereNull('ended_at')->orWhere('ended_at', '>', now('UTC')->format('Y-m-d H:i:s.u'))));
     }
 }
