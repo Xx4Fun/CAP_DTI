@@ -584,6 +584,7 @@ export interface RegulatoryEmergencyRecord {
   declaration_reference: string
   starts_on: string
   ends_on: string | null
+  ended_at?: string | null
   status: 'draft' | 'active' | 'ended' | 'cancelled'
   effective_state: 'draft' | 'in_effect' | 'ended' | 'cancelled' | string
   preparation_hash?: string | null

@@ -5,6 +5,7 @@ import { adminApi } from '../../services/adminApi'
 import { EmergencyToggle } from './EmergencyToggle'
 import { LegalNoticeManager } from './LegalNoticeManager'
 import { AdminToastHost } from './AdminToastHost'
+import { adminToast } from '../../services/adminToast'
 
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
@@ -290,9 +291,10 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     render(<EmergencyToggle />)
     await screen.findByText('Normal SRP Protocol')
     expect(screen.queryByText('Active Price Freeze In Effect')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
   })
 
-  it('keeps the inclusive end date in effect after ending without dropping emergency detail', async () => {
+  it('ends immediately, confirms success and keeps historical emergency detail', async () => {
     const active = {
       id: 7, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-7',
       starts_on: '2026-09-09', ends_on: null, status: 'active' as const, effective_state: 'in_effect' as const,
@@ -302,16 +304,37 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       official_prices: [{ id: 11, regulatory_emergency_id: 7, commodity_key: 'rice', price_type: 'APC' as const, authoritative_price: 45, effective_from: '2026-09-09', effective_until: null, source_reference: 'DECL-7' }],
     }
     vi.mocked(adminApi.getEmergencies).mockResolvedValue([active])
-    vi.mocked(adminApi.updateEmergency).mockResolvedValue({ ...active, status: 'ended', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] })
+    vi.mocked(adminApi.updateEmergency).mockResolvedValue({ ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-09-09T02:00:00.123456Z', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
 
-    render(<EmergencyToggle />)
+    render(<><EmergencyToggle /><AdminToastHost /></>)
     await user.click(await screen.findByRole('button', { name: 'End Price Freeze' }))
 
     expect(adminApi.updateEmergency).toHaveBeenCalledWith(7, expect.objectContaining({ status: 'ended', confirmed: true }))
-    expect(screen.getByText('Confirmed APC references are in effect.')).toBeInTheDocument()
+    expect(window.confirm).toHaveBeenCalledWith('End the Price Freeze now?')
+    expect(await screen.findByText('Price Freeze ended immediately.')).toBeInTheDocument()
+    expect(screen.getByText('Normal SRP Protocol')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Manually ended at.*10:00:00.*Asia\/Manila/)).toBeInTheDocument()
     expect(screen.getByText('rice')).toBeInTheDocument()
+  })
+
+  it('allows an effective legacy ended declaration to end now and keeps errors visible on failure', async () => {
+    const success = vi.spyOn(adminToast, 'success')
+    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+      id: 7, location: 'San Jose', declaration_reference: 'LEGACY', starts_on: '2026-10-07', ends_on: '2026-10-08',
+      status: 'ended', effective_state: 'in_effect', ended_at: null,
+      source_week: { timezone: 'Asia/Manila', starts_at: '', ends_at: '' }, candidates: [], official_prices: [],
+    }])
+    vi.mocked(adminApi.updateEmergency).mockRejectedValue({ response: { data: { message: 'Audit storage unavailable.' } } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<EmergencyToggle />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'End Price Freeze' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Audit storage unavailable.')
+    expect(screen.getByRole('button', { name: 'End Price Freeze' })).toBeEnabled()
+    expect(screen.getByText('Confirmed APC references are in effect.')).toBeInTheDocument()
+    expect(success).not.toHaveBeenCalled()
   })
 
   it('shows an unavailable state when emergency declarations cannot be loaded', async () => {

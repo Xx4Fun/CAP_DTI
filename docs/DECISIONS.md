@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-08 — Manual Price Freeze ending
+
+- Manual ending records a nullable UTC `ended_at` with microsecond precision. A declaration applies only to observation instants strictly before this cutoff; scheduled end dates remain inclusive through the Manila day.
+- The authenticated, password-reconfirmed update is serialized with declaration activation and commodity editing, and is idempotent after a saved manual cutoff. Effective legacy `ended` declarations without a cutoff can be ended manually. No historical backfill is performed; cancellation is unchanged.
+- Current status, references and cadence switch immediately; pre-cutoff signed/queued evidence retains its historical references. Admin displays the server's actual Manila ending time and refreshes open views after success. Local verification and release boundary: [[plans/manual-price-freeze-end/README]].
+
 ## 2026-10-07 — Price Freeze synchronization
 
 - Public configuration, legacy calamity reads and Admin's effective-emergency indicator use `MonitoringPeriod::effectiveEmergency`; the legacy cache flag has no regulatory authority. Shelf-tag and manual comparisons use the same formal reference resolver as Field and Vendor. Missing official ceilings stay unavailable; SRP remains separately labelled context and history.

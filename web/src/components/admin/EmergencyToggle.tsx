@@ -224,10 +224,10 @@ export const EmergencyToggle: React.FC = () => {
         {/* Right Column: Review Console & Active References */}
         <div className="emergency-col-right">
           {/* Active Price Freeze Action Card */}
-          {selected?.status === 'active' && (
+          {selected?.effective_state === 'in_effect' && (selected.status === 'active' || (selected.status === 'ended' && !selected.ended_at)) && (
             <section className="admin-card emergency-active-banner">
               <div className="emergency-active-banner-info">
-                <h4>{selected.effective_state === 'in_effect' ? 'Active Price Freeze In Effect' : `Confirmed declaration: ${selected.effective_state.replace('_', ' ')}`}</h4>
+                <h4>Active Price Freeze In Effect</h4>
                 <p>Declaration reference: <strong>{selected.declaration_reference}</strong> ({selected.starts_on} to {selected.ends_on || 'open'})</p>
               </div>
               <button
@@ -235,7 +235,7 @@ export const EmergencyToggle: React.FC = () => {
                 className="admin-button secondary"
                 disabled={savingAction !== null}
                 onClick={async () => {
-                  if (!window.confirm('Confirm that this Price Freeze has ended?')) return
+                  if (!window.confirm('End the Price Freeze now?')) return
                   setSavingAction('end'); setActionError(null)
                   try {
                     replaceEmergency(await adminApi.updateEmergency(selected.id, {
@@ -243,6 +243,7 @@ export const EmergencyToggle: React.FC = () => {
                       ends_on: manilaToday(),
                       confirmed: true,
                     }))
+                    adminToast.success('Price Freeze ended immediately.', { id: 'price-freeze-ended' })
                   } catch (error: any) {
                     setActionError(error.response?.data?.message || 'The Price Freeze could not be ended.')
                   } finally {
@@ -252,6 +253,12 @@ export const EmergencyToggle: React.FC = () => {
               >
                 {savingAction === 'end' ? 'Ending…' : 'End Price Freeze'}
               </button>
+            </section>
+          )}
+
+          {selected?.ended_at && (
+            <section className="admin-card">
+              <p>Manually ended at {new Date(selected.ended_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', hour12: true })} · Asia/Manila</p>
             </section>
           )}
 
