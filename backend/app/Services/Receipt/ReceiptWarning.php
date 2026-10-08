@@ -16,6 +16,7 @@ final class ReceiptWarning
             'TOTAL_NOT_FOUND' => 'The receipt total was not extracted.',
             'TOTAL_MISMATCH' => 'The extracted item amounts do not match the extracted total.',
             'FIELDS_UNCERTAIN' => 'Some extracted values could not be read with confidence. Check them against the receipt photos.',
+            'GEMINI_FALLBACK_USED' => 'DTI should verify the extracted values against the original receipt photos.',
             'POSSIBLE_DUPLICATE_LINES' => 'Some item lines may repeat across overlapping receipt sections.',
             'LINE_ARITHMETIC_MISMATCH' => 'For some items, quantity times unit price does not equal the line total.',
             'EVIDENCE_QUALITY' => 'The receipt photos have quality problems such as blur, glare, or cropping. Verify every value against the photos.',

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Services\Receipt\Extraction\ExtractionFailedException;
 use App\Services\Receipt\Extraction\GeminiReceiptExtractor;
+use App\Services\Receipt\Extraction\ReceiptExtractionValidator;
 use App\Services\Receipt\Extraction\RetryableExtractionException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -152,6 +153,33 @@ class GeminiReceiptExtractorTest extends TestCase
             $this->fail('Expected a retryable failure.');
         } catch (RetryableExtractionException $exception) {
             $this->assertSame('GEMINI_TIMEOUT', $exception->failureCode);
+            $this->assertIsInt($exception->engine['duration_ms'] ?? null);
+        }
+    }
+
+    public function test_override_model_is_sent_and_recorded_when_the_response_omits_model(): void
+    {
+        $response = self::completed(ReceiptExtractionValidatorTest::payload());
+        unset($response['model']);
+        Http::fake([self::ENDPOINT => Http::response($response)]);
+        $result = $this->extractor()->extract([$this->frame(0)], 'gemini-3.5-flash-lite');
+        $this->assertSame('gemini-3.5-flash-lite', $result->engine['model']);
+        Http::assertSent(fn ($request) => $request['model'] === 'gemini-3.5-flash-lite');
+    }
+
+    public function test_provider_failure_keeps_only_known_error_codes(): void
+    {
+        Http::fake([self::ENDPOINT => Http::sequence()
+            ->push(['error' => ['code' => 'service_unavailable', 'message' => self::KEY]], 503)
+            ->push(['error' => ['code' => self::KEY, 'message' => self::KEY]], 503)]);
+        foreach (['service_unavailable', null] as $expected) {
+            try {
+                $this->extractor()->extract([$this->frame(0)]);
+                $this->fail('Expected a provider failure.');
+            } catch (RetryableExtractionException $exception) {
+                $this->assertSame($expected, $exception->engine['provider_error'] ?? null);
+                $this->assertStringNotContainsString(self::KEY, json_encode($exception->engine));
+            }
         }
     }
 
@@ -161,7 +189,7 @@ class GeminiReceiptExtractorTest extends TestCase
         Http::fake([self::ENDPOINT => Http::response($fixture['response'], $fixture['http_status'])]);
 
         $extraction = $this->extractor()->extract([$this->frame(0), $this->frame(1)]);
-        $result = (new \App\Services\Receipt\Extraction\ReceiptExtractionValidator)
+        $result = (new ReceiptExtractionValidator)
             ->validate($extraction->payload, ['store_name' => 'Probe Test Mart', 'frame_count' => 2]);
 
         $this->assertSame('completed', $extraction->engine['provider_status']);

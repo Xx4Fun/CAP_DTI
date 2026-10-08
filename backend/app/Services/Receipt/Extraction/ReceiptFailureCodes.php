@@ -54,10 +54,17 @@ final class ReceiptFailureCodes
         return ! self::isRestartOnly($code) && ! in_array($code, self::OPERATOR_ONLY, true);
     }
 
+    public static function canUseGeminiFallback(?string $code): bool
+    {
+        return in_array($code, [self::GEMINI_TIMEOUT, self::GEMINI_RATE_LIMITED, self::GEMINI_UNAVAILABLE], true);
+    }
+
     /** Public, non-technical explanation for failures that are not a plain "try again". */
     public static function publicReason(?string $code): ?string
     {
         return match ($code) {
+            self::GEMINI_TIMEOUT => 'Receipt processing took too long. Your photos are saved; retry processing or try again later.',
+            self::GEMINI_UNAVAILABLE, self::GEMINI_RATE_LIMITED => 'Receipt processing is temporarily busy. Your photos are saved; try again later.',
             self::EVIDENCE_INTEGRITY_FAILED => 'The stored receipt photos failed an integrity check, so they cannot be processed again. Capture the receipt again from the start.',
             self::EXTRACTION_ATTEMPT_CAP => 'This receipt could not be processed after several attempts. Capture the receipt again from the start.',
             self::EXTRACTION_TOO_LARGE => 'The receipt photos are too large to process together. Capture the receipt again with fewer, closer sections.',

@@ -4,6 +4,7 @@ namespace App\Services\Receipt\Extraction;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Http\Client\StrayRequestException;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -50,11 +51,11 @@ TEXT;
         private readonly ?string $caBundle = null,
     ) {}
 
-    public function extract(array $frames): ReceiptExtraction
+    public function extract(array $frames, ?string $model = null): ReceiptExtraction
     {
         $engine = [
             'provider' => 'gemini',
-            'model' => $this->model,
+            'model' => $model ?? $this->model,
             'thinking_level' => $this->thinkingLevel,
             'image_resolution' => $this->imageResolution,
             'frame_count' => count($frames),
@@ -63,7 +64,7 @@ TEXT;
         $temporary = [];
         try {
             [$images, $engine['derived_images']] = $this->imagesWithinLimit($frames, $temporary);
-            $body = $this->requestBody($images);
+            $body = $this->requestBody($images, $engine['model']);
             $started = hrtime(true);
             try {
                 $request = Http::withHeaders(['x-goog-api-key' => $this->apiKey])
@@ -74,6 +75,7 @@ TEXT;
                 }
                 $response = $request->post($this->endpoint, $body);
             } catch (ConnectionException $exception) {
+                $engine['duration_ms'] = (int) round((hrtime(true) - $started) / 1e6);
                 // Only classify; the exception text may contain request details and is never kept.
                 $timedOut = str_contains($exception->getMessage(), 'cURL error 28');
                 throw new RetryableExtractionException($timedOut ? ReceiptFailureCodes::GEMINI_TIMEOUT : ReceiptFailureCodes::GEMINI_UNAVAILABLE, $engine);
@@ -82,11 +84,14 @@ TEXT;
             $engine['http_status'] = $response->status();
 
             return $this->parse($response, $engine);
-        } catch (RetryableExtractionException|ExtractionFailedException|\Illuminate\Http\Client\StrayRequestException $exception) {
+        } catch (RetryableExtractionException|ExtractionFailedException|StrayRequestException $exception) {
             // Stray-request guards (tests) must fail loudly, never look like a provider outage.
             throw $exception;
         } catch (\Throwable) {
             // Any other client error may echo request details (including header values); keep only a code, never the cause.
+            if (isset($started)) {
+                $engine['duration_ms'] = (int) round((hrtime(true) - $started) / 1e6);
+            }
             throw new RetryableExtractionException(ReceiptFailureCodes::GEMINI_UNAVAILABLE, $engine);
         } finally {
             foreach ($temporary as $path) {
@@ -96,7 +101,7 @@ TEXT;
     }
 
     /** @return array<string, mixed> */
-    private function requestBody(array $images): array
+    private function requestBody(array $images, string $model): array
     {
         $input = [];
         $count = count($images);
@@ -111,7 +116,7 @@ TEXT;
         $input[] = ['type' => 'text', 'text' => 'Extract this receipt into the required JSON structure.'];
 
         return [
-            'model' => $this->model,
+            'model' => $model,
             'store' => false,
             'system_instruction' => self::INSTRUCTIONS,
             'generation_config' => ['thinking_level' => $this->thinkingLevel],
@@ -174,6 +179,12 @@ TEXT;
     private function parse(Response $response, array $engine): ReceiptExtraction
     {
         $status = $response->status();
+        if ($status >= 400) {
+            // Never persist arbitrary upstream strings that could echo credentials or receipt content.
+            $code = $response->json('error.code');
+            $engine['provider_error'] = in_array($code, ['service_unavailable', 'unavailable', 'resource_exhausted',
+                'deadline_exceeded', 'internal', 'invalid_argument', 'permission_denied', 'unauthenticated', 'not_found'], true) ? $code : null;
+        }
         if ($status === 429) {
             throw new RetryableExtractionException(ReceiptFailureCodes::GEMINI_RATE_LIMITED, $engine);
         }
@@ -187,12 +198,11 @@ TEXT;
             throw new ExtractionFailedException(ReceiptFailureCodes::GEMINI_AUTH, $engine);
         }
         if ($status >= 400) {
-            $engine['provider_error'] = is_string($response->json('error.code')) ? $response->json('error.code') : null;
             throw new ExtractionFailedException(ReceiptFailureCodes::GEMINI_REJECTED, $engine);
         }
 
         $body = $response->json();
-        $engine['model'] = is_string($body['model'] ?? null) ? $body['model'] : $this->model;
+        $engine['model'] = is_string($body['model'] ?? null) ? $body['model'] : $engine['model'];
         $engine['service_tier'] = is_string($body['service_tier'] ?? null) ? $body['service_tier'] : null;
         $engine['usage'] = [
             'input_tokens' => (int) ($body['usage']['total_input_tokens'] ?? 0),

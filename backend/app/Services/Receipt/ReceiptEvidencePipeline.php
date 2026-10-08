@@ -10,10 +10,10 @@ use App\Services\Ocr\ShelfTagOcrService;
 use App\Services\Receipt\Extraction\ExtractionFailedException;
 use App\Services\Receipt\Extraction\ReceiptExtraction;
 use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
-use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
 use App\Services\Receipt\Extraction\ReceiptExtractionValidator;
 use App\Services\Receipt\Extraction\ReceiptExtractor;
+use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\Extraction\RetryableExtractionException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -141,6 +141,7 @@ class ReceiptEvidencePipeline
                             $ocrDiagnostics[$index]['passes'][] = [
                                 'pass' => $pass, 'status' => 'skipped', 'duration_ms' => 0, 'timeout_seconds' => 0, 'result' => null,
                             ];
+
                             continue;
                         }
                         $remaining = (int) floor($deadline - hrtime(true) / 1e9);
@@ -210,8 +211,7 @@ class ReceiptEvidencePipeline
             }
 
             $readableSequences = array_column($frames, 'sequence');
-            $unreadable = array_filter($frameCandidates, fn (array $frame) =>
-                ! in_array($frame['source_sequence'], $readableSequences, true)
+            $unreadable = array_filter($frameCandidates, fn (array $frame) => ! in_array($frame['source_sequence'], $readableSequences, true)
                 && ! (bool) data_get($frame, 'quality.acceptable', false)
             );
             if ($unreadable !== []) {
@@ -354,6 +354,10 @@ class ReceiptEvidencePipeline
         $result['engine'] = [...$extraction->engine, 'route' => $route, 'status' => $result['status'],
             'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
             'consent_versions' => array_values((array) config('services.receipt_extraction.consent_versions', []))];
+        if ($extraction->engine['fallback'] ?? false) {
+            $result['manual_review_required'] = true;
+            $result['warnings'][] = ReceiptWarning::make('GEMINI_FALLBACK_USED');
+        }
         $result['extraction_raw'] = $extraction->payload;
         Log::info('receipt_extraction.completed', [
             'report_id' => $report->id,
@@ -377,19 +381,33 @@ class ReceiptEvidencePipeline
      */
     private function buyExtraction(ConsumerReport $report, ReceiptEvidenceBundle $bundle, array $frames): ReceiptExtraction
     {
+        $retry = $bundle->processing_result_json['gemini_retry'] ?? null;
+        $model = is_array($retry) && is_string($retry['model'] ?? null) ? $retry['model'] : null;
+        $fallbackEngine = $model === null ? [] : ['fallback' => true, 'fallback_reason_code' => $retry['reason_code'] ?? null];
         $reservation = $this->extractionBudget->reserve($report, $bundle, count($frames));
         try {
-            $extraction = app(ReceiptExtractor::class)->extract($frames);
+            $extraction = app(ReceiptExtractor::class)->extract($frames, $model);
+            $extraction = new ReceiptExtraction($extraction->payload, [...$extraction->engine, ...$fallbackEngine]);
         } catch (RetryableExtractionException|ExtractionFailedException $exception) {
             $notBilled = in_array($exception->failureCode, [ReceiptFailureCodes::EXTRACTION_TOO_LARGE, ReceiptFailureCodes::GEMINI_RATE_LIMITED], true);
             $notBilled
                 ? $this->extractionBudget->refund($reservation)
                 : $this->extractionBudget->reconcile($reservation, $exception->engine['usage']['total_tokens'] ?? null);
             if ($exception instanceof RetryableExtractionException) {
+                // Switch only the next call; one send per job attempt keeps retry backoff and budgets intact.
+                $fallback = trim((string) config('services.gemini.fallback_model'));
+                $state = (array) $bundle->processing_result_json;
+                if ($model === null && $fallback !== '' && $fallback !== (string) config('services.gemini.model')
+                    && ReceiptFailureCodes::canUseGeminiFallback($exception->failureCode)) {
+                    $state['gemini_retry'] = ['model' => $fallback, 'reason_code' => $exception->failureCode];
+                }
+                $state['engine'] = [...$exception->engine, ...$fallbackEngine, 'failure_code' => $exception->failureCode];
+                $bundle->forceFill(['processing_result_json' => $state])->save();
                 Log::warning('receipt_extraction.transient_failure', ['report_id' => $report->id, 'code' => $exception->failureCode,
                     'model' => $exception->engine['model'] ?? null, 'duration_ms' => $exception->engine['duration_ms'] ?? null]);
+                throw new RetryableExtractionException($exception->failureCode, [...$exception->engine, ...$fallbackEngine]);
             }
-            throw $exception;
+            throw new ExtractionFailedException($exception->failureCode, [...$exception->engine, ...$fallbackEngine]);
         }
         $this->extractionBudget->reconcile($reservation, $extraction->engine['usage']['total_tokens'] ?? null);
         $bundle->forceFill(['processing_result_json' => [
@@ -508,8 +526,7 @@ class ReceiptEvidencePipeline
         array $quality,
         int $sourceSequence,
         float $timestampSeconds,
-    ): void
-    {
+    ): void {
         $bundle = $report->evidenceBundle;
         $sha256 = hash_file('sha256', $localPath);
         $path = "receipt-evidence/{$bundle->evidence_uuid}/extracted-frame-{$sequence}-{$sha256}.jpg";
@@ -572,5 +589,4 @@ class ReceiptEvidencePipeline
             'diagnostics' => ['ocr' => $ocrDiagnostics, 'budget_exhausted' => $budgetExhausted],
         ];
     }
-
 }

@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-08 — Gemini receipt processing recovery
+
+- Keep Gemini 3.8 Flash primary; a transient provider failure selects Gemini 3.5 Flash-Lite for subsequent attempts on the same immutable evidence. The saved choice survives manual retries; a new capture starts with primary.
+- Fallback retains consent, schema validation, original integrity, and usage caps, and requires DTI review while preserving warnings. Status and retry share current allowance checks; retry writes recheck under a row lock.
+- Operational contract and release acceptance: `../backend/docs/receipt-ocr-remediation.md` (Gemini recovery). Verification is local until an explicitly approved release and real-receipt acceptance.
+
 ## 2026-10-08 — Manual Price Freeze ending
 
 - Manual ending records a nullable UTC `ended_at` with microsecond precision. A declaration applies only to observation instants strictly before this cutoff; scheduled end dates remain inclusive through the Manila day.

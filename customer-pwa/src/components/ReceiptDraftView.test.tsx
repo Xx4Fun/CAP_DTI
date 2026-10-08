@@ -156,6 +156,20 @@ describe('ReceiptDraftView', () => {
     });
   });
 
+  it('shows current server failure guidance instead of stale history for a retryable outage', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
+      report_reference: 'REP-OUTAGE', status: 'Processing failed', processing_status: 'failed',
+      message: 'Receipt processing retry queued using the original evidence.',
+      failure_reason: { code: 'GEMINI_UNAVAILABLE', message: 'Receipt processing is temporarily busy. Your photos are saved; try again later.' },
+      can_retry_processing: true, can_recapture: false, ready_for_review: false,
+      attempt_number: 1, store: null, recapture_reason: null, evidence: [],
+    } } });
+    render(<ReceiptDraftView reference="REP-OUTAGE" mode="processing" />);
+    expect(await screen.findByText('Receipt processing is temporarily busy. Your photos are saved; try again later.')).toBeInTheDocument();
+    expect(screen.queryByText('Receipt processing retry queued using the original evidence.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry processing' })).toBeEnabled();
+  });
+
   it('offers a fresh capture instead of a retry when stored photos failed their integrity check', async () => {
     const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: {
       report_reference: 'REP-20260816-READY', status: 'Processing failed', processing_status: 'failed',

@@ -4,20 +4,28 @@ namespace Tests\Feature;
 
 use App\Jobs\ProcessReceiptEvidence;
 use App\Models\CaptureSession;
+use App\Models\CitizenTip;
 use App\Models\ConsumerReport;
 use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
 use App\Models\Store;
+use App\Models\User;
 use App\Services\Ocr\ShelfTagOcrService;
+use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
+use App\Services\Receipt\Extraction\ReceiptExtractionValidator;
 use App\Services\Receipt\ReceiptEvidencePipeline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\Sanctum;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 use Tests\Unit\GeminiReceiptExtractorTest;
 use Tests\Unit\ReceiptExtractionValidatorTest;
@@ -44,6 +52,8 @@ class ReceiptGeminiExtractionTest extends TestCase
             'services.receipt_extraction.provider' => 'gemini',
             'services.receipt_extraction.consent_versions' => ['1.1'],
             'services.gemini.key' => 'feature-test-gemini-key',
+            'services.gemini.model' => 'gemini-3.8-flash',
+            'services.gemini.fallback_model' => 'gemini-3.5-flash-lite',
         ]);
     }
 
@@ -162,7 +172,7 @@ class ReceiptGeminiExtractionTest extends TestCase
             ->assertStatus(422);
         $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/confirm-ocr", ['consumer_confirmed' => true])
             ->assertOk()->assertJsonPath('data.status', 'Submitted');
-        $snapshot = \App\Models\CitizenTip::firstOrFail()->extracted_text_json['system_extracted_items'];
+        $snapshot = CitizenTip::firstOrFail()->extracted_text_json['system_extracted_items'];
         $this->assertSame(111.75, $snapshot[0]['line_total']);
         $this->assertEquals(27, $snapshot[1]['unit_price']);
         $this->assertSame([], $snapshot[0]['uncertain_fields']);
@@ -268,10 +278,232 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->assertSame('GEMINI_UNAVAILABLE', $report->evidenceBundle->failure_code);
         $this->assertSame(3, $report->evidenceBundle->extraction_calls);
         Http::assertSentCount(3);
+        $this->assertSame(['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash-lite'],
+            Http::recorded()->map(fn ($pair) => $pair[0]['model'])->all());
+        $this->assertSame('gemini-3.5-flash-lite', $report->evidenceBundle->processing_result_json['engine']['model']);
         Http::assertSent(fn ($request) => $request->url() === self::ENDPOINT);
         $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
             ->assertJsonPath('data.can_retry_processing', true)
-            ->assertJsonPath('data.failure_reason', null);
+            ->assertJsonPath('data.failure_reason.code', 'GEMINI_UNAVAILABLE');
+    }
+
+    public function test_fallback_uses_the_same_evidence_and_keeps_warnings_for_customer_and_admin_review(): void
+    {
+        $payload = ReceiptExtractionValidatorTest::payload();
+        $payload['items'][0]['uncertain_fields'] = ['unit_price'];
+        $response = GeminiReceiptExtractorTest::completed($payload);
+        $response['model'] = 'gemini-3.5-flash-lite';
+        Http::fake([self::ENDPOINT => Http::sequence()->push(['error' => ['code' => 'service_unavailable']], 503)->push($response)]);
+        [$report, $token] = $this->report('FALLBACK');
+        $original = $report->evidenceBundle->assets->first();
+
+        $this->runJob($report, 1)->assertReleased(30);
+        Http::assertSentCount(1);
+        $this->runJob($report, 2)->assertNotReleased();
+
+        $result = $report->refresh()->evidenceBundle->processing_result_json;
+        $this->assertSame('Ready for confirmation', $report->status);
+        $this->assertSame(2, $report->evidenceBundle->extraction_calls);
+        $this->assertSame(2, $report->evidenceBundle->processing_attempts);
+        $this->assertSame('gemini-3.5-flash-lite', $result['engine']['model']);
+        $this->assertTrue($result['engine']['fallback']);
+        $this->assertSame('GEMINI_UNAVAILABLE', $result['engine']['fallback_reason_code']);
+        $this->assertTrue($result['manual_review_required']);
+        $this->assertContains('FIELDS_UNCERTAIN', array_column($result['warnings'], 'code'));
+        $this->assertContains('GEMINI_FALLBACK_USED', array_column($result['warnings'], 'code'));
+        $requests = Http::recorded()->map(fn ($pair) => $pair[0]->data())->all();
+        $this->assertSame('gemini-3.8-flash', $requests[0]['model']);
+        $this->assertSame('gemini-3.5-flash-lite', $requests[1]['model']);
+        unset($requests[0]['model'], $requests[1]['model']);
+        $this->assertSame($requests[0], $requests[1]);
+        $this->assertSame($original->sha256, hash('sha256', Storage::disk($original->disk)->get($original->path)));
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/review")
+            ->assertOk()->assertJsonPath('data.manual_review_required', true);
+
+        $admin = User::factory()->create(['role' => 'dti_evaluator']);
+        Sanctum::actingAs($admin);
+        $this->getJson("/api/admin/reports/{$report->id}/evidence-manifest")
+            ->assertOk()->assertJsonPath('data.processing_result.engine.model', 'gemini-3.5-flash-lite')
+            ->assertJsonPath('data.processing_result.manual_review_required', true);
+    }
+
+    public function test_manual_retry_of_an_old_primary_timeout_starts_with_fallback_and_a_new_capture_resets_it(): void
+    {
+        [$report, $token] = $this->report('OLDFAIL');
+        $report->update(['status' => 'Processing failed', 'processing_status' => 'failed']);
+        $report->evidenceBundle->update(['failure_code' => 'GEMINI_TIMEOUT', 'extraction_calls' => 3,
+            'processing_result_json' => ['engine' => ['provider' => 'gemini', 'model' => 'gemini-3.8-flash']]]);
+        Http::fake(function ($request) {
+            $response = GeminiReceiptExtractorTest::completed(ReceiptExtractionValidatorTest::payload());
+            $response['model'] = $request['model'];
+
+            return Http::response($response);
+        });
+
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertOk();
+        $this->runJob($report->refresh());
+        $this->assertSame('gemini-3.5-flash-lite', $report->refresh()->raw_ocr_json['engine']['model']);
+        $this->assertSame(4, $report->evidenceBundle->extraction_calls);
+
+        $this->attachBundle($report);
+        $this->runJob($report->refresh());
+        $this->assertSame('gemini-3.8-flash', $report->refresh()->raw_ocr_json['engine']['model']);
+        $this->assertSame(['gemini-3.5-flash-lite', 'gemini-3.8-flash'], Http::recorded()->map(fn ($pair) => $pair[0]['model'])->all());
+    }
+
+    public function test_fallback_choice_survives_exhausted_queue_attempts_and_manual_retry(): void
+    {
+        Http::fake([self::ENDPOINT => Http::response([], 503)]);
+        [$report, $token] = $this->report('KEEPFALLBACK');
+        foreach ([1, 2, 3] as $attempt) {
+            $this->runJob($report->refresh(), $attempt);
+        }
+        // Existing attempts retain the selected model even if the configured default changes.
+        config(['services.gemini.fallback_model' => 'different-default']);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertOk();
+        $this->runJob($report->refresh());
+        $this->assertSame('gemini-3.5-flash-lite', Http::recorded()->last()[0]['model']);
+        $this->assertSame(4, $report->refresh()->evidenceBundle->extraction_calls);
+    }
+
+    public function test_fallback_paid_result_survives_a_worker_failure_and_is_reused_at_the_call_cap(): void
+    {
+        $response = GeminiReceiptExtractorTest::completed(ReceiptExtractionValidatorTest::payload());
+        $response['model'] = 'gemini-3.5-flash-lite';
+        Http::fake([self::ENDPOINT => Http::sequence()->push([], 503)->push($response)]);
+        [$report, $token] = $this->report('FALLBACKREUSE');
+        $this->runJob($report);
+        $this->app->instance(ReceiptExtractionValidator::class, Mockery::mock(
+            ReceiptExtractionValidator::class, fn ($mock) => $mock->shouldReceive('validate')->andThrow(new \RuntimeException('worker lost'))));
+        try {
+            $this->runJob($report->refresh(), 2);
+        } catch (\RuntimeException) {
+        }
+        $this->app->forgetInstance(ReceiptExtractionValidator::class);
+        (new ProcessReceiptEvidence($report->report_reference))->failed(new MaxAttemptsExceededException('x'));
+        config(['services.receipt_extraction.max_calls_per_attempt' => 2, 'services.receipt_extraction.max_calls_per_report' => 2]);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertOk();
+        $this->runJob($report->refresh());
+        $result = $report->refresh()->evidenceBundle->processing_result_json;
+        $this->assertTrue($result['engine']['reused']);
+        $this->assertTrue($result['manual_review_required']);
+        $this->assertSame('gemini-3.5-flash-lite', $result['engine']['model']);
+        $this->assertSame(2, $report->evidenceBundle->extraction_calls);
+        Http::assertSentCount(2);
+    }
+
+    public function test_modified_originals_are_not_sent_on_a_fallback_attempt(): void
+    {
+        Http::fake([self::ENDPOINT => Http::response([], 503)]);
+        [$report] = $this->report('FALLBACKINTEGRITY');
+        $this->runJob($report);
+        $asset = $report->evidenceBundle->assets->first();
+        Storage::disk($asset->disk)->put($asset->path, 'changed original');
+        $this->runJob($report->refresh(), 2)->assertNotReleased();
+        $this->assertSame('EVIDENCE_INTEGRITY_FAILED', $report->refresh()->evidenceBundle->failure_code);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        Http::assertSentCount(1);
+    }
+
+    public function test_an_empty_fallback_setting_keeps_retrying_primary(): void
+    {
+        config(['services.gemini.fallback_model' => '']);
+        Http::fake([self::ENDPOINT => Http::response([], 503)]);
+        [$report] = $this->report('DISABLED');
+        foreach ([1, 2, 3] as $attempt) {
+            $this->runJob($report->refresh(), $attempt);
+        }
+        $this->assertSame(['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash'], Http::recorded()->map(fn ($pair) => $pair[0]['model'])->all());
+        $this->assertArrayNotHasKey('gemini_retry', $report->refresh()->evidenceBundle->processing_result_json);
+    }
+
+    public function test_a_last_report_allowance_failure_offers_neither_retry_nor_restart(): void
+    {
+        config(['services.receipt_extraction.max_calls_per_report' => 1]);
+        Http::fake([self::ENDPOINT => Http::response([], 503)]);
+        [$report, $token] = $this->report('LASTREPORTCALL');
+        $this->runJob($report, 3);
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertJsonPath('data.can_retry_processing', false)->assertJsonPath('data.can_recapture', false)
+            ->assertJsonPath('data.failure_reason.code', 'EXTRACTION_REPORT_CAP');
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")
+            ->assertStatus(409)->assertJsonPath('success', false);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/recapture-session", ['restart' => true])->assertStatus(409);
+        Http::assertSentCount(1);
+    }
+
+    public function test_report_cap_overrides_an_old_attempt_cap_restart_offer(): void
+    {
+        config(['services.receipt_extraction.max_calls_per_report' => 6]);
+        [$report, $token] = $this->report('CAPPRIORITY');
+        $report->update(['status' => 'Processing failed', 'processing_status' => 'failed']);
+        $report->evidenceBundle->update(['failure_code' => 'EXTRACTION_ATTEMPT_CAP', 'extraction_calls' => 6]);
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertJsonPath('data.can_retry_processing', false)->assertJsonPath('data.can_recapture', false)
+            ->assertJsonPath('data.failure_reason.code', 'EXTRACTION_REPORT_CAP');
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/recapture-session", ['restart' => true])->assertStatus(409);
+    }
+
+    public function test_timeout_selects_fallback_for_the_next_attempt(): void
+    {
+        Http::fakeSequence()->pushFailedConnection('cURL error 28: Operation timed out')->push(
+            array_replace(GeminiReceiptExtractorTest::completed(ReceiptExtractionValidatorTest::payload()), ['model' => 'gemini-3.5-flash-lite']));
+        [$report] = $this->report('TIMEOUTFALLBACK');
+        $this->runJob($report)->assertReleased(30);
+        $this->runJob($report->refresh(), 2);
+        $this->assertSame('Ready for confirmation', $report->refresh()->status);
+        $this->assertSame('GEMINI_TIMEOUT', $report->evidenceBundle->processing_result_json['engine']['fallback_reason_code']);
+        $this->assertSame(2, $report->evidenceBundle->extraction_calls);
+    }
+
+    public static function nonFallbackResponses(): array
+    {
+        return ['auth' => [403, 'GEMINI_AUTH'], 'bad request' => [400, 'GEMINI_REJECTED'], 'invalid output' => [200, 'EXTRACTION_INVALID']];
+    }
+
+    #[DataProvider('nonFallbackResponses')]
+    public function test_non_transient_failures_never_select_fallback(int $status, string $code): void
+    {
+        Http::fake([self::ENDPOINT => Http::response($status === 200 ? GeminiReceiptExtractorTest::completed(['items' => 'invalid']) : [], $status)]);
+        [$report] = $this->report('NOFALLBACK');
+        $this->runJob($report)->assertNotReleased();
+        $bundle = $report->refresh()->evidenceBundle;
+        $this->assertSame($code, $bundle->failure_code);
+        $this->assertArrayNotHasKey('gemini_retry', $bundle->processing_result_json);
+        Http::assertSentCount(1);
+    }
+
+    public function test_a_last_allowed_call_failure_disables_retry_and_enforces_restart_at_the_endpoint(): void
+    {
+        config(['services.receipt_extraction.max_calls_per_attempt' => 1]);
+        Http::fake([self::ENDPOINT => Http::response([], 503)]);
+        [$report, $token] = $this->report('LASTCALL');
+        $this->runJob($report, 3);
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertJsonPath('data.can_retry_processing', false)->assertJsonPath('data.can_recapture', true)
+            ->assertJsonPath('data.failure_reason.code', 'EXTRACTION_ATTEMPT_CAP');
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertStatus(409);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/recapture-session", ['restart' => true])->assertCreated();
+        Http::assertSentCount(1);
+        Queue::assertNotPushed(ProcessReceiptEvidence::class);
+    }
+
+    public function test_a_stale_retry_request_rechecks_locked_status_and_does_not_enqueue_twice(): void
+    {
+        [$report, $token] = $this->report('STALE');
+        $report->update(['status' => 'Processing failed', 'processing_status' => 'failed']);
+        $report->evidenceBundle->update(['failure_code' => 'GEMINI_TIMEOUT']);
+        // Simulate a second request queuing the report after this request's authorization read.
+        $changed = false;
+        DB::listen(function ($query) use ($report, &$changed) {
+            if (! $changed && str_starts_with($query->sql, 'select') && str_contains($query->sql, 'consumer_reports') && str_contains($query->sql, 'report_reference')) {
+                $changed = true;
+                ConsumerReport::whereKey($report->id)->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+            }
+        });
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertStatus(409);
+        Queue::assertNotPushed(ProcessReceiptEvidence::class);
+        $this->assertSame(0, $report->statusHistories()->count());
     }
 
     public function test_failed_hook_keeps_a_specific_code_and_classifies_timeouts(): void
@@ -345,17 +577,18 @@ class ReceiptGeminiExtractionTest extends TestCase
         [$report, $token] = $this->report('REUSE');
 
         // First run: the call succeeds and the extraction is stored before the job finishes.
-        $this->app->instance(\App\Services\Receipt\Extraction\ReceiptExtractionValidator::class, Mockery::mock(
-            \App\Services\Receipt\Extraction\ReceiptExtractionValidator::class, fn ($mock) => $mock->shouldReceive('validate')->andThrow(new \RuntimeException('worker lost'))));
+        $this->app->instance(ReceiptExtractionValidator::class, Mockery::mock(
+            ReceiptExtractionValidator::class, fn ($mock) => $mock->shouldReceive('validate')->andThrow(new \RuntimeException('worker lost'))));
         try {
             $this->runJob($report);
         } catch (\RuntimeException) {
         }
-        $this->app->forgetInstance(\App\Services\Receipt\Extraction\ReceiptExtractionValidator::class);
+        $this->app->forgetInstance(ReceiptExtractionValidator::class);
         (new ProcessReceiptEvidence($report->report_reference))->failed(new MaxAttemptsExceededException('x'));
         $this->assertSame('JOB_TIMEOUT', $report->refresh()->evidenceBundle->failure_code);
         $this->assertSame(1, $report->evidenceBundle->extraction_calls);
         $this->assertArrayHasKey('pending_extraction', $report->evidenceBundle->processing_result_json);
+        config(['services.receipt_extraction.max_calls_per_attempt' => 1, 'services.receipt_extraction.max_calls_per_report' => 1]);
 
         $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")
             ->assertOk();
@@ -370,20 +603,27 @@ class ReceiptGeminiExtractionTest extends TestCase
 
     public function test_rate_limited_calls_are_refunded_and_do_not_consume_the_allowance(): void
     {
-        Http::fake([self::ENDPOINT => Http::response(['error' => ['message' => 'quota', 'code' => 'resource_exhausted']], 429)]);
+        $response = GeminiReceiptExtractorTest::completed(ReceiptExtractionValidatorTest::payload());
+        $response['model'] = 'gemini-3.5-flash-lite';
+        Http::fake([self::ENDPOINT => Http::sequence()->push(['error' => ['message' => 'quota', 'code' => 'resource_exhausted']], 429)->push($response)]);
         [$report] = $this->report('RATE');
 
         $this->runJob($report, 1)->assertReleased(30);
 
         $this->assertSame(0, $report->refresh()->evidenceBundle->extraction_calls);
-        $this->assertSame(0, (int) \Illuminate\Support\Facades\Cache::get('receipt-extraction:calls:'.now('UTC')->format('Y-m-d')));
-        $this->assertSame(0, (int) \Illuminate\Support\Facades\Cache::get('receipt-extraction:tokens:'.now('UTC')->format('Y-m-d')));
+        $this->assertSame(0, (int) Cache::get('receipt-extraction:calls:'.now('UTC')->format('Y-m-d')));
+        $this->assertSame(0, (int) Cache::get('receipt-extraction:tokens:'.now('UTC')->format('Y-m-d')));
         Http::assertSentCount(1);
+        $this->runJob($report->refresh(), 2);
+        $this->assertSame('Ready for confirmation', $report->refresh()->status);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        $this->assertSame('gemini-3.5-flash-lite', $report->raw_ocr_json['engine']['model']);
+        Http::assertSentCount(2);
     }
 
     public function test_capture_modes_other_than_guided_photos_take_the_legacy_route(): void
     {
-        $route = app(\App\Services\Receipt\Extraction\ReceiptExtractionRouter::class)
+        $route = app(ReceiptExtractionRouter::class)
             ->route(new ConsumerReport(['capture_mode' => 'continuous_video_v1', 'privacy_notice_version' => '1.1']));
 
         $this->assertSame(['provider' => 'tesseract', 'route' => 'legacy_mode'], $route);
@@ -424,8 +664,12 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->assertSame(0, $report->evidenceBundle->extraction_calls);
         Http::assertNothingSent();
         $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
-            ->assertJsonPath('data.can_retry_processing', true)
+            ->assertJsonPath('data.can_retry_processing', false)
             ->assertJsonPath('data.failure_reason.code', 'EXTRACTION_BUDGET_EXHAUSTED');
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/retry-processing")->assertStatus(409);
+        config(['services.receipt_extraction.daily_call_limit' => 200]);
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("/api/public/reports/{$report->report_reference}/processing")
+            ->assertJsonPath('data.can_retry_processing', true);
     }
 
     public function test_provider_auth_failure_is_not_retryable_and_never_a_bad_capture(): void

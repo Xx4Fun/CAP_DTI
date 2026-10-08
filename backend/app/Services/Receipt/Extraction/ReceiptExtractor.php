@@ -12,5 +12,5 @@ interface ReceiptExtractor
      * @throws RetryableExtractionException for transient provider failures
      * @throws ExtractionFailedException for non-transient failures
      */
-    public function extract(array $frames): ReceiptExtraction;
+    public function extract(array $frames, ?string $model = null): ReceiptExtraction;
 }

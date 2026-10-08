@@ -413,7 +413,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     return layout(
       <section className="receipt-draft-page">
         {pageHead(needsAttention ? <AlertTriangle size={36} aria-hidden="true" /> : <Clock3 size={36} aria-hidden="true" />, processing.status)}
-        <p>{processing.recapture_reason?.message || processing.message || 'PRICE-Watch is preparing the receipt for your confirmation.'}</p>
+        <p>{processing.recapture_reason?.message || processing.failure_reason?.message || processing.message || 'PRICE-Watch is preparing the receipt for your confirmation.'}</p>
         {processing.ready_for_review && (
           <button type="button" className="btn-primary" onClick={openReview}>Review detected items</button>
         )}
@@ -442,7 +442,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         {retryable && <button type="button" className="btn-primary" disabled={busy} onClick={() => void retryProcessing()}>
           {submitting ? 'Retrying processing…' : 'Retry processing'}
         </button>}
-        {failed && !retryable && <div className="banner-warning">{processing.failure_reason?.message || 'This receipt cannot be processed again. Capture the receipt again from the start.'}</div>}
+        {failed && !retryable && !processing.failure_reason?.message && <div className="banner-warning">This receipt cannot be processed again. Capture the receipt again from the start.</div>}
         {failed && !retryable && processing.can_recapture && (
           <button type="button" className="btn-primary" disabled={busy} onClick={() => void startRecapture({ restart: true })}>
             {submitting ? 'Starting camera…' : 'Restart receipt'}

@@ -24,6 +24,7 @@ return [
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.8-flash'),
+        'fallback_model' => env('GEMINI_FALLBACK_MODEL', 'gemini-3.5-flash-lite'),
         'endpoint' => env('GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/interactions'),
         'thinking_level' => env('GEMINI_THINKING_LEVEL', 'low'),
         // Per-image resolution sent with each receipt section: low, medium, high, or ultra_high (Phase 1a probe).

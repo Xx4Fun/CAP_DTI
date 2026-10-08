@@ -27,6 +27,25 @@ class ReceiptExtractionBudget
             ->sum('extraction_calls');
     }
 
+    /** Read-only eligibility check; reserve still enforces daily limits atomically before sending. */
+    public function blockingCode(ConsumerReport $report, ReceiptEvidenceBundle $bundle, int $frameCount): ?string
+    {
+        if ($this->callsForReport($report) >= (int) config('services.receipt_extraction.max_calls_per_report', 18)) {
+            return ReceiptFailureCodes::EXTRACTION_REPORT_CAP;
+        }
+        if ((int) $bundle->extraction_calls >= (int) config('services.receipt_extraction.max_calls_per_attempt', 6)) {
+            return ReceiptFailureCodes::EXTRACTION_ATTEMPT_CAP;
+        }
+        $day = now('UTC')->format('Y-m-d');
+        if ((int) Cache::get($this->key('calls', $day), 0) >= (int) config('services.receipt_extraction.daily_call_limit', 200)
+            || (int) Cache::get($this->key('tokens', $day), 0) + $frameCount * self::ESTIMATED_TOKENS_PER_FRAME + self::ESTIMATED_OUTPUT_TOKENS
+                > (int) config('services.receipt_extraction.daily_token_limit', 3000000)) {
+            return ReceiptFailureCodes::EXTRACTION_BUDGET_EXHAUSTED;
+        }
+
+        return null;
+    }
+
     /**
      * Reserves one call and an estimated token amount.
      *
@@ -34,11 +53,11 @@ class ReceiptExtractionBudget
      */
     public function reserve(ConsumerReport $report, ReceiptEvidenceBundle $bundle, int $frameCount): array
     {
-        if ($this->callsForReport($report) >= (int) config('services.receipt_extraction.max_calls_per_report', 18)) {
-            throw new ExtractionFailedException(ReceiptFailureCodes::EXTRACTION_REPORT_CAP);
-        }
-        if ((int) $bundle->extraction_calls >= (int) config('services.receipt_extraction.max_calls_per_attempt', 6)) {
-            throw new ExtractionFailedException(ReceiptFailureCodes::EXTRACTION_ATTEMPT_CAP);
+        if ($code = $this->blockingCode($report, $bundle, $frameCount)) {
+            if ($code === ReceiptFailureCodes::EXTRACTION_BUDGET_EXHAUSTED) {
+                $this->alertExhausted('calls_or_tokens');
+            }
+            throw new ExtractionFailedException($code);
         }
 
         $day = now('UTC')->format('Y-m-d');

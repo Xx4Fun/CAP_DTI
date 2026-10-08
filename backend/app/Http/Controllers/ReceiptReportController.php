@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CitizenTip;
 use App\Jobs\ProcessReceiptEvidence;
 use App\Models\CaptureSession;
+use App\Models\CitizenTip;
 use App\Models\ConsumerReport;
 use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
 use App\Models\ReportStatusHistory;
 use App\Models\WebPushSubscription;
+use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
 use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -206,45 +207,49 @@ class ReceiptReportController extends Controller
     public function retryProcessing(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        if ($report->status !== 'Processing failed' || ! $report->evidenceBundle) {
-            return response()->json(['success' => false, 'message' => 'Only a failed receipt process can be retried.'], 409);
-        }
-        $failureCode = $report->evidenceBundle->failure_code;
-        if (! ReceiptFailureCodes::isRetryable($failureCode)) {
-            return response()->json([
-                'success' => false,
-                'message' => $failureCode === ReceiptFailureCodes::EVIDENCE_INTEGRITY_FAILED
-                    ? 'This receipt cannot be processed again because its stored photos failed an integrity check. Capture the receipt again.'
-                    : (ReceiptFailureCodes::publicReason($failureCode) ?? 'This receipt cannot be processed again.'),
-            ], 409);
-        }
 
-        DB::transaction(function () use ($report) {
-            $report->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
+        return DB::transaction(function () use ($report) {
+            $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
+            $bundle = ReceiptEvidenceBundle::whereKey($locked->receipt_evidence_bundle_id)->lockForUpdate()->first();
+            $locked->setRelation('evidenceBundle', $bundle);
+            if ($locked->status !== 'Processing failed' || ! $bundle) {
+                return response()->json(['success' => false, 'message' => 'Only a failed receipt process can be retried.'], 409);
+            }
+            $blocked = $this->retryBlockCode($locked);
+            if ($blocked !== null) {
+                return response()->json(['success' => false, 'message' => ReceiptFailureCodes::publicReason($blocked) ?? 'This receipt cannot be processed again.'], 409);
+            }
+            $locked->update(['status' => 'Processing receipt', 'processing_status' => 'queued']);
             // A paid extraction stored before the failure is kept so the retry reuses it instead of buying another.
-            $pendingExtraction = data_get($report->evidenceBundle->processing_result_json, 'pending_extraction');
-            $report->evidenceBundle->update([
+            $state = array_intersect_key((array) $bundle->processing_result_json, array_flip(['pending_extraction', 'gemini_retry']));
+            // Older failed bundles predate fallback metadata; seed their first manual retry from the saved failure.
+            $fallback = trim((string) config('services.gemini.fallback_model'));
+            if (! isset($state['gemini_retry']) && $fallback !== '' && $fallback !== (string) config('services.gemini.model')
+                && ReceiptFailureCodes::canUseGeminiFallback($bundle->failure_code)) {
+                $state['gemini_retry'] = ['model' => $fallback, 'reason_code' => $bundle->failure_code];
+            }
+            $bundle->update([
                 'processing_status' => 'queued',
-                'processing_result_json' => $pendingExtraction ? ['pending_extraction' => $pendingExtraction] : null,
+                'processing_result_json' => $state ?: null,
                 'processing_started_at' => null,
                 'processing_completed_at' => null,
                 'failure_code' => null,
             ]);
             ReportStatusHistory::create([
-                'consumer_report_id' => $report->id,
+                'consumer_report_id' => $locked->id,
                 'previous_status' => 'Processing failed',
                 'new_status' => 'Processing receipt',
                 'public_message' => 'Receipt processing retry queued using the original evidence.',
                 'actor_type' => 'system',
             ]);
-        });
-        ProcessReceiptEvidence::dispatch($report->report_reference)->afterCommit();
+            ProcessReceiptEvidence::dispatch($locked->report_reference)->afterCommit();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Receipt processing retry queued.',
-            'data' => ['report_reference' => $report->report_reference, 'status' => 'Processing receipt'],
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Receipt processing retry queued.',
+                'data' => ['report_reference' => $locked->report_reference, 'status' => 'Processing receipt'],
+            ]);
+        });
     }
 
     public function subscribe(Request $request, string $reference)
@@ -303,7 +308,8 @@ class ReceiptReportController extends Controller
         $reasonCode = $report->evidenceBundle?->failure_code
             ?? data_get($report->evidenceBundle?->processing_result_json, 'reason_code');
         $failed = $report->status === 'Processing failed';
-        $failureCode = $failed ? $report->evidenceBundle?->failure_code : null;
+        $blocked = $failed ? $this->retryBlockCode($report) : null;
+        $failureCode = $failed ? ($blocked ?? $report->evidenceBundle?->failure_code) : null;
         $failureMessage = $failed ? ReceiptFailureCodes::publicReason($failureCode) : null;
 
         return response()->json([
@@ -316,8 +322,8 @@ class ReceiptReportController extends Controller
                 'created_at' => $report->created_at->toIso8601String(),
                 'submitted_at' => $report->submitted_at?->toIso8601String(),
                 'ready_for_review' => $report->status === 'Ready for confirmation',
-                'can_recapture' => $report->status === 'Needs recapture' || $this->restartOnlyFailure($report),
-                'can_retry_processing' => $failed && ReceiptFailureCodes::isRetryable($failureCode),
+                'can_recapture' => $report->status === 'Needs recapture' || ($failed && ReceiptFailureCodes::isRestartOnly($failureCode)),
+                'can_retry_processing' => $failed && $blocked === null && $report->evidenceBundle !== null,
                 'failure_reason' => $failureMessage !== null ? ['code' => $failureCode, 'message' => $failureMessage] : null,
                 'attempt_number' => (int) ($report->evidenceBundle?->attempt_number ?? 1),
                 'store' => $report->store ? [
@@ -531,7 +537,34 @@ class ReceiptReportController extends Controller
     private function restartOnlyFailure(ConsumerReport $report): bool
     {
         return $report->status === 'Processing failed'
-            && ReceiptFailureCodes::isRestartOnly($report->evidenceBundle?->failure_code);
+            && ReceiptFailureCodes::isRestartOnly($this->retryBlockCode($report));
+    }
+
+    /** Same eligibility for status and the locked retry write; completed extractions need no new allowance. */
+    private function retryBlockCode(ConsumerReport $report): ?string
+    {
+        $bundle = $report->evidenceBundle;
+        if (! $bundle) {
+            return ReceiptFailureCodes::PROCESSING_FAILED;
+        }
+        if (! ReceiptFailureCodes::isRetryable($bundle->failure_code)) {
+            if ($bundle->failure_code === ReceiptFailureCodes::EXTRACTION_ATTEMPT_CAP
+                && app(ReceiptExtractionBudget::class)->blockingCode($report, $bundle, 0) === ReceiptFailureCodes::EXTRACTION_REPORT_CAP) {
+                return ReceiptFailureCodes::EXTRACTION_REPORT_CAP;
+            }
+
+            return $bundle->failure_code;
+        }
+        $pending = $bundle->processing_result_json['pending_extraction'] ?? null;
+        if (is_array($pending) && is_array($pending['payload'] ?? null) && $bundle->extraction_attempted_at !== null) {
+            return null;
+        }
+        if (data_get($bundle->processing_result_json, 'engine.provider') !== 'gemini'
+            && ! ReceiptFailureCodes::canUseGeminiFallback($bundle->failure_code)) {
+            return null;
+        }
+
+        return app(ReceiptExtractionBudget::class)->blockingCode($report, $bundle, $bundle->assets()->where('kind', 'source_frame')->count());
     }
 
     /** Customer-facing amount lines: description, amount, and uncertainty only. */

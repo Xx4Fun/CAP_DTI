@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ConsumerReport;
 use App\Models\ReportStatusHistory;
+use App\Services\Receipt\Extraction\ReceiptExtractionRouter;
 use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\Extraction\RetryableExtractionException;
 use App\Services\Receipt\ReceiptEvidencePipeline;
@@ -72,11 +73,10 @@ class ProcessReceiptEvidence implements ShouldQueue
                 'transaction_date' => null,
                 'warnings' => [],
                 'manual_review_required' => false,
-                // Only the primary route reaches the provider, so a transient failure here was a real send: record the
-                // claim and the approved consent list that allowed it, or the audit trail loses exactly those cases.
+                // Retain the consent and billing snapshots for failed provider sends too.
                 'engine' => ['provider' => 'gemini', 'route' => 'primary', ...$exception->engine,
                     'failure_code' => $exception->failureCode,
-                    'billing_attestation' => \App\Services\Receipt\Extraction\ReceiptExtractionRouter::billingAttestation(),
+                    'billing_attestation' => ReceiptExtractionRouter::billingAttestation(),
                     'consent_versions' => array_values((array) config('services.receipt_extraction.consent_versions', []))],
             ];
         }
@@ -85,6 +85,11 @@ class ProcessReceiptEvidence implements ShouldQueue
             ? 'Ready for confirmation'
             : ($internalStatus === 'needs_recapture' ? 'Needs recapture' : 'Processing failed');
         $reasonCode = (string) ($result['reason_code'] ?? ($internalStatus === 'failed' ? ReceiptFailureCodes::PROCESSING_FAILED : ''));
+        // The bundle remembers its selected fallback across queue exhaustion and manual retries.
+        $retry = $report->evidenceBundle?->processing_result_json['gemini_retry'] ?? null;
+        if (is_array($retry)) {
+            $result['gemini_retry'] = $retry;
+        }
 
         DB::transaction(function () use ($report, $result, $internalStatus, $publicStatus, $reasonCode, $srpMatcher) {
             $report->items()->delete();

@@ -47,7 +47,17 @@ Guided stills can also carry `INCOMPLETE_SCAN` as an unverified-continuity warni
 
 `OCR_UNAVAILABLE`, `OCR_TIMEOUT`, `OCR_FAILED`, and unexpected processing errors become `Processing failed`. The Customer can retry processing against the same immutable evidence; technical failures are not described as bad captures.
 
-Structured-extraction failure codes follow `ReceiptFailureCodes`: every other code (e.g. `GEMINI_TIMEOUT`, `GEMINI_RATE_LIMITED`, `GEMINI_UNAVAILABLE`, `GEMINI_REJECTED`, `EXTRACTION_INVALID`, `EXTRACTION_BUDGET_EXHAUSTED`, `JOB_TIMEOUT`) allows a customer retry, bounded by the per-attempt call cap; `EXTRACTION_ATTEMPT_CAP`, `EXTRACTION_TOO_LARGE`, and `EVIDENCE_INTEGRITY_FAILED` allow only a full restart; `GEMINI_NOT_CONFIGURED`, `GEMINI_AUTH`, and `EXTRACTION_REPORT_CAP` need an operator. A paid extraction stored before a failure is reused by a retry rather than bought again.
+Structured-extraction failure codes follow `ReceiptFailureCodes`: every other code (e.g. `GEMINI_TIMEOUT`, `GEMINI_RATE_LIMITED`, `GEMINI_UNAVAILABLE`, `GEMINI_REJECTED`, `EXTRACTION_INVALID`, `EXTRACTION_BUDGET_EXHAUSTED`, `JOB_TIMEOUT`) allows a customer retry when the attempt, report, and daily allowances permit another call; `EXTRACTION_ATTEMPT_CAP`, `EXTRACTION_TOO_LARGE`, and `EVIDENCE_INTEGRITY_FAILED` allow only a full restart; `GEMINI_NOT_CONFIGURED`, `GEMINI_AUTH`, and `EXTRACTION_REPORT_CAP` need an operator. The report cap takes precedence over an attempt-cap restart. A paid extraction stored before a failure is reused by a retry rather than bought again, even when the call allowance is exhausted.
+
+## Gemini recovery
+
+- `GEMINI_MODEL` remains `gemini-3.8-flash`. `GEMINI_FALLBACK_MODEL` defaults to `gemini-3.5-flash-lite`; an empty value disables selecting a new fallback.
+- A timeout, rate limit, or provider outage selects the fallback for subsequent calls on the same evidence bundle. There is one provider call per queue attempt, retaining the three attempts and 30/120-second retry delays. Authentication, invalid requests/output, integrity failures, and application usage caps never select fallback.
+- The private `gemini_retry` bundle metadata retains the selected model and original transient failure code through queue exhaustion and manual retries. Older failed primary bundles acquire this metadata on their first manual retry. A new capture bundle starts with primary again. Changing the configured default does not change an already selected fallback.
+- Both models use the same integrity-verified images, consent gates, request schema, settings, validation, and budgets. Rate-limited calls retain the existing refund behavior; timeouts and outages consume the conservative reservation.
+- Fallback results keep every validation warning, add `GEMINI_FALLBACK_USED`, and set `manual_review_required=true`. Admin evidence retains the actual model; the Customer gets public failure guidance without provider response text or credentials.
+- Status and retry use the same current allowance check. Retry locks and rechecks the report and bundle, then dispatches after commit, preventing two requests from queuing the same failed report.
+- Release acceptance remains separate: after approval, retry the affected report through its authorized Customer flow, process a new real receipt, and verify original evidence, extracted values, and warnings in Admin. Local tests do not prove live recovery.
 
 ## No Customer correction layer
 

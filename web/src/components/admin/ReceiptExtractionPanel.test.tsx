@@ -59,6 +59,19 @@ describe('ReceiptExtractionPanel', () => {
     const { container: empty } = render(<ReceiptExtractionPanel result={null} />)
     expect(empty).toBeEmptyDOMElement()
   })
+
+  it('keeps uncertainty and fallback review warnings visible with read-only values', () => {
+    render(<ReceiptExtractionPanel result={{ ...result,
+      engine: { provider: 'gemini', model: 'gemini-3.5-flash-lite', route: 'primary' },
+      manual_review_required: true,
+      warnings: [...result.warnings!, { code: 'GEMINI_FALLBACK_USED', message: 'DTI should verify the extracted values against the original receipt photos.' }],
+    }} />)
+    const warnings = screen.getByRole('list', { name: 'Extraction warnings' })
+    expect(within(warnings).getByText('GEMINI_FALLBACK_USED')).toBeInTheDocument()
+    expect(within(warnings).getByText('POSSIBLE_DUPLICATE_LINES')).toBeInTheDocument()
+    expect(screen.getByText('DTI should verify the extracted values against the original receipt photos.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
 })
 
 describe('EvidenceSectionNav', () => {
