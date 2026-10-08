@@ -14,7 +14,15 @@ export function getPriceLabel(source: PriceDataSource): string {
 
 export function applicablePrice(commodity: Commodity, freeze?: boolean) {
   const reference = commodity.reference;
-  if (reference) return { label: reference.label, value: reference.status === 'available' ? reference.value : null };
-  if (freeze && commodity.price_freeze_applicable) return { label: 'Emergency reference unavailable', value: null };
-  return { label: 'Current SRP', value: commodity.baseline_price };
+  if (reference) {
+    const isEmergency = reference.type === 'emergency_ceiling';
+    const label = !isEmergency ? reference.label
+      : reference.status !== 'available' ? 'Freeze reference unavailable'
+      : reference.label === 'Official APC / Price Freeze reference' ? 'APC ceiling'
+      : reference.label === 'Official frozen price reference' ? 'Frozen SRP ceiling'
+      : 'Price Freeze ceiling';
+    return { label, value: reference.status === 'available' ? reference.value : null, isEmergency };
+  }
+  if (freeze && commodity.price_freeze_applicable) return { label: 'Freeze reference unavailable', value: null, isEmergency: true };
+  return { label: 'Current SRP', value: commodity.baseline_price, isEmergency: false };
 }

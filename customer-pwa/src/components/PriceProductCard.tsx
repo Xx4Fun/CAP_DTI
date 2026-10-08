@@ -59,11 +59,10 @@ export const PriceProductCard: React.FC<PriceProductCardProps> = ({
         </span>
       </span>
 
-      <span className="price-product-price">
+      <span className={`price-product-price${price.isEmergency ? ' is-emergency' : ''}`}>
         <span className="price-product-price-label">{price.label}</span>
         <span className="price-product-price-rule" aria-hidden="true" />
-        <span className="price-product-price-value">{price.value === null ? 'Unavailable' : `₱${Number(price.value).toFixed(2)}`}</span>
-        {commodity.reference?.type === 'emergency_ceiling' && <span>SRP context: ₱{Number(commodity.baseline_price).toFixed(2)}</span>}
+        <span className={`price-product-price-value${price.value === null ? ' is-unavailable' : ''}`}>{price.value === null ? 'Unavailable' : `₱${Number(price.value).toFixed(2)}`}</span>
       </span>
     </button>
   );

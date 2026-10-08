@@ -130,6 +130,9 @@ describe('MoreView Component', () => {
 
     expect(screen.getByText('State of Calamity Active')).toBeInTheDocument();
     expect(screen.getByText(/automatic price freeze is enforced/i)).toBeInTheDocument();
+    expect(screen.getByText(/as amended by R.A. 10623/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot be sold above their applicable frozen prices/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0% markup/i)).not.toBeInTheDocument();
   });
 
   it('renders empty history state when no comparisons are stored and navigates on CTA click', async () => {

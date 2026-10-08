@@ -34,10 +34,29 @@ function mockHistory(history: SrpHistoryEntry[]) {
 describe('ProductDetail', () => {
   it('shows the official ceiling separately from SRP history', async () => {
     render(<ProductDetail commodity={{ ...commodity, reference: { status: 'available', type: 'emergency_ceiling', value: 22, label: 'Official APC / Price Freeze reference', source: 'DECL-1', effective_date: '2026-10-07', source_id: 1 } }} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />);
-    expect(screen.getByText('Official APC / Price Freeze reference')).toBeInTheDocument();
+    expect(screen.getByText('APC ceiling')).toBeInTheDocument();
     expect(screen.getByText('\u20B122.00')).toBeInTheDocument();
-    expect(screen.getByText(/SRP context.*25.00/)).toBeInTheDocument();
+    const summary = screen.getByRole('heading', { name: /Absolute/ }).closest('section')!;
+    expect(within(summary).getByText('Oct 7, 2026')).toBeInTheDocument();
+    expect(within(summary).queryByText(/25.00/)).not.toBeInTheDocument();
+    expect(screen.getByText('SRP context')).toBeInTheDocument();
+    expect(screen.getByText('\u20B125.00')).toBeInTheDocument();
+    expect(screen.getByText('SRP trend')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Source' }));
+    expect(screen.getByText('DECL-1')).toBeInTheDocument();
+    expect(screen.getAllByText('Oct 7, 2026')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('tab', { name: 'Details' }));
     expect(await screen.findByText('No past SRP')).toBeInTheDocument();
+  });
+  it.each([false, true])('does not borrow SRP metadata when an emergency reference is missing (record present: %s)', async (recordPresent) => {
+    render(<ProductDetail commodity={{ ...commodity, price_freeze_applicable: true, reference: recordPresent ? { status: 'unavailable', type: 'emergency_ceiling', label: 'Emergency reference unavailable', value: null, source: null, effective_date: null, source_id: null } : undefined }} stateOfCalamity dataSource="cached" dataFetchedAt={null} onBack={vi.fn()} />);
+    const summary = screen.getByRole('heading', { name: /Absolute/ }).closest('section')!;
+    expect(within(summary).getByText('Unavailable')).toBeInTheDocument();
+    expect(within(summary).getByText('Not provided')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Source' }));
+    expect(screen.getByText('Reference source').nextElementSibling).toHaveTextContent('Not provided');
+    expect(screen.getByText('Ceiling effective date').nextElementSibling).toHaveTextContent('Not provided');
+    expect(screen.getByText('Saved copy')).toBeInTheDocument();
   });
   beforeEach(() => mockHistory([currentVersion]));
   afterEach(() => vi.restoreAllMocks());
@@ -89,7 +108,7 @@ describe('ProductDetail', () => {
     );
 
     const detailsTab = screen.getByRole('tab', { name: 'Details' });
-    const historyTab = screen.getByRole('tab', { name: 'History' });
+    const historyTab = screen.getByRole('tab', { name: 'SRP history' });
     expect(detailsTab).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Official unit')).toBeInTheDocument();
     expect(screen.getByText('Normal monitoring')).toBeInTheDocument();
@@ -117,7 +136,7 @@ describe('ProductDetail', () => {
     const user = userEvent.setup();
     render(<ProductDetail commodity={commodity} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />);
 
-    await user.click(screen.getByRole('tab', { name: 'History' }));
+    await user.click(screen.getByRole('tab', { name: 'SRP history' }));
     await user.click(await screen.findByRole('button', { name: 'Retry price history' }));
     expect(get).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('No past SRP is available for comparison.')).toBeInTheDocument();

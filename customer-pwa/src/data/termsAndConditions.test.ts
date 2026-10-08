@@ -44,6 +44,10 @@ describe('termsAndConditions data module', () => {
     expect(headings).toContain('Baseline SRP Protection');
     expect(headings).toContain('The 10% Normal Market Rule');
     expect(headings).toContain('Automatic Price Freeze in Calamity');
+    const freeze = PRICE_ACT_REGULATIONS.find((item) => item.id === 'price-act-freeze')!;
+    expect(freeze.lawReference).toContain('R.A. 10623');
+    expect(freeze.description).toContain('DTI review');
+    expect(freeze.description).not.toMatch(/0% markup|immediate Show Cause|administrative fines/i);
   });
 
   it('details R.A. 71 Price Tag Law regulations', () => {

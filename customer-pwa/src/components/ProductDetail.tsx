@@ -41,7 +41,7 @@ type Trend =
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
   { id: 'details', label: 'Details' },
-  { id: 'history', label: 'History' },
+  { id: 'history', label: 'SRP history' },
   { id: 'source', label: 'Source' },
 ];
 const CATEGORY_ACRONYMS = new Set(['DTI', 'LPG', 'NFA', 'PET', 'SRP']);
@@ -153,7 +153,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const imageTriggerRef = useRef<HTMLButtonElement>(null);
   const requestSequence = useRef(0);
   const tabRefs = useRef<Partial<Record<DetailTab, HTMLButtonElement | null>>>({});
-  const tabPanelRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async () => {
     const requestId = ++requestSequence.current;
@@ -192,10 +191,15 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   );
   const title = parsed.title || commodity.commodity_name;
   const subtitle = formatCategoryDisplay(parsed.categoryPath || commodity.category || 'Category not provided');
-  const effectiveDate = formatDate(commodity.effective_date);
   const fetchedDate = formatDate(dataFetchedAt);
   const price = applicablePrice(commodity, stateOfCalamity);
   const priceLabel = price.label;
+  const effectiveDate = formatDate(price.isEmergency
+    ? commodity.reference?.effective_date
+    : commodity.reference?.effective_date ?? commodity.effective_date);
+  const referenceSource = price.isEmergency
+    ? commodity.reference?.source
+    : commodity.reference?.source ?? commodity.source_reference;
   const trend = useMemo(
     () => deriveTrend(commodity, history, historyStatus),
     [commodity, history, historyStatus],
@@ -214,9 +218,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   const selectTab = (tab: DetailTab, focus = false) => {
     setActiveTab(tab);
-    if (tabPanelRef.current) {
-      tabPanelRef.current.scrollTop = 0;
-    }
     if (focus) tabRefs.current[tab]?.focus();
   };
 
@@ -278,10 +279,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             <div className="product-detail-metric product-detail-price-block">
               <span>{priceLabel}</span>
               <strong className="product-detail-price">{price.value === null ? 'Unavailable' : `\u20B1${Number(price.value).toFixed(2)}`}</strong>
-              {commodity.reference?.type === 'emergency_ceiling' && <span>SRP context: {'\u20B1'}{Number(commodity.baseline_price).toFixed(2)}</span>}
             </div>
             <div className="product-detail-metric product-detail-trend">
-              <span>Trend</span>
+              <span>SRP trend</span>
               <TrendValue trend={trend} />
             </div>
             <div className="product-detail-metric">
@@ -338,7 +338,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         </div>
 
         <div
-          ref={tabPanelRef}
           className="product-detail-tab-panel"
           role="tabpanel"
           id={`product-detail-panel-${activeTab}`}
@@ -351,6 +350,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <MetadataRow label="Official unit">{commodity.unit || commodity.package_size || 'Not provided'}</MetadataRow>
               <MetadataRow label="Classification">{classification}</MetadataRow>
               {monitoringLabel && <MetadataRow label="Monitoring status">{monitoringLabel}</MetadataRow>}
+              {price.isEmergency && <MetadataRow label="SRP context">{'\u20B1'}{Number(commodity.baseline_price).toFixed(2)}</MetadataRow>}
             </dl>
           )}
 
@@ -383,8 +383,12 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
           {activeTab === 'source' && (
             <dl className="product-detail-facts">
-              <MetadataRow label="Bulletin source">{commodity.source_reference || 'Not provided'}</MetadataRow>
-              <MetadataRow label="Effective date">{effectiveDate || 'Not provided'}</MetadataRow>
+              <MetadataRow label={price.isEmergency ? 'Reference source' : 'Bulletin source'}>{referenceSource || 'Not provided'}</MetadataRow>
+              <MetadataRow label={price.isEmergency ? 'Ceiling effective date' : 'Effective date'}>{effectiveDate || 'Not provided'}</MetadataRow>
+              {price.isEmergency && <>
+                <MetadataRow label="SRP bulletin source">{commodity.source_reference || 'Not provided'}</MetadataRow>
+                <MetadataRow label="SRP effective date">{formatDate(commodity.effective_date) || 'Not provided'}</MetadataRow>
+              </>}
               <MetadataRow label="Data status">{dataSource === 'live' ? 'Live data' : 'Saved copy'}</MetadataRow>
               <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
                 {fetchedDate || 'Not provided'}
