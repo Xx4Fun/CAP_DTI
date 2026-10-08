@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CitizenTipReview } from './CitizenTipReview'
@@ -33,7 +33,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
         current_page: 1, last_page: 1, per_page: 20, total: rows.length,
         from: rows.length ? 1 : null, to: rows.length || null,
         filter: 'all',
-        filter_counts: { all: rows.length, to_review: rows.length, with_officer: 0, violations: 0, no_violation: 0, rejected: 0 },
+        filter_counts: { all: rows.length, to_review: rows.length, with_officer: 0, violations: 0, confirmed_findings: 0, no_violation: 0, rejected: 0 },
       },
     })
   }
@@ -108,9 +108,9 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
     // Workflow states, replacing buckets that matched only two of the six statuses the system
     // writes and left two pills permanently empty.
-    expect(screen.getByRole('button', { name: /To review/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /For Review/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /With field officer/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Violations/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Violations/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /No violation/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Rejected/i })).toBeInTheDocument()
 
@@ -120,8 +120,34 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
 
     // Filtering is the server's job now, so choosing a pill re-queries rather than slicing rows.
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /Violations/i }))
+    await user.click(screen.getByRole('button', { name: /^Violations/i }))
     expect(adminApi.getReportPage).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'violations' }))
+  })
+
+  it('opens detected violations first and exposes the confirmed findings queue separately', async () => {
+    render(<CitizenTipReview />)
+    await screen.findByText('RPT-2026-001')
+    const tabs = within(screen.getByRole('group', { name: 'Report status' })).getAllByRole('button')
+    expect(tabs.map(tab => tab.textContent?.replace(/\d+$/, '').trim())).toEqual([
+      'Violations', 'Confirmed Findings', 'No Violations', 'For Review', 'With Field Officer', 'Rejected', 'All',
+    ])
+    expect(tabs[0]).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.setup().click(tabs[1])
+    await waitFor(() => expect(tabs[1]).toHaveAttribute('aria-pressed', 'true'))
+  })
+
+  it('shows an automatically resolved report without requiring an evaluator decision', async () => {
+    mockReportPage([{ ...mockReports[0], status: 'Resolved', category: 'no_violation', automatic_assessment_json: {
+      category: 'no_violation', assessed_at: '2026-10-09T00:00:00Z', reasons: [], items: [],
+    } }])
+    render(<CitizenTipReview />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Open RPT-2026-001/i }))
+    expect(screen.getByText('Automatically resolved')).toBeInTheDocument()
+    expect(screen.queryByText('OCR FLAG — REVIEW')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Final determination rests with the review officer/)).not.toBeInTheDocument()
+    expect(screen.getByText('Automatic assessment snapshot')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Record finding' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Decision reason / Verification Note')).not.toBeInTheDocument()
   })
 
   it('scopes the queue by establishment and receipt date on the server, and clears the scope', async () => {
@@ -575,9 +601,9 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getAllByText(/\+₱8\.50/)).toHaveLength(2)
     // The ordinary SRP is the default and is not labelled; only an emergency ceiling is named.
     expect(screen.queryByText(/SRP baseline \(provisional\)/)).not.toBeInTheDocument()
-    // Defaults follow the comparison: above reference reads as a violation, no reference as none.
+    // A missing reference remains insufficient evidence until the evaluator decides it.
     expect(screen.getByRole('combobox', { name: /Finding for Saba Sardines/i })).toHaveValue('confirmed_violation')
-    expect(screen.getByRole('combobox', { name: /Finding for Unmatched line/i })).toHaveValue('no_violation')
+    expect(screen.getByRole('combobox', { name: /Finding for Unmatched line/i })).toHaveValue('insufficient_evidence')
     // A confident automatic match asks the evaluator for nothing.
     expect(screen.queryByRole('combobox', { name: /Commodity for Saba Sardines/i })).not.toBeInTheDocument()
     // The report roll-up counts only what was actually compared.
@@ -617,13 +643,33 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     // A keyless bulletin can never resolve a reference, so it is not offered at all.
     expect(screen.queryByText(/Keyless Commodity/)).not.toBeInTheDocument()
 
-    // Left unmatched, the line is recorded as no violation without a commodity.
+    // The evaluator can explicitly confirm that the unmatched line is not an SRP commodity.
+    await user.selectOptions(screen.getByRole('combobox', { name: /Finding for ZZQX UNREADABLE/i }), 'no_violation')
     vi.mocked(adminApi.decideReport).mockResolvedValue({ ...mockReports[0], status: 'Resolved' })
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Not an SRP commodity.')
     await user.click(screen.getByRole('button', { name: /Record finding/i }))
     expect(adminApi.decideReport).toHaveBeenCalledWith(101, expect.objectContaining({
       item_decisions: [expect.objectContaining({ item_id: 701, commodity_key: '', regulatory_finding: 'no_violation' })],
     }))
+  })
+
+  it('refreshes the queue and counts after confirming a finding', async () => {
+    const user = userEvent.setup()
+    mockReportPage([{ ...mockReports[0], category: 'violations' }])
+    render(<CitizenTipReview />)
+    await user.click(await screen.findByRole('button', { name: /Open RPT-2026-001/i }))
+    vi.mocked(adminApi.decideReport).mockResolvedValue({ ...mockReports[0], category: 'confirmed_findings', status: 'Under regulatory review' })
+    vi.mocked(adminApi.getReportPage).mockResolvedValue({ data: [], meta: {
+      current_page: 1, last_page: 1, per_page: 20, total: 0, from: null, to: null,
+      filter_counts: { violations: 0, confirmed_findings: 1, all: 1, to_review: 0, with_officer: 0, no_violation: 0, rejected: 0 },
+    } })
+    await user.selectOptions(screen.getByRole('combobox', { name: /Regulatory finding/i }), 'confirmed_violation')
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verified against original evidence.')
+    await user.click(screen.getByRole('button', { name: /Record finding/i }))
+    expect(await screen.findByText('DTI confirmed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Back to reports/i }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Open RPT-2026-001/i })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Confirmed Findings1/i })).toBeInTheDocument()
   })
 
   it('reports item progress and names what is blocking the decision', async () => {

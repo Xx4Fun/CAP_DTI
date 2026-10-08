@@ -266,6 +266,7 @@ class ReceiptExtractionValidator
             'detected_total' => $total === null ? null : $total['cents'] / 100.0,
             'item_sum' => $reconciliation['items_sum'] === null ? null : (float) $reconciliation['items_sum'],
             'transaction_date' => $transactionDate,
+            'transaction_date_uncertain' => (bool) $payload['transaction_date']['uncertain'] || $transactionDate === null,
             'receipt_number' => $receiptNumber,
             'subtotal' => $subtotal === null ? null : ReceiptAmount::format($subtotal['cents']),
             'discounts' => array_map(fn (array $discount) => [...$discount, 'amount' => $discount['cents'] === null ? null : ReceiptAmount::format($discount['cents'])], $discounts),

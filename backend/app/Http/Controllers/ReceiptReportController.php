@@ -9,9 +9,11 @@ use App\Models\ConsumerReport;
 use App\Models\ReceiptEvidenceAsset;
 use App\Models\ReceiptEvidenceBundle;
 use App\Models\ReportStatusHistory;
+use App\Models\Store;
 use App\Models\WebPushSubscription;
 use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
 use App\Services\Receipt\Extraction\ReceiptFailureCodes;
+use App\Services\Receipt\ConsumerReportAssessment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -418,7 +420,7 @@ class ReceiptReportController extends Controller
         ]);
     }
 
-    public function confirm(Request $request, string $reference)
+    public function confirm(Request $request, string $reference, ConsumerReportAssessment $assessment)
     {
         $report = $this->authorizedReport($request, $reference);
         $rules = [
@@ -430,7 +432,7 @@ class ReceiptReportController extends Controller
         }
         $request->validate($rules);
 
-        if ($report->status === 'Submitted') {
+        if ($report->consumer_confirmed_at !== null || $report->status === 'Submitted') {
             return response()->json([
                 'success' => true,
                 'message' => 'Receipt items were already confirmed.',
@@ -453,11 +455,14 @@ class ReceiptReportController extends Controller
                 'message' => 'The original receipt evidence is unavailable. This report cannot be submitted.',
             ], 409);
         }
-        DB::transaction(function () use ($report) {
+        DB::transaction(function () use ($report, $request, $assessment) {
+            if ($report->store_id) Store::whereKey($report->store_id)->lockForUpdate()->first();
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
-            if ($locked->status === 'Submitted') {
+            abort_unless((int) $locked->store_id === (int) $report->store_id, 409, 'This report changed. Reload it and try again.');
+            if ($locked->consumer_confirmed_at !== null || $locked->status === 'Submitted') {
                 return;
             }
+            abort_unless($locked->status === 'Ready for confirmation', 409, 'Only a receipt that is ready for confirmation can be submitted.');
 
             $systemItems = $locked->items()->orderBy('sequence')->get()->map(fn ($item) => [
                 'sequence' => $item->sequence,
@@ -501,6 +506,7 @@ class ReceiptReportController extends Controller
                 'status' => 'pending',
             ]);
             $locked->pushSubscriptions()->detach();
+            $assessment->assess($locked, $request);
         });
 
         $report->refresh();

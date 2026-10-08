@@ -93,7 +93,8 @@ class ReportReviewService
             $previous = $report->status;
             $reviewed = in_array($action, ['validate', 'correct'], true);
             $confirmedViolation = $reviewed && ($corrected['regulatory_finding'] ?? null) === 'confirmed_violation';
-            $status = $confirmedViolation ? 'Under regulatory review' : ($action === 'reject' ? 'Closed' : 'Resolved');
+            $insufficient = $reviewed && ($corrected['regulatory_finding'] ?? null) === 'insufficient_evidence';
+            $status = $confirmedViolation ? 'Under regulatory review' : ($action === 'reject' ? 'Closed' : ($insufficient ? 'Under initial evaluation' : 'Resolved'));
             if ($reviewed) $report->evaluator_confirmed_json = $corrected;
             $report->status = $status;
             $report->save();
@@ -183,7 +184,8 @@ class ReportReviewService
             $previous = $report->status;
             $hasConfirmedViolation = collect($itemDecisions)
                 ->contains(fn ($decision) => $decision['regulatory_finding'] === 'confirmed_violation');
-            $status = $hasConfirmedViolation ? 'Under regulatory review' : 'Resolved';
+            $hasInsufficientEvidence = collect($itemDecisions)->contains(fn ($decision) => $decision['regulatory_finding'] === 'insufficient_evidence');
+            $status = $hasConfirmedViolation ? 'Under regulatory review' : ($hasInsufficientEvidence ? 'Under initial evaluation' : 'Resolved');
 
             foreach ($itemDecisions as $decision) {
                 $item = $report->items()->findOrFail($decision['item_id']);

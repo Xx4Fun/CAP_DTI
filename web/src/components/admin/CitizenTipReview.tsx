@@ -45,7 +45,8 @@ export const CitizenTipReview: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [reportPage, setReportPage] = useState({ current_page: 1, last_page: 1, per_page: 20, total: 0, from: null as number | null, to: null as number | null })
-  const [filter, setFilter] = useState<ConsumerReportFilter>('to_review')
+  const [filter, setFilter] = useState<ConsumerReportFilter>('violations')
+  const [queueRevision, setQueueRevision] = useState(0)
   const [filterCounts, setFilterCounts] = useState<Partial<Record<ConsumerReportFilter, number>>>({})
   const [searchTerm, setSearchTerm] = useState('')
   /** Server-side scope: one establishment and a receipt-date range. Tab counts follow it. */
@@ -101,10 +102,11 @@ export const CitizenTipReview: React.FC = () => {
   }, [])
 
   useEffect(() => {
+    let active = true
     setLoading(true)
     setError('')
     // Filtering is server-side: the pills describe the whole queue, not the 20 rows that happen to
-    // be loaded, and the buckets are stored statuses rather than guesses at the status text.
+    // be loaded. The backend separates detected violations from confirmed findings.
     //
     // No `typeof adminApi.getReportPage === 'function'` guard here. It can only be false against a
     // partial test mock, and its synthetic meta omitted `from`/`to`, which broke the typecheck. The
@@ -114,14 +116,17 @@ export const CitizenTipReview: React.FC = () => {
       store_id: storeId || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined,
     })
       .then((response) => {
+        if (!active) return
         setReports(response.data)
         setReportPage(response.meta)
         if (response.meta.filter_counts) setFilterCounts(response.meta.filter_counts)
       }).catch(() => {
+        if (!active) return
         setReports([])
         setError('Consumer reports could not be loaded. Retry when the Admin API is available.')
-      }).finally(() => setLoading(false))
-  }, [reportPage.current_page, reportPage.per_page, filter, storeId, dateFrom, dateTo])
+      }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [reportPage.current_page, reportPage.per_page, filter, storeId, dateFrom, dateTo, queueRevision])
 
   // The establishment list only feeds the filter, so a failure leaves "All establishments" usable.
   useEffect(() => {
@@ -130,6 +135,10 @@ export const CitizenTipReview: React.FC = () => {
 
   /** Any change of scope starts again from page 1; page 3 of the old scope may not exist. */
   const toFirstPage = () => setReportPage((current) => ({ ...current, current_page: 1 }))
+  const refreshQueue = () => {
+    toFirstPage()
+    setQueueRevision(current => current + 1)
+  }
   const scoped = Boolean(storeId || dateFrom || dateTo)
   const clearFilters = () => {
     setStoreId('')
@@ -223,9 +232,9 @@ export const CitizenTipReview: React.FC = () => {
         receipt_price: typeof saved?.receipt_price === 'number' ? saved.receipt_price : (suggestedUnitPrice(item) ?? ''),
         observed_at: String(saved?.observed_at ?? observedAt),
         // Pre-filled from the comparison: only a line above its reference reads as a violation.
-        // A line with no reference (not an SRP commodity) defaults to no violation.
+        // Missing references need a decision; they do not establish a clean price.
         regulatory_finding: String(saved?.regulatory_finding
-          ?? (item.reference?.is_above_reference === true ? 'confirmed_violation' : 'no_violation')),
+          ?? (item.reference?.is_above_reference === true ? 'confirmed_violation' : item.reference?.is_above_reference === false ? 'no_violation' : 'insufficient_evidence')),
       } satisfies ItemDecision]
     }))
     setItemDecisions(seeded)
@@ -297,6 +306,7 @@ export const CitizenTipReview: React.FC = () => {
         const updated = await adminApi.decideReport(selected.id, { action, reason, item_decisions: decisions })
         setSelected(updated)
         setReports((current) => current.map((report) => (report.id === updated.id ? updated : report)))
+        refreshQueue()
         setError('')
       } catch (failure: any) {
         setError(failure.response?.data?.message || 'The report decision could not be saved.')
@@ -335,6 +345,7 @@ export const CitizenTipReview: React.FC = () => {
       const updated = await adminApi.decideReport(selected.id, { action, reason, corrected })
       setSelected(updated)
       setReports((current) => current.map((report) => (report.id === updated.id ? updated : report)))
+      refreshQueue()
       setError('')
     } catch (failure: any) {
       setError(failure.response?.data?.message || 'The report decision could not be saved.')
@@ -348,9 +359,10 @@ export const CitizenTipReview: React.FC = () => {
     setDecisionSaving(true)
     try {
       const request = await adminApi.requestFieldVerification(selected.id, { reason: reason.trim(), field_officer_id: Number(fieldOfficerId) })
-      const updated = { ...selected, status: 'Referred for field verification', verification_request: request }
+      const updated = { ...selected, status: 'Referred for field verification', category: 'with_officer' as const, ...request.report_state, verification_request: request }
       setSelected(updated)
       setReports((current) => current.map((report) => report.id === updated.id ? updated : report))
+      refreshQueue()
       setReason('')
       setError('')
     } catch (failure: any) {
@@ -365,9 +377,10 @@ export const CitizenTipReview: React.FC = () => {
     setDecisionSaving(true)
     try {
       const request = await adminApi.cancelFieldVerification(selected.verification_request.id)
-      const updated = { ...selected, verification_request: request }
+      const updated = { ...selected, ...request.report_state, verification_request: request }
       setSelected(updated)
       setReports((current) => current.map((report) => report.id === updated.id ? updated : report))
+      refreshQueue()
       setError('')
     } catch (failure: any) {
       setError(failure.response?.data?.message || 'The field verification request could not be cancelled.')
@@ -384,7 +397,12 @@ export const CitizenTipReview: React.FC = () => {
     return 'muted'
   }
 
-  const getReadableStatus = (status: string) => {
+  const getReadableStatus = (status: string, category?: ConsumerReportFilter) => {
+    const labels: Partial<Record<ConsumerReportFilter, string>> = {
+      violations: 'System detected', confirmed_findings: 'DTI confirmed', no_violation: 'No Violations',
+      to_review: 'For Review', with_officer: 'With Field Officer', rejected: 'Rejected',
+    }
+    if (category && labels[category]) return labels[category]
     const s = status.toLowerCase()
     if (s.includes('validate') || s.includes('violation') || s.includes('loi')) return 'Field Verification'
     if (s.includes('pending') || s.includes('under')) return 'Pending Review'
@@ -406,10 +424,11 @@ export const CitizenTipReview: React.FC = () => {
 
   /** Workflow states, in the order an evaluator meets them. */
   const FILTERS: Array<{ id: ConsumerReportFilter; label: string; tone: 'accent' | 'warn' | 'muted' }> = [
-    { id: 'to_review', label: 'To review', tone: 'warn' },
-    { id: 'with_officer', label: 'With field officer', tone: 'accent' },
     { id: 'violations', label: 'Violations', tone: 'accent' },
-    { id: 'no_violation', label: 'No violation', tone: 'muted' },
+    { id: 'confirmed_findings', label: 'Confirmed Findings', tone: 'accent' },
+    { id: 'no_violation', label: 'No Violations', tone: 'muted' },
+    { id: 'to_review', label: 'For Review', tone: 'warn' },
+    { id: 'with_officer', label: 'With Field Officer', tone: 'accent' },
     { id: 'rejected', label: 'Rejected', tone: 'muted' },
     { id: 'all', label: 'All', tone: 'muted' },
   ]
@@ -422,6 +441,9 @@ export const CitizenTipReview: React.FC = () => {
 
   const ocrItems = parseOcrItems(selected?.raw_ocr_json ?? null)
   const hasItemReview = (selected?.items?.length ?? 0) > 0
+  const automaticallyResolved = selected?.category === 'no_violation'
+    && selected.automatic_assessment_json?.category === 'no_violation'
+    && selected.evaluator_confirmed_json === null
 
   /** The suggestion an evaluator picked, matched by the commodity key the option submitted. */
   const candidateFor = (item: ConsumerReportItemRecord, commodityKey: string) =>
@@ -639,7 +661,7 @@ export const CitizenTipReview: React.FC = () => {
                     <th>Store</th>
                     <th>Receipt date</th>
                     <th className="is-numeric">Items</th>
-                    <th className="is-numeric">Above SRP</th>
+                    <th className="is-numeric">Above reference</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -651,7 +673,7 @@ export const CitizenTipReview: React.FC = () => {
                         <td data-label="Store"><span className="skeleton-cell-store" /></td>
                         <td data-label="Receipt date"><span className="skeleton-cell-date" /></td>
                         <td data-label="Items" className="is-numeric"><span className="skeleton-cell-num" /></td>
-                        <td data-label="Above SRP" className="is-numeric"><span className="skeleton-cell-num" /></td>
+                        <td data-label="Above reference" className="is-numeric"><span className="skeleton-cell-num" /></td>
                         <td data-label="Status"><span className="skeleton-cell-status" /></td>
                       </tr>
                     ))
@@ -680,14 +702,14 @@ export const CitizenTipReview: React.FC = () => {
                             || (report.submitted_at ? new Date(report.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date unavailable')}
                         </td>
                         <td data-label="Items" className="is-numeric">{report.items?.length ?? 0}</td>
-                        <td data-label="Above SRP" className="is-numeric">
+                        <td data-label="Above reference" className="is-numeric">
                           {above > 0
                             ? <span className="consumer-report-above-badge">{above}</span>
                             : <span className="consumer-report-table-muted">0</span>}
                         </td>
                         <td data-label="Status">
                           <span className={`consumer-report-status tone-${getStatusTone(report.status)}`}>
-                            {getReadableStatus(report.status)}
+                            {getReadableStatus(report.status, report.category)}
                           </span>
                         </td>
                       </tr>
@@ -745,7 +767,7 @@ export const CitizenTipReview: React.FC = () => {
                 </span>
               )}
               <span className={`consumer-report-status tone-${getStatusTone(selected.status)}`}>
-                {getReadableStatus(selected.status)}
+                {getReadableStatus(selected.status, selected.category)}
               </span>
             </div>
           </header>
@@ -886,7 +908,7 @@ export const CitizenTipReview: React.FC = () => {
               <div className="consumer-report-findings-block">
                 <div className="consumer-report-findings-head">
                   <h3>System extraction status</h3>
-                  <span className="consumer-report-ocr-flag">OCR FLAG — REVIEW</span>
+                  {!automaticallyResolved && <span className="consumer-report-ocr-flag">OCR FLAG — REVIEW</span>}
                 </div>
 
                 {/* An item report is summarised from the per-item references resolved by the
@@ -930,9 +952,9 @@ export const CitizenTipReview: React.FC = () => {
                       </p>
                     )}
 
-                    <p className="consumer-report-comparison-note">
+                    {!automaticallyResolved && <p className="consumer-report-comparison-note">
                       System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
-                    </p>
+                    </p>}
                   </div>
                 ) : (
                   <div className="consumer-report-comparison">
@@ -964,9 +986,9 @@ export const CitizenTipReview: React.FC = () => {
                       </div>
                     </div>
 
-                    <p className="consumer-report-comparison-note">
+                    {!automaticallyResolved && <p className="consumer-report-comparison-note">
                       System-detected comparison for DTI evaluator verification. Final determination rests with the review officer.
-                    </p>
+                    </p>}
                   </div>
                 )}
 
@@ -1005,6 +1027,17 @@ export const CitizenTipReview: React.FC = () => {
 
               {/* DTI DECISION & REVIEW SECTION */}
               <div className="consumer-report-decision">
+                {selected.automatic_assessment_json && (
+                  <section className="admin-feedback" aria-label="Automatic assessment">
+                    <strong>{automaticallyResolved ? 'Automatically resolved' : selected.evaluator_confirmed_json ? 'Initial system assessment' : selected.automatic_assessment_json.category === 'violations' ? 'System detected a possible violation' : 'Assessment requires review'}</strong>
+                    {automaticallyResolved && <p>No price violations were detected. No evaluator decision is required.</p>}
+                    {selected.automatic_assessment_json.reasons.length > 0 && <ul>{selected.automatic_assessment_json.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+                    {selected.automatic_assessment_json.items.filter(item => item.reasons.length > 0).map(item => (
+                      <p key={item.item_id}>{selected.items?.find(line => line.id === item.item_id)?.item_name || 'Receipt item'}: {item.reasons.join(' ')}</p>
+                    ))}
+                  </section>
+                )}
+                {!automaticallyResolved && <>
                 <h3 className="consumer-report-decision-title">DTI evaluator findings and decision</h3>
 
                 {/* Structured Multi-Item Forms (when applicable) */}
@@ -1331,6 +1364,7 @@ export const CitizenTipReview: React.FC = () => {
                   )}
                 </div>
 
+                </>}
                 {/* Collapsible Technical & Audit Data Accordion */}
                 {/* Reference material, not working surface. Each payload used to sit in its own
                     90-140px scrollport, so a collapsed accordion still contained three nested
@@ -1339,7 +1373,7 @@ export const CitizenTipReview: React.FC = () => {
                   <summary>Technical detail &amp; audit traceability</summary>
                   <div className="consumer-report-technical-body">
                     <div className="consumer-report-provenance">
-                      Formal receipt | Consumer report | Human validation required
+                      Formal receipt | Consumer report | {automaticallyResolved ? 'Automatically assessed' : 'DTI confirmation required for violations'}
                     </div>
 
                     <div>
@@ -1348,6 +1382,13 @@ export const CitizenTipReview: React.FC = () => {
                       </h4>
                       <pre className="admin-code">{JSON.stringify(selected.raw_ocr_json, null, 2)}</pre>
                     </div>
+
+                    {selected.automatic_assessment_json && (
+                      <div>
+                        <h4 className="consumer-report-technical-title">Automatic assessment snapshot</h4>
+                        <pre className="admin-code">{JSON.stringify(selected.automatic_assessment_json, null, 2)}</pre>
+                      </div>
+                    )}
 
                     {evidenceManifest?.processing_result && (
                       <div>
@@ -1367,7 +1408,7 @@ export const CitizenTipReview: React.FC = () => {
                       </div>
                     )}
 
-                    {!hasItemReview && (
+                    {!hasItemReview && !automaticallyResolved && (
                       <div>
                         <label htmlFor="eval-confirmed-json" className="consumer-report-json-label">
                           Evaluator-confirmed JSON

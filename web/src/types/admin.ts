@@ -359,18 +359,25 @@ export interface FieldVerificationRequestActionRecord {
   claimed_at: string | null
   completed_at: string | null
   cancelled_at: string | null
+  report_state?: { status: string; category: ConsumerReportFilter } | null
 }
 
 /**
- * Where a report sits in the evaluator's workflow. These replace the old substring buckets, which
- * matched only two of the six statuses the system writes and left two pills permanently empty.
+ * Backend-owned categories separate automatic detection from confirmed DTI findings.
  */
-export type ConsumerReportFilter = 'all' | 'to_review' | 'with_officer' | 'violations' | 'no_violation' | 'rejected'
+export type ConsumerReportFilter = 'all' | 'to_review' | 'with_officer' | 'violations' | 'confirmed_findings' | 'no_violation' | 'rejected'
 
 export interface ConsumerReportRecord {
   id: number
   report_reference: string
   status: string
+  category?: ConsumerReportFilter
+  automatic_assessment_json?: {
+    category: 'violations' | 'no_violation' | 'to_review'
+    assessed_at: string
+    reasons: string[]
+    items: Array<{ item_id: number; reliable: boolean; reasons: string[]; reference: ItemPriceReference }>
+  } | null
   store_name?: string
   submitted_at: string
   raw_ocr_json: Record<string, unknown> | null

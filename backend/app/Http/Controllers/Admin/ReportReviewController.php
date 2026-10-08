@@ -15,9 +15,9 @@ use App\Services\Admin\ReportReviewService;
 use App\Services\FieldNotificationService;
 use App\Services\FieldReferenceResolver;
 use App\Services\Receipt\ReceiptPriceComparison;
+use App\Services\Receipt\ConsumerReportAssessment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -26,25 +26,6 @@ class ReportReviewController extends Controller
     public function __construct(private readonly FieldReferenceResolver $references)
     {
     }
-
-    /**
-     * Where a report sits in the evaluator's workflow, as stored statuses.
-     *
-     * The panel previously guessed buckets from substrings of the status text, which matched only
-     * two of the six statuses the system actually writes — "Submitted" (the default for every new
-     * report) and "Referred for field verification" (written by this very controller) fell into no
-     * bucket at all, leaving two filter pills permanently empty.
-     */
-    private const FILTERS = [
-        'to_review' => ['Submitted', 'Under initial evaluation'],
-        'with_officer' => ['Referred for field verification'],
-        // Written only when an item decision is confirmed_violation.
-        'violations' => ['Under regulatory review'],
-        // Covers both a recorded no-violation finding and a report resolved without one; the two
-        // are distinguishable only by the presence of regulatory_findings rows.
-        'no_violation' => ['Resolved'],
-        'rejected' => ['Closed'],
-    ];
 
     /** Reports still with the consumer or the OCR pipeline; they never enter the review queue. */
     private const UNREVIEWABLE_STATUSES = ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'];
@@ -55,7 +36,7 @@ class ReportReviewController extends Controller
         $filters = $request->validate([
             'page' => 'sometimes|integer|min:1',
             'per_page' => 'sometimes|integer|min:1|max:50',
-            'filter' => ['sometimes', 'string', Rule::in(array_merge(['all'], array_keys(self::FILTERS)))],
+            'filter' => ['sometimes', 'string', Rule::in(array_merge(['all'], ConsumerReportAssessment::CATEGORIES))],
             'store_id' => 'sometimes|nullable|integer|exists:stores,id',
             'date_from' => 'sometimes|nullable|date',
             // Only when a start exists: otherwise Laravel reads "date_from" as a literal date and
@@ -66,8 +47,8 @@ class ReportReviewController extends Controller
         $scope = $this->scope($filters);
 
         $query = $scope($this->reviewQuery());
-        if (isset(self::FILTERS[$filter])) {
-            $query->whereIn('status', self::FILTERS[$filter]);
+        if ($filter !== 'all') {
+            $query->whereRaw('('.ConsumerReportAssessment::categorySql().') = ?', [$filter]);
         }
 
         $paginator = $query->latest()->paginate($filters['per_page'] ?? 20);
@@ -121,36 +102,20 @@ class ReportReviewController extends Controller
             ->when($ids !== null, fn ($nested) => $nested->whereIn('id', $ids));
     }
 
-    /**
-     * How many reports sit in each workflow state across the whole queue.
-     *
-     * A status outside the map is a bug, but it must not fail the request: consumer_reports.status
-     * is an unconstrained string and cancelling a referral restores a value captured in immutable
-     * context_json. Unrecognised rows stay reachable under "all" and are logged instead.
-     */
     private function filterCounts(\Closure $scope): array
     {
-        $byStatus = $scope($this->reviewQuery())->getQuery()
-            ->select('status')->selectRaw('count(*) as aggregate')
-            ->groupBy('status')->pluck('aggregate', 'status');
-
-        $counts = ['all' => (int) $byStatus->sum()];
-        foreach (self::FILTERS as $name => $statuses) {
-            $counts[$name] = (int) collect($statuses)->sum(fn ($status) => $byStatus[$status] ?? 0);
-        }
-
-        $unmapped = $byStatus->keys()->diff(collect(self::FILTERS)->flatten());
-        if ($unmapped->isNotEmpty()) {
-            Log::warning('Consumer report statuses outside the workflow filter map.', ['statuses' => $unmapped->values()->all()]);
-        }
-
+        $category = ConsumerReportAssessment::categorySql();
+        $byCategory = $scope(ConsumerReport::query()->whereNotIn('status', self::UNREVIEWABLE_STATUSES))
+            ->selectRaw($category.' AS category, count(*) as aggregate')->groupByRaw($category)->pluck('aggregate', 'category');
+        $counts = ['all' => (int) $byCategory->sum()];
+        foreach (ConsumerReportAssessment::CATEGORIES as $name) $counts[$name] = (int) ($byCategory[$name] ?? 0);
         return $counts;
     }
 
     /** Relations every review payload needs, loaded once so a row never triggers per-item queries. */
     private function reviewQuery()
     {
-        return ConsumerReport::with([
+        return ConsumerReport::query()->select('consumer_reports.*')->selectRaw(ConsumerReportAssessment::categorySql().' AS category')->with([
             'store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'activeVerificationRequest', 'latestVerificationRequest',
         ])->whereNotIn('status', self::UNREVIEWABLE_STATUSES);
     }
@@ -175,7 +140,10 @@ class ReportReviewController extends Controller
             ? ($report->activeVerificationRequest ?? $report->latestVerificationRequest)
             : $report->latestVerificationRequest;
         $observedAt = $this->observedAtFor($report);
-        $items = $report->items->map(function ($item) use ($comparison, $observedAt) {
+        $automaticallyResolved = $report->status === 'Resolved' && $report->evaluator_confirmed_json === null
+            && ($report->automatic_assessment_json['category'] ?? null) === 'no_violation';
+        $assessmentItems = collect($automaticallyResolved ? ($report->automatic_assessment_json['items'] ?? []) : [])->keyBy('item_id');
+        $items = $report->items->map(function ($item) use ($comparison, $observedAt, $assessmentItems) {
             return [
                 'id' => $item->id,
                 'sequence' => $item->sequence,
@@ -195,12 +163,15 @@ class ReportReviewController extends Controller
                 'commodity_name' => $item->srp?->commodity_name ?? $item->item_name,
                 'evaluator_decision_json' => $item->evaluator_decision_json,
                 // The applicable reference and the price comparison against it, per item.
-                'reference' => $comparison->forItem($item, $observedAt),
+                'reference' => $item->evaluator_decision_json === null
+                    ? ($assessmentItems->get($item->id)['reference'] ?? $comparison->forItem($item, $observedAt))
+                    : $comparison->forItem($item, $observedAt),
             ];
         })->values();
 
         return [
             'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
+            'category' => $report->category, 'automatic_assessment_json' => $report->automatic_assessment_json,
             'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
             'raw_ocr_json' => $report->raw_ocr_json,
             'evaluator_confirmed_json' => $report->evaluator_confirmed_json,
@@ -257,9 +228,7 @@ class ReportReviewController extends Controller
     private function freshRow(ConsumerReport $report, ReceiptPriceComparison $comparison): array
     {
         return $this->reportRow(
-            ConsumerReport::with([
-                'store', 'items.srp', 'evidenceBundle.assets', 'evidenceAttempts.assets', 'activeVerificationRequest', 'latestVerificationRequest',
-            ])->findOrFail($report->id),
+            $this->reviewQuery()->findOrFail($report->id),
             $comparison,
         );
     }
@@ -321,7 +290,7 @@ class ReportReviewController extends Controller
             return $verification;
         });
 
-        return response()->json(['data' => $verification], 201);
+        return response()->json(['data' => $this->verificationRow($verification)], 201);
     }
 
     public function cancelVerification(Request $request, FieldVerificationRequest $verificationRequest, AdminAuthorizationService $auth, AuditTrailService $audit)
@@ -348,7 +317,7 @@ class ReportReviewController extends Controller
             $audit->recordOrFail($request, 'field_verification.cancelled', $verificationRequest);
         });
 
-        return response()->json(['data' => $verificationRequest->fresh()]);
+        return response()->json(['data' => $this->verificationRow($verificationRequest->fresh())]);
     }
 
     public function reopenVerification(Request $request, FieldVerificationRequest $verificationRequest, AdminAuthorizationService $auth, AuditTrailService $audit)
@@ -377,7 +346,15 @@ class ReportReviewController extends Controller
             $audit->recordOrFail($request, 'field_verification.reopened', $verificationRequest);
         });
 
-        return response()->json(['data' => $verificationRequest->fresh()]);
+        return response()->json(['data' => $this->verificationRow($verificationRequest->fresh())]);
+    }
+
+    private function verificationRow(FieldVerificationRequest $verification): array
+    {
+        $report = ConsumerReport::query()->select(['id', 'status'])
+            ->selectRaw(ConsumerReportAssessment::categorySql().' AS category')->find($verification->consumer_report_id);
+
+        return $verification->toArray() + ['report_state' => $report ? ['status' => $report->status, 'category' => $report->category] : null];
     }
     private const DECIDABLE_STATUSES = ReportReviewService::DECIDABLE_STATUSES;
 

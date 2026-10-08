@@ -27,6 +27,7 @@ class ConsumerReport extends Model
         'raw_ocr_json',
         'consumer_confirmed_json',
         'evaluator_confirmed_json',
+        'automatic_assessment_json',
         'status',
         'submitted_at',
         'consumer_confirmed_at',
@@ -39,6 +40,7 @@ class ConsumerReport extends Model
         'raw_ocr_json' => 'array',
         'consumer_confirmed_json' => 'array',
         'evaluator_confirmed_json' => 'array',
+        'automatic_assessment_json' => 'array',
         'submitted_at' => 'datetime',
         'consumer_confirmed_at' => 'datetime',
     ];

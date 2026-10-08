@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-09 — Consumer report assessment and confirmed findings
+
+- Reliable clean receipt reports resolve automatically after consumer submission. Unidentified/uncertain lines, unavailable references, extraction warnings, and unverified originals prevent automatic clean resolution. A reliable overpriced line takes precedence over other uncertain lines and enters Violations for DTI checking.
+- System assessment snapshots remain separate from evaluator decisions and create no confirmed regulatory findings. Confirmed Findings requires an actual DTI-confirmed finding; field verification completion alone is not confirmation. Manual insufficient evidence stays For Review.
+- New submissions and existing undecided reports use the same assessment. An explicit preview/apply batch preserves past decisions and active referrals. Local implementation and release boundary: [[plans/consumer-report-assessment/README]].
+
 ## 2026-10-08 — Gemini receipt processing recovery
 
 - Keep Gemini 3.8 Flash primary; a transient provider failure selects Gemini 3.5 Flash-Lite for subsequent attempts on the same immutable evidence. The saved choice survives manual retries; a new capture starts with primary.

@@ -116,6 +116,7 @@ class ProcessReceiptEvidence implements ShouldQueue
                     'merchant' => $result['merchant'] ?? null,
                     'detected_total' => $result['detected_total'] ?? null,
                     'transaction_date' => $result['transaction_date'] ?? null,
+                    'transaction_date_uncertain' => $result['transaction_date_uncertain'] ?? null,
                     'receipt_number' => $result['receipt_number'] ?? null,
                     'subtotal' => $result['subtotal'] ?? null,
                     'subtotal_uncertain' => (bool) ($result['subtotal_uncertain'] ?? false),

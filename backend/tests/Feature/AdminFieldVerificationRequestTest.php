@@ -63,6 +63,8 @@ class AdminFieldVerificationRequestTest extends TestCase
             'field_officer_id' => $officer->id,
         ])->assertCreated()
             ->assertJsonPath('data.status', 'claimed')
+            ->assertJsonPath('data.report_state.category', 'with_officer')
+            ->assertJsonPath('data.report_state.status', 'Referred for field verification')
             ->assertJsonPath('data.source_type', 'complaint')
             ->assertJsonPath('data.claimed_by', $officer->id)
             ->assertJsonPath('data.consumer_report_id', $report->id);

@@ -254,6 +254,13 @@ class ReceiptExtractionValidatorTest extends TestCase
         $this->assertSame('2026-09-04', $this->validate(self::payload(['transaction_date' => ['text' => 'Sep 4, 2026', 'uncertain' => false]]))['transaction_date']);
     }
 
+    public function test_date_uncertainty_is_preserved_for_automatic_report_assessment(): void
+    {
+        $result = $this->validate(self::payload(['transaction_date' => ['text' => 'Sep 4, 2026', 'uncertain' => true]]));
+        $this->assertSame('2026-09-04', $result['transaction_date']);
+        $this->assertTrue($result['transaction_date_uncertain'] ?? null);
+    }
+
     public function test_missing_merchant_and_total_stay_null_and_are_never_filled_from_the_store_record(): void
     {
         $result = $this->validate(self::payload([

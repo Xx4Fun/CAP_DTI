@@ -143,6 +143,7 @@ class ReceiptGeminiExtractionTest extends TestCase
         $this->assertSame(['provider' => 'gemini', 'model' => 'gemini-3.8-flash'], $report->raw_ocr_json['engine']);
         $this->assertSame('matched', $report->raw_ocr_json['reconciliation']['status']);
         $this->assertSame('OR 000123', $report->raw_ocr_json['receipt_number']);
+        $this->assertFalse($report->raw_ocr_json['transaction_date_uncertain']);
         $this->assertSame('primary', $bundle->processing_result_json['engine']['route']);
         $this->assertSame(1136, $bundle->processing_result_json['engine']['usage']['input_tokens']);
         $this->assertArrayHasKey('extraction_raw', $bundle->processing_result_json);
