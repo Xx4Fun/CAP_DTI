@@ -111,7 +111,6 @@ const SwipeableReportRow = ({ report, onOpen, onArchive, onDelete }: SwipeableRe
       vertical: false,
     };
     suppressClickRef.current = false;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -126,6 +125,7 @@ const SwipeableReportRow = ({ report, onOpen, onArchive, onDelete }: SwipeableRe
       return;
     }
     if (deltaX >= 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
     const width = Math.max(event.currentTarget.getBoundingClientRect().width, 1);
     const nextOffset = Math.max(deltaX, width * -0.7);

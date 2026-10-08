@@ -5,15 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { ReceiptDraftView } from './ReceiptDraftView';
 
-const { getResumeTokenMock, deleteResumeTokenMock } = vi.hoisted(() => ({
+const { getResumeTokenMock, deleteResumeTokenMock, getTrackingTokenMock } = vi.hoisted(() => ({
   getResumeTokenMock: vi.fn(),
   deleteResumeTokenMock: vi.fn(),
+  getTrackingTokenMock: vi.fn(),
 }));
 
 vi.mock('../app/receiptResumeStore', () => ({
   getReceiptResumeToken: getResumeTokenMock,
   deleteReceiptResumeToken: deleteResumeTokenMock,
 }));
+vi.mock('../app/reportTrackingStore', () => ({ getReportTrackingToken: getTrackingTokenMock }));
 
 describe('ReceiptDraftView', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -21,6 +23,7 @@ describe('ReceiptDraftView', () => {
   beforeEach(() => {
     getResumeTokenMock.mockReset().mockResolvedValue('rsm_device');
     deleteResumeTokenMock.mockReset().mockResolvedValue(undefined);
+    getTrackingTokenMock.mockReset().mockResolvedValue('trk_saved');
     history.replaceState(null, '', '/reports/REP-20260816-READY/review');
     if (!URL.createObjectURL) Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn() });
     if (!URL.revokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
@@ -432,22 +435,122 @@ describe('ReceiptDraftView', () => {
     ['a matched merchant', { merchant: { status: 'matched', display_name: 'TEST SHOP' } }, 'Matches selected store'],
     ['a confidently read different merchant', { extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG', uncertain: false } }, 'Wrong store?'],
     ['an uncertain merchant read', { extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG', uncertain: true } }, 'Store not confirmed'],
+    ['an uncertain matched merchant', { extraction_provider: 'gemini', merchant: { status: 'matched', display_name: 'TEST SHOP', uncertain: true } }, 'Store not confirmed'],
     ['a deleted selected store', { store: null, extraction_provider: 'gemini', merchant: { status: 'mismatch', display_name: 'MERCURY DRUG' } }, 'Store not confirmed'],
     ['an OCR mismatch without a merchant name', { merchant: { status: 'mismatch', display_name: null } }, 'Store not confirmed'],
     ['no merchant text', {}, 'Store not confirmed'],
-  ])('labels the store check for %s without blocking submission', async (_case, overrides, label) => {
+  ])('blocks only a clear store mismatch: %s', async (_case, overrides, label) => {
     vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
       ? { data: new Blob(['photo']) }
-      : { data: { data: reviewData({ evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }], ...overrides }) } });
+      : { data: { data: reviewData({ evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }], manual_review_required: false, ...overrides }) } });
     render(<ReceiptDraftView reference="REP-20260816-READY" mode="review" />);
 
     expect(await screen.findByText(label)).toBeInTheDocument();
     const helper = screen.queryByText(/Receipt shows .* but you selected/);
-    if (label === 'Wrong store?') expect(helper).toHaveTextContent('Receipt shows MERCURY DRUG, but you selected Test shop. You can still submit — DTI will check.');
+    if (label === 'Wrong store?') expect(helper).toHaveTextContent(/Change the selected store|change the selected store/);
     else expect(helper).not.toBeInTheDocument();
     fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
     await userEvent.click(screen.getByRole('checkbox'));
-    expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeEnabled();
+    if (label === 'Wrong store?') {
+      expect(screen.getByRole('checkbox')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Change store' })).toBeEnabled();
+    } else {
+      expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeEnabled();
+      if (label === 'Store not confirmed') expect(screen.getByText(/Some details couldn’t be read reliably/)).toBeInTheDocument();
+    }
+  });
+
+  it('opens submitted receipt photos and saved results with tracking access and no mutation controls', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['photo']) }
+      : { data: { data: reviewData({ status: 'Resolved', read_only: true, submitted_at: '2026-10-09T01:00:00Z',
+        items: [{ sequence: 0, item_name: 'Saved rice', quantity: 1, line_total: 45 }],
+        evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] }) } });
+    render(<ReceiptDraftView reference="REP-SENT" mode="submitted" onBack={vi.fn()} />);
+    expect(await screen.findByText('Saved rice')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'Original receipt section 1' })).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/public/reports/REP-SENT/review', expect.objectContaining({ headers: { 'X-Tracking-Token': 'trk_saved' } }));
+    expect(get).toHaveBeenCalledWith('/public/reports/REP-SENT/evidence-assets/1', expect.objectContaining({ headers: { 'X-Tracking-Token': 'trk_saved' } }));
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retake|Add section|Restart|Change store|Submit report|Retry processing/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'View full size: section 1' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('changes the store using the saved draft and clears acknowledgement without uploading again', async () => {
+    const initial = reviewData({ merchant: { status: 'matched', display_name: 'Test shop' },
+      evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] });
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).includes('/evidence-assets/')) return { data: new Blob(['photo']) };
+      if (url === '/public/establishments') return { data: { data: [{ id: 2, store_name: 'Other shop', address: 'San Jose' }] } };
+      return { data: { data: initial } };
+    });
+    const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { data: { ...initial, store: { id: 2, store_name: 'Other shop', address: 'San Jose' } } } });
+    const onStoreChanged = vi.fn();
+    render(<ReceiptDraftView reference="REP-CHANGE" mode="review" onStoreChanged={onStoreChanged} />);
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Change store' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue with Other shop' }));
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toBeChecked());
+    expect(post).toHaveBeenCalledExactlyOnceWith('/public/reports/REP-CHANGE/store', {
+      store_id: 2, expected_store_id: 1, expected_attempt_number: 1,
+    }, expect.objectContaining({ headers: { 'X-Report-Resume-Token': 'rsm_device' } }));
+    expect(onStoreChanged).toHaveBeenCalledWith('Other shop');
+    expect(screen.getByRole('button', { name: 'Submit report to DTI' })).toBeDisabled();
+  });
+
+  it('cancels store selection without altering the draft', async () => {
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => url === '/public/establishments'
+      ? { data: { data: [] } } : { data: { data: reviewData() } });
+    const post = vi.spyOn(apiClient, 'post');
+    render(<ReceiptDraftView reference="REP-CANCEL" mode="review" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Change store' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Back to receipt' }));
+    expect(await screen.findByText('Test shop')).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('shows submission success even when deleting the revoked local resume credential fails', async () => {
+    deleteResumeTokenMock.mockRejectedValue(new Error('Device storage unavailable'));
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => String(url).includes('/evidence-assets/')
+      ? { data: new Blob(['photo']) } : { data: { data: reviewData({ evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] }) } });
+    vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { data: { report_reference: 'REP-ACCEPTED', status: 'Submitted', submitted_at: '2026-10-09T01:00:00Z' } } });
+    render(<ReceiptDraftView reference="REP-ACCEPTED" mode="review" />);
+    fireEvent.load(await screen.findByRole('img', { name: 'Original receipt section 1' }));
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
+    expect(await screen.findByRole('heading', { name: 'Report submitted to DTI' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View receipt and results' })).toBeEnabled();
+    expect(screen.queryByText(/report was not submitted/i)).not.toBeInTheDocument();
+  });
+
+  it('shows unavailable access when the submitted report has no saved tracking credential', async () => {
+    getTrackingTokenMock.mockResolvedValue(null);
+    const get = vi.spyOn(apiClient, 'get');
+    render(<ReceiptDraftView reference="REP-NOACCESS" mode="submitted" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/secure report credential/i);
+    expect(screen.queryByRole('button', { name: 'Submit report to DTI' })).not.toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('retries missing photos in submitted viewing without exposing correction controls', async () => {
+    let missing = true;
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).includes('/evidence-assets/')) {
+        if (missing) throw new Error('Photo unavailable');
+        return { data: new Blob(['photo']) };
+      }
+      return { data: { data: reviewData({ status: 'Submitted', read_only: true,
+        evidence: [{ id: 1, sequence: 0, mime_type: 'image/jpeg', size_bytes: 5 }] }) } };
+    });
+    render(<ReceiptDraftView reference="REP-MISSING" mode="submitted" />);
+    expect(await screen.findByText('Section 1 could not be loaded.')).toBeInTheDocument();
+    missing = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading photos' }));
+    expect(await screen.findByRole('img', { name: 'Original receipt section 1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retake section 1' })).not.toBeInTheDocument();
   });
 
   it('clears acknowledgement when refreshing a changed evidence attempt', async () => {

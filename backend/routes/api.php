@@ -63,6 +63,7 @@ Route::prefix('public')->group(function () {
         Route::post('/reports/{reference}/recapture-session', [ReceiptReportController::class, 'startRecapture']);
         Route::post('/reports/{reference}/recapture', [ReceiptReportController::class, 'finalizeRecapture']);
         Route::get('/reports/{reference}/review', [ReceiptReportController::class, 'review']);
+        Route::post('/reports/{reference}/store', [ReceiptReportController::class, 'changeStore']);
         Route::get('/reports/{reference}/evidence-assets/{asset}', [ReceiptReportController::class, 'evidenceAsset']);
         Route::post('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'subscribe']);
         Route::delete('/reports/{reference}/push-subscription', [ReceiptReportController::class, 'unsubscribe']);

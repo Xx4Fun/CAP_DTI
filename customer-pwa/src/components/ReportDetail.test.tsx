@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient, type TrackReportResponse } from '../api/client';
@@ -93,6 +93,18 @@ describe('ReportDetail', () => {
     await userEvent.setup().click(back);
 
     expect(onBack).toHaveBeenCalledOnce();
+  });
+  it('opens the submitted receipt viewer and returns to report details', async () => {
+    history.replaceState({ fromReportList: true }, '', '/reports/track/REP-NEWEST');
+    getTrackingTokenMock.mockResolvedValue('trk_newest');
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: trackedReport } });
+    render(<ReportDetail reference="REP-NEWEST" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'View receipt and results' }));
+    expect(location.pathname).toBe('/reports/REP-NEWEST/receipt');
+    expect(history.state).toEqual({ fromReportDetail: true });
+    history.back();
+    await waitFor(() => expect(location.pathname).toBe('/reports/track/REP-NEWEST'));
+    expect(history.state.fromReportList).toBe(true);
   });
 
   it('announces that the report reference was copied', async () => {

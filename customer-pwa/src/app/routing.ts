@@ -10,6 +10,7 @@ export type AppRoute =
   | { name: 'report-detail'; reference: string }
   | { name: 'receipt-processing'; reference: string }
   | { name: 'receipt-review'; reference: string }
+  | { name: 'receipt-view'; reference: string }
   | { name: 'more' };
 
 export function parseRoute(pathname: string): AppRoute {
@@ -18,7 +19,7 @@ export function parseRoute(pathname: string): AppRoute {
     : pathname;
   const productMatch = normalizedPath.match(/^\/prices\/(\d+)$/);
   const reportDetailMatch = normalizedPath.match(/^\/reports\/track\/([^/]+)$/);
-  const receiptMatch = normalizedPath.match(/^\/reports\/([^/]+)\/(processing|review)$/);
+  const receiptMatch = normalizedPath.match(/^\/reports\/([^/]+)\/(processing|review|receipt)$/);
 
   if (productMatch) {
     return { name: 'product', commodityId: Number(productMatch[1]) };
@@ -28,7 +29,7 @@ export function parseRoute(pathname: string): AppRoute {
   }
   if (receiptMatch) {
     return {
-      name: receiptMatch[2] === 'review' ? 'receipt-review' : 'receipt-processing',
+      name: receiptMatch[2] === 'receipt' ? 'receipt-view' : receiptMatch[2] === 'review' ? 'receipt-review' : 'receipt-processing',
       reference: decodeURIComponent(receiptMatch[1]),
     };
   }
@@ -51,15 +52,15 @@ export function pathFor(route: AppRoute): string {
   if (route.name === 'product') {
     return `/prices/${route.commodityId}`;
   }
-  if (route.name === 'receipt-processing' || route.name === 'receipt-review') {
-    const step = route.name === 'receipt-review' ? 'review' : 'processing';
+  if (route.name === 'receipt-processing' || route.name === 'receipt-review' || route.name === 'receipt-view') {
+    const step = route.name === 'receipt-view' ? 'receipt' : route.name === 'receipt-review' ? 'review' : 'processing';
     return `/reports/${encodeURIComponent(route.reference)}/${step}`;
   }
   if (route.name === 'report-detail') {
     return `/reports/track/${encodeURIComponent(route.reference)}`;
   }
 
-  const paths: Record<Exclude<AppRoute['name'], 'product' | 'report-detail' | 'receipt-processing' | 'receipt-review'>, string> = {
+  const paths: Record<Exclude<AppRoute['name'], 'product' | 'report-detail' | 'receipt-processing' | 'receipt-review' | 'receipt-view'>, string> = {
     home: '/',
     prices: '/prices',
     compare: '/compare',

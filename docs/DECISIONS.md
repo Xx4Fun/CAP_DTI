@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-09 — Consumer receipt store validation and private viewing
+
+- A confidently detected merchant mismatch blocks both review confirmation and the locked submission write. Missing or uncertain merchants remain eligible for DTI review.
+- Ready, unsubmitted drafts may correct their selected store using saved extraction without another AI request. Audit the correction; preserve original capture store context, evidence hashes, receipt values, and credentials.
+- Submitted receipt viewing uses the saved tracking credential and the shared review layout with mutation controls removed. Show saved system extraction separately from evaluator findings; historical item snapshots that are missing remain unavailable. Contract: [[customer-pwa-api]]. Implementation and verification are local until an authorized release.
+
 ## 2026-10-09 — Consumer report assessment and confirmed findings
 
 - Reliable clean receipt reports resolve automatically after consumer submission. Unidentified/uncertain lines, unavailable references, extraction warnings, and unverified originals prevent automatic clean resolution. A reliable overpriced line takes precedence over other uncertain lines and enters Violations for DTI checking.

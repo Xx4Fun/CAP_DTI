@@ -15,6 +15,10 @@ describe('routing', () => {
   it('falls back to home for unknown paths', () => {
     expect(parseRoute('/not-a-screen')).toEqual({ name: 'home' });
   });
+  it('opens a submitted receipt through its own stable URL', () => {
+    expect(parseRoute('/reports/REP-SENT/receipt')).toEqual({ name: 'receipt-view', reference: 'REP-SENT' });
+    expect(pathFor({ name: 'receipt-view', reference: 'REP-SENT' })).toBe('/reports/REP-SENT/receipt');
+  });
 
   it('generates stable report paths', () => {
     expect(pathFor({ name: 'new-report' })).toBe('/reports/new');

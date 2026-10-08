@@ -1195,6 +1195,207 @@ class ReceiptEvidenceWorkflowTest extends TestCase
         return "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 2, 0, 0, 0)).$chunk('IEND', '');
     }
 
+    public function test_clear_store_mismatch_blocks_review_and_confirmation_without_submission_writes(): void
+    {
+        [$report, $token] = $this->createReadyReport('WRONGSTORE');
+        $report->evidenceBundle->update(['processing_result_json' => [
+            'merchant' => ['status' => 'mismatch', 'display_name' => 'Mercury Drug', 'uncertain' => false],
+        ]]);
+        $base = "/api/public/reports/{$report->report_reference}";
+        $this->withHeader('X-Report-Resume-Token', $token)->getJson("{$base}/review")
+            ->assertOk()->assertJsonPath('data.can_submit', false)
+            ->assertJsonPath('data.can_change_store', true)
+            ->assertJsonPath('data.submission_block_reason.code', 'STORE_MISMATCH');
+        $this->postJson("{$base}/confirm-ocr", ['consumer_confirmed' => true])
+            ->assertUnprocessable()->assertJsonPath('code', 'STORE_MISMATCH');
+        $report->refresh();
+        $this->assertNull($report->submitted_at);
+        $this->assertNull($report->consumer_confirmed_at);
+        $this->assertNull($report->automatic_assessment_json);
+        $this->assertNotNull($report->resume_token_hash);
+        $this->assertDatabaseCount('citizen_tips', 0);
+        $this->assertDatabaseCount('report_status_histories', 0);
+    }
+
+    public function test_uncertain_missing_and_partial_merchants_remain_submittable(): void
+    {
+        foreach ([
+            ['status' => 'mismatch', 'display_name' => 'Mercury Drug', 'uncertain' => true],
+            ['status' => 'mismatch', 'display_name' => null],
+            ['status' => 'unverified', 'display_name' => 'JUAN'],
+            ['status' => 'matched', 'display_name' => 'Juan Grocery'],
+        ] as $index => $merchant) {
+            [$report, $token] = $this->createReadyReport('UNCERTAIN'.$index);
+            $report->evidenceBundle->update(['processing_result_json' => ['merchant' => $merchant]]);
+            $this->withHeader('X-Report-Resume-Token', $token)
+                ->getJson("/api/public/reports/{$report->report_reference}/review")
+                ->assertOk()->assertJsonPath('data.can_submit', true)->assertJsonPath('data.submission_block_reason', null);
+            $this->postJson("/api/public/reports/{$report->report_reference}/confirm-ocr", ['consumer_confirmed' => true])->assertOk();
+        }
+    }
+
+    public function test_store_correction_rechecks_saved_extraction_preserves_evidence_and_is_idempotent(): void
+    {
+        Queue::fake();
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        [$report, $token] = $this->createReadyReport('CHANGE');
+        $target = Store::create(['dti_sec_number' => 'SEC-MERCURY', 'store_name' => 'Mercury Drug', 'owner_name' => 'Mercury Drug Corp', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94]);
+        $result = [
+            'merchant' => ['status' => 'mismatch', 'display_name' => 'MERCURY DRUG', 'observed' => ['MERCURY DRUG', 'SAN JOSE'], 'uncertain' => false],
+            'warnings' => [\App\Services\Receipt\ReceiptWarning::make('STORE_NOT_CONFIRMED'), \App\Services\Receipt\ReceiptWarning::make('TOTAL_MISMATCH')],
+            'manual_review_required' => true, 'total' => '45.00', 'extraction_raw' => ['merchant' => ['text' => 'MERCURY DRUG', 'uncertain' => false]],
+        ];
+        $report->evidenceBundle->update(['processing_result_json' => $result, 'extraction_calls' => 1]);
+        $report->update(['raw_ocr_json' => $result]);
+        $item = $report->items()->create(['sequence' => 0, 'item_name' => 'Rice', 'observed_price' => 45]);
+        $originalAssets = $report->evidenceBundle->assets()->get()->toArray();
+        $credentials = [$report->tracking_token_hash, $report->resume_token_hash];
+        $base = "/api/public/reports/{$report->report_reference}/store";
+        $payload = ['store_id' => $target->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1];
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson($base, $payload)
+            ->assertOk()->assertJsonPath('data.store.id', $target->id)
+            ->assertJsonPath('data.merchant.status', 'matched')->assertJsonPath('data.can_submit', true)
+            ->assertJsonPath('data.warnings.0.code', 'TOTAL_MISMATCH');
+        $this->postJson($base, $payload)->assertOk();
+        $report->refresh()->load('evidenceBundle');
+        $this->assertSame($target->id, $report->store_id);
+        $this->assertSame($this->store->id, $report->captureSession->store_id);
+        $this->assertSame($this->store->id, $report->evidenceBundle->store_id);
+        $this->assertSame($originalAssets, $report->evidenceBundle->assets()->get()->toArray());
+        $this->assertSame($credentials, [$report->tracking_token_hash, $report->resume_token_hash]);
+        $this->assertSame('45.00', $report->raw_ocr_json['total']);
+        $this->assertSame($result['extraction_raw'], $report->evidenceBundle->processing_result_json['extraction_raw']);
+        $this->assertSame('matched', $report->raw_ocr_json['merchant']['status']);
+        $this->assertSame($result['merchant']['observed'], $report->raw_ocr_json['merchant']['observed']);
+        $this->assertTrue($report->raw_ocr_json['manual_review_required']);
+        $this->assertSame('Rice', $item->fresh()->item_name);
+        $this->assertSame(1, $report->evidenceBundle->extraction_calls);
+        $this->assertDatabaseCount('audit_events', 1);
+        $this->assertDatabaseHas('audit_events', ['action' => 'report.store_changed', 'subject_id' => $report->id]);
+        Queue::assertNotPushed(ProcessReceiptEvidence::class);
+    }
+
+    public function test_store_correction_rejects_stale_invalid_and_submitted_requests(): void
+    {
+        [$report, $token] = $this->createReadyReport('STALESTORE');
+        $base = "/api/public/reports/{$report->report_reference}/store";
+        $payload = ['store_id' => $this->store->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1];
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson($base, [...$payload, 'expected_attempt_number' => 2])->assertConflict();
+        $this->postJson($base, [...$payload, 'expected_store_id' => 99999])->assertConflict();
+        $this->postJson($base, [...$payload, 'store_id' => 99999])->assertUnprocessable();
+        $this->postJson($base, [...$payload, 'merchant' => 'Invented'])->assertUnprocessable();
+        $report->update(['status' => 'Resolved', 'consumer_confirmed_at' => now(), 'submitted_at' => now()]);
+        $this->postJson($base, $payload)->assertConflict();
+        $this->assertDatabaseCount('audit_events', 0);
+        $this->withHeader('X-Report-Resume-Token', 'invalid')->postJson($base, $payload)->assertForbidden();
+    }
+
+    public function test_submitted_receipt_is_viewable_with_tracking_credential_after_evaluation(): void
+    {
+        [$report, $token] = $this->createReadyReport('VIEWONLY');
+        $savedItem = ['sequence' => 0, 'item_name' => 'RICE', 'observed_price' => 45];
+        $report->evidenceBundle->update(['processing_result_json' => ['items' => [$savedItem], 'merchant' => ['status' => 'matched']]]);
+        $report->update(['status' => 'Resolved', 'consumer_confirmed_at' => now(), 'submitted_at' => now(), 'resume_token_hash' => null]);
+        $report->items()->create(['sequence' => 0, 'item_name' => 'DTI corrected name', 'observed_price' => 12]);
+        $base = "/api/public/reports/{$report->report_reference}";
+        $this->withHeader('X-Tracking-Token', 'tracking-VIEWONLY')->getJson("{$base}/review")
+            ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('data.read_only', true)->assertJsonPath('data.can_submit', false)
+            ->assertJsonPath('data.can_change_store', false)->assertJsonPath('data.items.0.item_name', 'RICE')
+            ->assertJsonPath('data.items.0.observed_price', 45)->assertJsonMissingPath('data.evaluator_confirmed_json');
+        $asset = $report->evidenceBundle->assets()->first();
+        $this->get("{$base}/evidence-assets/{$asset->id}")->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $this->withHeader('X-Tracking-Token', 'invalid')->getJson("{$base}/review")->assertForbidden();
+        $this->withHeader('X-Tracking-Token', '')->withHeader('X-Report-Resume-Token', $token)->getJson("{$base}/review")->assertForbidden();
+    }
+
+    public function test_historical_receipt_does_not_present_evaluator_items_as_saved_extraction(): void
+    {
+        [$report] = $this->createReadyReport('HISTORICAL');
+        $report->evidenceBundle->update(['processing_result_json' => null]);
+        $report->update(['status' => 'Resolved', 'consumer_confirmed_at' => now(), 'submitted_at' => now(), 'resume_token_hash' => null]);
+        $report->items()->create(['sequence' => 0, 'item_name' => 'DTI corrected name', 'observed_price' => 12]);
+        $base = "/api/public/reports/{$report->report_reference}";
+        $this->withHeader('X-Tracking-Token', 'tracking-HISTORICAL')->getJson("{$base}/review")
+            ->assertOk()->assertJsonPath('data.read_only', true)
+            ->assertJsonPath('data.results_available', false)->assertJsonPath('data.items', []);
+        $asset = $report->evidenceBundle->assets()->first();
+        Storage::disk($asset->disk)->delete($asset->path);
+        $this->get("{$base}/evidence-assets/{$asset->id}")->assertNotFound();
+    }
+
+    public function test_confirmation_rechecks_the_corrected_store_and_uncertainty_is_never_cleared(): void
+    {
+        [$report, $token] = $this->createReadyReport('RECHECK');
+        $target = Store::create(['dti_sec_number' => 'SEC-OTHER', 'store_name' => 'Another Grocery', 'owner_name' => 'Another Corp', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94]);
+        $saved = ['merchant' => ['status' => 'matched', 'display_name' => 'Juan Grocery', 'uncertain' => false], 'warnings' => []];
+        $report->evidenceBundle->update(['processing_result_json' => $saved]);
+        $report->update(['raw_ocr_json' => $saved]);
+        $base = "/api/public/reports/{$report->report_reference}";
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("{$base}/store", [
+            'store_id' => $target->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1,
+        ])->assertOk()->assertJsonPath('data.can_submit', false);
+        $this->postJson("{$base}/confirm-ocr", ['consumer_confirmed' => true])->assertUnprocessable()->assertJsonPath('code', 'STORE_MISMATCH');
+        $this->assertDatabaseCount('citizen_tips', 0);
+        $result = $report->evidenceBundle->fresh()->processing_result_json;
+        $result['merchant']['uncertain'] = true;
+        $report->evidenceBundle->update(['processing_result_json' => $result]);
+        $this->postJson("{$base}/store", ['store_id' => $this->store->id, 'expected_store_id' => $target->id, 'expected_attempt_number' => 1])
+            ->assertOk()->assertJsonPath('data.merchant.uncertain', true)->assertJsonPath('data.manual_review_required', true);
+    }
+
+    public function test_store_change_removes_only_store_warning_from_both_saved_results(): void
+    {
+        [$report, $token] = $this->createReadyReport('ONLYWARNING');
+        $target = Store::create(['dti_sec_number' => 'SEC-WARNING', 'store_name' => 'Mercury Drug', 'owner_name' => 'Mercury Corp', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94]);
+        $report->evidenceBundle->update(['processing_result_json' => [
+            'merchant' => ['status' => 'mismatch', 'display_name' => 'MERCURY DRUG', 'uncertain' => false],
+            'manual_review_required' => true, 'warnings' => [\App\Services\Receipt\ReceiptWarning::make('STORE_NOT_CONFIRMED')],
+        ]]);
+        // An older compact raw result lacks warning details; the bundle remains the authoritative source.
+        $report->update(['raw_ocr_json' => ['manual_review_required' => true]]);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/store", [
+            'store_id' => $target->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1,
+        ])->assertOk()->assertJsonPath('data.warnings', [])->assertJsonPath('data.manual_review_required', false);
+        $this->assertFalse($report->fresh()->raw_ocr_json['manual_review_required']);
+    }
+
+    public function test_store_correction_rechecks_submission_after_the_store_lock(): void
+    {
+        [$report, $token] = $this->createReadyReport('CONFIRM-RACE');
+        $target = Store::create(['dti_sec_number' => 'SEC-RACE', 'store_name' => 'Other Store', 'owner_name' => 'Other Owner', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94]);
+        $interleaved = false;
+        // Simulate confirmation winning between credential lookup and the locked report read.
+        Store::retrieved(function (Store $store) use ($report, $target, &$interleaved) {
+            if ($interleaved || $store->id !== $target->id) return;
+            $interleaved = true;
+            ConsumerReport::whereKey($report->id)->update(['consumer_confirmed_at' => now(), 'submitted_at' => now(), 'status' => 'Submitted']);
+        });
+        try {
+            $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/store", [
+                'store_id' => $target->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1,
+            ])->assertConflict();
+        } finally {
+            \Illuminate\Support\Facades\Event::forget('eloquent.retrieved: '.Store::class);
+        }
+        $this->assertTrue($interleaved);
+        $this->assertSame($this->store->id, $report->fresh()->store_id);
+        $this->assertDatabaseCount('audit_events', 0);
+    }
+
+    public function test_store_correction_rolls_back_when_audit_persistence_fails(): void
+    {
+        [$report, $token] = $this->createReadyReport('AUDITSTORE');
+        $target = Store::create(['dti_sec_number' => 'SEC-AUDIT', 'store_name' => 'Another Store', 'owner_name' => 'Another Corp', 'address' => 'San Jose', 'latitude' => 10.74, 'longitude' => 121.94]);
+        $original = $report->evidenceBundle->processing_result_json;
+        $this->mock(\App\Services\Admin\AuditTrailService::class)->shouldReceive('recordAs')->once()->andReturn(null);
+        $this->withHeader('X-Report-Resume-Token', $token)->postJson("/api/public/reports/{$report->report_reference}/store", [
+            'store_id' => $target->id, 'expected_store_id' => $this->store->id, 'expected_attempt_number' => 1,
+        ])->assertStatus(503);
+        $this->assertSame($this->store->id, $report->fresh()->store_id);
+        $this->assertSame($original, $report->evidenceBundle->fresh()->processing_result_json);
+    }
+
     private function createReadyReport(string $suffix, bool $withEvidence = true): array
     {
         $resumeToken = 'rsm_'.Str::random(32);

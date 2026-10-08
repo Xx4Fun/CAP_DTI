@@ -56,7 +56,7 @@ const tabForRoute = (route: AppRoute): string => {
   if (route.name === 'prices' || route.name === 'product') return 'prices';
   if (route.name === 'compare') return 'compare';
   if (route.name === 'scan') return 'scan';
-  if (route.name === 'track-report' || route.name === 'report-detail') return 'track';
+  if (route.name === 'track-report' || route.name === 'report-detail' || route.name === 'receipt-view') return 'track';
   if (route.name === 'more') return 'more';
   return 'reports';
 };
@@ -213,9 +213,17 @@ export const App: React.FC = () => {
   };
 
   useLayoutEffect(() => {
+    if (route.name !== 'track-report') return;
+    const previous = history.scrollRestoration;
+    // Native back restoration otherwise overwrites the list position restored below.
+    history.scrollRestoration = 'manual';
+    return () => { history.scrollRestoration = previous; };
+  }, [route.name]);
+
+  useLayoutEffect(() => {
     const previousRouteName = previousRouteNameRef.current;
     previousRouteNameRef.current = route.name;
-    if (route.name !== 'track-report' || !['report-detail', 'receipt-processing', 'receipt-review'].includes(previousRouteName)) return;
+    if (route.name !== 'track-report' || !['report-detail', 'receipt-processing', 'receipt-review', 'receipt-view'].includes(previousRouteName)) return;
 
     const state = history.state as { reportListScrollY?: unknown } | null;
     const savedScrollY = typeof state?.reportListScrollY === 'number'
@@ -491,12 +499,20 @@ export const App: React.FC = () => {
           />
         )}
 
-        {(route.name === 'receipt-processing' || route.name === 'receipt-review') && (
+        {(route.name === 'receipt-processing' || route.name === 'receipt-review' || route.name === 'receipt-view') && (
           <ReceiptDraftView
             key={`${route.name}:${route.reference}`}
             reference={route.reference}
-            mode={route.name === 'receipt-review' ? 'review' : 'processing'}
-            onBack={returnToReportList}
+            mode={route.name === 'receipt-view' ? 'submitted' : route.name === 'receipt-review' ? 'review' : 'processing'}
+            backLabel={route.name === 'receipt-view' && history.state?.fromReportDetail === true ? 'Back to report details' : 'Back to My Reports'}
+            onBack={() => {
+              if (route.name === 'receipt-view' && history.state?.fromReportDetail === true) history.back();
+              else returnToReportList();
+            }}
+            onStoreChanged={(storeName) => {
+              const existing = getRecentReports().find(report => report.reportReference === route.reference);
+              if (existing) setRecentReports(saveRecentReport({ ...existing, storeName }));
+            }}
             onStatus={(status) => updateRecentReportStatus(route.reference, status)}
             onSubmitted={(result) => updateRecentReportStatus(result.report_reference, result.status, result.submitted_at)}
           />
@@ -504,7 +520,7 @@ export const App: React.FC = () => {
           </Suspense>
         </ErrorBoundary>
       </main>
-      <BackToTop hidden={routeChunkPending || route.name === 'receipt-processing' || route.name === 'receipt-review'} />
+      <BackToTop hidden={routeChunkPending || route.name === 'receipt-processing' || route.name === 'receipt-review' || route.name === 'receipt-view'} />
     </div>
     </BackNavigationProvider>
   );

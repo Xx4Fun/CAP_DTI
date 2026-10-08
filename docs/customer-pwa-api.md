@@ -149,35 +149,36 @@ Submits a formal receipt report with live camera capture image, cryptographic SH
 }
 ```
 
+### `GET /api/public/reports/{reference}/review`
+Returns the saved receipt photos, merchant details, system extraction, warnings, and review capabilities. Ready drafts and consumer-confirmed reports are readable, including after later evaluation status changes.
+
+* **Authentication:** `X-Report-Resume-Token` for drafts; `X-Tracking-Token` for submitted viewing. Report credentials remain private. Responses and evidence assets use `Cache-Control: no-store, private`.
+* **Capability fields:** `read_only`, `can_submit`, `can_change_store`, `submission_block_reason` (null or `{code, message}`), `submitted_at`, `attempt_number`, and `results_available`.
+* Clear merchant mismatch means status `mismatch`, a nonempty detected name, no uncertainty flag, and an existing selected store. It blocks submission; missing, partial, or uncertain merchant names remain eligible with a warning.
+* Submitted items come from saved extraction snapshots, never evaluator-corrected item rows. Missing historical snapshots or photos are explicitly unavailable.
+* `/reports/{reference}/receipt` in the Consumer PWA opens a view-only layout using the device's tracking credential. Photo zoom, back navigation, and retrying reads remain available.
+
+### `POST /api/public/reports/{reference}/store`
+Corrects the selected store of a ready, unsubmitted receipt. Uses the same report credentials as review.
+
+```json
+{
+  "store_id": 2,
+  "expected_store_id": 1,
+  "expected_attempt_number": 1
+}
+```
+
+Returns refreshed review data. Invalid stores or extra receipt fields return 422; stale store/attempt expectations and submitted receipts return 409. Repeating an already-applied correction is a no-op. Store and report locks protect eligibility; audit metadata records old/new store IDs and the receipt attempt. Saved extraction is rechecked without an AI request; unrelated warnings, photos, hashes, credentials, receipt values, and capture history remain intact. Capture session and evidence bundle store IDs retain their original association.
+
 ### `POST /api/public/reports/{reference}/confirm-ocr`
-Allows the consumer to confirm or correct recognized OCR product fields.
-* **Authentication:** None (Requires `tracking_token` parameter)
-* **Request Body:**
-```json
-{
-  "tracking_token": "trk_9a8b7c6d5e4f3a2b",
-  "confirmed_items": [
-    {
-      "commodity_id": 1,
-      "commodity_name": "Regular Milled Rice",
-      "receipt_price": 45.00,
-      "srp_baseline": 38.00,
-      "quantity": 1
-    }
-  ]
-}
-```
-* **Response (200 OK):**
-```json
-{
-  "success": true,
-  "message": "OCR field corrections stored successfully.",
-  "data": {
-    "report_reference": "REP-20260722-A8F2",
-    "status": "Under initial evaluation"
-  }
-}
-```
+Confirms the saved system extraction and submits the receipt for DTI evaluation. Receipt values are read-only; edited item fields are prohibited.
+
+* **Authentication:** `X-Report-Resume-Token` or `X-Tracking-Token` (existing `tracking_token` body parameter remains supported).
+* **Request body:** `{ "consumer_confirmed": true }`.
+* **Response:** `{ "success": true, "data": { "report_reference": "REP-...", "status": "Submitted", "submitted_at": "..." } }`; automatic assessment may return a later status.
+* The final transaction returns 422 with `code: "STORE_MISMATCH"` for a clear merchant mismatch before submission, assessment, status history, or Citizen Tip writes.
+* Successful confirmation revokes the draft resume credential. The Consumer PWA removes its local copy and retains the tracking credential for private viewing.
 
 ### `GET /api/public/reports/track`
 Tracks a report's sanitized public status using public reference and secret tracking token.

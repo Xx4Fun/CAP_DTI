@@ -16,6 +16,7 @@ import { apiClient, type TrackReportResponse } from '../api/client';
 import { getReportTrackingToken } from '../app/reportTrackingStore';
 import { reportStatusTone } from '../app/reportPresentation';
 import { deriveTimelineItems } from '../app/status';
+import { navigate } from '../app/routing';
 import './TrackReport.css';
 
 interface ReportDetailProps {
@@ -163,6 +164,10 @@ export const ReportDetail = ({ reference, onBack, onReportTracked }: ReportDetai
             </div>
           </section>
 
+          <button type="button" className="btn-secondary" onClick={() => navigate({ name: 'receipt-view', reference }, {
+            state: { fromReportDetail: true },
+          })}>View receipt and results</button>
+
           <section className="track-report-timeline-section" aria-labelledby="report-progress-title">
             <h2 id="report-progress-title" className="track-report-timeline-title"><Clock size={19} aria-hidden="true" /> Evaluation progress</h2>
             <div className="track-report-timeline">
@@ -188,7 +193,7 @@ export const ReportDetail = ({ reference, onBack, onReportTracked }: ReportDetai
 
           <div className="banner-info track-report-privacy">
             <ShieldCheck size={19} aria-hidden="true" />
-            <div><strong>Your privacy is protected.</strong> Only public evaluation updates appear here. Receipt evidence and personal details remain restricted.</div>
+            <div><strong>Your privacy is protected.</strong> Your saved credential protects access to receipt photos and results. Evaluation updates show only public status information.</div>
           </div>
         </>
       )}

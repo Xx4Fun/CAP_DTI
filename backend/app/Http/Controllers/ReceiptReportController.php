@@ -14,6 +14,9 @@ use App\Models\WebPushSubscription;
 use App\Services\Receipt\Extraction\ReceiptExtractionBudget;
 use App\Services\Receipt\Extraction\ReceiptFailureCodes;
 use App\Services\Receipt\ConsumerReportAssessment;
+use App\Services\Receipt\ReceiptMerchantMatcher;
+use App\Services\Receipt\ReceiptWarning;
+use App\Services\Admin\AuditTrailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -343,29 +346,129 @@ class ReceiptReportController extends Controller
     public function review(Request $request, string $reference)
     {
         $report = $this->authorizedReport($request, $reference);
-        if (! in_array($report->status, ['Ready for confirmation', 'Submitted'], true)) {
+        if (! $this->isSubmitted($report) && $report->status !== 'Ready for confirmation') {
             return response()->json([
                 'success' => false,
                 'message' => 'Receipt results are not ready for review.',
             ], 409);
         }
 
+        return $this->reviewResponse($report);
+    }
+
+    private function isSubmitted(ConsumerReport $report): bool
+    {
+        return $report->consumer_confirmed_at !== null || $report->submitted_at !== null || $report->status === 'Submitted';
+    }
+
+    /** The same authoritative rule drives review eligibility and the locked submission write. */
+    private function storeMismatchReason(ConsumerReport $report): ?array
+    {
+        $report->loadMissing(['store', 'evidenceBundle']);
+        $merchant = $report->evidenceBundle?->processing_result_json['merchant'] ?? ($report->raw_ocr_json['merchant'] ?? []);
+        if (($merchant['status'] ?? null) !== 'mismatch' || trim((string) ($merchant['display_name'] ?? '')) === ''
+            || ($merchant['uncertain'] ?? false) === true || ! $report->store) {
+            return null;
+        }
+
+        return ['code' => 'STORE_MISMATCH', 'message' => 'Receipt shows '.$merchant['display_name'].', but you selected '.$report->store->store_name.'. Change the selected store or retake the receipt before submitting.'];
+    }
+
+    public function changeStore(Request $request, string $reference, ReceiptMerchantMatcher $matcher, AuditTrailService $audit)
+    {
+        $report = $this->authorizedReport($request, $reference);
+        $rules = [
+            'store_id' => 'required|integer|exists:stores,id',
+            'expected_store_id' => 'present|nullable|integer',
+            'expected_attempt_number' => 'required|integer|min:1',
+            'tracking_token' => 'sometimes|string',
+        ];
+        foreach (array_keys($request->except(array_keys($rules))) as $field) $rules[$field] = 'prohibited';
+        $data = $request->validate($rules);
+
+        DB::transaction(function () use ($report, $data, $matcher, $audit, $request) {
+            // Every writer locks stores before the report; sorting also avoids inverse store-change deadlocks.
+            $stores = Store::whereIn('id', array_filter([$report->store_id, $data['store_id']]))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
+            abort_if($this->isSubmitted($locked) || $locked->status !== 'Ready for confirmation', 409, 'Only an unsubmitted receipt ready for confirmation can change stores.');
+            abort_unless((int) $locked->store_id === (int) $report->store_id, 409, 'This report changed. Reload it and try again.');
+            $bundle = ReceiptEvidenceBundle::whereKey($locked->receipt_evidence_bundle_id)->lockForUpdate()->first();
+            abort_unless($bundle && (int) $bundle->attempt_number === (int) $data['expected_attempt_number'], 409, 'This receipt attempt changed. Reload it and try again.');
+            // A retry of an already-applied correction is a no-op, with no duplicate audit or extraction.
+            if ((int) $locked->store_id === (int) $data['store_id']) {
+                $lastChange = \App\Models\AuditEvent::where('subject_type', $locked->getMorphClass())
+                    ->where('subject_id', $locked->id)->where('action', 'report.store_changed')->latest('id')->first();
+                $replay = (int) data_get($lastChange?->metadata, 'old_store_id') === (int) $data['expected_store_id']
+                    && (int) data_get($lastChange?->metadata, 'new_store_id') === (int) $data['store_id']
+                    && (int) data_get($lastChange?->metadata, 'attempt_number') === (int) $data['expected_attempt_number'];
+                abort_unless((int) $locked->store_id === (int) $data['expected_store_id'] || $replay, 409, 'The selected store changed. Reload the receipt and try again.');
+                return;
+            }
+            abort_unless((int) $locked->store_id === (int) $data['expected_store_id'], 409, 'The selected store changed. Reload the receipt and try again.');
+            $target = $stores->get((int) $data['store_id']);
+            abort_unless($target, 422, 'The selected store is unavailable.');
+            $result = $bundle->processing_result_json ?? [];
+            $raw = $locked->raw_ocr_json ?? [];
+            $oldMerchant = $result['merchant'] ?? ($raw['merchant'] ?? []);
+            // Recheck only server-saved extraction. Customer-supplied receipt values are prohibited above.
+            $header = ! empty($oldMerchant['display_name']) ? [$oldMerchant['display_name']] : ($oldMerchant['observed'] ?? []);
+            $merchant = $matcher->match($target->store_name, $target->owner_name, $header);
+            $merchant['observed'] = $oldMerchant['observed'] ?? $merchant['observed'];
+            $merchant['display_name'] = $oldMerchant['display_name'] ?? ($merchant['display_name'] ?? null);
+            $merchant['uncertain'] = (bool) ($oldMerchant['uncertain'] ?? false);
+            $originalWarnings = $result['warnings'] ?? ($raw['warnings'] ?? []);
+            foreach ([$result, $raw] as $index => $saved) {
+                $previousWarnings = $saved['warnings'] ?? $originalWarnings;
+                $warnings = array_values(array_filter($previousWarnings, fn ($warning) => (is_array($warning) ? ($warning['code'] ?? null) : $warning) !== 'STORE_NOT_CONFIRMED'));
+                if ($merchant['status'] !== 'matched' || $merchant['uncertain']) $warnings[] = ReceiptWarning::make('STORE_NOT_CONFIRMED');
+                $saved['merchant'] = $merchant;
+                $saved['warnings'] = $warnings;
+                $saved['manual_review_required'] = $warnings !== [] || ($previousWarnings === [] && (bool) ($saved['manual_review_required'] ?? false));
+                if ($index === 0) $result = $saved; else $raw = $saved;
+            }
+            $oldStoreId = $locked->store_id;
+            $locked->update(['store_id' => $target->id, 'raw_ocr_json' => $raw]);
+            $bundle->update(['processing_result_json' => $result]);
+            // Capture-session and bundle store IDs remain the original capture context.
+            abort_unless($audit->recordAs($request, null, 'report.store_changed', $locked, [
+                'old_store_id' => $oldStoreId, 'new_store_id' => $target->id, 'attempt_number' => $bundle->attempt_number,
+            ]), 503, 'Audit trail is unavailable. The store change could not be saved.');
+        });
+
+        return $this->reviewResponse($report->fresh());
+    }
+
+    private function reviewResponse(ConsumerReport $report)
+    {
         $report->load(['store', 'items', 'evidenceBundle.assets']);
         $processingResult = $report->evidenceBundle?->processing_result_json ?? [];
+        $readOnly = $this->isSubmitted($report);
+        $blockReason = $this->storeMismatchReason($report);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'report_reference' => $report->report_reference,
                 'status' => $report->status,
+                'read_only' => $readOnly,
+                'can_submit' => ! $readOnly && $report->status === 'Ready for confirmation' && $blockReason === null,
+                'can_change_store' => ! $readOnly && $report->status === 'Ready for confirmation',
+                'submission_block_reason' => $blockReason,
+                'submitted_at' => $report->submitted_at?->toIso8601String(),
                 'attempt_number' => (int) ($report->evidenceBundle?->attempt_number ?? 1),
+                'results_available' => $readOnly ? is_array($processingResult['items'] ?? null) : $processingResult !== [] || ! empty($report->raw_ocr_json) || $report->items->isNotEmpty(),
                 'store' => $report->store ? [
                     'id' => $report->store->id,
                     'store_name' => $report->store->store_name,
                     'address' => $report->store->address,
                 ] : null,
                 'lines' => $report->raw_ocr_json['lines'] ?? [],
-                'items' => $report->items->map(fn ($item) => [
+                'items' => $readOnly
+                    ? collect($processingResult['items'] ?? [])->map(fn ($item) => collect($item)->only([
+                        'sequence', 'raw_text', 'item_name', 'quantity', 'unit', 'observed_price', 'unit_price', 'line_total',
+                        'uncertain_fields', 'section', 'possible_duplicate_of', 'ocr_confidence',
+                    ])->all())->values()
+                    : $report->items->map(fn ($item) => [
                     'sequence' => $item->sequence,
                     'raw_text' => $item->raw_text,
                     'item_name' => $item->item_name,
@@ -398,7 +501,7 @@ class ReceiptReportController extends Controller
                 'manual_review_required' => (bool) ($processingResult['manual_review_required'] ?? false),
                 'evidence' => $this->sourceEvidence($report),
             ],
-        ]);
+        ], 200, ['Cache-Control' => 'no-store, private']);
     }
 
     public function evidenceAsset(Request $request, string $reference, ReceiptEvidenceAsset $asset)
@@ -445,16 +548,6 @@ class ReceiptReportController extends Controller
                 'message' => 'Only a receipt that is ready for confirmation can be submitted.',
             ], 409);
         }
-        $report->loadMissing('evidenceBundle.assets');
-        $originals = $report->capture_mode === 'continuous_video_v1'
-            ? $report->evidenceBundle?->assets->where('kind', 'original_video') ?? collect()
-            : $report->evidenceBundle?->assets->where('kind', 'source_frame') ?? collect();
-        if ($originals->isEmpty() || $originals->contains(fn ($asset) => ! $asset->hasValidContent())) {
-            return response()->json([
-                'success' => false,
-                'message' => 'The original receipt evidence is unavailable. This report cannot be submitted.',
-            ], 409);
-        }
         DB::transaction(function () use ($report, $request, $assessment) {
             if ($report->store_id) Store::whereKey($report->store_id)->lockForUpdate()->first();
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
@@ -463,6 +556,15 @@ class ReceiptReportController extends Controller
                 return;
             }
             abort_unless($locked->status === 'Ready for confirmation', 409, 'Only a receipt that is ready for confirmation can be submitted.');
+
+            if ($reason = $this->storeMismatchReason($locked)) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'success' => false, 'code' => $reason['code'], 'message' => $reason['message'],
+                ], 422));
+            }
+            $locked->loadMissing('evidenceBundle.assets');
+            $originals = $locked->evidenceBundle?->assets->where('kind', $locked->capture_mode === 'continuous_video_v1' ? 'original_video' : 'source_frame') ?? collect();
+            abort_if($originals->isEmpty() || $originals->contains(fn ($asset) => ! $asset->hasValidContent()), 409, 'The original receipt evidence is unavailable. This report cannot be submitted.');
 
             $systemItems = $locked->items()->orderBy('sequence')->get()->map(fn ($item) => [
                 'sequence' => $item->sequence,
@@ -474,6 +576,17 @@ class ReceiptReportController extends Controller
                 'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
                 'uncertain_fields' => $item->uncertain_fields ?? [],
             ])->values()->all();
+            // Older completed bundles may not carry item snapshots. Save the system values once,
+            // before any DTI evaluation can occur, without exposing evaluator decisions to consumers.
+            if ($locked->evidenceBundle && ! array_key_exists('items', $locked->evidenceBundle->processing_result_json ?? [])) {
+                $locked->evidenceBundle->update(['processing_result_json' => [
+                    ...($locked->evidenceBundle->processing_result_json ?? []),
+                    'items' => $locked->items()->get()->map(fn ($item) => $item->only([
+                        'sequence', 'raw_text', 'item_name', 'quantity', 'unit', 'observed_price', 'unit_price', 'line_total',
+                        'uncertain_fields', 'section', 'possible_duplicate_of', 'ocr_confidence',
+                    ]))->all(),
+                ]]);
+            }
             $locked->update([
                 'consumer_confirmed_json' => null,
                 'consumer_confirmed_at' => now(),

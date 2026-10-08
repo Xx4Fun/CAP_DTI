@@ -1,84 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, ZoomIn } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw } from 'lucide-react';
 import { apiClient, type CaptureSessionResponse } from '../api/client';
 import { deleteReceiptResumeToken, getReceiptResumeToken } from '../app/receiptResumeStore';
 import { navigate } from '../app/routing';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 import { ReceiptPhotoViewer } from './ReceiptPhotoViewer';
+import { ReceiptReviewContent } from './ReceiptReviewContent';
+import { isWrongStore, type ReceiptReviewData, type ReceiptEvidence } from '../app/receiptReview';
+import { ReceiptStoreSelector } from './ReceiptStoreSelector';
+import { getReportTrackingToken } from '../app/reportTrackingStore';
+import { addRecentStore } from '../app/recentStores';
+import { useBackLayer } from '../hooks/useBackLayer';
 // Reuses the back-control styling that ReportDetail already imports from this stylesheet.
 import './TrackReport.css';
-
-interface ReceiptReviewItem {
-  sequence: number;
-  raw_text: string | null;
-  item_name: string | null;
-  quantity: number | null;
-  unit: string | null;
-  observed_price: number | null;
-  unit_price?: number | null;
-  line_total?: number | null;
-  /** Structured extraction only: fields that could not be read with confidence. */
-  uncertain_fields?: string[] | null;
-  section?: number | null;
-  /** Sequence of an earlier item this line may repeat where two photos overlap. */
-  possible_duplicate_of?: number | null;
-  ocr_confidence: number | null;
-}
-
-type ReceiptEvidence = { id: number; sequence: number; mime_type: string; size_bytes: number };
-
-type ReceiptAmountLine = { description?: string | null; kind?: string; direction?: 'add' | 'subtract'; amount: string | null; uncertain: boolean };
-
-interface ReceiptReviewData {
-  attempt_number?: number;
-  transaction_date?: string | null;
-  report_reference: string;
-  status: string;
-  store: { id: number; store_name: string; address: string } | null;
-  items: ReceiptReviewItem[];
-  continuity: { status: string; continuity_score?: number; reasons?: string[] } | null;
-  merchant: { status: string; observed?: string[]; display_name?: string | null; uncertain?: boolean } | null;
-  detected_total: number | null;
-  receipt_number?: string | null;
-  subtotal?: string | null;
-  subtotal_uncertain?: boolean;
-  total?: string | null;
-  total_uncertain?: boolean;
-  discounts?: ReceiptAmountLine[];
-  adjustments?: ReceiptAmountLine[];
-  reconciliation?: { status: string; checks?: Record<string, string> } | null;
-  /** `gemini` for structured extraction; uncertainty then comes from `uncertain_fields`, never from `ocr_confidence`. */
-  extraction_provider?: string | null;
-  warnings: Array<{ code: string; message: string }>;
-  manual_review_required: boolean;
-  lines: string[];
-  evidence: ReceiptEvidence[];
-}
-
-const peso = (value: number | string | null | undefined): string | null =>
-  value == null || value === '' || !Number.isFinite(Number(value)) ? null : `₱${Number(value).toFixed(2)}`;
-
-const FIELD_LABELS: Record<string, string> = { raw_description: 'Name', quantity: 'Quantity', unit_price: 'Unit price', line_total: 'Line total' };
-
-const ADJUSTMENT_LABELS: Record<string, string> = { vat_exemption: 'VAT exemption', rounding: 'Rounding', service_charge: 'Service charge' };
-
-const RECONCILIATION_MESSAGES: Record<string, string> = {
-  matched: 'The item amounts add up to the receipt total.',
-  mismatch: 'The item amounts do not add up to the receipt total. DTI will check the photos.',
-  unavailable: 'The amounts could not be checked automatically. DTI will check the photos.',
-};
-
-const UncertainBadge: React.FC<{ label?: string }> = ({ label = 'Uncertain' }) => <span className="receipt-uncertain-badge">{label}</span>;
-
-/** Only a confidently read merchant name that differs from the selected store counts as a wrong store. */
-const isWrongStore = (review: ReceiptReviewData) => review.merchant?.status === 'mismatch' && Boolean(review.merchant.display_name)
-  && review.merchant.uncertain !== true && Boolean(review.store?.store_name);
-
-const StoreCheck: React.FC<{ review: ReceiptReviewData }> = ({ review }) => {
-  if (review.merchant?.status === 'matched') return <span className="receipt-uncertain-badge receipt-store-check--ok">Matches selected store</span>;
-  if (isWrongStore(review)) return <UncertainBadge label="Wrong store?" />;
-  return <span className="receipt-uncertain-badge receipt-store-check--neutral">Store not confirmed</span>;
-};
 
 interface ReceiptProcessingData {
   report_reference: string;
@@ -104,20 +38,21 @@ export interface ReceiptConfirmationResult {
 
 interface ReceiptDraftViewProps {
   reference: string;
-  mode: 'processing' | 'review';
+  mode: 'processing' | 'review' | 'submitted';
   onSubmitted?: (result: ReceiptConfirmationResult) => void;
   onStatus?: (status: string) => void;
   onBack?: () => void;
+  onStoreChanged?: (storeName: string) => void;
+  backLabel?: string;
 }
 
-export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, mode, onSubmitted, onStatus, onBack }) => {
+export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, mode, onSubmitted, onStatus, onBack, onStoreChanged, backLabel = 'Back to My Reports' }) => {
   const [resumeToken, setResumeToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState<ReceiptProcessingData | null>(null);
   const [review, setReview] = useState<ReceiptReviewData | null>(null);
-  const [items, setItems] = useState<ReceiptReviewItem[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [submitted, setSubmitted] = useState<ReceiptConfirmationResult | null>(null);
   const [recaptureSession, setRecaptureSession] = useState<CaptureSessionResponse | null>(null);
@@ -125,6 +60,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   const [decodedIds, setDecodedIds] = useState<number[]>([]);
   const [viewer, setViewer] = useState<{ url: string; sequence: number } | null>(null);
   const [retrySeconds, setRetrySeconds] = useState(0);
+  const [choosingStore, setChoosingStore] = useState(false);
+  const credentialHeaderRef = React.useRef('X-Report-Resume-Token');
+  useBackLayer('receipt-store-selection', choosingStore, () => { if (!submitting) setChoosingStore(false); });
   const [refreshing, setRefreshing] = useState(false);
   const cooldownUntil = React.useRef(0);
   const requestRef = React.useRef<AbortController | null>(null);
@@ -162,7 +100,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       if (cache.has(asset.id)) return { ...asset, url: cache.get(asset.id)! };
       const evidence = await apiClient.get(
         `/public/reports/${encodeURIComponent(reference)}/evidence-assets/${asset.id}`,
-        { headers: { 'X-Report-Resume-Token': token }, responseType: 'blob', signal },
+        { headers: { [credentialHeaderRef.current]: token }, responseType: 'blob', signal },
       );
       if (signal.aborted) return { ...asset, url: null };
       const url = URL.createObjectURL(evidence.data as Blob);
@@ -184,25 +122,24 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     setRefreshing(true);
     setError('');
     try {
-      if (mode === 'review') {
+      if (mode !== 'processing') {
         const response = await apiClient.get(`/public/reports/${encodeURIComponent(reference)}/review`, {
-          headers: { 'X-Report-Resume-Token': token }, signal: controller.signal,
+          headers: { [credentialHeaderRef.current]: token }, signal: controller.signal,
         });
         const data = response.data.data as ReceiptReviewData;
         if (controller.signal.aborted) return;
-        const attempt = `${data.attempt_number ?? ''}:${(data.evidence ?? []).map(asset => asset.id).join(',')}`;
+        const attempt = `${data.store?.id ?? ''}:${data.attempt_number ?? ''}:${(data.evidence ?? []).map(asset => asset.id).join(',')}`;
         if (attemptRef.current !== attempt) {
           attemptRef.current = attempt;
           setConfirmed(false);
           setDecodedIds([]);
         }
         setReview(data);
-        setItems(data.items);
         await loadEvidence(data.evidence ?? [], token, controller.signal);
         if (!controller.signal.aborted) onStatusRef.current?.(data.status);
       } else {
         const response = await apiClient.get(`/public/reports/${encodeURIComponent(reference)}/processing`, {
-          headers: { 'X-Report-Resume-Token': token }, signal: controller.signal,
+          headers: { [credentialHeaderRef.current]: token }, signal: controller.signal,
         });
         const data = response.data.data as ReceiptProcessingData;
         if (controller.signal.aborted) return;
@@ -222,11 +159,15 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
 
   useEffect(() => {
     let active = true;
-    void getReceiptResumeToken(reference).then((token) => {
+    const readCredential = async () => {
+      credentialHeaderRef.current = mode === 'submitted' ? 'X-Tracking-Token' : 'X-Report-Resume-Token';
+      return mode === 'submitted' ? getReportTrackingToken(reference) : getReceiptResumeToken(reference);
+    };
+    void readCredential().then((token) => {
       if (!active) return;
       setResumeToken(token);
       if (!token) {
-        setError('This device no longer has the secure resume credential. Use Track Report with your report reference and recovery token.');
+        setError('This device no longer has the secure report credential. Use Track Report with your report reference and recovery token.');
         setLoading(false);
         return;
       }
@@ -237,7 +178,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       setLoading(false);
     });
     return () => { active = false; requestRef.current?.abort(); requestRef.current = null; };
-  }, [load, reference]);
+  }, [load, mode, reference]);
 
   useEffect(() => () => {
     evidenceUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -255,8 +196,36 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   const busy = submitting || refreshing || retrySeconds > 0;
   const errorNotice = error ? <div className="receipt-form-error" role="alert"><p>{error}</p>{retrySeconds > 0 && <p>Try again in {retrySeconds} seconds.</p>}</div> : null;
 
+  const readOnly = mode === 'submitted' || review?.read_only === true;
+  const canSubmit = !readOnly && Boolean(review) && review?.can_submit !== false && !isWrongStore(review!);
+
+  const changeStore = async (storeId: number) => {
+    if (!resumeToken || !review || readOnly || busy || requestRef.current) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setSubmitting(true);
+    setError('');
+    try {
+      const response = await apiClient.post(`/public/reports/${encodeURIComponent(reference)}/store`, {
+        store_id: storeId, expected_store_id: review.store?.id ?? null, expected_attempt_number: review.attempt_number ?? 1,
+      }, { headers: { [credentialHeaderRef.current]: resumeToken }, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      const data = response.data.data as ReceiptReviewData;
+      setReview(data);
+      setConfirmed(false);
+      setChoosingStore(false);
+      addRecentStore(storeId);
+      onStoreChanged?.(data.store?.store_name ?? 'Unspecified Store');
+    } catch (caught) {
+      if (!controller.signal.aborted) reportError(caught, 'The store was not changed. Your receipt is still available; try again.');
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+      if (!controller.signal.aborted) setSubmitting(false);
+    }
+  };
+
   const submit = async () => {
-    if (!resumeToken || !confirmed || !evidenceComplete || busy || cooldownUntil.current > Date.now()) return;
+    if (!canSubmit || !resumeToken || !confirmed || !evidenceComplete || busy || cooldownUntil.current > Date.now()) return;
     setSubmitting(true);
     setError('');
     try {
@@ -265,10 +234,11 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         {
           consumer_confirmed: true,
         },
-        { headers: { 'X-Report-Resume-Token': resumeToken } },
+        { headers: { [credentialHeaderRef.current]: resumeToken } },
       );
       const result = response.data.data as ReceiptConfirmationResult;
-      await deleteReceiptResumeToken(reference);
+      // The server has revoked this credential; local cleanup must not hide an accepted report.
+      await deleteReceiptResumeToken(reference).catch(() => undefined);
       setSubmitted(result);
       onSubmitted?.(result);
     } catch (caught: unknown) {
@@ -279,7 +249,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   };
 
   const startRecapture = async (action: { replace_sequence?: number; append?: boolean; restart?: boolean } = {}) => {
-    if (!resumeToken || busy || cooldownUntil.current > Date.now()) return;
+    if (readOnly || !resumeToken || busy || cooldownUntil.current > Date.now()) return;
     if (action.restart && !window.confirm('Restart this receipt capture? Your previous uploaded evidence will remain in the report history.')) return;
     setSubmitting(true);
     setError('');
@@ -287,7 +257,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       const response = await apiClient.post(
         `/public/reports/${encodeURIComponent(reference)}/recapture-session`,
         action,
-        { headers: { 'X-Report-Resume-Token': resumeToken } },
+        { headers: { [credentialHeaderRef.current]: resumeToken } },
       );
       setRecaptureSession(response.data.data as CaptureSessionResponse);
     } catch (caught: unknown) {
@@ -298,14 +268,14 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   };
 
   const retryProcessing = async () => {
-    if (!resumeToken || busy || cooldownUntil.current > Date.now()) return;
+    if (readOnly || !resumeToken || busy || cooldownUntil.current > Date.now()) return;
     setSubmitting(true);
     setError('');
     try {
       await apiClient.post(
         `/public/reports/${encodeURIComponent(reference)}/retry-processing`,
         {},
-        { headers: { 'X-Report-Resume-Token': resumeToken } },
+        { headers: { [credentialHeaderRef.current]: resumeToken } },
       );
       await load(resumeToken);
     } catch (caught: unknown) {
@@ -339,7 +309,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   // Icon-only: every branch below renders the page h1 next to it, so a labelled control would
   // introduce a second heading on the same row.
   const backButton = onBack ? (
-    <button type="button" className="track-report-back" aria-label="Back to My Reports" onClick={onBack}>
+    <button type="button" className="track-report-back" aria-label={backLabel} onClick={onBack}>
       <ArrowLeft size={21} aria-hidden="true" />
     </button>
   ) : null;
@@ -360,6 +330,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
         {pageHead(<CheckCircle2 size={36} aria-hidden="true" />, 'Report submitted to DTI')}
         <p>Your receipt and system results are available for DTI review. Submission does not establish a violation.</p>
         <strong>{submitted.report_reference}</strong>
+        <button type="button" className="btn-primary" onClick={() => navigate({ name: 'receipt-view', reference }, {
+          replace: true, ...(fromReportList() ? { state: { fromReportList: true } } : {}),
+        })}>View receipt and results</button>
       </section>
     );
   }
@@ -457,108 +430,40 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
 
   if (!review) return null;
 
-  const structured = review.extraction_provider === 'gemini';
-  const totalAmount = peso(review.total ?? review.detected_total);
-  const totalUncertain = Boolean(review.total_uncertain) || review.warnings?.some(warning => warning.code === 'TOTAL_MISMATCH');
-  const itemPosition = (sequence: number) => items.findIndex(item => item.sequence === sequence) + 1;
-  const showUncertaintyNotice = structured
-    ? review.manual_review_required || items.some(item => (item.uncertain_fields?.length ?? 0) > 0)
-    : review.manual_review_required || review.merchant?.status !== 'matched' || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8);
+  if (choosingStore && !readOnly) return layout(<>
+    <ReceiptStoreSelector busy={busy} onCancel={() => setChoosingStore(false)} onSelect={(store) => void changeStore(store.id)} />
+    {errorNotice}
+  </>);
 
   return layout(
     <section className="receipt-draft-page receipt-review-page">
-      {pageHead(null, 'Review your receipt')}
-      <p>Check that every section is clear and complete.</p>
+      {pageHead(null, readOnly ? 'Receipt and results' : 'Review your receipt')}
+      <p>{readOnly ? 'Your submitted receipt and saved system results. These results do not establish a violation.' : 'Check that every section is clear and complete.'}</p>
+      {readOnly && <p><strong>{reference}</strong> · {review.status}{review.submitted_at && <> · Submitted {new Date(review.submitted_at).toLocaleString()}</>}</p>}
       <div className="receipt-review-store"><span>Selected store</span><strong>{review.store?.store_name || 'Unavailable'}</strong><span>{review.store?.address}</span></div>
-      <section className="receipt-review-section" aria-labelledby="original-receipt-heading">
-        <h2 id="original-receipt-heading">Receipt photos</h2>
-        <div className="receipt-evidence-grid">
-          {evidenceUrls.map((asset) => <figure key={asset.id} className="receipt-evidence-card">
-            {asset.url ? <img src={asset.url} alt={`Original receipt section ${asset.sequence + 1}`}
-              onLoad={() => setDecodedIds(ids => ids.includes(asset.id) ? ids : [...ids, asset.id])}
-              onError={() => {
-                URL.revokeObjectURL(asset.url!);
-                evidenceUrlsRef.current.delete(asset.id);
-                setDecodedIds(ids => ids.filter(id => id !== asset.id));
-                setConfirmed(false);
-                setEvidenceUrls(assets => assets.map(entry => entry.id === asset.id ? { ...entry, url: null } : entry));
-                setError('A receipt photo could not be displayed. Retry loading photos.');
-              }} /> : <p>Section {asset.sequence + 1} could not be loaded.</p>}
-            <figcaption>Section {asset.sequence + 1}</figcaption>
-            <div className="receipt-photo-actions">
-            {asset.url && <button type="button" className="btn-secondary" aria-label={`View full size: section ${asset.sequence + 1}`}
-              onClick={() => setViewer({ url: asset.url!, sequence: asset.sequence })}><ZoomIn size={16} /> View full size</button>}
-            <button type="button" className="btn-secondary" disabled={busy} onClick={() => void startRecapture({ replace_sequence: asset.sequence })}>
-              <Camera size={16} /> Retake section {asset.sequence + 1}
-            </button>
-            </div>
-          </figure>)}
-        </div>
-        {evidenceUrls.length === 0 && <p>Original receipt photos are unavailable. Try loading them again before submitting.</p>}
-        {(!evidenceUrls.length || evidenceUrls.some(asset => !asset.url)) && <button type="button" className="btn-secondary" disabled={busy} onClick={() => resumeToken && void load(resumeToken)}>Retry loading photos</button>}
-        <div className="receipt-evidence-actions">
-          <button type="button" className="btn-secondary" disabled={busy || review.evidence.length >= 12} onClick={() => void startRecapture({ append: true })}><Plus size={16} /> Add section</button>
-          <button type="button" className="btn-secondary" disabled={busy} onClick={() => void startRecapture({ restart: true })}><RefreshCw size={16} /> Restart receipt</button>
-        </div>
-      </section>
-      <section className="receipt-review-section" aria-labelledby="system-extraction-heading">
-        <h2 id="system-extraction-heading">Details read from your receipt</h2>
-        <dl className="receipt-summary">
-          <div><dt>Merchant</dt><dd>{review.merchant?.display_name || 'Not detected'} <StoreCheck review={review} /></dd></div>
-          <div><dt>Date</dt><dd>{review.transaction_date || 'Not detected'}</dd></div>
-          {structured && <div><dt>Receipt no.</dt><dd>{review.receipt_number || 'Not detected'}</dd></div>}
-          {!structured && <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <span> — Uncertain</span>}</dd></div>}
-        </dl>
-        {isWrongStore(review) && <p className="receipt-field-warning">
-          Receipt shows {review.merchant?.display_name}, but you selected {review.store?.store_name}. You can still submit — DTI will check.
-        </p>}
-      <div className="receipt-review-items">
-        {items.map((item, index) => {
-          const lineTotal = peso(item.line_total ?? item.observed_price);
-          const unitPrice = peso(item.unit_price);
-          const uncertainFields = structured ? item.uncertain_fields ?? [] : [];
-          return (
-            <div key={item.sequence} className="receipt-review-item" aria-label={`Item ${index + 1}`}>
-              <strong>{item.item_name || 'Name not detected'}</strong>
-              <div className="receipt-review-row">
-                <span>Qty: {item.quantity ?? 'Not detected'} {item.unit ?? ''}</span>
-                {structured && <span>{unitPrice ? `${unitPrice} each` : 'Unit price not detected'}</span>}
-                <span>{lineTotal ?? 'Price not detected'}</span>
-              </div>
-              {uncertainFields.length > 0 && <div className="receipt-uncertain-list">
-                {uncertainFields.map(field => <UncertainBadge key={field} label={`${FIELD_LABELS[field] ?? field} unclear — check the photo`} />)}
-              </div>}
-              {structured && item.possible_duplicate_of != null && <span className="receipt-field-warning">
-                May repeat item {itemPosition(item.possible_duplicate_of) || item.possible_duplicate_of + 1} where two photos overlap. DTI will check.
-              </span>}
-              {!structured && (item.ocr_confidence == null || item.ocr_confidence <= 0.8 || !/[\p{L}]/u.test(item.item_name ?? '')) && <span className="receipt-field-warning">Uncertain — check the photo</span>}
-            </div>
-          );
-        })}
-      </div>
-      {items.length === 0 && <p>No items detected.</p>}
-      {structured && <dl className="receipt-summary receipt-amounts" aria-label="Receipt amounts">
-        {(review.subtotal != null || review.subtotal_uncertain) && <div><dt>Subtotal</dt><dd>{peso(review.subtotal) ?? 'Not detected'}{review.subtotal_uncertain && <UncertainBadge />}</dd></div>}
-        {(review.discounts ?? []).map((line, index) => <div key={`discount-${index}`}><dt>Discount</dt>
-          <dd>{peso(line.amount) ? `−${peso(line.amount)}` : 'Amount not detected'}{line.description ? ` (${line.description})` : ''}{line.uncertain && <UncertainBadge />}</dd></div>)}
-        {(review.adjustments ?? []).map((line, index) => <div key={`adjustment-${index}`}><dt>{ADJUSTMENT_LABELS[line.kind ?? ''] ?? 'Adjustment'}</dt>
-          <dd>{peso(line.amount) ? `${line.direction === 'subtract' ? '−' : '+'}${peso(line.amount)}` : 'Amount not detected'}{line.uncertain && <UncertainBadge />}</dd></div>)}
-        <div><dt>Total</dt><dd>{totalAmount ?? 'Not detected'}{totalUncertain && <UncertainBadge />}</dd></div>
-      </dl>}
-      {structured && review.reconciliation && <p className={`receipt-reconciliation receipt-reconciliation--${review.reconciliation.status}`}>
-        {RECONCILIATION_MESSAGES[review.reconciliation.status] ?? RECONCILIATION_MESSAGES.unavailable}
-      </p>}
-      {showUncertaintyNotice && <div className="banner-warning"><AlertTriangle size={20} /><span>Some details couldn’t be read reliably. If your photos are clear and complete, you can submit them for DTI review.</span></div>}
-      </section>
-      <label className="receipt-confirmation-check">
-        <input type="checkbox" checked={confirmed} disabled={!evidenceComplete || busy} onChange={(event) => setConfirmed(event.target.checked)} />
+      {!readOnly && review.can_change_store !== false && <button type="button" className="btn-secondary" disabled={busy} onClick={() => setChoosingStore(true)}>Change store</button>}
+      <ReceiptReviewContent review={review} evidenceUrls={evidenceUrls} busy={busy} readOnly={readOnly}
+        onPhotoLoaded={(id) => setDecodedIds(ids => ids.includes(id) ? ids : [...ids, id])}
+        onPhotoError={(id, url) => {
+          URL.revokeObjectURL(url);
+          evidenceUrlsRef.current.delete(id);
+          setDecodedIds(ids => ids.filter(value => value !== id));
+          setConfirmed(false);
+          setEvidenceUrls(assets => assets.map(entry => entry.id === id ? { ...entry, url: null } : entry));
+          setError('A receipt photo could not be displayed. Retry loading photos.');
+        }}
+        onViewPhoto={(url, sequence) => setViewer({ url, sequence })}
+        onRetryPhotos={() => { if (resumeToken) void load(resumeToken); }}
+        onRecapture={(action) => void startRecapture(action)} />
+      {!readOnly && <label className="receipt-confirmation-check">
+        <input type="checkbox" checked={confirmed} disabled={!canSubmit || !evidenceComplete || busy} onChange={(event) => setConfirmed(event.target.checked)} />
         <span>I reviewed the receipt photos and want to submit this report.</span>
-      </label>
+      </label>}
       {errorNotice}
       {error && !evidenceUrls.some(asset => !asset.url) && <button type="button" className="btn-secondary" disabled={busy} onClick={() => resumeToken && void load(resumeToken)}>Refresh receipt</button>}
-      <button type="button" className="btn-primary" disabled={!confirmed || !evidenceComplete || busy} onClick={() => void submit()}>
+      {!readOnly && <button type="button" className="btn-primary" disabled={!canSubmit || !confirmed || !evidenceComplete || busy} onClick={() => void submit()}>
         {submitting ? 'Submitting report…' : 'Submit report to DTI'}
-      </button>
+      </button>}
       <ReceiptPhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </section>
   );
