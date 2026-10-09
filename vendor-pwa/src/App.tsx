@@ -492,7 +492,7 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
           <strong>{TAB_TITLES[activeTab]}</strong>
           <span className={online ? 'online' : ''}>
             {online ? <Wifi size={16} /> : <WifiOff size={16} />}
-            {online ? (reachability === 'reachable' ? 'Connected to DTI' : 'Server unavailable · Showing saved data') : 'Offline · Showing saved data'}
+            {online ? (reachability === 'reachable' ? 'Online' : 'Server unavailable · Showing saved data') : 'Offline · Showing saved data'}
           </span>
           <button type="button" className="toolbar-icon-btn" aria-label={alertsLabel} onClick={() => setAlertsOpen(true)}>
             <Bell size={19} />
