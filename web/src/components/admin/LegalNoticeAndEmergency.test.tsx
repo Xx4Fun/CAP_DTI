@@ -340,7 +340,8 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       official_prices: [{ id: 11, regulatory_emergency_id: 7, commodity_key: 'rice', price_type: 'APC' as const, authoritative_price: 45, effective_from: '2026-09-09', effective_until: null, source_reference: 'DECL-7' }],
     }
     mockEmergencies([active])
-    vi.mocked(adminApi.updateEmergency).mockResolvedValue({ ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-09-09T02:00:00.123456Z', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] })
+    const ended: RegulatoryEmergencyRecord = { ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-09-09T02:00:00.123456Z', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] }
+    vi.mocked(adminApi.updateEmergency).mockImplementation(async () => { mockEmergencies([ended]); return ended })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
 

@@ -150,6 +150,48 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.queryByLabelText('Decision reason / Verification Note')).not.toBeInTheDocument()
   })
 
+  const assessedReport = (category: string) => {
+    const restated = ['Product is unidentified or its match is uncertain.', 'The applicable price reference is unavailable.']
+
+    return {
+      ...mockReports[0],
+      items: [
+        { id: 601, sequence: 0, item_name: 'QUAKER INST OATS', quantity: '1', observed_price: '125.25', line_total: '125.25', unit_price: '125.25' },
+        { id: 602, sequence: 1, item_name: 'PDS HYDRATING GLOW', quantity: '2', observed_price: '73.50', line_total: '73.50', unit_price: '36.75' },
+      ],
+      automatic_assessment_json: {
+        category, assessed_at: '2026-10-09T00:00:00Z', reasons: ['Extraction requires DTI review.'],
+        items: [
+          { item_id: 601, reliable: false, reasons: restated },
+          { item_id: 602, reliable: false, reasons: [restated[0], 'Receipt line is uncertain or may be duplicated.', restated[1]] },
+        ],
+      },
+    }
+  }
+
+  it('does not show an assessment that only asks for review', async () => {
+    mockReportPage([assessedReport('to_review')])
+    render(<CitizenTipReview />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Open RPT-2026-001/i }))
+
+    expect(screen.getByText('DTI evaluator findings and decision')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Automatic assessment' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Assessment requires review')).not.toBeInTheDocument()
+  })
+
+  it('leaves out per-item assessment reasons that the item cards already state', async () => {
+    mockReportPage([assessedReport('violations')])
+    render(<CitizenTipReview />)
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Open RPT-2026-001/i }))
+
+    const assessment = within(screen.getByRole('region', { name: 'Automatic assessment' }))
+    expect(assessment.getByText('System detected a possible violation')).toBeInTheDocument()
+    expect(assessment.getByText('Extraction requires DTI review.')).toBeInTheDocument()
+    expect(assessment.getByText('PDS HYDRATING GLOW: Receipt line is uncertain or may be duplicated.')).toBeInTheDocument()
+    expect(assessment.queryByText(/QUAKER INST OATS/)).not.toBeInTheDocument()
+    expect(assessment.queryByText(/Product is unidentified|price reference is unavailable/)).not.toBeInTheDocument()
+  })
+
   it('scopes the queue by establishment and receipt date on the server, and clears the scope', async () => {
     const user = userEvent.setup()
     render(<CitizenTipReview />)

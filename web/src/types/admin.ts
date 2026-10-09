@@ -10,6 +10,8 @@ export interface AdminUser {
 export interface AdminOverviewRecord {
   stores: number
   pending_reports: number
+  /** Absent on a backend that predates the count; the dashboard then shows it as unavailable. */
+  active_srp_bulletins?: number
   active_emergencies: number | null
   recent_stores?: Array<Pick<StoreRecord, 'id' | 'store_name' | 'dti_sec_number' | 'address' | 'is_active'>>
   availability?: {
@@ -606,6 +608,8 @@ export interface RegulatoryEmergencyRecord {
   ended_at?: string | null
   status: 'draft' | 'active' | 'ended' | 'cancelled'
   effective_state: 'draft' | 'in_effect' | 'ended' | 'cancelled' | string
+  activation_lock_held?: boolean
+  can_release_expired_lock?: boolean
   preparation_hash?: string | null
   source_week: {
     timezone: string
@@ -621,7 +625,7 @@ export interface RegulatoryEmergencyRecord {
 
 export type RegulatoryEmergencySummary = Pick<RegulatoryEmergencyRecord,
   'id' | 'location' | 'declaration_reference' | 'starts_on' | 'ends_on' | 'ended_at'
-  | 'status' | 'effective_state' | 'preparation_hash' | 'official_prices'>
+  | 'status' | 'effective_state' | 'preparation_hash' | 'official_prices' | 'activation_lock_held' | 'can_release_expired_lock'>
 
 export interface SrpRecord {
   id: number

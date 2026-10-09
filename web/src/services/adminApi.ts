@@ -13,7 +13,7 @@ export const adminApi = {
   async getMonitoringRecords(filters: { search?: string; anomaly?: 'all' | 'yes' | 'no'; review?: 'pending'; store_id?: number; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string; page?: number; per_page?: 10 | 25 | 50 } = {}): Promise<MonitoringRecordPage> {
     return data(await api.get('/admin/monitoring-records', { params: filters }))
   },
-  async getMonitoringExportMatrix(filters: { period?: MonitoringPeriodPreset; date_from?: string; date_to?: string } = {}): Promise<MonitoringMatrixData> {
+  async getMonitoringExportMatrix(filters: { search?: string; period?: MonitoringPeriodPreset; date_from?: string; date_to?: string } = {}): Promise<MonitoringMatrixData> {
     return data(await api.get('/admin/monitoring-records-matrix', { params: filters }))
   },
   async getMonitoringRecord(id: number): Promise<MonitoringRecordRecord> {
@@ -214,6 +214,11 @@ export const adminApi = {
   },
   async updateEmergency(id: number, payload: unknown): Promise<RegulatoryEmergencyRecord> {
     const record = data<RegulatoryEmergencyRecord>(await api.patch(`/admin/emergencies/${id}`, payload))
+    window.dispatchEvent(new Event('regulatory-data-changed'))
+    return record
+  },
+  async releaseExpiredEmergencyLock(id: number): Promise<RegulatoryEmergencyRecord> {
+    const record = data<RegulatoryEmergencyRecord>(await api.post(`/admin/emergencies/${id}/release-expired-lock`, { confirmed: true }))
     window.dispatchEvent(new Event('regulatory-data-changed'))
     return record
   },

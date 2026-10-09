@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { adminApi } from '../../services/adminApi'
 import { regulatoryRefresh } from '../../services/regulatoryRefresh'
 import { representativeAuditDetails } from '../../utils/representativeAudit'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, StoreRecord } from '../../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportRecord, LegalNoticeRecord, MonitoringRecordRecord, StoreRecord } from '../../types/admin'
 import type { AdminUser } from '../../types/admin'
 
 const StoreManager = lazy(() => import('./StoreManager').then((module) => ({ default: module.StoreManager })))
@@ -32,7 +32,17 @@ export function SettingsPanelWrapper(props: { user: AdminUser; onUserUpdate?: (u
 
 import type { ModuleId, NavigateTo } from './AdminShell'
 
-import { ArrowRight, Activity } from 'lucide-react'
+/** Open notice states the dashboard lists; `view` is the Legal Actions list a notice of that state opens in. */
+const LEGAL_STATES = [
+  { status: 'draft', label: 'Draft', badge: 'info', view: 'queue' },
+  { status: 'issued', label: 'Awaiting response', badge: 'warning', view: 'issued' },
+  { status: 'response_received', label: 'Response received', badge: 'success', view: 'issued' },
+]
+type LegalGroup = typeof LEGAL_STATES[number] & { total: number; rows: LegalNoticeRecord[] }
+const DASHBOARD_ROWS = 5
+const cardHeading = { fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }
+const cardLink = { background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }
+const cardNotice = { padding: '1rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }
 
 function formatSubjectType(type?: string): string {
   if (!type) return 'System Record'
@@ -52,16 +62,20 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
   const [summary, setSummary] = useState<AdminOverviewRecord | null>(null)
   const [reportsList, setReportsList] = useState<ConsumerReportRecord[]>([])
   const [error, setError] = useState(false)
-  // Totals from the Legal Actions list endpoint; null while loading, 'unavailable' if it cannot be read.
-  const [legalCounts, setLegalCounts] = useState<{ status: string; label: string; view: string; total: number }[] | null | 'unavailable'>(null)
+  // First-page rows per open state from the Legal Actions list endpoint; null while loading, 'unavailable' if it cannot be read.
+  const [legalNotices, setLegalNotices] = useState<LegalGroup[] | null | 'unavailable'>(null)
+  // Latest accepted visits from the Field Monitoring list endpoint; same loading and unavailable states.
+  const [visits, setVisits] = useState<MonitoringRecordRecord[] | null | 'unavailable'>(null)
 
   useEffect(() => {
     void adminApi.getReportPage?.({ page: 1, per_page: 4 }).then((page) => setReportsList(page?.data ?? [])).catch(() => {})
-    const statuses = [{ status: 'draft', label: 'Drafts to finish', view: 'queue' }, { status: 'issued', label: 'Issued, awaiting response', view: 'issued' }, { status: 'response_received', label: 'Responses to review', view: 'issued' }]
-    // Each count opens its own list: drafts in the queue, the others on the issued list filtered to that status.
-    if (!adminApi.getLegalNotices) { setLegalCounts('unavailable'); return }
-    void Promise.all(statuses.map(async (item) => ({ ...item, total: (await adminApi.getLegalNotices({ status: item.status, page: 1 })).total })))
-      .then(setLegalCounts).catch(() => setLegalCounts('unavailable'))
+    if (!adminApi.getMonitoringRecords) setVisits('unavailable')
+    else void adminApi.getMonitoringRecords({ per_page: 10 }).then((page) => setVisits(page.data.slice(0, DASHBOARD_ROWS))).catch(() => setVisits('unavailable'))
+    if (!adminApi.getLegalNotices) { setLegalNotices('unavailable'); return }
+    void Promise.all(LEGAL_STATES.map(async (item) => {
+      const page = await adminApi.getLegalNotices({ status: item.status, page: 1 })
+      return { ...item, total: page.total, rows: page.data }
+    })).then(setLegalNotices).catch(() => setLegalNotices('unavailable'))
   }, [])
 
   useEffect(() => {
@@ -92,17 +106,19 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
           <div className="admin-skeleton-block" style={{ height: '310px' }} />
           <div className="admin-skeleton-block" style={{ height: '310px' }} />
         </div>
-        <div className="dashboard-split-grid">
-          <div className="admin-skeleton-block" style={{ height: '420px' }} />
-          <div className="admin-skeleton-block" style={{ height: '420px' }} />
-        </div>
+        <div className="admin-skeleton-block" style={{ height: '320px' }} />
+        <div className="admin-skeleton-block" style={{ height: '320px' }} />
       </div>
     )
   }
 
   const storesList = summary.recent_stores ?? []
-  const isEmergencyUnavailable = summary.active_emergencies === null || summary.availability?.regulatory_emergencies === false
-  const isEmergencyActive = !isEmergencyUnavailable && (summary.active_emergencies ?? 0) > 0
+  const srpCount = summary.active_srp_bulletins
+  const legalRows = Array.isArray(legalNotices)
+    ? legalNotices.flatMap((group) => group.rows.map((notice) => ({ notice, group })))
+      .sort((a, b) => b.notice.updated_at.localeCompare(a.notice.updated_at)).slice(0, DASHBOARD_ROWS)
+    : []
+  const openNotices = Array.isArray(legalNotices) ? legalNotices.reduce((sum, group) => sum + group.total, 0) : null
 
   return (
     <div className="admin-dashboard-workspace">
@@ -126,7 +142,7 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
           <div className="kpi-card-content">
             <span className="kpi-card-title">REPORTS AWAITING DECISION</span>
             <strong className="kpi-card-val amber">{summary.pending_reports}</strong>
-            <span className="kpi-card-sub">{summary.pending_reports > 0 ? `${summary.pending_reports} pending evaluation` : 'No records yet'}</span>
+            <span className="kpi-card-sub">{summary.pending_reports > 0 ? 'Awaiting evaluator decision' : 'Nothing awaiting decision'}</span>
           </div>
         </article>
 
@@ -136,31 +152,31 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
           </div>
           <div className="kpi-card-content">
             <span className="kpi-card-title">ACTIVE SRP BULLETINS</span>
-            <strong className="kpi-card-val purple">Unavailable</strong>
-            <span className="kpi-card-sub">No authoritative bulletin count supplied by this overview</span>
+            <strong className="kpi-card-val purple">{srpCount ?? 'Unavailable'}</strong>
+            <span className="kpi-card-sub">{srpCount === undefined ? 'Bulletin count unavailable' : srpCount > 0 ? 'Current price references' : 'No bulletins in effect'}</span>
           </div>
         </article>
 
         <article className="kpi-card horizontal red">
           <div className="kpi-circle-icon red">
-            <i className="fa-solid fa-bell" aria-hidden="true" />
+            <i className="fa-solid fa-scale-balanced" aria-hidden="true" />
           </div>
           <div className="kpi-card-content">
-            <span className="kpi-card-title">EMERGENCY DECLARATIONS</span>
-            <strong className="kpi-card-val red">{isEmergencyUnavailable ? 'Unavailable' : summary.active_emergencies}</strong>
-            <span className="kpi-card-sub">{isEmergencyUnavailable ? 'Emergency records unavailable' : isEmergencyActive ? 'State of Calamity' : 'None in effect'}</span>
+            <span className="kpi-card-title">ACTIVE LEGAL ACTIONS</span>
+            <strong className="kpi-card-val red">{legalNotices === null ? '—' : openNotices ?? 'Unavailable'}</strong>
+            <span className="kpi-card-sub">{legalNotices === null ? 'Loading notices' : openNotices === null ? 'Legal notices unavailable' : openNotices > 0 ? 'Open notices' : 'No open notices'}</span>
           </div>
         </article>
       </div>
 
-      {/* Row 2: Receipt Review Status and Store Registry Status matching mockup */}
+      {/* Row 2: Consumer Reports and Store Registry */}
       <div className="dashboard-grid-50-50">
-        {/* Receipt Review Status Card */}
+        {/* Consumer Reports Card */}
         <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <i className="fa-solid fa-file-lines" style={{ color: '#0052cc', fontSize: '1.2rem' }} aria-hidden="true" />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Receipt review status</h3>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Consumer Reports</h3>
             </div>
             <button
               type="button"
@@ -205,7 +221,7 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
                   <span style={{ color: '#64748b', wordBreak: 'break-word', lineHeight: 1.35 }}>{report.store_name || 'Commercial Store'}</span>
                   <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{new Date(report.submitted_at).toLocaleDateString()}</span>
                   <span style={{ textAlign: 'right' }}>
-                    <span className={`kpi-badge ${report.status === 'PENDING' ? 'warning' : 'success'}`}>
+                    <span className={`kpi-badge ${['Resolved', 'Closed'].includes(report.status) ? 'success' : 'warning'}`}>
                       {report.status}
                     </span>
                   </span>
@@ -215,12 +231,12 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
           )}
         </div>
 
-        {/* Store Registry Status Card */}
+        {/* Store Registry Card */}
         <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <i className="fa-solid fa-store" style={{ color: '#0052cc', fontSize: '1.2rem' }} aria-hidden="true" />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Store registry status</h3>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Store Registry</h3>
             </div>
             <button
               type="button"
@@ -276,71 +292,72 @@ export function OverviewPanel(props: { onNavigate?: NavigateTo }) {
         </div>
       </div>
 
-      {/* Row 3: Monitoring Activity and Recent Activity */}
-      <div className="dashboard-split-grid">
-        {/* Left Section (65% Width): Monitoring Activity */}
-        <div className="dashboard-left-panel">
-          <div className="dashboard-card">
-            <div className="dashboard-card-header">
-              <div>
-                <h3>Monitoring Activity</h3>
-                <p>Four-week price compliance across San Jose de Buenavista establishments.</p>
-              </div>
-              <span className="badge-live-dot">Analytics workspace</span>
-            </div>
-
-            <div className="chart-preview-container">
-              <div className="chart-stats-summary" role="status">
-                <p>No authoritative trend summary is available on the dashboard. Open GIS Monitoring to follow prices by store and week.</p>
-              </div>
-              <div className="chart-placeholder-box">
-                <div className="chart-placeholder-content">
-                  <Activity size={32} className="chart-icon" aria-hidden="true" />
-                  <p>Prices over time</p>
-                  <small>Pick a week and commodity on the map, or open a store for its price history.</small>
-                </div>
-                <button
-                  type="button"
-                  className="admin-button secondary launch-analytics-btn"
-                  onClick={() => props.onNavigate?.('gis_monitoring')}
-                >
-                  Open GIS Monitoring <ArrowRight size={16} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
+      {/* Row 3: Field Monitoring, latest accepted visits */}
+      <div className="dashboard-card" style={{ gap: '0.85rem', height: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <i className="fa-solid fa-clipboard-check" style={{ color: '#0052cc', fontSize: '1.2rem' }} aria-hidden="true" />
+            <h3 style={cardHeading}>Field Monitoring</h3>
           </div>
+          <button type="button" onClick={() => props.onNavigate?.('field_monitoring', { monitor_tab: 'records' })} style={cardLink}>View all</button>
         </div>
 
-        {/* Right Section (35% Width): Active Legal Actions */}
-        <div className="dashboard-right-panel">
-          <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <i className="fa-solid fa-scale-balanced" style={{ color: '#0052cc', fontSize: '1.2rem' }} aria-hidden="true" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>Active Legal Actions</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => props.onNavigate?.('legal_actions')}
-                style={{ background: 'none', border: 'none', color: '#0052cc', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', padding: 0 }}
-              >
-                Open Legal Actions
-              </button>
-            </div>
+        {visits === null ? <div className="admin-skeleton-block" style={{ height: '200px' }} role="status" aria-label="Loading field monitoring visits" />
+          : visits === 'unavailable' ? <div role="status" style={cardNotice}>Field monitoring visits could not be loaded. Open Field Monitoring to review visits.</div>
+          : visits.length === 0 ? <div role="status" style={cardNotice}>No accepted monitoring visits yet. Visits finalized by field officers will appear here.</div>
+          : <div className="admin-table-wrap">
+            <table className="admin-data-table">
+              <caption className="sr-only">Latest accepted field monitoring visits</caption>
+              <thead><tr><th>Establishment</th><th>Location</th><th>Field officer</th><th>Visit date</th><th>Protocol</th><th>Items monitored</th><th>Result</th></tr></thead>
+              <tbody>
+                {visits.map((visit) => <tr key={visit.id}>
+                  <td><strong>{visit.store.store_name}</strong></td>
+                  <td>{visit.store.address}</td>
+                  <td>{visit.officer?.name ?? 'Officer unavailable'}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{new Date(visit.finalized_at).toLocaleDateString()}</td>
+                  <td><span className={`kpi-badge ${visit.protocol_mode === 'emergency' ? 'danger' : 'info'}`}>{visit.protocol_mode === 'emergency' ? 'Emergency' : 'Standard'}</span></td>
+                  <td>{visit.items_count ?? 0}</td>
+                  <td><span className={`kpi-badge ${visit.anomaly_count > 0 ? 'danger' : 'success'}`}>{visit.anomaly_count > 0 ? `${visit.anomaly_count} flagged` : 'No findings'}</span></td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>}
+      </div>
 
-            {legalCounts === null ? <div className="admin-skeleton-block" style={{ height: '120px' }} role="status" aria-label="Loading legal action counts" />
-              : legalCounts === 'unavailable' ? <div role="status" style={{ padding: '1rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}>
-                Legal action counts could not be loaded. Open Legal Actions to review notices.
-              </div>
-              : <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' }}>
-                {legalCounts.map((item) => <li key={item.status}>
-                  <button type="button" onClick={() => props.onNavigate?.('legal_actions', item.view === 'issued' ? { view: item.view, status: item.status } : { view: item.view })} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '44px', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#0f172a', cursor: 'pointer', fontSize: '0.88rem' }}>
-                    <span>{item.label}</span><strong style={{ color: '#0052cc', fontSize: '1.05rem' }}>{item.total}</strong>
-                  </button>
-                </li>)}
-              </ul>}
+      {/* Row 4: Active Legal Actions, open notices */}
+      <div className="dashboard-card" style={{ gap: '0.85rem', height: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <i className="fa-solid fa-scale-balanced" style={{ color: '#0052cc', fontSize: '1.2rem' }} aria-hidden="true" />
+            <h3 style={cardHeading}>Active Legal Actions</h3>
           </div>
+          <button type="button" onClick={() => props.onNavigate?.('legal_actions')} style={cardLink}>Open Legal Actions</button>
         </div>
+
+        {legalNotices === null ? <div className="admin-skeleton-block" style={{ height: '200px' }} role="status" aria-label="Loading legal notices" />
+          : legalNotices === 'unavailable' ? <div role="status" style={cardNotice}>Legal notices could not be loaded. Open Legal Actions to review them.</div>
+          : legalRows.length === 0 ? <div role="status" style={cardNotice}>No open notices. Drafted and issued notices will appear here.</div>
+          : <div className="admin-table-wrap">
+            <table className="admin-data-table">
+              <caption className="sr-only">Most recently updated open legal notices</caption>
+              <thead><tr><th>Notice</th><th>Establishment</th><th>Location</th><th>Items flagged</th><th>Issued</th><th>Response due</th><th>Status</th></tr></thead>
+              <tbody>
+                {legalRows.map(({ notice, group }) => {
+                  const store = notice.store ?? notice.source_snapshot?.store
+                  const due = notice.due_date_timestamp ? new Date(notice.due_date_timestamp) : null
+                  return <tr key={notice.id}>
+                    <td><button type="button" onClick={() => props.onNavigate?.('legal_actions', { view: group.view, source_notice: notice.id })} style={{ ...cardLink, textAlign: 'left' }}>{notice.notice_type} {notice.control_number ?? 'draft'}</button></td>
+                    <td><strong>{store?.store_name ?? 'Establishment unavailable'}</strong></td>
+                    <td>{store?.address ?? '—'}</td>
+                    <td>{notice.source_snapshot?.items?.length ?? 0}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{notice.issued_at ? new Date(notice.issued_at).toLocaleDateString() : 'Not issued'}</td>
+                    <td style={{ whiteSpace: 'nowrap', ...(due && notice.status === 'issued' && due < new Date() ? { color: '#b91c1c', fontWeight: 700 } : {}) }}>{due ? due.toLocaleDateString() : '—'}</td>
+                    <td><span className={`kpi-badge ${group.badge}`}>{group.label}</span></td>
+                  </tr>
+                })}
+              </tbody>
+            </table>
+          </div>}
       </div>
     </div>
   )

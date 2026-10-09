@@ -1,19 +1,17 @@
-import { CurrentRepresentativeDetails } from './CurrentRepresentativeDetails'
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, AlertTriangle, ArrowLeft, ArrowRight, Boxes, Building2, Calendar, ChartColumn, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
-  ClipboardCheck, ClipboardList, Eye, FileSignature, FileSpreadsheet, FileText, History, LayoutGrid, List, MapPin, RefreshCw, Search, ShieldAlert,
-  ShieldCheck, Store, Table, TrendingUp, TriangleAlert, User, UserCheck, X,
+  AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Boxes, Building2, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert,
+  ClipboardList, Clock, Eye, FileSignature, FileSpreadsheet, FileText, History, LayoutGrid, List, MapPin, MessageSquare, RefreshCw, RotateCcw, Search, ShieldAlert,
+  ShieldCheck, Store, Table, TrendingUp, TriangleAlert, User, UserCheck, UserPlus, X, XCircle,
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import type {
   FieldVerificationRequestPage, MonitoringEstablishmentProfile, MonitoringEstablishmentSummary,
-  ManagedUserRecord, MonitoringFindingItem, MonitoringFindingsPage, MonitoringPeriodPreset,
-  MonitoringPriceHistoryPage, MonitoringPriceHistoryRow, MonitoringRecordItem, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, NoticeSummary,
+  ManagedUserRecord, MonitoringPeriodPreset,
+  MonitoringRecordItem, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, NoticeSummary,
 } from '../../types/admin'
 
 type Tab = 'establishments' | 'records' | 'verification'
-type ProfileTab = 'overview' | 'findings' | 'history' | 'records'
 type RoutineStatus = 'all' | 'due' | 'completed'
 type AdditionalTask = 'all' | 'verification_required'
 type ObservationStatus = 'all' | 'with_observations' | 'reference_unavailable' | 'no_observations'
@@ -23,9 +21,7 @@ type ListFilter = 'all' | 'due' | 'completed' | 'verification' | 'observations'
 type ListFilterState = { routineStatus: RoutineStatus; additionalTask: AdditionalTask; observation: ObservationStatus }
 
 const emptyRecords: MonitoringRecordPage = { data: [], current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null }
-const emptyHistory: MonitoringPriceHistoryPage = { ...emptyRecords, data: [] }
 const emptyVerification: FieldVerificationRequestPage = { ...emptyRecords, data: [] }
-const emptyFindings: MonitoringFindingsPage = { data: [], current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null }
 const message = (error: unknown) => (error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Field Monitoring data could not load.'
 const formatDate = (value?: string | null) => value ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not recorded'
 const formatShortDate = (value?: string | null) => value ? new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)) : 'No visits'
@@ -61,6 +57,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     establishments: params.get('establishment_search') || '',
     records: params.get('record_search') || '',
     verification: params.get('verification_search') || '',
+    profile: params.get('profile_record_search') || '',
   })
   const [queries, setQueries] = useState(searches)
   const [routineStatus, setRoutineStatus] = useState<RoutineStatus>((params.get('routine_status') as RoutineStatus) || 'all')
@@ -69,11 +66,9 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   const [recordPeriod, setRecordPeriod] = useState<MonitoringPeriodPreset>((params.get('record_period') as MonitoringPeriodPreset) || 'all_time')
   const [exportingMatrix, setExportingMatrix] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>((params.get('verification_status') as VerificationStatus) || 'all')
-  const [profileTab, setProfileTab] = useState<ProfileTab>((params.get('profile_tab') as ProfileTab) || 'overview')
   const [period, setPeriod] = useState<MonitoringPeriodPreset>((params.get('period') as MonitoringPeriodPreset) || 'last_4_weeks')
   const [customDateFrom, setCustomDateFrom] = useState(params.get('date_from') || '')
   const [customDateTo, setCustomDateTo] = useState(params.get('date_to') || '')
-  const [commodity, setCommodity] = useState<`key:${string}` | `srp:${number}` | ''>('')
   const [verificationStore, setVerificationStore] = useState<number | null>(Number(params.get('verification_store')) || null)
   const [verificationStoreName, setVerificationStoreName] = useState('')
   const [pendingRequest, setPendingRequest] = useState<number | null>(null)
@@ -81,10 +76,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   const [records, setRecords] = useState(emptyRecords)
   const [verification, setVerification] = useState(emptyVerification)
   const [profile, setProfile] = useState<MonitoringEstablishmentProfile | null>(null)
-  const [history, setHistory] = useState(emptyHistory)
   const [profileRecords, setProfileRecords] = useState(emptyRecords)
-  const [findings, setFindings] = useState<MonitoringFindingsPage>(emptyFindings)
-  const [, setFindingsPage] = useState(1)
   const [selectedRecord, setSelectedRecord] = useState<MonitoringRecordRecord | null>(null)
   const [establishmentPage, setEstablishmentPage] = useState(1)
   const [recordPage, setRecordPage] = useState(1)
@@ -104,10 +96,11 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         establishments: searches.establishments.trim(),
         records: searches.records.trim(),
         verification: searches.verification.trim(),
+        profile: searches.profile.trim(),
       }
       setQueries(next)
       const url = new URL(window.location.href)
-      const keys = { establishments: 'establishment_search', records: 'record_search', verification: 'verification_search' } as const
+      const keys = { establishments: 'establishment_search', records: 'record_search', verification: 'verification_search', profile: 'profile_record_search' } as const
       Object.entries(next).forEach(([view, value]) => value ? url.searchParams.set(keys[view as keyof typeof keys], value) : url.searchParams.delete(keys[view as keyof typeof keys]))
       window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
     }, 300)
@@ -118,9 +111,9 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
   // record that finishes loading after the admin has moved on is dropped instead of popping open.
   const navSeq = useRef(0)
   const cancelNavigation = () => { navSeq.current += 1; setLoading(false) }
-  // Price history has three writers (profile load, history page, commodity switch); only the latest may land.
-  const historySeq = useRef(0)
-  useEffect(() => () => { navSeq.current += 1; historySeq.current += 1 }, [])
+  // Profile records have three writers (profile load, page change, search); only the latest may land.
+  const recordsSeq = useRef(0)
+  useEffect(() => () => { navSeq.current += 1; recordsSeq.current += 1 }, [])
 
   const fetchRecord = useCallback(async (id: number) => {
     const seq = ++navSeq.current
@@ -176,6 +169,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       const label = periodLabelMap[recordPeriod] || 'Price Monitoring Matrix'
       const matrixData = await adminApi.getMonitoringExportMatrix({
         period: recordPeriod === 'all_time' ? undefined : recordPeriod,
+        search: searches.records.trim() || undefined,
       })
       const { exportMonitoringMatrixExcel } = await import('../../utils/monitoringExcelExport')
       await exportMonitoringMatrixExcel(matrixData, label)
@@ -225,8 +219,6 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       const current = new URLSearchParams(window.location.search)
       const recordId = Number(current.get('record'))
       const storeId = Number(current.get('store'))
-      const nextProfileTab = current.get('profile_tab') as ProfileTab
-      setProfileTab(['overview', 'findings', 'history', 'records'].includes(nextProfileTab) ? nextProfileTab : 'overview')
       const nextPeriod = (current.get('period') as MonitoringPeriodPreset) || 'last_4_weeks'
       const nextFrom = current.get('date_from') || ''
       const nextTo = current.get('date_to') || ''
@@ -237,7 +229,7 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
       setRecordPeriod((current.get('record_period') as MonitoringPeriodPreset) || 'all_time')
       setVerificationStatus((current.get('verification_status') as VerificationStatus) || 'all')
       setVerificationStore(Number(current.get('verification_store')) || null)
-      setSearches({ establishments: current.get('establishment_search') || '', records: current.get('record_search') || '', verification: current.get('verification_search') || '' })
+      setSearches({ establishments: current.get('establishment_search') || '', records: current.get('record_search') || '', verification: current.get('verification_search') || '', profile: current.get('profile_record_search') || '' })
       if (recordId > 0) void fetchRecord(recordId)
       else if (storeId > 0) {
         setSelectedRecord(null)
@@ -264,9 +256,10 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
 
   async function openProfile(storeId: number, updateHistory = true, targetPeriod = period, targetFrom = customDateFrom, targetTo = customDateTo) {
     const seq = ++navSeq.current
-    const historyRequest = ++historySeq.current
-    // A newly chosen store starts on Overview; period changes and URL restores keep the current tab.
+    const recordsRequest = ++recordsSeq.current
+    // A newly chosen store starts with an empty record search; period changes and URL restores keep it.
     const freshStore = updateHistory && profile?.store.id !== storeId
+    const search = freshStore ? '' : queries.profile
     setLoading(true); setError('')
     try {
       const periodParams = {
@@ -274,56 +267,15 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         date_from: targetPeriod === 'custom' ? targetFrom || undefined : undefined,
         date_to: targetPeriod === 'custom' ? targetTo || undefined : undefined,
       }
-      const nextProfile = await adminApi.getMonitoringEstablishment(storeId, periodParams)
-      const requested = new URLSearchParams(window.location.search).get('commodity')
-      const selector = nextProfile.monitored_commodities.find((item) => item.selector === requested)?.selector || nextProfile.monitored_commodities[0]?.selector || ''
-      const [nextHistory, nextRecords, nextFindings] = await Promise.all([
-        adminApi.getMonitoringPriceHistory(storeId, { commodity: selector || undefined, ...periodParams, per_page: 10 }),
-        adminApi.getMonitoringRecords({ store_id: storeId, anomaly: 'all', ...periodParams, per_page: 10 }),
-        adminApi.getMonitoringFindings(storeId, { ...periodParams, per_page: 10 }),
+      const [nextProfile, nextRecords] = await Promise.all([
+        adminApi.getMonitoringEstablishment(storeId, periodParams),
+        adminApi.getMonitoringRecords({ store_id: storeId, anomaly: 'all', search: search || undefined, ...periodParams, per_page: 10 }),
       ])
       if (seq !== navSeq.current) return
-      let resolvedFindings = nextFindings
-      if (resolvedFindings.total === 0 && nextRecords.data.some((r) => (r.anomaly_count ?? 0) > 0)) {
-        const anomalies: MonitoringFindingItem[] = []
-        for (const rec of nextRecords.data) {
-          for (const itm of (rec.items || [])) {
-            if (itm.is_anomaly) {
-              anomalies.push({
-                id: itm.id,
-                monitoring_record_id: rec.id,
-                finalized_at: rec.finalized_at,
-                officer_name: rec.officer?.name || 'Field Officer',
-                commodity_name: itm.bulletin?.commodity_name || `Commodity #${itm.srp_id}`,
-                unit: itm.bulletin?.unit || null,
-                recorded_price: itm.recorded_price,
-                reference_value: itm.reference_value ?? itm.bulletin?.baseline_price ?? null,
-                difference: itm.reference_value != null ? Number(itm.recorded_price) - Number(itm.reference_value) : null,
-                variance_percent: itm.variance_percent,
-                is_anomaly: true,
-                protocol_mode: rec.protocol_mode ?? null,
-                reference_label: itm.reference_label ?? null,
-                reference_source: itm.reference_source ?? null,
-              })
-            }
-          }
-        }
-        if (anomalies.length > 0) {
-          resolvedFindings = {
-            data: anomalies,
-            total: anomalies.length,
-            current_page: 1,
-            last_page: 1,
-            per_page: 10,
-            from: 1,
-            to: anomalies.length,
-          }
-        }
-      }
-      setProfile(nextProfile); setProfileRecords(nextRecords); setFindings(resolvedFindings)
-      if (historyRequest === historySeq.current) { setCommodity(selector); setHistory(nextHistory) }
-      if (freshStore) setProfileTab('overview')
-      if (updateHistory) updateUrl({ store: storeId, period: targetPeriod, date_from: targetPeriod === 'custom' ? targetFrom : null, date_to: targetPeriod === 'custom' ? targetTo : null, ...(freshStore ? { profile_tab: null } : {}) })
+      setProfile(nextProfile)
+      if (recordsRequest === recordsSeq.current) setProfileRecords(nextRecords)
+      if (freshStore) setSearches((current) => ({ ...current, profile: '' }))
+      if (updateHistory) updateUrl({ store: storeId, period: targetPeriod, date_from: targetPeriod === 'custom' ? targetFrom : null, date_to: targetPeriod === 'custom' ? targetTo : null })
     } catch (reason) { if (seq === navSeq.current) setError(message(reason)) }
     finally { if (seq === navSeq.current) setLoading(false) }
   }
@@ -344,9 +296,9 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     if (profile && from && to && from <= to) await openProfile(profile.store.id, true, 'custom', from, to)
   }
 
-  const loadProfileHistoryPage = async (page: number) => {
-    if (!profile || loading) return
-    const seq = ++historySeq.current
+  const loadProfileRecordsPage = async (page: number) => {
+    if (!profile) return
+    const seq = ++recordsSeq.current
     const nav = navSeq.current
     try {
       const periodParams = {
@@ -354,41 +306,20 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
         date_from: period === 'custom' ? customDateFrom || undefined : undefined,
         date_to: period === 'custom' ? customDateTo || undefined : undefined,
       }
-      const next = await adminApi.getMonitoringPriceHistory(profile.store.id, { commodity: commodity || undefined, ...periodParams, page, per_page: 10 })
-      if (seq === historySeq.current && nav === navSeq.current) setHistory(next)
+      const next = await adminApi.getMonitoringRecords({ store_id: profile.store.id, anomaly: 'all', search: queries.profile || undefined, ...periodParams, page, per_page: 10 })
+      if (seq === recordsSeq.current && nav === navSeq.current) setProfileRecords(next)
     }
-    catch (reason) { if (seq === historySeq.current && nav === navSeq.current) setError(message(reason)) }
+    catch (reason) { if (seq === recordsSeq.current && nav === navSeq.current) setError(message(reason)) }
   }
 
-  const loadProfileRecordsPage = async (page: number) => {
-    if (!profile) return
-    try {
-      const periodParams = {
-        period,
-        date_from: period === 'custom' ? customDateFrom || undefined : undefined,
-        date_to: period === 'custom' ? customDateTo || undefined : undefined,
-      }
-      setProfileRecords(await adminApi.getMonitoringRecords({ store_id: profile.store.id, anomaly: 'all', ...periodParams, page, per_page: 10 }))
-    }
-    catch (reason) { setError(message(reason)) }
-  }
+  // A changed search reloads from page 1; a no-op with no profile open, and opening one loads its own records.
+  useEffect(() => {
+    void loadProfileRecordsPage(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries.profile])
 
-  const loadProfileFindingsPage = async (page: number) => {
-    if (!profile) return
-    try {
-      const periodParams = {
-        period,
-        date_from: period === 'custom' ? customDateFrom || undefined : undefined,
-        date_to: period === 'custom' ? customDateTo || undefined : undefined,
-      }
-      setFindings(await adminApi.getMonitoringFindings(profile.store.id, { ...periodParams, page, per_page: 10 }))
-      setFindingsPage(page)
-    }
-    catch (reason) { setError(message(reason)) }
-  }
-
-  const handleRegulatoryAction = (storeId: number, recordId?: number) => {
-    onNavigate?.('legal_actions', recordId ? { source_record: recordId, source_store: storeId } : { source_store: storeId })
+  const handleRegulatoryAction = (storeId: number, recordId: number) => {
+    onNavigate?.('legal_actions', { source_record: recordId, source_store: storeId })
   }
   // Field Monitoring only links to a notice; every action on it happens in Legal Actions.
   const openNotice = (noticeId: number) => onNavigate?.('legal_actions', { source_notice: noticeId })
@@ -410,58 +341,32 @@ export function FieldMonitoringRecords({ onNavigate }: { onNavigate?: (module: '
     return (
       <EstablishmentProfile
         profile={profile}
-        profileTab={profileTab}
         period={period}
         customDateFrom={customDateFrom}
         customDateTo={customDateTo}
-        commodity={commodity}
-        history={history}
+        search={searches.profile}
         records={profileRecords}
-        findings={findings}
         error={error}
         onBack={() => {
           cancelNavigation()
           setProfile(null)
-          updateUrl({ store: null, profile_tab: null, period: null, date_from: null, date_to: null })
+          setSearches((current) => ({ ...current, profile: '' }))
+          updateUrl({ store: null, profile_record_search: null, period: null, date_from: null, date_to: null })
         }}
-        onProfileTab={(next) => {
-          setProfileTab(next)
-          updateUrl({ profile_tab: next === 'overview' ? null : next })
-        }}
+        onSearch={(value) => setSearches((current) => ({ ...current, profile: value }))}
         onPeriodChange={handlePeriodChange}
         onCustomDateChange={handleCustomDateChange}
-        onCommodity={async (next) => {
-          // Ignored while the profile reloads; selector, table and URL change together only once the history arrives.
-          if (loading) return
-          const seq = ++historySeq.current
-          const nav = navSeq.current
-          const periodParams = {
-            period,
-            date_from: period === 'custom' ? customDateFrom || undefined : undefined,
-            date_to: period === 'custom' ? customDateTo || undefined : undefined,
-          }
-          try {
-            const nextHistory = await adminApi.getMonitoringPriceHistory(profile.store.id, { commodity: next, ...periodParams, per_page: 10 })
-            if (seq !== historySeq.current || nav !== navSeq.current) return
-            setCommodity(next); setHistory(nextHistory); setError('')
-            updateUrl({ commodity: next })
-          } catch (reason) { if (seq === historySeq.current && nav === navSeq.current) setError(message(reason)) }
-        }}
         onVerification={() => {
           cancelNavigation()
           setVerificationStore(profile.store.id)
           setVerificationStoreName(profile.store.store_name)
           setProfile(null)
+          setSearches((current) => ({ ...current, profile: '' }))
           setTab('verification')
-          updateUrl({ store: null, profile_tab: null, monitor_tab: 'verification', verification_store: profile.store.id })
+          updateUrl({ store: null, profile_record_search: null, monitor_tab: 'verification', verification_store: profile.store.id })
         }}
         onOpenRecord={openRecord}
-        onHistoryPage={loadProfileHistoryPage}
         onRecordsPage={loadProfileRecordsPage}
-        onFindingsPage={loadProfileFindingsPage}
-        onRegulatoryAction={handleRegulatoryAction}
-        onOpenNotice={openNotice}
-        reloading={loading}
       />
     )
   }
@@ -1127,7 +1032,7 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
               aria-label="Clear search"
               title="Clear search"
             >
-              <X size={15} />
+              <X size={15} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -1159,9 +1064,162 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
         <span>Refresh</span>
       </button>
     </section>
-    <section className="admin-table-card"><div className="admin-table-wrap"><table className="admin-data-table"><caption className="sr-only">Additional field visits</caption>
-      <thead><tr><th>Establishment</th><th>Source</th><th>Reason</th><th>Requested</th><th>Status</th><th>Assigned officer</th><th>Result</th></tr></thead>
-      <tbody>{loading ? <Skeleton columns={7} /> : page.data.map((request) => <tr key={request.id}><td data-label="Establishment"><strong>{request.store.store_name}</strong><small>{request.store.address}</small></td><td data-label="Source"><strong>{request.source_type === 'complaint' ? 'Complaint' : 'Supervisor directive'}</strong><small>{request.report?.report_reference || 'No consumer report'}</small></td><td data-label="Reason">{request.reason}</td><td data-label="Requested">{formatDate(request.requested_at)}</td><td data-label="Status"><span className={`admin-status-badge ${request.status === 'completed' ? 'current' : request.status === 'open' ? 'history' : ''}`}>{request.status === 'open' ? 'needs assignment' : request.status}</span></td><td data-label="Assigned officer">{request.claimant?.name || (request.status === 'open' ? 'Needs assignment' : 'Not assigned')}</td><td data-label="Result">{request.monitoring_record ? <button type="button" className="admin-button secondary" aria-label={`Open monitoring record ${request.monitoring_record.id}`} onClick={() => onOpenRecord(request.monitoring_record!.id)}>Record #{request.monitoring_record.id}</button> : request.status === 'cancelled' ? <button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onReopen(request.id)}>{pending === request.id ? 'Reopening…' : 'Reopen'}</button> : request.status === 'open' ? <><button type="button" className="admin-button primary" onClick={() => setAssigning(request.id)}>Assign</button><button disabled={pending === request.id} type="button" className="admin-button secondary" onClick={() => onCancel(request.id)}>{pending === request.id ? 'Cancelling…' : 'Cancel'}</button></> : 'Pending'}</td></tr>)}</tbody>
+    <section className="admin-table-card field-monitor-table-card"><div className="admin-table-wrap"><table className="admin-data-table field-monitor-table verification-table"><caption className="sr-only">Additional field visits</caption>
+      <thead><tr><th>Establishment</th><th>Source</th><th>Reason</th><th>Requested</th><th>Status</th><th>Assigned officer</th><th>Action</th></tr></thead>
+      <tbody>{loading ? <Skeleton columns={7} /> : page.data.map((request) => <tr key={request.id}>
+        <td data-label="Establishment">
+          <div className="verification-store-cell">
+            <div className="verification-store-name">
+              <Building2 size={16} aria-hidden="true" />
+              <span>{request.store.store_name}</span>
+            </div>
+            <div className="verification-store-addr">
+              <MapPin size={12} aria-hidden="true" />
+              <span>{request.store.address}</span>
+            </div>
+          </div>
+        </td>
+        <td data-label="Source">
+          <div className="verification-source-cell">
+            {request.source_type === 'complaint' ? (
+              <>
+                <span className="visit-source-badge complaint">
+                  <AlertCircle size={12} aria-hidden="true" />
+                  <span>Complaint</span>
+                </span>
+                {request.report?.report_reference && (
+                  <span className="visit-ref-pill">{request.report.report_reference}</span>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="visit-source-badge directive">
+                  <ShieldAlert size={12} aria-hidden="true" />
+                  <span>Supervisor Directive</span>
+                </span>
+                <span className="visit-ref-pill">Internal Order</span>
+              </>
+            )}
+          </div>
+        </td>
+        <td data-label="Reason">
+          <div className="verification-reason-bubble" title={request.reason || 'No reason provided'}>
+            <MessageSquare size={13} aria-hidden="true" />
+            <span>{request.reason || 'No reason provided'}</span>
+          </div>
+        </td>
+        <td data-label="Requested">
+          {(() => {
+            const raw = request.requested_at;
+            if (!raw) return <span className="verification-unassigned">Not recorded</span>;
+            const d = new Date(raw);
+            const dateStr = !isNaN(d.getTime()) ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium' }).format(d) : 'Not recorded';
+            const timeStr = !isNaN(d.getTime()) ? new Intl.DateTimeFormat('en-PH', { timeStyle: 'short' }).format(d) : '';
+            return (
+              <div className="verification-date-cell">
+                <span className="verification-date-primary">{dateStr}</span>
+                {timeStr && (
+                  <span className="verification-date-sub">
+                    <Clock size={11} aria-hidden="true" />
+                    <span>{timeStr}</span>
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+        </td>
+        <td data-label="Status">
+          {request.status === 'open' && (
+            <span className="admin-status-badge verification-status-badge open">
+              <Clock size={12} aria-hidden="true" />
+              <span>Needs Assignment</span>
+            </span>
+          )}
+          {request.status === 'claimed' && (
+            <span className="admin-status-badge verification-status-badge claimed">
+              <UserCheck size={12} aria-hidden="true" />
+              <span>Assigned</span>
+            </span>
+          )}
+          {request.status === 'completed' && (
+            <span className="admin-status-badge verification-status-badge completed">
+              <CheckCircle2 size={12} aria-hidden="true" />
+              <span>Completed</span>
+            </span>
+          )}
+          {request.status === 'cancelled' && (
+            <span className="admin-status-badge verification-status-badge cancelled">
+              <XCircle size={12} aria-hidden="true" />
+              <span>Cancelled</span>
+            </span>
+          )}
+        </td>
+        <td data-label="Assigned officer">
+          {request.claimant ? (
+            <div className="verification-officer-cell">
+              <div className="verification-officer-avatar" aria-hidden="true">
+                {getStoreInitials(request.claimant.name)}
+              </div>
+              <div className="verification-officer-details">
+                <span className="verification-officer-name">{request.claimant.name}</span>
+                {request.claimant.email && (
+                  <span className="verification-officer-sub">{request.claimant.email}</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <span className="verification-unassigned">— Unassigned —</span>
+          )}
+        </td>
+        <td data-label="Action">
+          {request.monitoring_record ? (
+            <button
+              type="button"
+              className="admin-button secondary verification-action-btn secondary"
+              aria-label={`Open monitoring record ${request.monitoring_record.id}`}
+              onClick={() => onOpenRecord(request.monitoring_record!.id)}
+            >
+              <FileText size={14} aria-hidden="true" />
+              <span>Record #{request.monitoring_record.id}</span>
+            </button>
+          ) : request.status === 'cancelled' ? (
+            <button
+              disabled={pending === request.id}
+              type="button"
+              className="admin-button secondary verification-action-btn secondary"
+              onClick={() => onReopen(request.id)}
+            >
+              <RotateCcw size={14} aria-hidden="true" />
+              <span>{pending === request.id ? 'Reopening…' : 'Reopen'}</span>
+            </button>
+          ) : request.status === 'open' ? (
+            <div className="verification-action-group">
+              <button
+                type="button"
+                className="admin-button primary verification-action-btn primary"
+                onClick={() => setAssigning(request.id)}
+              >
+                <UserPlus size={14} aria-hidden="true" />
+                <span>Assign</span>
+              </button>
+              <button
+                disabled={pending === request.id}
+                type="button"
+                className="admin-button secondary verification-action-btn secondary"
+                onClick={() => onCancel(request.id)}
+              >
+                <XCircle size={14} aria-hidden="true" />
+                <span>{pending === request.id ? 'Cancelling…' : 'Cancel'}</span>
+              </button>
+            </div>
+          ) : (
+            <span className="verification-pending-text">
+              <Clock size={13} aria-hidden="true" />
+              <span>In Progress</span>
+            </span>
+          )}
+        </td>
+      </tr>)}</tbody>
     </table>{!loading && !page.data.length && <Empty text="No additional visits match." />}</div></section>
     <Pagination page={page} onPage={onPage} />
     {assigningRequest && (
@@ -1172,105 +1230,37 @@ function VerificationView({ page, loading, search, status, scope, pending, onCle
   </>
 }
 
-function PriceDeltaBanner({ row }: { row: MonitoringPriceHistoryRow }) {
-  const isAnomaly = row.is_anomaly
-  const diff = row.difference !== null && row.difference !== undefined ? Number(row.difference) : null
-  const percent = row.variance_percent !== null && row.variance_percent !== undefined ? Number(row.variance_percent) : null
-
-  return <div className="price-delta-summary-card">
-    <div className="price-delta-header">
-      <div className="price-delta-title">
-        <TrendingUp size={18} />
-        <span>Latest price vs reference</span>
-      </div>
-      <div className={`price-delta-badge ${isAnomaly ? 'anomaly' : 'compliant'}`}>
-        {isAnomaly ? <TriangleAlert size={14} /> : <CheckCircle2 size={14} />}
-        <span>
-          {diff !== null
-            ? `${diff > 0 ? '+' : ''}₱${Math.abs(diff).toFixed(2)} (${percent !== null ? (percent > 0 ? '+' : '') + percent.toFixed(1) : 0}% variance)`
-            : 'Reference unavailable'}
-        </span>
-      </div>
-    </div>
-
-    <div className="price-delta-comparison">
-      <div className="comparison-metric reference">
-        <span className="metric-label">Reference Basis ({row.reference_label || 'Official SRP'})</span>
-        <strong className="metric-val">{money(row.reference_value)}</strong>
-        <small className="metric-sub">{row.reference_source || 'DTI Bulletin'} {row.reference_effective_date ? `· ${row.reference_effective_date}` : ''}</small>
-      </div>
-
-      <div className="comparison-arrow" aria-hidden="true">→</div>
-
-      <div className={`comparison-metric observed ${isAnomaly ? 'anomaly' : 'compliant'}`}>
-        <span className="metric-label">Observed Shelf Price</span>
-        <strong className="metric-val">{money(row.recorded_price)}</strong>
-        <small className="metric-sub">Recorded {formatDate(row.monitoring_date)}</small>
-      </div>
-
-      <div className="comparison-divider" aria-hidden="true" />
-
-      <div className="comparison-metric evaluation">
-        <span className="metric-label">Comparison with reference</span>
-        <strong className={`metric-val status-text ${isAnomaly ? 'anomaly' : 'compliant'}`}>
-          {diff === null ? 'Reference unavailable' : isAnomaly ? (row.finding_basis === 'previous_price_spike' ? 'Up over the previous record (For Review)' : 'Above the reference (For Review)') : 'Within reference'}
-        </strong>
-        <small className="metric-sub">{row.protocol_mode === 'emergency' ? 'Emergency Protocol (0% Tolerance)' : 'Standard Market Protocol'}</small>
-      </div>
-    </div>
-  </div>
-}
-
 function EstablishmentProfile({
   profile,
-  profileTab,
   period,
   customDateFrom,
   customDateTo,
-  commodity,
-  history,
+  search,
   records,
-  findings,
   error,
   onBack,
-  onProfileTab,
+  onSearch,
   onPeriodChange,
   onCustomDateChange,
-  onCommodity,
   onVerification,
   onOpenRecord,
-  onHistoryPage,
   onRecordsPage,
-  onFindingsPage,
-  onRegulatoryAction,
-  onOpenNotice,
-  reloading,
 }: {
   profile: MonitoringEstablishmentProfile
-  profileTab: ProfileTab
   period: MonitoringPeriodPreset
   customDateFrom: string
   customDateTo: string
-  commodity: `key:${string}` | `srp:${number}` | ''
-  history: MonitoringPriceHistoryPage
+  search: string
   records: MonitoringRecordPage
-  findings: MonitoringFindingsPage
   error: string
   onBack: () => void
-  onProfileTab: (tab: ProfileTab) => void
+  onSearch: (value: string) => void
   onPeriodChange: (period: MonitoringPeriodPreset) => void
   onCustomDateChange: (from: string, to: string) => void
-  onCommodity: (selector: `key:${string}` | `srp:${number}`) => void
   onVerification: () => void
   onOpenRecord: (id: number) => void
-  onHistoryPage: (page: number) => void
   onRecordsPage: (page: number) => void
-  onFindingsPage: (page: number) => void
-  onRegulatoryAction: (storeId: number, recordId?: number) => void
-  onOpenNotice: (noticeId: number) => void
-  reloading: boolean
 }) {
-  const latest = profile.latest_record
   const isMarket = profile.store.store_name.toLowerCase().includes('market')
   const [assigning, setAssigning] = useState(false)
   const [assigned, setAssigned] = useState(false)
@@ -1279,12 +1269,9 @@ function EstablishmentProfile({
   const recidivism = profile.store.recidivism_index ?? 0
   const periodCompleted = profile.period_completed_records_count ?? profile.completed_records_count
   const periodObservations = profile.period_records_with_observations_count ?? profile.records_with_observations_count
-  const cadence = profile.monitoring_period?.cadence
-  const routineDone = profile.routine_status === 'completed'
-  const protocolMode = profile.monitoring_period?.protocol_mode
   // Only facts the counts support: flagged items are above the review threshold, while unflagged prices may still be
   // above the reference within tolerance, and items without a reference are never flagged. Legal conclusions are DTI's.
-  const latestUnavailable = latest?.unavailable_reference_count ?? 0
+  const latestUnavailable = profile.latest_record?.unavailable_reference_count ?? 0
   const periodUnavailable = profile.period_unavailable_reference_count
   const regulatory = periodCompleted === 0
     ? { tone: 'amber', value: 'Not monitored this period', sub: 'No accepted visits in the selected period' }
@@ -1292,24 +1279,12 @@ function EstablishmentProfile({
       ? { tone: 'amber', value: 'Observations Noted', sub: `${periodObservations} visit${periodObservations > 1 ? 's' : ''} with flagged items` }
       : { tone: 'emerald', value: 'No flagged observations', sub: periodUnavailable === 0
         ? `${periodCompleted} visit${periodCompleted > 1 ? 's' : ''} recorded · compared against available references`
-        : `${periodCompleted} visit${periodCompleted > 1 ? 's' : ''} recorded · see Price History for each comparison` }
-  const latestResult = !latest
-    ? { tone: 'muted', label: 'Never monitored' }
-    : latest.anomaly_count
-      ? { tone: 'attention', label: 'Observations recorded' }
-      : latestUnavailable
-        ? { tone: 'muted', label: 'Reference Unavailable' }
-        : { tone: 'clean', label: 'No flagged observations' }
-  const commoditiesChecked = latest ? (latest.items_count ?? latest.items?.length ?? 0) : 0
+        : `${periodCompleted} visit${periodCompleted > 1 ? 's' : ''} recorded · open a visit for each comparison` }
 
   return (
     <article className="field-monitor-profile">
       {error && <div className="admin-feedback error" role="alert">{error}</div>}
 
-      <section className="admin-card">
-        <p><strong>Registered owner:</strong> {profile.store.owner_name || 'Not recorded'}</p>
-        <CurrentRepresentativeDetails representative={profile.store.current_representative} />
-      </section>
       <header className="field-monitor-profile-hero">
         <img
           src={getStoreImageUrl(profile.store)}
@@ -1388,451 +1363,120 @@ function EstablishmentProfile({
       )}
       {assigned && <div className="admin-feedback success" role="status">Additional visit assigned.</div>}
 
-      <div className="field-profile-toolbar">
-        <div className="field-monitor-tabs field-profile-tabs" role="tablist" aria-label="Establishment monitoring profile" onKeyDown={moveTabFocus}>
-          <button
-            key="overview"
-            id="profile-tab-overview"
-            aria-controls="profile-panel-overview"
-            type="button"
-            role="tab"
-            tabIndex={profileTab === 'overview' ? 0 : -1}
-            aria-selected={profileTab === 'overview'}
-            onClick={() => onProfileTab('overview')}
-          >
-            <LayoutGrid size={17} aria-hidden="true" />
-            <span>Overview</span>
-          </button>
-          <button
-            key="findings"
-            id="profile-tab-findings"
-            aria-controls="profile-panel-findings"
-            type="button"
-            role="tab"
-            tabIndex={profileTab === 'findings' ? 0 : -1}
-            aria-selected={profileTab === 'findings'}
-            onClick={() => onProfileTab('findings')}
-          >
-            <TriangleAlert size={17} aria-hidden="true" />
-            <span>Observations</span>
-            {findings.total > 0 && <span className="tab-count-badge danger">{findings.total}</span>}
-          </button>
-          <button
-            key="history"
-            id="profile-tab-history"
-            aria-controls="profile-panel-history"
-            type="button"
-            role="tab"
-            tabIndex={profileTab === 'history' ? 0 : -1}
-            aria-selected={profileTab === 'history'}
-            onClick={() => onProfileTab('history')}
-          >
-            <ChartColumn size={17} aria-hidden="true" />
-            <span>Price History</span>
-          </button>
-          <button
-            key="records"
-            id="profile-tab-records"
-            aria-controls="profile-panel-records"
-            type="button"
-            role="tab"
-            tabIndex={profileTab === 'records' ? 0 : -1}
-            aria-selected={profileTab === 'records'}
-            onClick={() => onProfileTab('records')}
-          >
-            <FileText size={17} aria-hidden="true" />
-            <span>Monitoring Records</span>
-            {records.total > 0 && <span className="tab-count-badge">{records.total}</span>}
-          </button>
+      <section className="overview-kpi-grid" aria-label="Establishment monitoring summary">
+        <div className="overview-kpi-card blue">
+          <span className="kpi-icon" aria-hidden="true"><ClipboardList size={24} /></span>
+          <div className="kpi-copy">
+            <span className="kpi-label">Completed Visits</span>
+            <strong className="kpi-value">{periodCompleted}</strong>
+            <small className="kpi-sub">Within selected period</small>
+          </div>
         </div>
-
-        <div className="field-profile-period">
-          <label htmlFor="profile-period-select" className="field-profile-period-label">
-            <Calendar size={16} aria-hidden="true" />
-            <span>Period:</span>
-          </label>
-          <div className="unified-select-wrap">
-            <select
-              id="profile-period-select"
-              aria-label="Monitoring period"
-              value={period}
-              onChange={(event) => onPeriodChange(event.target.value as MonitoringPeriodPreset)}
-            >
-              <option value="last_4_weeks">Last 4 Weeks</option>
-              <option value="this_week">This Week</option>
-              <option value="this_month">This Month</option>
-              <option value="last_month">Last Month</option>
-              <option value="all_time">All Time</option>
-              <option value="custom">Custom range</option>
-            </select>
-            <ChevronDown size={15} className="unified-select-chevron" aria-hidden="true" />
+        <div className="overview-kpi-card orange">
+          <span className="kpi-icon" aria-hidden="true"><CircleAlert size={24} /></span>
+          <div className="kpi-copy">
+            <span className="kpi-label">Visits with Observations</span>
+            <strong className={`kpi-value ${periodObservations > 0 ? 'text-orange' : ''}`}>{periodObservations}</strong>
+            <small className="kpi-sub">Items above the review threshold</small>
           </div>
-          {period === 'custom' && (
-            <div className="period-custom-form">
-              <label className="period-date-field">
-                <span>From</span>
-                <input
-                  type="date"
-                  aria-label="Filter from date"
-                  value={customDateFrom}
-                  onChange={(e) => onCustomDateChange(e.target.value, customDateTo)}
-                />
-              </label>
-              <label className="period-date-field">
-                <span>To</span>
-                <input
-                  type="date"
-                  aria-label="Filter to date"
-                  value={customDateTo}
-                  onChange={(e) => onCustomDateChange(customDateFrom, e.target.value)}
-                />
-              </label>
-            </div>
-          )}
         </div>
-      </div>
+        <div className="overview-kpi-card purple">
+          <span className="kpi-icon" aria-hidden="true"><Boxes size={24} /></span>
+          <div className="kpi-copy">
+            <span className="kpi-label">Monitored Commodities</span>
+            <strong className="kpi-value">{profile.period_commodities_count ?? profile.monitored_commodities.length}</strong>
+            <small className="kpi-sub">Actively tracked items</small>
+          </div>
+        </div>
+        <div className={`overview-kpi-card ${regulatory.tone}`}>
+          <span className="kpi-icon" aria-hidden="true"><FileText size={24} /></span>
+          <div className="kpi-copy">
+            <span className="kpi-label">Review Status</span>
+            <strong className={`kpi-value kpi-value-text text-${regulatory.tone}`}>{regulatory.value}</strong>
+            <small className="kpi-sub">{regulatory.sub}</small>
+            {periodUnavailable !== undefined
+              ? periodUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {periodUnavailable} item{periodUnavailable > 1 ? 's' : ''} in this period</small>
+              : latestUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {latestUnavailable} item{latestUnavailable > 1 ? 's' : ''} on the latest visit</small>}
+            {recidivism > 0 && <small className="kpi-sub text-danger">{recidivism} confirmed finding{recidivism > 1 ? 's' : ''} on record (decided by DTI)</small>}
+          </div>
+        </div>
+      </section>
 
-      {/* TAB 1: OVERVIEW */}
-      {profileTab === 'overview' && (
-        <section role="tabpanel" id="profile-panel-overview" aria-labelledby="profile-tab-overview" className="establishment-overview-workspace" aria-label="Establishment monitoring summary">
-          <div className="overview-kpi-grid">
-            <div className="overview-kpi-card blue">
-              <span className="kpi-icon" aria-hidden="true"><ClipboardList size={24} /></span>
-              <div className="kpi-copy">
-                <span className="kpi-label">Completed Visits</span>
-                <strong className="kpi-value">{periodCompleted}</strong>
-                <small className="kpi-sub">Within selected period</small>
-              </div>
-            </div>
-            <div className="overview-kpi-card orange">
-              <span className="kpi-icon" aria-hidden="true"><CircleAlert size={24} /></span>
-              <div className="kpi-copy">
-                <span className="kpi-label">Visits with Observations</span>
-                <strong className={`kpi-value ${periodObservations > 0 ? 'text-orange' : ''}`}>{periodObservations}</strong>
-                <small className="kpi-sub">Items above the review threshold</small>
-              </div>
-            </div>
-            <div className="overview-kpi-card purple">
-              <span className="kpi-icon" aria-hidden="true"><Boxes size={24} /></span>
-              <div className="kpi-copy">
-                <span className="kpi-label">Monitored Commodities</span>
-                <strong className="kpi-value">{profile.period_commodities_count ?? profile.monitored_commodities.length}</strong>
-                <small className="kpi-sub">Actively tracked items</small>
-              </div>
-            </div>
-            <div className={`overview-kpi-card ${regulatory.tone}`}>
-              <span className="kpi-icon" aria-hidden="true"><FileText size={24} /></span>
-              <div className="kpi-copy">
-                <span className="kpi-label">Review Status</span>
-                <strong className={`kpi-value kpi-value-text text-${regulatory.tone}`}>{regulatory.value}</strong>
-                <small className="kpi-sub">{regulatory.sub}</small>
-                {periodUnavailable !== undefined
-                  ? periodUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {periodUnavailable} item{periodUnavailable > 1 ? 's' : ''} in this period</small>
-                  : latestUnavailable > 0 && <small className="kpi-sub">Reference unavailable for {latestUnavailable} item{latestUnavailable > 1 ? 's' : ''} on the latest visit</small>}
-                {recidivism > 0 && <small className="kpi-sub text-danger">{recidivism} confirmed finding{recidivism > 1 ? 's' : ''} on record (decided by DTI)</small>}
-              </div>
+      <div className="field-profile-records">
+        <section className="field-monitor-controls-unified" aria-label="Monitoring record filters">
+          <div className="unified-search-wrap">
+            <label htmlFor="profile-records-search-input" className="sr-only">Search monitoring records</label>
+            <div className="admin-search-field-modern">
+              <Search size={17} aria-hidden="true" />
+              <input
+                id="profile-records-search-input"
+                type="search"
+                aria-label="Search monitoring records"
+                placeholder="Search field officer..."
+                value={search}
+                onChange={(event) => onSearch(event.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => onSearch('')}
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X size={15} />
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="overview-detail-grid">
-            <div className="detail-card">
-              <div className="detail-card-header">
-                <ShieldCheck size={22} className="detail-icon" aria-hidden="true" />
-                <h3 className="detail-card-title">Monitoring status</h3>
-                {protocolMode && (
-                  <span className={`profile-status-pill ${protocolMode === 'emergency' ? 'danger' : 'success'}`} title={profile.monitoring_period?.declaration_reference || undefined}>
-                    <ShieldCheck size={13} aria-hidden="true" />
-                    <span>{protocolMode === 'emergency' ? 'Emergency Protocol' : 'Normal Market Protocol'}</span>
-                  </span>
-                )}
-              </div>
-              <div className="detail-lead">
-                <span>{cadence === 'daily' ? 'Daily routine status' : 'Weekly routine status'}</span>
-                <strong>{routineDone ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}</strong>
-                <small>{profile.monitoring_period ? `${formatShortDate(profile.monitoring_period.starts_at)} – ${formatShortDate(profile.monitoring_period.ends_at)}` : ''}</small>
-              </div>
-              <div className="detail-facts">
-                <div className="detail-fact">
-                  <Calendar size={20} aria-hidden="true" />
-                  <div>
-                    <span>Last monitored</span>
-                    <strong>{formatDate(profile.latest_routine_monitoring_at)}</strong>
-                    <small>{profile.latest_routine_record?.officer.name || (profile.has_prior_routine_monitoring ? 'Officer unavailable' : 'No previous routine visits')}</small>
-                  </div>
-                </div>
-                <div className="detail-fact">
-                  <History size={20} aria-hidden="true" />
-                  <div>
-                    <span>{routineDone ? 'Next routine cycle' : 'Routine due by'}</span>
-                    <strong>{profile.monitoring_period ? formatShortDate(profile.monitoring_period.ends_at) : 'Not scheduled'}</strong>
-                    <small>{routineDone ? 'Current cycle completed' : 'Within current protocol cycle'}</small>
-                  </div>
-                </div>
-                <div className="detail-fact">
-                  <ShieldAlert size={20} aria-hidden="true" />
-                  <div>
-                    <span>Verification requirement</span>
-                    <strong>{profile.verification_task_status === 'none' ? 'None' : 'Verification Required'}</strong>
-                    {profile.verification_task_status === 'claimed' && <small>Verification claimed by {profile.verification_claimant?.name || 'an officer'}</small>}
-                  </div>
-                </div>
-                <div className="detail-fact">
-                  <ClipboardCheck size={20} aria-hidden="true" />
-                  <div>
-                    <span>Completed records</span>
-                    <strong>{profile.completed_records_count}</strong>
-                    <small>{profile.records_with_observations_count} with observations</small>
-                  </div>
-                </div>
-              </div>
+          <div className="unified-filter-group">
+            <label htmlFor="profile-period-select" className="unified-filter-label">
+              Period:
+            </label>
+            <div className="unified-select-wrap">
+              <select
+                id="profile-period-select"
+                aria-label="Monitoring period"
+                value={period}
+                onChange={(event) => onPeriodChange(event.target.value as MonitoringPeriodPreset)}
+              >
+                <option value="last_4_weeks">Last 4 Weeks</option>
+                <option value="this_week">This Week</option>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="all_time">All Time</option>
+                <option value="custom">Custom range</option>
+              </select>
+              <ChevronDown size={15} className="unified-select-chevron" aria-hidden="true" />
             </div>
-
-            <div className="detail-card">
-              <div className="detail-card-header">
-                <Activity size={22} className="detail-icon" aria-hidden="true" />
-                <h3 className="detail-card-title">Latest Inspection Snapshot</h3>
-                <button type="button" className="detail-card-link" onClick={() => onProfileTab('records')}>
-                  <span>View in Monitoring Records</span>
-                  <ArrowRight size={15} aria-hidden="true" />
-                </button>
-              </div>
-              <div className="snapshot-highlight">
-                <span className="snapshot-icon" aria-hidden="true"><Calendar size={22} /></span>
-                <div className="snapshot-copy">
-                  <span>Latest accepted visit</span>
-                  <strong>{formatDate(latest?.finalized_at)}</strong>
-                  <small>{latest?.officer.name || 'Officer unavailable'}</small>
-                </div>
-                <span className={`snapshot-result ${latestResult.tone}`}>{latestResult.label}</span>
-              </div>
-              <div className="detail-facts">
-                <div className="detail-fact">
-                  <Boxes size={20} aria-hidden="true" />
-                  <div>
-                    <span>Commodities checked</span>
-                    <strong>{latest ? `${commoditiesChecked} item${commoditiesChecked === 1 ? '' : 's'}` : 'None'}</strong>
-                  </div>
-                </div>
-                <button type="button" className="detail-fact detail-fact-button" onClick={() => onProfileTab('findings')} aria-label="Open findings and anomalies">
-                  <FileText size={20} aria-hidden="true" />
-                  <div>
-                    <span>Key findings</span>
-                    <strong>{latest?.anomaly_count ? `${latest.anomaly_count} price anomal${latest.anomaly_count === 1 ? 'y' : 'ies'}` : 'No anomalies'}</strong>
-                  </div>
-                  <ChevronRight size={18} className="detail-fact-chevron" aria-hidden="true" />
-                </button>
-              </div>
-              <div className="snapshot-footer">
-                <div>
-                  <span>Protocol</span>
-                  <strong>{latest?.protocol_mode ? `${latest.protocol_mode === 'emergency' ? 'Emergency' : 'Standard'} protocol` : 'Not captured'}</strong>
-                  {latest?.protocol_reference && <small>{latest.protocol_reference}</small>}
-                </div>
-                <div>
-                  <span>Latest record</span>
-                  <strong>{latest ? `Visit #${latest.id}` : 'None'}</strong>
-                  {latest && <button type="button" className="text-button" onClick={() => onOpenRecord(latest.id)}>Open record</button>}
-                </div>
-                <div>
-                  <span>Recent visits</span>
-                  <strong>{records.data.slice(0, 3).map((record) => `#${record.id}`).join(', ') || 'None'}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* TAB 2: FLAGGED OBSERVATIONS */}
-      {profileTab === 'findings' && (
-        <div role="tabpanel" id="profile-panel-findings" aria-labelledby="profile-tab-findings" className="field-profile-findings">
-          <section className="admin-table-card">
-            <div className="field-monitor-items-heading">
-              <div>
-                <h3>Flagged Observations</h3>
-                <p>Commodities recorded above the review threshold of their captured reference in the selected period. These are observations for DTI review, not findings.</p>
-              </div>
-            </div>
-
-            {findings.data.length === 0 ? (
-              <div className="findings-empty-state">
-                <CheckCircle2 size={36} className="text-emerald" aria-hidden="true" />
-                <h4>No Flagged Observations</h4>
-                <p>No recorded price for this establishment was above the review threshold in the selected period. Items without an available reference are never flagged; see Price History.</p>
-              </div>
-            ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-data-table">
-                  <caption className="sr-only">Establishment flagged price observations</caption>
-                  <thead>
-                    <tr>
-                      <th>Inspection Date</th>
-                      <th>Commodity</th>
-                      <th>Observed Price</th>
-                      <th>Reference / SRP</th>
-                      <th>Variance</th>
-                      <th>Protocol Mode</th>
-                      <th>Field Officer</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {findings.data.map((item) => (
-                      <tr key={item.id}>
-                        <td data-label="Inspection Date">{formatDate(item.finalized_at)}</td>
-                        <td data-label="Commodity">
-                          <strong>{item.commodity_name}</strong>
-                          {item.unit && <small> · {item.unit}</small>}
-                        </td>
-                        <td data-label="Observed Price">
-                          <strong className="text-danger">{money(item.recorded_price)}</strong>
-                        </td>
-                        <td data-label="Reference / SRP">
-                          <div>{money(item.reference_value)}</div>
-                          <small>{item.reference_source || item.reference_label || 'SRP baseline'}</small>
-                        </td>
-                        <td data-label="Variance">
-                          <span className="variance-pill anomaly">
-                            {Number(item.difference) > 0 ? '+' : ''}{money(item.difference)}
-                            {item.variance_percent !== null && ` (+${Number(item.variance_percent).toFixed(1)}%)`}
-                          </span>
-                        </td>
-                        <td data-label="Protocol Mode">
-                          <span className={`protocol-badge ${item.protocol_mode === 'emergency' ? 'emergency' : 'standard'}`}>
-                            {item.protocol_mode === 'emergency' ? 'Emergency (0%)' : 'Standard (10%)'}
-                          </span>
-                        </td>
-                        <td data-label="Field Officer">{item.officer_name}</td>
-                        <td data-label="Actions" className="actions-cell">
-                          {item.notice
-                            ? <button type="button" className="regulatory-chip" onClick={() => onOpenNotice(item.notice!.id)}>{noticeChipLabel(item.notice)}</button>
-                            : item.decision ? <span className="regulatory-chip muted" title={item.decision_reason ?? undefined}>{decisionLabel(item.decision)}{decidedBy(item.decided_by_name, item.decided_at)}{item.decision === 'no_action' && item.decision_reason ? `: ${item.decision_reason}` : ''}</span>
-                              : <span className="regulatory-chip muted">Not reviewed</span>}
-                          {!item.decision && !(item.notice && ['draft', 'issued', 'response_received'].includes(item.notice.status)) && <button
-                            type="button"
-                            className="admin-button small notice-action-btn"
-                            onClick={() => onRegulatoryAction(profile.store.id, item.monitoring_record_id)}
-                          >
-                            <TriangleAlert size={13} aria-hidden="true" />
-                            <span>Prepare Notice</span>
-                          </button>}
-                          <button
-                            type="button"
-                            className="text-button"
-                            onClick={() => onOpenRecord(item.monitoring_record_id)}
-                          >
-                            View Record
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {period === 'custom' && (
+              <div className="period-custom-form">
+                <label className="period-date-field">
+                  <span>From</span>
+                  <input
+                    type="date"
+                    aria-label="Filter from date"
+                    value={customDateFrom}
+                    onChange={(e) => onCustomDateChange(e.target.value, customDateTo)}
+                  />
+                </label>
+                <label className="period-date-field">
+                  <span>To</span>
+                  <input
+                    type="date"
+                    aria-label="Filter to date"
+                    value={customDateTo}
+                    onChange={(e) => onCustomDateChange(customDateFrom, e.target.value)}
+                  />
+                </label>
               </div>
             )}
-          </section>
-          {findings.last_page > 1 && <Pagination page={findings} onPage={onFindingsPage} />}
-        </div>
-      )}
-
-      {/* TAB 3: PRICE HISTORY */}
-      {profileTab === 'history' && (
-        <div role="tabpanel" id="profile-panel-history" aria-labelledby="profile-tab-history">
-          <section className="field-monitor-controls">
-            <label>Commodity
-              <select aria-label="Commodity" value={commodity} disabled={reloading} onChange={(event) => onCommodity(event.target.value as `key:${string}` | `srp:${number}`)}>
-                {profile.monitored_commodities.map((item) => (
-                  <option key={item.selector} value={item.selector}>
-                    {item.commodity_name}{item.unit ? ` · ${item.unit}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
-
-          {history.data.length > 0 && <PriceDeltaBanner row={history.data[0]} />}
-
-          <section className="admin-table-card">
-            <div className="field-monitor-items-heading">
-              <div>
-                <h3>Price History</h3>
-                <p>Captured references remain tied to their monitoring date.</p>
-              </div>
-            </div>
-            <div className="admin-table-wrap">
-              <table className="admin-data-table">
-                <caption className="sr-only">Temporal price history</caption>
-                <thead>
-                  <tr>
-                    <th>Monitoring date</th>
-                    <th>Captured reference</th>
-                    <th>Source / effective date</th>
-                    <th>Reference value</th>
-                    <th>Observed price</th>
-                    <th>Peso difference</th>
-                    <th>Percentage</th>
-                    <th>Result</th>
-                    <th>Record</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.data.map((row) => (
-                    <tr key={row.id}>
-                      <td data-label="Monitoring date">{formatDate(row.monitoring_date)}</td>
-                      <td data-label="Captured reference">
-                        <strong>{row.reference_type || 'Reference unavailable'}</strong>
-                        <small>{row.reference_label || 'Not assessed'}</small>
-                      </td>
-                      <td data-label="Source / effective date">
-                        <strong>{row.reference_source || 'Unavailable'}</strong>
-                        <small>{row.reference_effective_date || 'Date unavailable'}</small>
-                      </td>
-                      <td data-label="Reference value">{money(row.reference_value)}</td>
-                      <td data-label="Observed price">{money(row.recorded_price)}</td>
-                      <td data-label="Peso difference">
-                        {row.difference === null ? 'Not assessed' : (
-                          <span className={`diff-pill ${Number(row.difference) > 0 ? 'diff-high' : Number(row.difference) < 0 ? 'diff-low' : 'diff-match'}`}>
-                            {Number(row.difference) > 0 ? '+' : ''}{money(row.difference)}
-                          </span>
-                        )}
-                      </td>
-                      <td data-label="Percentage">
-                        {row.variance_percent === null ? 'Not assessed' : (
-                          <span className={`variance-pill ${row.is_anomaly ? 'anomaly' : 'compliant'}`}>
-                            {Number(row.variance_percent) > 0 ? '+' : ''}{Number(row.variance_percent).toFixed(1)}%
-                          </span>
-                        )}
-                      </td>
-                      <td data-label="Result">
-                        {row.reference_status === 'unavailable' ? (
-                          <span className="monitor-observation neutral">Reference unavailable / Not assessed</span>
-                        ) : (
-                          <Observation value={row.is_anomaly ? 'with_observations' : 'no_observations'} />
-                        )}
-                      </td>
-                      <td data-label="Record">
-                        <button type="button" className="text-button" onClick={() => onOpenRecord(row.monitoring_record_id)}>
-                          Open source record
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!history.data.length && <Empty text="No price history is available for this commodity." />}
-            </div>
-          </section>
-          <Pagination page={history} onPage={onHistoryPage} disabled={reloading} />
-        </div>
-      )}
-
-      {/* TAB 4: MONITORING RECORDS */}
-      {profileTab === 'records' && (
-        <div role="tabpanel" id="profile-panel-records" aria-labelledby="profile-tab-records" className="field-profile-records">
-          <RecordTable page={records} loading={false} hideEstablishment onOpen={onOpenRecord} />
-          <Pagination page={records} onPage={onRecordsPage} />
-        </div>
-      )}
+          </div>
+        </section>
+        <RecordTable page={records} loading={false} hideEstablishment onOpen={onOpenRecord} />
+        <Pagination page={records} onPage={onRecordsPage} />
+      </div>
     </article>
   )
 }

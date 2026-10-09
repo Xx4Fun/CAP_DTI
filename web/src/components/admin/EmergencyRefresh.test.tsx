@@ -158,7 +158,12 @@ describe('Emergency Protocol independent loading and refresh', () => {
   })
 
   it('replaces draft prices immediately after activation with the authoritative response', async () => {
-    vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect', official_prices: [official('rice', 'APC', 46)] })
+    const confirmed: RegulatoryEmergencyRecord = { ...draft, status: 'active', effective_state: 'in_effect', official_prices: [official('rice', 'APC', 46)] }
+    vi.mocked(adminApi.activateEmergency).mockImplementation(async () => {
+      vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(confirmed)])
+      vi.mocked(adminApi.getEmergency).mockResolvedValue(confirmed)
+      return confirmed
+    })
     render(<EmergencyToggle />)
     await screen.findByRole('checkbox')
     const user = userEvent.setup()
@@ -308,7 +313,11 @@ describe('Emergency Protocol independent loading and refresh', () => {
     vi.mocked(adminApi.getEmergencySummaries).mockReturnValueOnce(oldSummary.promise)
     vi.mocked(adminApi.getEmergency).mockReturnValueOnce(oldDetail.promise)
     refresh()
-    await act(async () => write.resolve({ ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-10-09T01:00:00Z' }))
+    const ended: RegulatoryEmergencyRecord = { ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-10-09T01:00:00Z' }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(ended)])
+    // The old summary never completed, so its old detail was never started; keep the one-shot old detail for the next read.
+    vi.mocked(adminApi.getEmergency).mockReset().mockResolvedValue(ended)
+    await act(async () => write.resolve(ended))
     await act(async () => { oldSummary.resolve([summary(active)]); oldDetail.resolve(active) })
     expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
     expect(screen.getByText(/Manually ended at/)).toBeInTheDocument()

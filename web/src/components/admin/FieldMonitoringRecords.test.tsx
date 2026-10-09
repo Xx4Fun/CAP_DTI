@@ -1,8 +1,9 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
 import { FieldMonitoringRecords } from './FieldMonitoringRecords'
+import { exportMonitoringMatrixExcel } from '../../utils/monitoringExcelExport'
 
 vi.mock('../../services/adminApi', () => ({ adminApi: {
   getMonitoringEstablishments: vi.fn(), getMonitoringEstablishment: vi.fn(), getMonitoringPriceHistory: vi.fn(),
@@ -41,13 +42,11 @@ describe('FieldMonitoringRecords', () => {
     window.history.replaceState({}, '', '/?module=field_monitoring')
     vi.mocked(adminApi.getMonitoringEstablishments).mockResolvedValue(workspace)
     vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ store: { id: 2, dti_sec_number: null, store_name: 'Gaisano Grand Mall', owner_name: 'Maria Santos', address: 'San Jose de Buenavista', latitude: 10.74, longitude: 121.94, is_active: true, is_verified: true, is_public: true }, completed_records_count: 1, records_with_observations_count: 1, open_verification_requests_count: 1, monitoring_period: workspace.monitoring_period, routine_status: 'completed', monitoring_week: workspace.monitoring_week, weekly_routine_status: 'monitored_this_week', has_prior_routine_monitoring: true, latest_routine_monitoring_at: record.finalized_at, latest_routine_record: { ...record, verification_request: undefined }, verification_task_status: 'claimed', verification_claimant: record.officer, latest_record: record, monitored_commodities: [{ selector: 'key:rice', commodity_name: 'Rice', unit: 'kg' }] })
-    vi.mocked(adminApi.getMonitoringPriceHistory).mockResolvedValue({ data: [{ id: 1, monitoring_record_id: 14, monitoring_date: record.finalized_at, protocol_mode: 'standard', protocol_reference: null, commodity_name: 'Rice', unit: 'kg', reference_status: 'available', reference_label: 'SRP baseline', reference_value: 50, reference_source: 'SRP-2026-01', reference_effective_date: '2026-08-01', recorded_price: 62, difference: 12, variance_percent: 24, is_anomaly: true }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecords).mockResolvedValue({ data: [record], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getMonitoringRecord).mockResolvedValue(record)
     vi.mocked(adminApi.getFieldVerificationRequests).mockResolvedValue({ data: [{ id: 301, source_type: 'complaint', status: 'completed', reason: 'Verify the shelf price.', requested_at: '2026-08-24T06:00:00Z', completed_at: record.finalized_at, store: record.store, report: { id: 101, report_reference: 'RPT-101', status: 'Under regulatory review' }, claimant: record.officer, monitoring_record: { id: 14 } }], current_page: 1, last_page: 1, per_page: 10, total: 1, from: 1, to: 1 })
     vi.mocked(adminApi.getManagedUsers).mockResolvedValue({ records: [{ id: 9, name: 'Ben Officer', email: 'ben@dti.test', role: 'field_officer', is_active: true, created_at: '2026-01-01', stores: [] }], pagination: { current_page: 1, last_page: 1, per_page: 50, total: 1, from: 1, to: 1 }, counts: { total: 1, field_officer: 1, vendor: 0, inactive: 0 } })
     vi.mocked(adminApi.createAdditionalVisit).mockResolvedValue({ id: 401, source_type: 'supervisor_directive', status: 'claimed', reason: 'Recheck display.', store_id: 2, claimed_by: 9, requested_at: '2026-08-24T09:00:00Z', claimed_at: '2026-08-24T09:00:00Z', completed_at: null, cancelled_at: null })
-    vi.mocked(adminApi.getMonitoringFindings).mockResolvedValue({ data: [], current_page: 1, last_page: 1, per_page: 10, total: 0, from: null, to: null })
   })
 
   it('opens on the establishment overview with operational summary filters', async () => {
@@ -76,16 +75,29 @@ describe('FieldMonitoringRecords', () => {
     expect(await screen.findByRole('region', { name: 'Monitoring establishments' })).toBeInTheDocument()
   })
 
-  it('opens an establishment profile with captured price history and filtered records', async () => {
+  it('opens an establishment profile showing only the summary cards and its monitoring records', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
     expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
-    await user.click(screen.getByRole('tab', { name: 'Price History' }))
-    expect(screen.getByRole('table', { name: 'Temporal price history' })).toHaveTextContent('₱50.00')
-    expect(screen.getByRole('table', { name: 'Temporal price history' })).not.toHaveTextContent('₱999.00')
-    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, expect.objectContaining({ commodity: 'key:rice' }))
+    expect(screen.getByRole('table', { name: 'Accepted field monitoring visits' })).toHaveTextContent('Ana Officer')
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2, period: 'last_4_weeks' }))
+    expect(screen.getByText('Completed Visits')).toBeInTheDocument()
+    expect(screen.queryByRole('tablist', { name: 'Establishment monitoring profile' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Registered owner|Current establishment representative/)).not.toBeInTheDocument()
+    expect(adminApi.getMonitoringPriceHistory).not.toHaveBeenCalled()
+    expect(adminApi.getMonitoringFindings).not.toHaveBeenCalled()
     expect(new URLSearchParams(window.location.search).get('store')).toBe('2')
+  })
+
+  it('searches the monitoring records of the open establishment', async () => {
+    const user = userEvent.setup()
+    render(<FieldMonitoringRecords />)
+    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
+    await user.type(await screen.findByRole('searchbox', { name: 'Search monitoring records' }), 'Ana')
+    await waitFor(() => expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2, search: 'Ana', page: 1 })))
+    expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(window.location.search).toContain('profile_record_search=Ana'))
   })
 
   it('keeps records view-only and sends only observed products to legal actions', async () => {
@@ -110,6 +122,9 @@ describe('FieldMonitoringRecords', () => {
     render(<FieldMonitoringRecords />)
     await user.click(screen.getByRole('tab', { name: 'Additional Visits' }))
     expect(await screen.findByText('RPT-101')).toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: 'Quick status filters' })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Additional visit status' }), 'completed')
+    await waitFor(() => expect(adminApi.getFieldVerificationRequests).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' })))
     await user.click(screen.getByRole('button', { name: 'Open monitoring record 14' }))
     expect(await screen.findByRole('heading', { name: 'Visit #14' })).toBeInTheDocument()
   })
@@ -148,15 +163,13 @@ describe('FieldMonitoringRecords', () => {
     window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
     render(<FieldMonitoringRecords />)
     expect(await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })).toBeInTheDocument()
-    expect(adminApi.getMonitoringPriceHistory).toHaveBeenCalledWith(2, expect.objectContaining({ commodity: 'key:rice' }))
+    expect(adminApi.getMonitoringRecords).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
   })
 
   it('opens the scoped verification queue from an establishment and can clear it', async () => {
     const user = userEvent.setup()
     render(<FieldMonitoringRecords />)
     await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-    expect(screen.getByText('Last monitored').closest('div')).toHaveTextContent('Aug 24, 2026')
-    expect(screen.getByText('Verification claimed by Ana Officer')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'View Additional Visits' }))
     expect(await screen.findByText('Gaisano Grand Mall', { selector: '.field-monitor-scope strong' })).toBeInTheDocument()
     expect(adminApi.getFieldVerificationRequests).toHaveBeenCalledWith(expect.objectContaining({ store_id: 2 }))
@@ -192,46 +205,6 @@ describe('FieldMonitoringRecords', () => {
     await waitFor(() => {
       expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledWith(2, expect.objectContaining({ period: 'this_week' }))
     })
-  })
-
-  it('renders findings & anomalies tab and allows preparing legal notices', async () => {
-    const user = userEvent.setup()
-    const onNavigate = vi.fn()
-    vi.mocked(adminApi.getMonitoringFindings).mockResolvedValue({
-      data: [{
-        id: 88,
-        monitoring_record_id: 14,
-        finalized_at: record.finalized_at,
-        officer_name: 'Ana Officer',
-        commodity_name: 'Rice',
-        unit: 'kg',
-        recorded_price: 62,
-        reference_value: 50,
-        difference: 12,
-        variance_percent: 24,
-        protocol_mode: 'standard',
-        reference_label: 'SRP baseline',
-        reference_source: 'SRP-2026-01',
-      }],
-      current_page: 1,
-      last_page: 1,
-      per_page: 10,
-      total: 1,
-      from: 1,
-      to: 1,
-    })
-
-    render(<FieldMonitoringRecords onNavigate={onNavigate} />)
-    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-
-    // Open Observations tab
-    await user.click(screen.getByRole('tab', { name: /^Observations/i }))
-    expect(await screen.findByRole('table', { name: 'Establishment flagged price observations' })).toBeInTheDocument()
-    expect(screen.getByText('₱62.00')).toBeInTheDocument()
-
-    // Click Prepare Notice
-    await user.click(screen.getByRole('button', { name: 'Prepare Notice' }))
-    expect(onNavigate).toHaveBeenCalledWith('legal_actions', { source_record: 14, source_store: 2 })
   })
 
   it('drops a profile that finishes loading after the admin went back', async () => {
@@ -281,23 +254,6 @@ describe('FieldMonitoringRecords', () => {
     await waitFor(() => expect(adminApi.getMonitoringEstablishment).toHaveBeenCalledWith(2, expect.objectContaining({ period: 'last_4_weeks' })))
   })
 
-  it('keeps the previous commodity when switching commodity fails', async () => {
-    const profile = await adminApi.getMonitoringEstablishment(2, { period: 'last_4_weeks' })
-    vi.mocked(adminApi.getMonitoringEstablishment).mockResolvedValue({ ...profile, monitored_commodities: [...profile.monitored_commodities, { selector: 'key:sugar', commodity_name: 'Sugar', unit: 'kg' }] })
-    window.history.replaceState({}, '', '/?module=field_monitoring&store=2')
-    const user = userEvent.setup()
-    render(<FieldMonitoringRecords />)
-    await screen.findByRole('heading', { name: 'Gaisano Grand Mall' })
-    await user.click(screen.getByRole('tab', { name: 'Price History' }))
-    vi.mocked(adminApi.getMonitoringPriceHistory).mockRejectedValueOnce({ response: { data: { message: 'History unavailable.' } } })
-
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Commodity' }), 'key:sugar')
-
-    expect(await screen.findByText('History unavailable.')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Commodity' })).toHaveValue('key:rice')
-    expect(new URLSearchParams(window.location.search).get('commodity')).toBeNull()
-  })
-
   it('ignores Back/Forward into another module instead of loading its record', async () => {
     render(<FieldMonitoringRecords />)
     await screen.findByRole('region', { name: 'Monitoring establishments' })
@@ -307,16 +263,6 @@ describe('FieldMonitoringRecords', () => {
     })
     expect(adminApi.getMonitoringRecord).not.toHaveBeenCalled()
     expect(adminApi.getMonitoringEstablishment).not.toHaveBeenCalled()
-  })
-
-  it('opens another establishment on Overview instead of the last profile tab', async () => {
-    const user = userEvent.setup()
-    render(<FieldMonitoringRecords />)
-    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-    await user.click(await screen.findByRole('tab', { name: /^Observations/i }))
-    await user.click(screen.getByRole('button', { name: 'Back to establishments directory' }))
-    await user.click(await screen.findByRole('button', { name: 'Open Gaisano Grand Mall monitoring profile' }))
-    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('opens detail only from explicit buttons, not stray clicks on a table row', async () => {
@@ -396,7 +342,47 @@ describe('FieldMonitoringRecords', () => {
     const exportBtn = screen.getByRole('button', { name: 'Export to Excel' })
     expect(exportBtn).toBeInTheDocument()
     await user.click(exportBtn)
-    await waitFor(() => expect(adminApi.getMonitoringExportMatrix).toHaveBeenCalledWith({ period: 'last_4_weeks' }))
+    await waitFor(() => expect(adminApi.getMonitoringExportMatrix).toHaveBeenCalledWith({ period: 'last_4_weeks', search: undefined }))
+  })
+
+  it('exports the current search before debounce and restores period-only export when cleared', async () => {
+    const matrix = { period: 'this_week', date_range: { from: null, to: null }, commodities: [], weeks: [], generated_at: '2026-08-24T00:00:00Z' }
+    vi.mocked(adminApi.getMonitoringExportMatrix).mockResolvedValue(matrix)
+    window.history.replaceState({}, '', '/?module=field_monitoring&monitor_tab=records&record_search=Old&record_period=this_week')
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('table', { name: 'Accepted field monitoring visits' })
+
+    const exportButton = screen.getByRole('button', { name: 'Export to Excel' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search monitoring visits' }), { target: { value: '  aNtIqUe  ' } })
+    fireEvent.click(exportButton)
+    expect(adminApi.getMonitoringExportMatrix).toHaveBeenLastCalledWith({ period: 'this_week', search: 'aNtIqUe' })
+    await waitFor(() => expect(exportMonitoringMatrixExcel).toHaveBeenCalledWith(matrix, 'This Week'))
+    await waitFor(() => expect(exportButton).toBeEnabled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    fireEvent.click(exportButton)
+    expect(adminApi.getMonitoringExportMatrix).toHaveBeenLastCalledWith({ period: 'this_week', search: undefined })
+    await waitFor(() => expect(exportMonitoringMatrixExcel).toHaveBeenCalledTimes(2))
+  })
+
+  it.each(['request', 'workbook'])('shows %s export failures and allows retry', async (failure) => {
+    const matrix = { period: 'all_time', date_range: { from: null, to: null }, commodities: [], weeks: [], generated_at: '2026-08-24T00:00:00Z' }
+    vi.mocked(adminApi.getMonitoringExportMatrix).mockResolvedValue(matrix)
+    if (failure === 'request') vi.mocked(adminApi.getMonitoringExportMatrix).mockRejectedValueOnce(new Error('Export unavailable'))
+    else vi.mocked(exportMonitoringMatrixExcel).mockRejectedValueOnce(new Error('Export unavailable'))
+    window.history.replaceState({}, '', '/?module=field_monitoring&monitor_tab=records')
+    render(<FieldMonitoringRecords />)
+    await screen.findByRole('table', { name: 'Accepted field monitoring visits' })
+
+    const exportButton = screen.getByRole('button', { name: 'Export to Excel' })
+    fireEvent.click(exportButton)
+    expect(await screen.findByText('Export unavailable')).toBeInTheDocument()
+    expect(exportButton).toBeEnabled()
+    if (failure === 'request') expect(exportMonitoringMatrixExcel).not.toHaveBeenCalled()
+    fireEvent.click(exportButton)
+    await waitFor(() => expect(exportMonitoringMatrixExcel).toHaveBeenCalledWith(matrix, 'All Records'))
+    await waitFor(() => expect(exportButton).toBeEnabled())
+    expect(screen.queryByText('Export unavailable')).not.toBeInTheDocument()
   })
 
   it('links a visit to its notices and shows DTI decisions without acting on them', async () => {

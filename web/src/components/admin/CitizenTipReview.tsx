@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Building2,
   CheckCircle2,
   Circle,
-  AlertCircle,
-  ArrowLeft,
   Download,
   FileText,
   Lock,
@@ -34,6 +36,11 @@ type ItemDecision = {
   regulatory_finding: string
 }
 
+/** Assessment reasons (worded in backend ConsumerReportAssessment) that ItemReferenceVerdict restates on every item card. */
+const REASONS_SHOWN_ON_ITEM_CARD = [
+  'Product is unidentified or its match is uncertain.',
+  'The applicable price reference is unavailable.',
+]
 
 export const CitizenTipReview: React.FC = () => {
   const [reports, setReports] = useState<ConsumerReportRecord[]>([])
@@ -433,6 +440,12 @@ export const CitizenTipReview: React.FC = () => {
     { id: 'all', label: 'All', tone: 'muted' },
   ]
 
+  const formatEvidenceStatus = (val?: unknown) => {
+    if (!val) return 'Not available'
+    const str = String(val).replaceAll('_', ' ')
+    return str.charAt(0).toUpperCase() + str.slice(1)
+  }
+
   const parseOcrItems = (rawJson: Record<string, unknown> | null) => {
     if (!rawJson) return []
     if (Array.isArray(rawJson.items)) return rawJson.items as Array<Record<string, unknown>>
@@ -747,6 +760,7 @@ export const CitizenTipReview: React.FC = () => {
               <span className="consumer-report-header-divider" aria-hidden="true" />
 
               <h2 tabIndex={-1} className="consumer-report-detail-title">
+                <Building2 size={18} className="consumer-report-store-icon" aria-hidden="true" />
                 {selected.store_name || 'Store unmapped'}
               </h2>
             </div>
@@ -806,7 +820,11 @@ export const CitizenTipReview: React.FC = () => {
                   </div>
                   <div className="consumer-report-asset-meta-row">
                     <span className="consumer-report-asset-meta consumer-report-meta-chip">
-                      Continuity: {String(evidenceManifest.continuity?.status || 'Not available')} · Merchant: {String(evidenceManifest.merchant?.status || 'Not available')}
+                      <span className={`consumer-report-status-dot ${evidenceManifest.continuity?.status === 'verified' || evidenceManifest.continuity?.status === 'passed' ? 'active' : evidenceManifest.continuity?.status === 'failed' ? 'pending' : 'neutral'}`} />
+                      Continuity: {formatEvidenceStatus(evidenceManifest.continuity?.status)}
+                      {' · '}
+                      <span className={`consumer-report-status-dot ${evidenceManifest.merchant?.status === 'matched' ? 'active' : 'neutral'}`} />
+                      Merchant: {formatEvidenceStatus(evidenceManifest.merchant?.status)}
                     </span>
                   </div>
                 </div>
@@ -817,6 +835,7 @@ export const CitizenTipReview: React.FC = () => {
                 <button type="button" title="Zoom Out" aria-label="Zoom Out" onClick={() => setZoom((z) => Math.max(z - 0.25, 0.5))}>
                   <ZoomOut size={13} /> Zoom Out
                 </button>
+                <span className="consumer-report-zoom-badge" aria-label="Current zoom">{Math.round(zoom * 100)}%</span>
                 <button type="button" title="Zoom In" aria-label="Zoom In" onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}>
                   <ZoomIn size={13} /> Zoom In
                 </button>
@@ -1027,14 +1046,19 @@ export const CitizenTipReview: React.FC = () => {
 
               {/* DTI DECISION & REVIEW SECTION */}
               <div className="consumer-report-decision">
-                {selected.automatic_assessment_json && (
-                  <section className="admin-feedback" aria-label="Automatic assessment">
-                    <strong>{automaticallyResolved ? 'Automatically resolved' : selected.evaluator_confirmed_json ? 'Initial system assessment' : selected.automatic_assessment_json.category === 'violations' ? 'System detected a possible violation' : 'Assessment requires review'}</strong>
+                {/* An assessment that only asks for review adds nothing to the decision form below, so it is not shown. */}
+                {selected.automatic_assessment_json && selected.automatic_assessment_json.category !== 'to_review' && (
+                  <section className="admin-feedback consumer-report-assessment" aria-label="Automatic assessment">
+                    <strong>{automaticallyResolved ? 'Automatically resolved' : selected.automatic_assessment_json.category === 'violations' && !selected.evaluator_confirmed_json ? 'System detected a possible violation' : 'Initial system assessment'}</strong>
                     {automaticallyResolved && <p>No price violations were detected. No evaluator decision is required.</p>}
                     {selected.automatic_assessment_json.reasons.length > 0 && <ul>{selected.automatic_assessment_json.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
-                    {selected.automatic_assessment_json.items.filter(item => item.reasons.length > 0).map(item => (
-                      <p key={item.item_id}>{selected.items?.find(line => line.id === item.item_id)?.item_name || 'Receipt item'}: {item.reasons.join(' ')}</p>
-                    ))}
+                    {/* Each item card below already says when a line has no reference, so only the other reasons are listed. */}
+                    {selected.automatic_assessment_json.items
+                      .map(item => ({ id: item.item_id, reasons: item.reasons.filter(reason => !REASONS_SHOWN_ON_ITEM_CARD.includes(reason)) }))
+                      .filter(item => item.reasons.length > 0)
+                      .map(item => (
+                        <p key={item.id}>{selected.items?.find(line => line.id === item.id)?.item_name || 'Receipt item'}: {item.reasons.join(' ')}</p>
+                      ))}
                   </section>
                 )}
                 {!automaticallyResolved && <>
@@ -1046,19 +1070,34 @@ export const CitizenTipReview: React.FC = () => {
                     {selected.items!.map((item) => {
                       const decision = itemDecisions[item.id]
                       const decided = isItemDecided(item.id)
+                      const findingVal = decision?.regulatory_finding
+                      const findingClass = decided
+                        ? findingVal === 'confirmed_violation' ? ' is-violation'
+                        : findingVal === 'no_violation' ? ' is-clean'
+                        : ' is-insufficient'
+                        : ''
                       // Keyless bulletins cannot resolve a reference, so they are never offered.
                       const candidates = (item.reference?.match_candidates ?? []).filter((candidate) => Boolean(candidate.commodity_key))
                       const currentKey = decision?.commodity_key || ''
                       return (
-                        <fieldset key={item.id} className={`consumer-report-item${decided ? ' is-decided' : ''}`}>
+                        <fieldset key={item.id} className={`consumer-report-item${decided ? ' is-decided' : ''}${findingClass}`}>
                           {/* Identity, then the verdict, then the fields that settle it. These read
                               as one unit now; previously the three inputs stacked under a legend as
                               four unrelated controls with nothing tying them together. */}
                           <div className="consumer-report-item-head">
                             <strong>{item.item_name || `Item ${item.sequence + 1}`}</strong>
-                            <span className={`consumer-report-item-state${decided ? ' done' : ''}`}>
-                              {decided ? <CheckCircle2 size={13} aria-hidden="true" /> : <Circle size={13} aria-hidden="true" />}
-                              {decided ? 'Decided' : 'Needs a decision'}
+                            <span className={`consumer-report-item-state${decided ? ' done' : ''}${decided && findingVal === 'confirmed_violation' ? ' violation' : decided && findingVal === 'no_violation' ? ' compliant' : decided ? ' insufficient' : ''}`}>
+                              {decided ? (
+                                findingVal === 'confirmed_violation' ? (
+                                  <><AlertTriangle size={13} aria-hidden="true" /> Violation Confirmed</>
+                                ) : findingVal === 'no_violation' ? (
+                                  <><CheckCircle2 size={13} aria-hidden="true" /> Conforms to SRP</>
+                                ) : (
+                                  <><CheckCircle2 size={13} aria-hidden="true" /> Decided</>
+                                )
+                              ) : (
+                                <><Circle size={13} aria-hidden="true" /> Needs a decision</>
+                              )}
                             </span>
                           </div>
                           <div className="consumer-report-item-meta">
@@ -1143,50 +1182,6 @@ export const CitizenTipReview: React.FC = () => {
                       )
                     })}
                   </div>
-                )}
-
-                {/* Decision Intent & Regulatory Finding Controls */}
-                {selected.verification_request && (
-                  <section aria-label="Field verification request" className="consumer-report-referral is-active">
-                    <strong>Field verification request</strong>
-                    <small>{selected.status}</small>
-                    <span>{selected.verification_request.status.charAt(0).toUpperCase() + selected.verification_request.status.slice(1)}</span>
-                    <p>{selected.verification_request.reason}</p>
-                    {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
-                  </section>
-                )}
-                {/* Referral is available for BOTH report shapes. It used to live only in the
-                    legacy branch below, so on an item report — the normal case — the officer
-                    selector never rendered and a referral could not be made at all. */}
-                {!selected.verification_request && (
-                  <section aria-label="Refer for field verification" className="consumer-report-referral">
-                    <label className="consumer-report-referral-toggle">
-                      <input
-                        type="checkbox"
-                        checked={verificationChosen}
-                        onChange={(event) => {
-                          setVerificationChosen(event.target.checked)
-                          setDecisionIntent(event.target.checked ? 'verify' : 'close')
-                          if (!event.target.checked) setFieldOfficerId('')
-                        }}
-                      />
-                      <Send size={14} aria-hidden="true" /> Refer this report for field verification
-                    </label>
-                    {verificationChosen && (
-                      <label className="consumer-report-field">
-                        Field Officer
-                        <select
-                          aria-label="Field Officer"
-                          required
-                          value={fieldOfficerId}
-                          onChange={(event) => setFieldOfficerId(event.target.value)}
-                        >
-                          <option value="">Select active officer</option>
-                          {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
-                        </select>
-                      </label>
-                    )}
-                  </section>
                 )}
 
                 {!hasItemReview && (
@@ -1276,6 +1271,47 @@ export const CitizenTipReview: React.FC = () => {
                     <p className="admin-feedback error" role="alert">{error}</p>
                   )}
 
+                  {selected.verification_request && (
+                    <section aria-label="Field verification request" className="consumer-report-referral is-active">
+                      <strong>Field verification request</strong>
+                      <small>{selected.status}</small>
+                      <span>{selected.verification_request.status.charAt(0).toUpperCase() + selected.verification_request.status.slice(1)}</span>
+                      <p>{selected.verification_request.reason}</p>
+                      {selected.verification_request.status === 'open' && <button type="button" className="admin-button secondary" disabled={decisionSaving} onClick={() => void cancelVerification()}>Cancel field verification</button>}
+                    </section>
+                  )}
+
+                  {!selected.verification_request && (
+                    <section aria-label="Refer for field verification" className={`consumer-report-referral${verificationChosen ? ' is-active' : ''}`}>
+                      <label className="consumer-report-referral-toggle">
+                        <input
+                          type="checkbox"
+                          checked={verificationChosen}
+                          onChange={(event) => {
+                            setVerificationChosen(event.target.checked)
+                            setDecisionIntent(event.target.checked ? 'verify' : 'close')
+                            if (!event.target.checked) setFieldOfficerId('')
+                          }}
+                        />
+                        <Send size={14} aria-hidden="true" /> Refer this report for field verification
+                      </label>
+                      {verificationChosen && (
+                        <label className="consumer-report-field">
+                          Field Officer
+                          <select
+                            aria-label="Field Officer"
+                            required
+                            value={fieldOfficerId}
+                            onChange={(event) => setFieldOfficerId(event.target.value)}
+                          >
+                            <option value="">Select active officer</option>
+                            {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                          </select>
+                        </label>
+                      )}
+                    </section>
+                  )}
+
                   {hasItemReview && (
                     <div className="consumer-report-progress">
                       <span className="consumer-report-progress-count">
@@ -1309,7 +1345,7 @@ export const CitizenTipReview: React.FC = () => {
                   )}
 
                   <div className="consumer-report-actions">
-                    <div className="consumer-report-actions-primary-group">
+                    <div className="consumer-report-actions-tier">
                       <button
                         type="button"
                         className="admin-button primary action-primary"
@@ -1329,7 +1365,9 @@ export const CitizenTipReview: React.FC = () => {
                       >
                         <Send size={15} aria-hidden="true" /> Refer for field verification
                       </button>
+                    </div>
 
+                    <div className="consumer-report-actions-tier">
                       <button
                         type="button"
                         className="admin-button secondary action-resolve"
@@ -1339,9 +1377,7 @@ export const CitizenTipReview: React.FC = () => {
                       >
                         Resolve without a finding
                       </button>
-                    </div>
 
-                    <div className="consumer-report-actions-danger-group">
                       <button
                         type="button"
                         className="admin-button danger action-reject"

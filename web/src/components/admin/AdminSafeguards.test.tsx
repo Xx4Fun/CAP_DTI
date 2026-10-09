@@ -98,7 +98,7 @@ describe('DTI Admin safeguards', () => {
     expect(screen.queryByText('Pending Consumer Tips')).not.toBeInTheDocument()
   })
 
-  it('keeps available overview counts and marks missing emergency records unavailable', async () => {
+  it('keeps available overview counts and marks unreadable counts unavailable', async () => {
     vi.mocked(adminApi.getOverview).mockResolvedValue({
       stores: 12,
       pending_reports: 3,
@@ -110,14 +110,15 @@ describe('DTI Admin safeguards', () => {
 
     expect(await screen.findByText('12')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
+    // SRP bulletins (count absent from the overview) and legal actions (notice list unreadable).
+    expect(await screen.findByText(/Legal notices could not be loaded/i)).toBeInTheDocument()
     expect(screen.getAllByText('Unavailable')).toHaveLength(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('100%')).not.toBeInTheDocument()
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
     expect(screen.queryByText(/SCO-2026-0801/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/LOI-2026-0728/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/No authoritative trend summary is available/i)).toBeInTheDocument()
-    expect(await screen.findByText(/Legal action counts could not be loaded/i)).toBeInTheDocument()
+    expect(screen.getByText(/Field monitoring visits could not be loaded/i)).toBeInTheDocument()
   })
 
   it('shows a safe schema-unavailable state instead of an empty audit trail', async () => {

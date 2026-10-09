@@ -39,6 +39,7 @@ const emergencySummary = (record: RegulatoryEmergencyRecord): RegulatoryEmergenc
   id: record.id, location: record.location, declaration_reference: record.declaration_reference,
   starts_on: record.starts_on, ends_on: record.ends_on, ended_at: record.ended_at,
   status: record.status, effective_state: record.effective_state,
+  activation_lock_held: record.activation_lock_held, can_release_expired_lock: record.can_release_expired_lock,
   preparation_hash: record.preparation_hash, official_prices: record.official_prices,
 })
 const manilaToday = () => {
@@ -67,6 +68,9 @@ export const EmergencyToggle: React.FC = () => {
   const [savingAction, setSavingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [activationVerification, setActivationVerification] = useState<{ id: number; hash: string } | null>(null)
+  const [checkingActivation, setCheckingActivation] = useState(false)
+  const verificationRequest = useRef(0)
 
   // Candidate filtering & search state
   const [candidateSearch, setCandidateSearch] = useState('')
@@ -118,7 +122,7 @@ export const EmergencyToggle: React.FC = () => {
     setCandidatePage(1); setRefPage(1)
   }
 
-  const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
+  const replaceEmergency = (record: RegulatoryEmergencyRecord, preserveSelection = false) => {
     loadRequest.current++
     detailRequest.current++
     summaryInFlight.current = false; refreshQueued.current = false; detailInFlight.current = null
@@ -127,9 +131,11 @@ export const EmergencyToggle: React.FC = () => {
     setEmergencies((current) => current.some((item) => item.id === record.id)
       ? current.map((item) => item.id === record.id ? emergencySummary(record) : item)
       : [emergencySummary(record), ...current])
-    if (selectedIdRef.current !== record.id) resetPricing()
-    selectedIdRef.current = record.id
-    setSelectedId(record.id); setSelectedDetail(record)
+    if (!preserveSelection || selectedIdRef.current === record.id) {
+      if (selectedIdRef.current !== record.id) resetPricing()
+      selectedIdRef.current = record.id
+      setSelectedId(record.id); setSelectedDetail(record)
+    }
     // A single write response cannot verify declarations that were never loaded or are stale.
     if (!summaryVerified.current) void loadEmergencies()
   }
@@ -199,11 +205,45 @@ export const EmergencyToggle: React.FC = () => {
     }
   }
 
+  const refreshMutation = (record: RegulatoryEmergencyRecord, preserveSelection = true) => {
+    const wasVerified = summaryVerified.current
+    replaceEmergency(record, preserveSelection)
+    // A write can recover another declaration's lock, so update the entire list as well as this record.
+    if (wasVerified) void loadEmergencies()
+  }
+
+  const verifyActivation = async (target: { id: number; hash: string }) => {
+    const request = ++verificationRequest.current
+    setActivationVerification(target); setCheckingActivation(true); setActionError(null)
+    try {
+      const record = await adminApi.getEmergency(target.id)
+      if (request !== verificationRequest.current) return
+      refreshMutation(record)
+      setActivationVerification(null)
+      setReviewed(false)
+      if (record.status === 'draft') {
+        setActionError('Declaration was not confirmed. Review the preparation and try again.')
+      } else {
+        window.dispatchEvent(new Event('regulatory-data-changed'))
+        if (record.status === 'active' && record.preparation_hash === target.hash) {
+          adminToast.success(record.effective_state === 'scheduled'
+            ? 'Declaration confirmation is saved. Price Freeze is scheduled for its recorded start date.'
+            : 'Declaration confirmation is saved. The current protocol has been refreshed.', { id: 'price-freeze-activated' })
+        }
+      }
+    } catch {
+      // Keep the activation write disabled until a status read succeeds. Retry performs only reads.
+    } finally {
+      if (request === verificationRequest.current) setCheckingActivation(false)
+    }
+  }
+
   useEffect(() => {
     void loadEmergencies()
     const stop = regulatoryRefresh(() => { void loadEmergencies() })
     return () => {
       loadRequest.current++; detailRequest.current++
+      verificationRequest.current++
       summaryInFlight.current = false; refreshQueued.current = false; detailInFlight.current = null
       stop()
     }
@@ -220,6 +260,8 @@ export const EmergencyToggle: React.FC = () => {
   const officialPrices = useMemo(() => selectedSummary?.official_prices ?? [], [selectedSummary])
   const srpFallbacks = selected?.srp_fallbacks ?? []
   const isDraft = selectedSummary?.status === 'draft' && selectedSummary.effective_state === 'draft'
+  const expiredDraft = isDraft && !!selectedSummary?.ends_on && day(selectedSummary.ends_on) < manilaToday()
+  const expiredLocks = emergencies.filter((record) => record.can_release_expired_lock)
   const pricingStage = isDraft ? 'Proposed price ceilings' : PRICE_STAGES.get(selectedSummary?.effective_state ?? '') ?? 'Status unavailable'
   const draftPrices = useMemo<DraftPriceRow[]>(() => selected ? [...selected.candidates, ...(selected.srp_fallbacks ?? [])] : [], [selected])
   const productName = (row: DraftPriceRow) => 'computed_apc_price' in row
@@ -368,6 +410,38 @@ export const EmergencyToggle: React.FC = () => {
           </div>
         </div>
       )}
+      {activationVerification && (
+        <div role="alert" className="admin-alert admin-alert--error">
+          <p>{checkingActivation ? 'Checking activation status…' : 'Activation result unknown. Could not verify whether the declaration was saved. Check its status before trying another activation.'}</p>
+          <button type="button" disabled={checkingActivation || savingAction !== null}
+            onClick={() => void verifyActivation(activationVerification)}>Retry status checking</button>
+        </div>
+      )}
+      {expiredLocks.map((record) => (
+        <div key={record.id} role="alert" className="admin-alert admin-alert--error">
+          <div>
+            <strong>Expired activation lock</strong>
+            <p>Expired declaration {record.declaration_reference} (ended {day(record.ends_on)}) still holds an activation lock. It does not put a Price Freeze in effect today.</p>
+            <p>Historical dates and confirmed prices will be preserved when this lock is released. A valid new activation also releases it automatically.</p>
+            <button type="button" className="admin-button secondary"
+              disabled={!loaded || loading || !!loadError || savingAction !== null || !!activationVerification}
+              onClick={async () => {
+                setSavingAction('release'); setActionError(null)
+                try {
+                  refreshMutation(await adminApi.releaseExpiredEmergencyLock(record.id))
+                  adminToast.success('Expired activation lock released. Historical dates and prices were preserved.', { id: 'expired-lock-released' })
+                } catch (error: any) {
+                  setActionError(error.response?.data?.message || 'Could not verify lock recovery. Refresh declarations before trying again.')
+                  void loadEmergencies()
+                } finally {
+                  setSavingAction(null)
+                }
+              }}>
+              {savingAction === 'release' ? 'Releasing…' : 'Release expired lock'}
+            </button>
+          </div>
+        </div>
+      ))}
       {detailError && (
         <div role="alert" className="admin-alert admin-alert--error">
           <p>{detailError}</p>
@@ -540,6 +614,25 @@ export const EmergencyToggle: React.FC = () => {
         {/* Right Column: Review Console & Active References */}
         <div className="emergency-col-right">
           {detailLoading && <p role="status">{selected ? 'Refreshing…' : 'Loading declaration details…'}</p>}
+          {selected?.status === 'active' && selected.effective_state === 'scheduled' && (
+            <section className="admin-card">
+              <h4>Scheduled declaration reserves activation</h4>
+              <p>{selected.declaration_reference} is confirmed for {formatPstDateRange(selected.starts_on, selected.ends_on)}. Cancel it before confirming a different declaration.</p>
+              <button type="button" className="admin-button secondary"
+                disabled={savingAction !== null || loading || !loaded || !!loadError || !detailVerified || !!activationVerification}
+                onClick={async () => {
+                  setSavingAction('cancel'); setActionError(null)
+                  try {
+                    refreshMutation(await adminApi.updateEmergency(selected.id, { status: 'cancelled', confirmed: true }))
+                    adminToast.success('Scheduled declaration cancelled.', { id: 'scheduled-declaration-cancelled' })
+                  } catch (error: any) {
+                    setActionError(error.response?.data?.message || 'The scheduled declaration could not be cancelled.')
+                  } finally {
+                    setSavingAction(null)
+                  }
+                }}>{savingAction === 'cancel' ? 'Cancelling…' : 'Cancel scheduled declaration'}</button>
+            </section>
+          )}
           {/* Active Price Freeze Action Card */}
           {selected?.effective_state === 'in_effect' && (selected.status === 'active' || (selected.status === 'ended' && !selected.ended_at)) && (
             <section className="admin-card emergency-active-banner">
@@ -574,7 +667,7 @@ export const EmergencyToggle: React.FC = () => {
                   if (!window.confirm('End the Price Freeze now?')) return
                   setSavingAction('end'); setActionError(null)
                   try {
-                    replaceEmergency(await adminApi.updateEmergency(selected.id, {
+                    refreshMutation(await adminApi.updateEmergency(selected.id, {
                       status: 'ended',
                       ends_on: manilaToday(),
                       confirmed: true,
@@ -864,26 +957,36 @@ export const EmergencyToggle: React.FC = () => {
                   <span>I reviewed the source week of each product, supporting statistics, computed APC values, and products held at SRP.</span>
                 </label>
 
+                {expiredDraft && <p role="alert">Cannot activate this expired declaration: its end date is {day(selected.ends_on)} (Asia/Manila). Prepare a declaration with the correct effective dates.</p>}
+
                 <button
                   type="button"
                   className="admin-button primary"
-                  disabled={!reviewed || !completePreparation || !selected.preparation_hash || savingAction !== null || loading || !loaded || !!loadError || !detailVerified}
+                  disabled={expiredDraft || !!activationVerification || !reviewed || !completePreparation || !selected.preparation_hash || savingAction !== null || loading || !loaded || !!loadError || !detailVerified}
                   onClick={async () => {
                     if (!selected.preparation_hash) return
                     setActionError(null); setSavingAction('activate')
                     try {
-                      replaceEmergency(await adminApi.activateEmergency(selected.id, {
+                      const record = await adminApi.activateEmergency(selected.id, {
                         confirmed: true,
                         preparation_hash: selected.preparation_hash,
-                      }))
+                      })
+                      refreshMutation(record)
                       setReviewed(false)
-                      adminToast.success('Official APC references confirmed and Price Freeze activated.', {
+                      adminToast.success(record.effective_state === 'scheduled'
+                        ? 'Official price references confirmed. Price Freeze is scheduled for its recorded start date.'
+                        : 'Official APC references confirmed and Price Freeze activated.', {
                         id: 'price-freeze-activated',
                       })
                     } catch (error: any) {
-                      const message = error.response?.data?.message || 'Price Freeze could not be activated.'
-                      setActionError(message)
-                      if (error.response?.data?.status === 'APC_PREPARATION_STALE') setReviewed(false)
+                      if (!error.response || error.response.status >= 500) {
+                        await verifyActivation({ id: selected.id, hash: selected.preparation_hash })
+                      } else {
+                        const message = error.response?.data?.message || 'Price Freeze could not be activated.'
+                        setActionError(message)
+                        if (error.response?.data?.status === 'APC_PREPARATION_STALE') setReviewed(false)
+                        if (error.response?.data?.status === 'EMERGENCY_ACTIVATION_BLOCKED') void loadEmergencies()
+                      }
                     } finally {
                       setSavingAction(null)
                     }
