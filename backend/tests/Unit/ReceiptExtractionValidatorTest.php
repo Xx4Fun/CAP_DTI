@@ -389,6 +389,53 @@ class ReceiptExtractionValidatorTest extends TestCase
         $this->assertSame('matched', $result['reconciliation']['status']);
     }
 
+    /** Every line of the default two-item receipt, read once per section; later copies flag the first-section copy. */
+    private static function repeatedPerSection(int $sections): array
+    {
+        $items = [];
+        $overlap = [];
+        for ($section = 1; $section <= $sections; $section++) {
+            $flag = $section > 1;
+            $items[] = self::item('CALLA PWD F/C ROSE GARDEN', '1', '111.75', '111.75', ['004793487 1 111.75 111.75T', 'CALLA PWD F/C ROSE GARDEN'], $section, [], $flag ? 0 : null);
+            $items[] = self::item('COBRA BERRY BLAST 350ML/3', '2', '27.00', '54.00', ['004663895 2 27.00 54.00T', 'COBRA BERRY BLAST 350ML/3'], $section, [], $flag ? 1 : null);
+            $overlap[] = ['index' => $section, 'overlaps_previous' => $flag ? 'yes' : 'unknown'];
+        }
+
+        return ['items' => $items, 'sections' => $overlap];
+    }
+
+    public function test_lines_repeated_where_photos_overlap_are_collapsed_when_the_total_confirms_it(): void
+    {
+        $result = $this->validate(self::payload(self::repeatedPerSection(2)), ['frame_count' => 2]);
+
+        $this->assertSame(['CALLA PWD F/C ROSE GARDEN', 'COBRA BERRY BLAST 350ML/3'], array_column($result['items'], 'item_name'));
+        $this->assertSame([0, 1], array_column($result['items'], 'sequence'));
+        $this->assertSame(2, $result['duplicate_lines_removed']);
+        $this->assertSame('matched', $result['reconciliation']['status']);
+        $this->assertCount(2, $result['reconciliation']['lines']);
+        $this->assertNotContains('POSSIBLE_DUPLICATE_LINES', $this->codes($result));
+    }
+
+    public function test_a_repeat_of_a_line_from_a_non_adjacent_section_is_collapsed_too(): void
+    {
+        $result = $this->validate(self::payload(self::repeatedPerSection(3)), ['frame_count' => 3]);
+
+        $this->assertCount(2, $result['items']);
+        $this->assertSame(4, $result['duplicate_lines_removed']);
+        $this->assertSame([[], []], $result['item_flags']);
+        $this->assertSame('matched', $result['reconciliation']['status']);
+    }
+
+    public function test_collapsed_repeats_stay_flagged_for_review_when_the_total_cannot_confirm_them(): void
+    {
+        $payload = self::payload([...self::repeatedPerSection(2), 'total' => ['amount' => null, 'source_line' => null, 'uncertain' => false]]);
+
+        $result = $this->validate($payload, ['frame_count' => 2]);
+
+        $this->assertCount(2, $result['items']);
+        $this->assertContains('POSSIBLE_DUPLICATE_LINES', $this->codes($result));
+    }
+
     public static function malformedPayloads(): array
     {
         $item = self::item('RICE 1KG', '1', '45.00', '45.00', ['RICE 1KG 45.00']);

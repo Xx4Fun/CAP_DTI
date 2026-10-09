@@ -129,10 +129,12 @@ class ReceiptExtractionValidator
                 continue;
             }
             $target = $kept[$reference] ?? null;
-            // The referenced line must be an earlier item in the adjacent earlier section and must look like the same line.
+            // The referenced line must be an earlier item in an earlier section, with no reported gap between the two
+            // sections, and must look like the same line. Photos of a short receipt can all show the same lines.
             $valid = is_int($reference) && $reference < $modelIndex && $target !== null
-                && $item['section'] - $target['section'] === 1
-                && ($sectionOverlap[$item['section']] ?? 'unknown') !== 'no'
+                && $item['section'] > $target['section']
+                && ! in_array('no', array_map(fn (int $section) => $sectionOverlap[$section] ?? 'unknown',
+                    range($target['section'] + 1, $item['section'])), true)
                 && (($item['line_total_cents'] !== null && $item['line_total_cents'] === $target['line_total_cents'])
                     || ($item['item_name'] !== null && $target['item_name'] !== null
                         && $this->normalize($item['item_name']) === $this->normalize($target['item_name'])));
@@ -166,18 +168,27 @@ class ReceiptExtractionValidator
                 'source_line' => $adjustment['source_line'] ?? null, 'uncertain' => (bool) ($adjustment['uncertain'] ?? false) || $parsed === null];
         }
 
-        $reconciliation = $this->reconciler->reconcile(
+        $reconcile = fn (array $rows) => $this->reconciler->reconcile(
             array_values(array_map(fn (array $item) => [
                 'quantity' => $item['quantity'],
                 'unit_price_cents' => $item['unit_price_cents'],
                 'line_total_cents' => $item['line_total_cents'],
                 'possible_duplicate' => $item['possible_duplicate_of'] !== null,
-            ], $kept)),
+            ], $rows)),
             $subtotal['cents'] ?? null,
             array_column($discounts, 'cents'),
             array_map(fn (array $adjustment) => ['direction' => $adjustment['direction'], 'cents' => $adjustment['cents']], $adjustments),
             $total['cents'] ?? null,
         );
+        $reconciliation = $reconcile($kept);
+        // A line photographed in two overlapping sections is one printed line, so the repeat is dropped; the provider's
+        // own output stays in extraction_raw. Repeats are kept only when counting them is what makes the amounts add up.
+        $single = array_filter($kept, fn (array $item) => $item['possible_duplicate_of'] === null);
+        $duplicateLinesRemoved = $reconciliation['duplicates_are_likely_genuine'] ? 0 : count($kept) - count($single);
+        if ($duplicateLinesRemoved > 0) {
+            $kept = $single;
+            $reconciliation = $reconcile($kept);
+        }
 
         $merchantText = $payload['merchant']['text'];
         $merchant = $this->merchantMatcher->match($context['store_name'] ?? null, $context['owner_name'] ?? null,
@@ -223,7 +234,10 @@ class ReceiptExtractionValidator
         if ($anyUncertain) {
             $warnings[] = 'FIELDS_UNCERTAIN';
         }
-        if (in_array(true, array_map(fn (array $item) => $item['possible_duplicate_of'] !== null, $items), true)) {
+        // Dropped repeats need no review once the remaining items add up to the printed subtotal or total.
+        $sumConfirmed = in_array(ReceiptReconciler::MATCHED, [$reconciliation['checks']['items_vs_subtotal'], $reconciliation['checks']['expected_vs_total']], true);
+        if (in_array(true, array_map(fn (array $item) => $item['possible_duplicate_of'] !== null, $items), true)
+            || ($duplicateLinesRemoved > 0 && ! $sumConfirmed)) {
             $warnings[] = 'POSSIBLE_DUPLICATE_LINES';
         }
         // Section 1 has no previous section, and a single-photo receipt has no overlap to verify.
@@ -263,6 +277,7 @@ class ReceiptExtractionValidator
             ], $items, array_keys($items)),
             'item_flags' => array_map(fn (array $item) => $item['uncertain_reasons'], $items),
             'rejected_item_lines' => $rejected,
+            'duplicate_lines_removed' => $duplicateLinesRemoved,
             'detected_total' => $total === null ? null : $total['cents'] / 100.0,
             'item_sum' => $reconciliation['items_sum'] === null ? null : (float) $reconciliation['items_sum'],
             'transaction_date' => $transactionDate,
