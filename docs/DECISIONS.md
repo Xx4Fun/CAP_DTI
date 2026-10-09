@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-09 — Four additional establishment photos
+
+- CPT Mart, HARO MART, Puregold and Unitop use the supplied JPGs through the existing public image disk and Store URL accessor; all clients keep their current API image contract.
+- `stores:import-photos` previews by default. Explicit apply changes only the four photo fields with transactional audits, verifies uploaded bytes, rejects conflicts and reuses matching objects on retry. The full establishment seeder is not the production photo-import path.
+- Source assets, commands, verification and the production release procedure: [[plans/store-photos/README]].
+
 ## 2026-10-09 — Selected-declaration Price Freeze prices
 
 - Admin uses one pricing section: proposed APC/SRP-held ceilings for a draft and saved official ceilings for the selected confirmed or historical declaration. Historical prices remain accessible through the Declarations list.

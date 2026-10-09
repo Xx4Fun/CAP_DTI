@@ -53,8 +53,11 @@ class OfficialEstablishmentSeederTest extends TestCase
             'owner_name' => 'Robinsons Supermarket Corporation', 'address' => 'San Angel',
         ]);
         $this->assertDatabaseHas('stores', [
-            'store_name' => 'Puregold Price Club Incorporated', 'image_path' => null,
+            'store_name' => 'Puregold Price Club Incorporated', 'image_path' => 'store_images/puregold.jpg',
         ]);
+        $this->assertDatabaseHas('stores', ['store_name' => 'CPT Mart- Antique Branch', 'image_path' => 'store_images/cptmart.jpg']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'HARO MART', 'image_path' => 'store_images/haromart.jpg']);
+        $this->assertDatabaseHas('stores', ['store_name' => 'Unitop General Merchandise', 'image_path' => 'store_images/unitop.jpg']);
         $this->assertDatabaseHas('stores', ['store_name' => 'Gaisano Grand Mall', 'image_path' => 'store_images/gaisano-grand.webp']);
         $this->assertDatabaseHas('stores', ['store_name' => 'Robinsons Supermarket Corp.', 'image_path' => 'store_images/robinsons.webp']);
         $this->assertDatabaseHas('stores', ['store_name' => 'Merrymart Consumer Corp.', 'image_path' => 'store_images/merrymart.webp']);
@@ -72,6 +75,10 @@ class OfficialEstablishmentSeederTest extends TestCase
     {
         $this->seed(OfficialEstablishmentSeeder::class);
         $expected = [
+            'CPT Mart- Antique Branch' => Storage::disk('public')->url('store_images/cptmart.jpg'),
+            'HARO MART' => Storage::disk('public')->url('store_images/haromart.jpg'),
+            'Puregold Price Club Incorporated' => Storage::disk('public')->url('store_images/puregold.jpg'),
+            'Unitop General Merchandise' => Storage::disk('public')->url('store_images/unitop.jpg'),
             'Gaisano Grand Mall' => Storage::disk('public')->url('store_images/gaisano-grand.webp'),
             'Robinsons Supermarket Corp.' => Storage::disk('public')->url('store_images/robinsons.webp'),
             'Merrymart Consumer Corp.' => Storage::disk('public')->url('store_images/merrymart.webp'),
