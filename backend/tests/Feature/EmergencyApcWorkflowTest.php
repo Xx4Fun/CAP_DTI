@@ -5,18 +5,174 @@ namespace Tests\Feature;
 use App\Models\AuditEvent;
 use App\Models\MonitoringRecord;
 use App\Models\MonitoringRecordItem;
+use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
 use App\Services\FieldReferenceResolver;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class EmergencyApcWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_summary_keeps_official_prices_without_loading_preparation_sources(): void
+    {
+        [$admin, $officer] = $this->adminAndOfficer('summary');
+        Sanctum::actingAs($admin);
+        $rice = $this->coveredBulletin('Rice', 'rice', 50);
+        $this->acceptedObservation($officer, $rice, 'Market A', '2026-09-01 09:00:00', 45);
+        $draft = $this->postJson('/api/admin/emergencies', [
+            'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+            'declaration_reference' => 'SUMMARY-1',
+        ])->assertCreated()->json('data');
+        RegulatoryPriceRecord::create([
+            'regulatory_emergency_id' => $draft['id'], 'commodity_key' => 'rice',
+            'price_type' => 'APC', 'authoritative_price' => 45, 'effective_from' => '2026-09-09',
+            'location' => $draft['location'], 'declaration_reference' => 'SUMMARY-1',
+            'source_reference' => 'Monitoring week', 'created_by' => $admin->id,
+        ]);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $summary = $this->getJson('/api/admin/emergencies?view=summary')->assertOk()
+            ->assertJsonPath('data.0.declaration_reference', 'SUMMARY-1')
+            ->assertJsonPath('data.0.preparation_hash', $draft['preparation_hash'])
+            ->assertJsonPath('data.0.official_prices.0.authoritative_price', 45);
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+        foreach (['candidates', 'source_week', 'srp_fallbacks', 'covered_commodity_keys', 'missing_commodity_keys'] as $key) {
+            $this->assertArrayNotHasKey($key, $summary->json('data.0'));
+        }
+        foreach ($queries as $query) {
+            $this->assertDoesNotMatchRegularExpression('/monitoring_record|regulatory_price_candidates|srp_bulletins/', $query['query']);
+        }
+        $legacy = $this->getJson('/api/admin/emergencies')->assertOk()
+            ->assertJsonPath('data.0.candidates.0.source_observations.0.store_name', 'Market A');
+        $this->getJson('/api/admin/emergencies/'.$draft['id'])->assertOk()
+            ->assertJsonPath('data.candidates.0.computed_apc_price', 45);
+        $this->assertLessThan(strlen($legacy->getContent()), strlen($summary->getContent()));
+    }
+
+    public function test_summary_effective_states_match_detail_with_constant_query_count(): void
+    {
+        [$admin] = $this->adminAndOfficer('summary-states');
+        Sanctum::actingAs($admin);
+        $this->travelTo(Carbon::parse('2026-09-10 10:00:00', 'Asia/Manila'));
+        foreach ([
+            ['draft', null, null, '2026-09-09', null],
+            ['active', '2026-09-09 00:00:00', null, '2026-09-09', null],
+            ['ended', '2026-09-09 00:00:00', '2026-09-10 01:00:00', '2026-09-09', null],
+            ['active', '2026-09-09 00:00:00', null, '2026-09-11', null],
+            ['active', '2026-09-09 00:00:00', null, '2026-09-01', '2026-09-09'],
+            ['cancelled', '2026-09-09 00:00:00', null, '2026-09-09', null],
+            ['ended', '2026-09-09 00:00:00', null, '2026-09-09', '2026-09-10'],
+        ] as $i => [$status, $confirmedAt, $endedAt, $startsOn, $endsOn]) {
+            $emergency = RegulatoryEmergency::create([
+                'location' => 'San Jose de Buenavista, Antique', 'declaration_reference' => 'STATE-'.$i,
+                'starts_on' => $startsOn, 'ends_on' => $endsOn, 'status' => $status,
+                'confirmed_at' => $confirmedAt, 'ended_at' => $endedAt,
+                'responsible_admin_id' => $admin->id,
+            ]);
+            $summaries = $this->getJson('/api/admin/emergencies?view=summary')->assertOk()->json('data');
+            $summary = collect($summaries)->firstWhere('id', $emergency->id);
+            $this->getJson('/api/admin/emergencies/'.$emergency->id)->assertOk()
+                ->assertJsonPath('data.effective_state', $summary['effective_state']);
+            // Only one active declaration may exist; finish each active fixture before inserting the next.
+            if ($status === 'active') {
+                $emergency->update(['status' => 'cancelled']);
+            }
+        }
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $this->getJson('/api/admin/emergencies?view=summary')->assertOk();
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+        RegulatoryEmergency::create([
+            'location' => 'San Jose de Buenavista, Antique', 'declaration_reference' => 'MORE',
+            'starts_on' => '2026-09-09', 'status' => 'active', 'confirmed_at' => '2026-09-09 00:00:00',
+            'responsible_admin_id' => $admin->id,
+        ]);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $this->getJson('/api/admin/emergencies?view=summary')->assertOk();
+        $this->assertSame($count, count(DB::getQueryLog()));
+        DB::disableQueryLog();
+    }
+
+    public function test_summary_does_not_grant_field_officers_admin_access(): void
+    {
+        [, $officer] = $this->adminAndOfficer('summary-access');
+        Sanctum::actingAs($officer);
+        $this->getJson('/api/admin/emergencies?view=summary')->assertForbidden();
+    }
+
+    public function test_representative_summary_and_selected_detail_use_less_payload_and_queries(): void
+    {
+        [$admin, $officer] = $this->adminAndOfficer('summary-volume');
+        Sanctum::actingAs($admin);
+        $this->travelTo(Carbon::parse('2026-09-10 10:00:00', 'Asia/Manila'));
+        for ($i = 0; $i < 123; $i++) {
+            $bulletin = $this->coveredBulletin('Product '.$i, 'product-'.$i, 50);
+            foreach ([40, 45, 50] as $j => $price) {
+                $this->acceptedObservation($officer, $bulletin, 'Market '.$j, '2026-09-01 09:00:00', $price);
+            }
+        }
+        for ($i = 0; $i < 3; $i++) {
+            $draft = $this->postJson('/api/admin/emergencies', [
+                'location' => 'San Jose de Buenavista, Antique', 'starts_on' => '2026-09-09',
+                'declaration_reference' => 'VOLUME-'.$i,
+            ])->assertCreated()->json('data');
+            if ($i < 2) {
+                RegulatoryEmergency::findOrFail($draft['id'])->update([
+                    'status' => 'ended', 'confirmed_at' => '2026-09-09 00:00:00', 'ends_on' => '2026-09-09',
+                ]);
+                foreach ($draft['candidates'] as $candidate) {
+                    RegulatoryPriceRecord::create([
+                        'regulatory_emergency_id' => $draft['id'], 'commodity_key' => $candidate['commodity_key'],
+                        'price_type' => 'APC', 'authoritative_price' => 45, 'effective_from' => '2026-09-09',
+                        'effective_until' => '2026-09-09', 'location' => $draft['location'],
+                        'declaration_reference' => $draft['declaration_reference'], 'source_reference' => 'Monitoring week',
+                        'created_by' => $admin->id,
+                    ]);
+                }
+            }
+        }
+        $measure = function (string $url): array {
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $start = hrtime(true);
+            $response = $this->getJson($url)->assertOk();
+            $result = [
+                'milliseconds' => round((hrtime(true) - $start) / 1e6, 2),
+                'bytes' => strlen($response->getContent()), 'queries' => count(DB::getQueryLog()),
+            ];
+            DB::disableQueryLog();
+
+            return $result;
+        };
+        $urls = [
+            'legacy_list' => '/api/admin/emergencies', 'summary_list' => '/api/admin/emergencies?view=summary',
+            'selected_detail' => '/api/admin/emergencies/'.$draft['id'],
+        ];
+        // Warm each path, then compare the same immutable fixture over five paired reads.
+        foreach ($urls as $url) {
+            $measure($url);
+        }
+        $samples = [];
+        for ($i = 0; $i < 5; $i++) {
+            foreach ($urls as $name => $url) {
+                $samples[$name][] = $measure($url);
+            }
+        }
+        $this->assertLessThan($samples['legacy_list'][0]['bytes'], $samples['summary_list'][0]['bytes'] + $samples['selected_detail'][0]['bytes']);
+        $this->assertLessThan($samples['legacy_list'][0]['queries'], $samples['summary_list'][0]['queries'] + $samples['selected_detail'][0]['queries']);
+        fwrite(STDERR, 'Emergency read benchmark (SQLite in memory, 3 declarations, 123 products, 369 observations, 246 official prices): '.json_encode($samples).PHP_EOL);
+    }
 
     public function test_declaration_is_prepared_from_the_latest_completed_routine_week_without_becoming_active(): void
     {

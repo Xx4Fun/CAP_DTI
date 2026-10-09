@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
-import type { RegulatoryEmergencyRecord } from '../../types/admin'
+import type { RegulatoryEmergencyRecord, RegulatoryEmergencySummary } from '../../types/admin'
 import {
   humanizeCommoditySlug,
   formatPstDateRange,
@@ -27,6 +27,12 @@ import {
 const SAN_JOSE = 'San Jose de Buenavista, Antique'
 const money = (value: number) => `₱${Number(value).toFixed(2)}`
 const day = (value: string | null) => value ? value.slice(0, 10) : '—'
+const emergencySummary = (record: RegulatoryEmergencyRecord): RegulatoryEmergencySummary => ({
+  id: record.id, location: record.location, declaration_reference: record.declaration_reference,
+  starts_on: record.starts_on, ends_on: record.ends_on, ended_at: record.ended_at,
+  status: record.status, effective_state: record.effective_state,
+  preparation_hash: record.preparation_hash, official_prices: record.official_prices,
+})
 const manilaToday = () => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -35,11 +41,21 @@ const manilaToday = () => {
 }
 
 export const EmergencyToggle: React.FC = () => {
-  const [emergencies, setEmergencies] = useState<RegulatoryEmergencyRecord[]>([])
+  const [emergencies, setEmergencies] = useState<RegulatoryEmergencySummary[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const selectedIdRef = useRef<number | null>(null)
+  const [selectedDetail, setSelectedDetail] = useState<RegulatoryEmergencyRecord | null>(null)
   const [reviewed, setReviewed] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const loadRequest = useRef(0)
+  const detailRequest = useRef(0)
+  const summaryInFlight = useRef(false)
+  const summaryVerified = useRef(false)
+  const refreshQueued = useRef(false)
+  const detailInFlight = useRef<number | null>(null)
   const [savingAction, setSavingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -91,37 +107,100 @@ export const EmergencyToggle: React.FC = () => {
 
   const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
     loadRequest.current++
-    setLoading(false); setLoadError(null)
+    detailRequest.current++
+    summaryInFlight.current = false; refreshQueued.current = false; detailInFlight.current = null
+    setLoading(false)
+    setDetailLoading(false); setDetailError(null)
     setEmergencies((current) => current.some((item) => item.id === record.id)
-      ? current.map((item) => item.id === record.id ? record : item)
-      : [record, ...current])
-    setSelectedId(record.id)
+      ? current.map((item) => item.id === record.id ? emergencySummary(record) : item)
+      : [emergencySummary(record), ...current])
+    selectedIdRef.current = record.id
+    setSelectedId(record.id); setSelectedDetail(record)
+    // A single write response cannot verify declarations that were never loaded or are stale.
+    if (!summaryVerified.current) void loadEmergencies()
+  }
+
+  const loadDetail = async (id: number) => {
+    if (detailInFlight.current === id) return
+    const request = ++detailRequest.current
+    const summaryVersion = loadRequest.current
+    let superseded = false
+    setDetailLoading(true)
+    detailInFlight.current = id
+    try {
+      const record = await adminApi.getEmergency(id)
+      if (request !== detailRequest.current || selectedIdRef.current !== id) return
+      if (summaryVersion !== loadRequest.current) { superseded = true; return }
+      setSelectedDetail(record)
+      setDetailError(null)
+      setEmergencies((current) => current.map((item) => item.id === id ? emergencySummary(record) : item))
+    } catch {
+      if (request !== detailRequest.current || selectedIdRef.current !== id) return
+      if (summaryVersion !== loadRequest.current) { superseded = true; return }
+      setDetailError('Could not load declaration details. Previously loaded details may be stale; confirmation is unavailable until the connection is restored.')
+    } finally {
+      if (request === detailRequest.current) {
+        detailInFlight.current = null
+        setDetailLoading(false)
+        if (superseded && !summaryInFlight.current && selectedIdRef.current === id) void loadDetail(id)
+      }
+    }
+  }
+
+  const selectEmergency = (id: number | null) => {
+    if (selectedIdRef.current !== id) {
+      detailRequest.current++; detailInFlight.current = null
+      selectedIdRef.current = id
+      setSelectedId(id); setReviewed(false); setDetailError(null)
+      setDetailLoading(id !== null)
+    }
+    if (id !== null) void loadDetail(id)
   }
 
   const loadEmergencies = async () => {
+    if (summaryInFlight.current) { refreshQueued.current = true; return }
+    summaryInFlight.current = true
     const request = ++loadRequest.current
-    setLoading(true); setLoadError(null)
+    setLoading(true)
     try {
-      const records = await adminApi.getEmergencies()
+      const records = await adminApi.getEmergencySummaries()
       if (request !== loadRequest.current) return
-      setEmergencies(records)
-      setSelectedId((current) => current && records.some((item) => item.id === current)
+      setEmergencies(records); setLoaded(true); setLoadError(null)
+      summaryVerified.current = true
+      const current = selectedIdRef.current
+      selectEmergency(current && records.some((item) => item.id === current)
         ? current
         : records.find((item) => item.status === 'draft')?.id ?? records[0]?.id ?? null)
     } catch {
       if (request !== loadRequest.current) return
-      setLoadError('Could not load emergency declarations. Current market protocol is unavailable until the connection is restored.')
-    } finally { if (request === loadRequest.current) setLoading(false) }
+      summaryVerified.current = false
+      setLoadError('Could not load emergency declarations. Previously loaded records may be stale; current market protocol is unavailable until the connection is restored.')
+    } finally {
+      if (request === loadRequest.current) {
+        summaryInFlight.current = false
+        setLoading(false)
+        if (refreshQueued.current) { refreshQueued.current = false; void loadEmergencies() }
+      }
+    }
   }
 
   useEffect(() => {
     void loadEmergencies()
     const stop = regulatoryRefresh(() => { void loadEmergencies() })
-    return () => { loadRequest.current++; stop() }
+    return () => {
+      loadRequest.current++; detailRequest.current++
+      summaryInFlight.current = false; refreshQueued.current = false; detailInFlight.current = null
+      stop()
+    }
   }, [])
 
-  const selected = emergencies.find((item) => item.id === selectedId) ?? null
-  useEffect(() => { setReviewed(false) }, [selected?.preparation_hash])
+  const selectedSummary = emergencies.find((item) => item.id === selectedId)
+  const selected = selectedDetail?.id === selectedId && selectedSummary
+    ? selectedDetail
+    : null
+  useEffect(() => { setReviewed(false) }, [selectedId, selected?.preparation_hash])
+  const detailVerified = !!selected && !detailLoading && !detailError
+    && selectedDetail?.preparation_hash === selectedSummary?.preparation_hash
   const inEffect = emergencies.some((item) => item.effective_state === 'in_effect')
   const officialPrices = useMemo(() => emergencies.flatMap((item) => item.official_prices || []), [emergencies])
   const srpFallbacks = selected?.srp_fallbacks ?? []
@@ -149,6 +228,7 @@ export const EmergencyToggle: React.FC = () => {
 
   // Paginated candidate slice & boundaries
   const totalCandidatePages = Math.max(1, Math.ceil(filteredCandidates.length / candidatePerPage))
+  useEffect(() => { setCandidatePage((page) => Math.min(page, totalCandidatePages)) }, [totalCandidatePages])
   const paginatedCandidates = useMemo(() => {
     const start = (candidatePage - 1) * candidatePerPage
     return filteredCandidates.slice(start, start + candidatePerPage)
@@ -158,6 +238,7 @@ export const EmergencyToggle: React.FC = () => {
 
   // Paginated official references slice & boundaries
   const totalRefPages = Math.max(1, Math.ceil(officialPrices.length / refPerPage))
+  useEffect(() => { setRefPage((page) => Math.min(page, totalRefPages)) }, [totalRefPages])
   const paginatedOfficialPrices = useMemo(() => {
     const start = (refPage - 1) * refPerPage
     return officialPrices.slice(start, start + refPerPage)
@@ -217,7 +298,7 @@ export const EmergencyToggle: React.FC = () => {
           </div>
           <div className={`emergency-status-badge ${inEffect ? 'badge-danger' : 'badge-normal'}`}>
             <span className={`emergency-pulse-dot ${inEffect ? 'pulse-red' : 'pulse-green'}`} />
-            <span>{loadError || (loading && !emergencies.length) ? 'Emergency status unavailable' : inEffect ? 'State of Calamity' : 'Normal SRP Protocol'}</span>
+            <span>{loadError || !loaded ? 'Emergency status unavailable' : inEffect ? 'State of Calamity' : 'Normal SRP Protocol'}</span>
           </div>
         </div>
       </section>
@@ -271,6 +352,12 @@ export const EmergencyToggle: React.FC = () => {
           </div>
         </div>
       )}
+      {detailError && (
+        <div role="alert" className="admin-alert admin-alert--error">
+          <p>{detailError}</p>
+          <button type="button" onClick={() => { if (selectedId !== null) void loadDetail(selectedId) }}>Retry</button>
+        </div>
+      )}
 
       {/* 2-Column Responsive Workspace */}
       <div className="emergency-grid-workspace">
@@ -288,9 +375,10 @@ export const EmergencyToggle: React.FC = () => {
               </span>
             </div>
 
-            {loading ? (
+            {(loaded || emergencies.length > 0) && loading && <small role="status">Refreshing…</small>}
+            {!loaded && !emergencies.length && loading ? (
               <p>Loading emergency records…</p>
-            ) : emergencies.length === 0 ? (
+            ) : loaded && emergencies.length === 0 ? (
               <p>No emergency declarations recorded.</p>
             ) : (
               <div className="emergency-decl-list">
@@ -307,7 +395,7 @@ export const EmergencyToggle: React.FC = () => {
                       type="button"
                       className={`admin-button secondary emergency-decl-btn ${record.id === selectedId ? 'is-active' : ''}`}
                       aria-pressed={record.id === selectedId}
-                      onClick={() => { setSelectedId(record.id); setReviewed(false) }}
+                      onClick={() => { selectEmergency(record.id); setReviewed(false) }}
                     >
                       <div className="emergency-decl-top">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -435,6 +523,7 @@ export const EmergencyToggle: React.FC = () => {
 
         {/* Right Column: Review Console & Active References */}
         <div className="emergency-col-right">
+          {detailLoading && <p role="status">{selected ? 'Refreshing…' : 'Loading declaration details…'}</p>}
           {/* Active Price Freeze Action Card */}
           {selected?.effective_state === 'in_effect' && (selected.status === 'active' || (selected.status === 'ended' && !selected.ended_at)) && (
             <section className="admin-card emergency-active-banner">
@@ -464,7 +553,7 @@ export const EmergencyToggle: React.FC = () => {
               <button
                 type="button"
                 className="admin-button secondary emergency-end-freeze-btn"
-                disabled={savingAction !== null}
+                disabled={savingAction !== null || loading || !loaded || !!loadError || !detailVerified}
                 onClick={async () => {
                   if (!window.confirm('End the Price Freeze now?')) return
                   setSavingAction('end'); setActionError(null)
@@ -744,13 +833,14 @@ export const EmergencyToggle: React.FC = () => {
                 <div className="apc-source-records-container">
                   <div className="apc-source-records-header">
                     <Database size={15} />
-                    <strong>Detailed Source Monitoring Logs ({selected.candidates.filter(c => c.source_observations?.length).length} Products)</strong>
+                    <strong>Monitoring sources for APC ({selected.candidates.filter(c => c.source_observations?.length).length} products)</strong>
                   </div>
+                  <p className="apc-source-records-guidance">Expand a product to review the establishment, observation date, recorded price, and monitoring record used in its APC preparation.</p>
                   <div className="apc-source-records-scroll">
                     {selected.candidates.map((candidate) =>
                       candidate.source_observations?.length ? (
                         <details key={`source-${candidate.id}`} className="apc-source-details">
-                          <summary>Source records for {candidate.commodity_key}</summary>
+                          <summary>Source records for {srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)}</summary>
                           <ul>
                             {candidate.source_observations.map((observation) => (
                               <li key={observation.item_id}>
@@ -783,7 +873,7 @@ export const EmergencyToggle: React.FC = () => {
                 <button
                   type="button"
                   className="admin-button primary"
-                  disabled={!reviewed || !completePreparation || !selected.preparation_hash || savingAction !== null}
+                  disabled={!reviewed || !completePreparation || !selected.preparation_hash || savingAction !== null || loading || !loaded || !!loadError || !detailVerified}
                   onClick={async () => {
                     if (!selected.preparation_hash) return
                     setActionError(null); setSavingAction('activate')

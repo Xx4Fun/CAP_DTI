@@ -10,6 +10,16 @@ import { adminApi } from './adminApi'
 describe('adminApi', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('opts into emergency summaries without changing the legacy list or detail requests', async () => {
+    get.mockResolvedValue({ data: { data: [] } })
+    await adminApi.getEmergencySummaries()
+    await adminApi.getEmergencies()
+    await adminApi.getEmergency(7)
+    expect(get).toHaveBeenNthCalledWith(1, '/admin/emergencies', { params: { view: 'summary' } })
+    expect(get).toHaveBeenNthCalledWith(2, '/admin/emergencies')
+    expect(get).toHaveBeenNthCalledWith(3, '/admin/emergencies/7')
+  })
+
   it('loads the establishment workspace, history, records, and verification queue', async () => {
     get.mockResolvedValue({ data: { data: { ok: true } } })
 

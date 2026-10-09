@@ -15,6 +15,7 @@ use App\Services\FieldNotificationService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -24,6 +25,20 @@ class EmergencyAdminController extends Controller
     public function index(Request $request, AdminAuthorizationService $auth)
     {
         $auth->requireManager($request->user());
+
+        if ($request->query('view') === 'summary') {
+            $effectiveIds = RegulatoryEmergency::query()->effectiveAt(now('UTC'))->pluck('id')->flip();
+
+            return response()->json(['data' => RegulatoryEmergency::with('priceRecords')->latest()->get()
+                ->map(fn (RegulatoryEmergency $emergency) => [
+                    ...Arr::only($emergency->attributesToArray(), [
+                        'id', 'location', 'declaration_reference', 'starts_on', 'ends_on', 'ended_at',
+                        'status', 'preparation_hash',
+                    ]),
+                    'effective_state' => $this->effectiveState($emergency, $effectiveIds->has($emergency->id)),
+                    'official_prices' => $this->officialPricesPayload($emergency),
+                ])->values()]);
+        }
 
         return response()->json(['data' => RegulatoryEmergency::with(['candidates', 'priceRecords'])->latest()->get()
             ->map(fn (RegulatoryEmergency $emergency) => $this->detailPayload($emergency))->values()]);
@@ -100,15 +115,20 @@ class EmergencyAdminController extends Controller
                     ] : null;
                 })->filter()->values(),
             ])->values(),
-            'official_prices' => $emergency->priceRecords->map(fn (RegulatoryPriceRecord $price) => [
-                ...$price->toArray(),
-                'effective_from' => $price->effective_from?->toDateString(),
-                'effective_until' => $price->effective_until?->toDateString(),
-            ])->values(),
+            'official_prices' => $this->officialPricesPayload($emergency),
         ];
     }
 
-    private function effectiveState(RegulatoryEmergency $emergency): string
+    private function officialPricesPayload(RegulatoryEmergency $emergency)
+    {
+        return $emergency->priceRecords->map(fn (RegulatoryPriceRecord $price) => [
+            ...$price->toArray(),
+            'effective_from' => $price->effective_from?->toDateString(),
+            'effective_until' => $price->effective_until?->toDateString(),
+        ])->values();
+    }
+
+    private function effectiveState(RegulatoryEmergency $emergency, ?bool $effective = null): string
     {
         if ($emergency->status === 'cancelled' || ! $emergency->confirmed_at) {
             return $emergency->status;
@@ -124,7 +144,7 @@ class EmergencyAdminController extends Controller
             return $emergency->status === 'active' ? 'expired' : $emergency->status;
         }
 
-        return RegulatoryEmergency::query()->whereKey($emergency->id)->effectiveAt(now('UTC'))->exists() ? 'in_effect' : 'scheduled';
+        return ($effective ?? RegulatoryEmergency::query()->whereKey($emergency->id)->effectiveAt(now('UTC'))->exists()) ? 'in_effect' : 'scheduled';
     }
 
     public function show(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth)
@@ -257,6 +277,7 @@ class EmergencyAdminController extends Controller
                 'ended_at' => $emergency->ended_at?->toISOString(),
             ]);
             $notifications->broadcast('emergency_'.$emergency->status, ['emergency_id' => $emergency->id, 'ends_on' => $emergency->ends_on?->toDateString(), 'ended_at' => $emergency->ended_at?->toISOString()]);
+
             return $emergency;
         });
 

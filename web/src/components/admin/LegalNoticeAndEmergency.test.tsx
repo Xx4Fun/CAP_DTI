@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
+import type { RegulatoryEmergencyRecord } from '../../types/admin'
 import { EmergencyToggle } from './EmergencyToggle'
 import { LegalNoticeManager } from './LegalNoticeManager'
 import { AdminToastHost } from './AdminToastHost'
@@ -18,7 +19,7 @@ vi.mock('../../services/adminApi', () => ({
     getMonitoringRecord: vi.fn(),
     getMonitoringRecords: vi.fn(),
     dispatchLegal: vi.fn(),
-    getEmergencies: vi.fn(),
+    getEmergencySummaries: vi.fn(),
     getEmergency: vi.fn(),
     getSrp: vi.fn(),
     createEmergency: vi.fn(),
@@ -27,6 +28,11 @@ vi.mock('../../services/adminApi', () => ({
     updateEmergency: vi.fn(),
   },
 }))
+
+function mockEmergencies(records: RegulatoryEmergencyRecord[]) {
+  vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue(records.map(({ candidates: _candidates, source_week: _week, srp_fallbacks: _fallbacks, ...summary }) => summary))
+  vi.mocked(adminApi.getEmergency).mockImplementation(async (id) => records.find((record) => record.id === id)!)
+}
 
 describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   beforeEach(() => {
@@ -263,7 +269,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       pagination: { current_page: 1, last_page: 1, per_page: 1000, total: 1, from: 1, to: 1 },
       capabilities: { can_publish: true, status: 'AVAILABLE' },
     })
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+    mockEmergencies([{
       id: 7,
       location: 'San Jose, Antique',
       declaration_reference: 'PDRRMC-2026-07',
@@ -295,7 +301,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     }).formatToParts(new Date()).map(({ type, value }) => [type, value]))
     const today = `${parts.year}-${parts.month}-${parts.day}`
     const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+    mockEmergencies([{
       id: 8, location: 'San Jose de Buenavista, Antique', declaration_reference: 'DECL-8',
       starts_on: today, ends_on: tomorrow, status: 'active', effective_state: 'in_effect',
       source_week: { timezone: 'Asia/Manila', starts_at: '2026-09-28T00:00:00Z', ends_at: '2026-10-05T00:00:00Z' },
@@ -311,7 +317,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   })
 
   it.each(['scheduled', 'expired'])('does not label a confirmed %s declaration as currently in effect', async (effectiveState) => {
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+    mockEmergencies([{
       id: 7, location: 'San Jose', declaration_reference: 'DECL-7', starts_on: '2026-10-07', ends_on: '2026-10-07',
       status: 'active', effective_state: effectiveState,
       source_week: { timezone: 'Asia/Manila', starts_at: '2026-09-28T00:00:00Z', ends_at: '2026-10-05T00:00:00Z' },
@@ -333,7 +339,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       candidates: [],
       official_prices: [{ id: 11, regulatory_emergency_id: 7, commodity_key: 'rice', price_type: 'APC' as const, authoritative_price: 45, effective_from: '2026-09-09', effective_until: null, source_reference: 'DECL-7' }],
     }
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([active])
+    mockEmergencies([active])
     vi.mocked(adminApi.updateEmergency).mockResolvedValue({ ...active, status: 'ended', effective_state: 'ended', ended_at: '2026-09-09T02:00:00.123456Z', ends_on: '2026-09-09', official_prices: [{ ...active.official_prices[0], effective_until: '2026-09-09' }] })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
@@ -352,7 +358,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
   it('allows an effective legacy ended declaration to end now and keeps errors visible on failure', async () => {
     const success = vi.spyOn(adminToast, 'success')
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+    mockEmergencies([{
       id: 7, location: 'San Jose', declaration_reference: 'LEGACY', starts_on: '2026-10-07', ends_on: '2026-10-08',
       status: 'ended', effective_state: 'in_effect', ended_at: null,
       source_week: { timezone: 'Asia/Manila', starts_at: '', ends_at: '' }, candidates: [], official_prices: [],
@@ -368,7 +374,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   })
 
   it('shows an unavailable state when emergency declarations cannot be loaded', async () => {
-    vi.mocked(adminApi.getEmergencies).mockRejectedValue(new Error('offline'))
+    vi.mocked(adminApi.getEmergencySummaries).mockRejectedValue(new Error('offline'))
 
     render(<EmergencyToggle />)
 
@@ -377,7 +383,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
   })
 
   it('keeps a failed declaration visible as an error and does not claim success', async () => {
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([])
+    mockEmergencies([])
     vi.mocked(adminApi.createEmergency).mockRejectedValue({ response: { data: { message: 'Audit storage unavailable.' } } })
     const user = userEvent.setup()
 
@@ -389,7 +395,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Audit storage unavailable.')
     expect(screen.queryByText('Emergency declaration recorded.')).not.toBeInTheDocument()
-    expect(adminApi.getEmergencies).toHaveBeenCalledTimes(1)
+    expect(adminApi.getEmergencySummaries).toHaveBeenCalledTimes(1)
   })
 
   it('shows computed APC values as read only and activates only the reviewed preparation hash', async () => {
@@ -401,7 +407,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       candidates: [{ id: 3, commodity_key: 'rice', minimum_price: 40, maximum_price: 50, observed_average_price: 44, computed_apc_price: 45, observation_count: 3, establishment_count: 2, source_item_ids: [1, 2, 3], dataset_hash: 'c'.repeat(64), source_observations: [{ item_id: 1, monitoring_record_id: 9, store_name: 'Market A', finalized_at: '2026-09-01T01:00:00Z', recorded_price: 40 }] }],
       official_prices: [],
     }
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([draft])
+    mockEmergencies([draft])
     vi.mocked(adminApi.prepareEmergency).mockResolvedValue(draft)
     vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect' })
     const user = userEvent.setup()
@@ -413,7 +419,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
     expect(screen.getByText('₱50.00')).toBeInTheDocument()
     expect(screen.getByText('₱44.00')).toBeInTheDocument()
     expect(screen.getByText('₱45.00')).toBeInTheDocument()
-    await user.click(screen.getByText('Source records for rice'))
+    await user.click(screen.getByText(/Source records for .*rice/i))
     expect(screen.getByText('Market A')).toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
 
@@ -439,7 +445,7 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       missing_commodity_keys: ['milk', 'sugar'],
       official_prices: [],
     }
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([draft])
+    mockEmergencies([draft])
     vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect' })
     const user = userEvent.setup()
 

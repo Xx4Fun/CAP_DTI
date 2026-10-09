@@ -1,0 +1,90 @@
+{
+  "environment": "SQLite in memory; Laravel test HTTP kernel; no network or production data",
+  "declarations": 3,
+  "products": 123,
+  "observations": 369,
+  "official_prices": 246,
+  "samples": {
+    "legacy_list": [
+      {
+        "milliseconds": 2427.04,
+        "bytes": 503876,
+        "queries": 21
+      },
+      {
+        "milliseconds": 2176.7,
+        "bytes": 503876,
+        "queries": 21
+      },
+      {
+        "milliseconds": 1982.44,
+        "bytes": 503876,
+        "queries": 21
+      },
+      {
+        "milliseconds": 1930.09,
+        "bytes": 503876,
+        "queries": 21
+      },
+      {
+        "milliseconds": 1908.15,
+        "bytes": 503876,
+        "queries": 21
+      }
+    ],
+    "summary_list": [
+      {
+        "milliseconds": 431.66,
+        "bytes": 103740,
+        "queries": 3
+      },
+      {
+        "milliseconds": 351.48,
+        "bytes": 103740,
+        "queries": 3
+      },
+      {
+        "milliseconds": 329.77,
+        "bytes": 103740,
+        "queries": 3
+      },
+      {
+        "milliseconds": 353.06,
+        "bytes": 103740,
+        "queries": 3
+      },
+      {
+        "milliseconds": 365.47,
+        "bytes": 103740,
+        "queries": 3
+      }
+    ],
+    "selected_detail": [
+      {
+        "milliseconds": 463.22,
+        "bytes": 96682,
+        "queries": 9
+      },
+      {
+        "milliseconds": 433.85,
+        "bytes": 96682,
+        "queries": 9
+      },
+      {
+        "milliseconds": 446.92,
+        "bytes": 96682,
+        "queries": 9
+      },
+      {
+        "milliseconds": 431.19,
+        "bytes": 96682,
+        "queries": 9
+      },
+      {
+        "milliseconds": 460.42,
+        "bytes": 96682,
+        "queries": 9
+      }
+    ]
+  }
+}

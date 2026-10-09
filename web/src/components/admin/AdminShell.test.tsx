@@ -10,7 +10,7 @@ vi.mock('../../services/adminApi', () => ({
     getStores: vi.fn().mockResolvedValue([]),
     getReports: vi.fn().mockResolvedValue([]),
     getReportPage: vi.fn().mockResolvedValue({ data: [], meta: { current_page: 1, last_page: 1, per_page: 4, total: 0 } }),
-    getEmergencies: vi.fn().mockResolvedValue([]),
+    getEmergencySummaries: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
     getConversations: vi.fn().mockResolvedValue({ data: [], current_page: 1, last_page: 1, total: 0 }),
     getManagedUsers: vi.fn().mockResolvedValue({

@@ -10057,6 +10057,14 @@ button.regulatory-chip { cursor: pointer; }
 
 .apc-source-records-scroll .apc-source-details {
   margin-top: 0;
+  flex-shrink: 0;
+}
+
+.apc-source-records-guidance {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: #64748b;
 }
 
 .apc-source-details {

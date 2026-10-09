@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi } from '../../services/adminApi'
+import type { RegulatoryEmergencyRecord } from '../../types/admin'
 import { AuditPanel, EmergencyPanel, LegalDraftPanel, OverviewPanel, ReportReviewPanel } from './AdminPanels'
 
 vi.mock('../../services/adminApi', () => ({
@@ -17,7 +18,8 @@ vi.mock('../../services/adminApi', () => ({
     updateLegalNotice: vi.fn(),
     previewLegalNotice: vi.fn(),
     issueLegalNotice: vi.fn(),
-    getEmergencies: vi.fn(),
+    getEmergencySummaries: vi.fn(),
+    getEmergency: vi.fn(),
     createEmergency: vi.fn(),
     prepareEmergency: vi.fn(),
     activateEmergency: vi.fn(),
@@ -29,6 +31,11 @@ vi.mock('../../services/adminApi', () => ({
     getAuditEvents: vi.fn(),
   },
 }))
+
+function mockEmergencies(records: RegulatoryEmergencyRecord[]) {
+  vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue(records.map(({ candidates: _candidates, source_week: _week, srp_fallbacks: _fallbacks, ...summary }) => summary))
+  vi.mocked(adminApi.getEmergency).mockImplementation(async (id) => records.find((record) => record.id === id)!)
+}
 
 describe('DTI Admin safeguards', () => {
   beforeEach(() => {
@@ -151,7 +158,7 @@ describe('DTI Admin safeguards', () => {
   })
 
   it('shows confirmed APC records without manual authoritative-price controls', async () => {
-    vi.mocked(adminApi.getEmergencies).mockResolvedValue([{
+    mockEmergencies([{
       id: 7,
       location: 'San Jose, Antique',
       declaration_reference: 'PDRRMC-2026-07',

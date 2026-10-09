@@ -6,7 +6,7 @@ import { OverviewPanel } from './AdminPanels'
 vi.mock('../../services/adminApi', () => ({
   adminApi: {
     getOverview: vi.fn().mockResolvedValue({ stores: 12, pending_reports: 3, active_emergencies: 0 }),
-    getEmergencies: vi.fn().mockResolvedValue([]),
+    getEmergencySummaries: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
     getLegalNotices: vi.fn(async ({ status }: { status?: string } = {}) => ({ total: ({ draft: 2, issued: 5, response_received: 1 } as Record<string, number>)[status ?? ''] ?? 0 })),
   },

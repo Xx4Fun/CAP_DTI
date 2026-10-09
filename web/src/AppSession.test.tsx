@@ -21,7 +21,7 @@ vi.mock('./services/adminApi', () => ({
     getOverview: vi.fn().mockResolvedValue({ stores: 0, pending_reports: 0, active_emergencies: 0 }),
     getStores: vi.fn().mockResolvedValue([]),
     getReports: vi.fn().mockResolvedValue([]),
-    getEmergencies: vi.fn().mockResolvedValue([]),
+    getEmergencySummaries: vi.fn().mockResolvedValue([]),
     getAuditEvents: vi.fn().mockResolvedValue([]),
     getSettings: vi.fn().mockResolvedValue({}),
   },

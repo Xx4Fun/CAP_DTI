@@ -607,6 +607,10 @@ export interface RegulatoryEmergencyRecord {
   official_prices?: OfficialPriceRecord[]
 }
 
+export type RegulatoryEmergencySummary = Pick<RegulatoryEmergencyRecord,
+  'id' | 'location' | 'declaration_reference' | 'starts_on' | 'ends_on' | 'ended_at'
+  | 'status' | 'effective_state' | 'preparation_hash' | 'official_prices'>
+
 export interface SrpRecord {
   id: number
   commodity_name: string

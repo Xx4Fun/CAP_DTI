@@ -1,6 +1,6 @@
 import api from './api'
 import { cached } from './responseCache'
-import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, GisMonitoringPayload, LegalNoticePage, LegalNoticeRecord, LegalNoticeOutcome, ItemDecision, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
+import type { AdminOverviewRecord, AuditRecord, ConsumerReportFilter, ConsumerReportRecord, LegalSignatoryRecord, ConversationSummary, ConversationThread, StoreMessageRecord, FieldVerificationRequestActionRecord, FieldVerificationRequestPage, GisMonitoringPayload, LegalNoticePage, LegalNoticeRecord, LegalNoticeOutcome, ItemDecision, ManagedUserPage, ManagedUserRecord, ManagedUserRole, MonitoringEstablishmentProfile, MonitoringFindingsPage, MonitoringMatrixData, MonitoringPeriodFilter, MonitoringPeriodPreset, MonitoringPriceHistoryPage, MonitoringRecordPage, MonitoringRecordRecord, MonitoringWorkspace, ReceiptEvidenceManifest, RegulatoryEmergencyRecord, RegulatoryEmergencySummary, SrpRecord, StoreRecord, VendorInvitationRecord } from '../types/admin'
 import type { BatchSrpUpdatePayload, CreateSrpPayload, ManagedSrpRecord, SrpListFilters, SrpPage, SrpRevisionPayload, SrpRevisionPreview, UpdateSrpMetadataPayload } from '../types/adminSrp'
 
 const data = <T>(response: { data: { data: T } }): T => response.data.data
@@ -191,6 +191,9 @@ export const adminApi = {
   async getReportEvidenceAsset(reportId: number, assetId: number): Promise<Blob> {
     const response = await api.get(`/admin/reports/${reportId}/evidence-assets/${assetId}`, { responseType: 'blob' })
     return response.data
+  },
+  async getEmergencySummaries(): Promise<RegulatoryEmergencySummary[]> {
+    return data(await api.get('/admin/emergencies', { params: { view: 'summary' } }))
   },
   async getEmergencies(): Promise<RegulatoryEmergencyRecord[]> {
     return data(await api.get('/admin/emergencies'))

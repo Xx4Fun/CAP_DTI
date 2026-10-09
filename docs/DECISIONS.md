@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-09 — Emergency Protocol summary and detail refresh
+
+- Admin declaration summaries retain all official references; only the selected declaration loads APC preparation sources and current SRP fallbacks. The opt-in summary contract preserves legacy list/detail/write responses.
+- Background refresh preserves visible records. Separate read guards and authoritative write responses prevent older requests from replacing current state; activation and ending require verified current data. Review confirmation follows selection and preparation hash.
+- Expandable monitoring sources remain part of APC review. Local verification and release boundary: [[plans/emergency-loading/README]].
+
 ## 2026-10-09 — Consumer receipt store validation and private viewing
 
 - A confidently detected merchant mismatch blocks both review confirmation and the locked submission write. Missing or uncertain merchants remain eligible for DTI review.
