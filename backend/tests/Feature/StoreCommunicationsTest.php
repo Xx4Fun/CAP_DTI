@@ -185,6 +185,35 @@ class StoreCommunicationsTest extends TestCase
         $this->asAdmin()->getJson('/api/admin/conversations')->assertJsonPath('data.data.0.last_message.preview', 'Message deleted');
     }
 
+    public function test_dti_staff_edit_and_delete_only_the_messages_they_sent(): void
+    {
+        $base = "/api/admin/conversations/{$this->store->id}/messages";
+        $own = $this->asAdmin()->postJson($base, ['body' => 'Reply by Friday.'])->assertCreated()->assertJsonPath('data.can_modify', true)->json('data.id');
+        $vendor = $this->asVendor($this->vendor)->postJson("/api/vendor/conversations/{$this->store->id}/messages", ['body' => 'Understood.'])->assertCreated()->json('data.id');
+        $colleague = User::create(['name' => 'Second Evaluator', 'email' => 'eval2@dti.test', 'password' => 'password', 'role' => 'dti_evaluator']);
+
+        $this->asAdmin()->getJson("/api/admin/conversations/{$this->store->id}")
+            ->assertJsonPath('data.messages.0.can_modify', true)->assertJsonPath('data.messages.1.can_modify', false);
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($colleague, 'sanctum')->getJson("/api/admin/conversations/{$this->store->id}")->assertJsonPath('data.messages.0.can_modify', false);
+        $this->actingAs($colleague, 'sanctum')->patchJson("$base/$own", ['body' => 'Rewritten'])->assertNotFound();
+        $this->actingAs($colleague, 'sanctum')->deleteJson("$base/$own")->assertNotFound();
+
+        $this->asAdmin()->patchJson("$base/$vendor", ['body' => 'Rewritten'])->assertNotFound();
+        $this->asAdmin()->deleteJson("$base/$vendor")->assertNotFound();
+
+        $this->asAdmin()->patchJson("$base/$own", ['body' => 'Reply by Monday.'])
+            ->assertOk()->assertJsonPath('data.body', 'Reply by Monday.')->assertJsonPath('data.edited_at', fn ($value) => $value !== null);
+        $this->assertSame('Reply by Friday.', \App\Models\AuditEvent::where('action', 'store.message_edited')->where('subject_id', $own)->firstOrFail()->metadata['previous_body']);
+
+        $this->asAdmin()->deleteJson("$base/$own")->assertOk()->assertJsonPath('data.body', null)->assertJsonPath('data.can_modify', false);
+        $this->assertDatabaseHas('audit_events', ['action' => 'store.message_deleted', 'subject_id' => $own]);
+        $this->assertSame('Reply by Monday.', StoreMessage::findOrFail($own)->body);
+        // The vendor receives the placeholder, never the removed text.
+        $this->asVendor($this->vendor)->getJson("/api/vendor/conversations/{$this->store->id}")
+            ->assertJsonPath('data.messages.0.body', null)->assertJsonPath('data.messages.0.deleted_at', fn ($value) => $value !== null);
+    }
+
     private function asAdmin(): static
     {
         $this->app['auth']->forgetGuards();

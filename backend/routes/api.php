@@ -190,6 +190,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/conversations', [StoreConversationController::class, 'index']);
         Route::get('/conversations/{store}', [StoreConversationController::class, 'show']);
         Route::post('/conversations/{store}/messages', [StoreConversationController::class, 'send'])->middleware('throttle:30,1');
+        Route::patch('/conversations/{store}/messages/{message}', [StoreConversationController::class, 'update'])->middleware('throttle:30,1');
+        Route::delete('/conversations/{store}/messages/{message}', [StoreConversationController::class, 'destroy'])->middleware('throttle:30,1');
         Route::get('/conversations/{store}/messages/{message}/attachment', [StoreConversationController::class, 'attachment']);
 
         Route::get('/settings', [AdminSettingsController::class, 'index']);

@@ -58,7 +58,7 @@ class StoreConversationController extends Controller
 
         return response()->json(['data' => [
             'store' => ['id' => $store->id, 'store_name' => $store->store_name, 'address' => $store->address, 'linked' => (bool) $store->vendor_user_id, 'vendor' => $store->vendor?->only(['id', 'name', 'email', 'is_active'])],
-            'messages' => $messages->map(fn (StoreMessage $m) => $m->toThreadArray() + ['vendor_name' => $m->vendor?->name])->values(),
+            'messages' => $messages->map(fn (StoreMessage $m) => $this->threadRow($m, $request) + ['vendor_name' => $m->vendor?->name])->values(),
             'has_more' => $hasMore,
             // Everything except drafts that were cancelled before issue.
             'notices' => $store->legalNotices()->where(fn ($q) => $q->where('status', '!=', 'cancelled')->orWhereNotNull('issued_at'))
@@ -95,7 +95,35 @@ class StoreConversationController extends Controller
             throw $error;
         }
 
-        return response()->json(['data' => $message->load('sender:id,name')->toThreadArray()], 201);
+        return response()->json(['data' => $this->threadRow($message->load('sender:id,name'), $request)], 201);
+    }
+
+    public function update(Request $request, Store $store, int $message, AdminAuthorizationService $auth, AuditTrailService $audit)
+    {
+        $auth->requireManager($request->user());
+        $data = $request->validate(['body' => ['required', 'string', 'max:'.StoreMessage::BODY_MAX]]);
+        $message = DB::transaction(function () use ($request, $store, $message, $data, $audit) {
+            $message = $this->ownMessage($request, $store, $message);
+            // The replaced text survives only here.
+            $audit->recordOrFail($request, 'store.message_edited', $message, ['store_id' => $store->id, 'previous_body' => $message->body]);
+            $message->update(['body' => $data['body'], 'edited_at' => now()]);
+            return $message;
+        });
+
+        return response()->json(['data' => $this->threadRow($message->load('sender:id,name'), $request)]);
+    }
+
+    public function destroy(Request $request, Store $store, int $message, AdminAuthorizationService $auth, AuditTrailService $audit)
+    {
+        $auth->requireManager($request->user());
+        $message = DB::transaction(function () use ($request, $store, $message, $audit) {
+            $message = $this->ownMessage($request, $store, $message);
+            $audit->recordOrFail($request, 'store.message_deleted', $message, ['store_id' => $store->id]);
+            $message->update(['deleted_at' => now()]);
+            return $message;
+        });
+
+        return response()->json(['data' => $this->threadRow($message->load('sender:id,name'), $request)]);
     }
 
     public function attachment(Request $request, Store $store, StoreMessage $message, AdminAuthorizationService $auth, AuditTrailService $audit)
@@ -104,6 +132,21 @@ class StoreConversationController extends Controller
         abort_unless((int) $message->store_id === (int) $store->id, 404);
         $audit->recordOrFail($request, 'store.message_attachment_accessed', $message, ['store_id' => $store->id]);
         return $message->attachmentResponse();
+    }
+
+    /** A DTI message this staff member sent and has not deleted, locked for the change. */
+    private function ownMessage(Request $request, Store $store, int $messageId): StoreMessage
+    {
+        return StoreMessage::whereKey($messageId)->where('store_id', $store->id)->where('sender_side', 'dti')
+            ->where('sender_id', $request->user()->id)->whereNull('deleted_at')->lockForUpdate()->firstOrFail();
+    }
+
+    /** `can_modify` tells the admin thread which messages this staff member may edit or delete: only their own. */
+    private function threadRow(StoreMessage $message, Request $request): array
+    {
+        return $message->toThreadArray() + [
+            'can_modify' => $message->sender_side === 'dti' && ! $message->deleted_at && (int) $message->sender_id === (int) $request->user()->id,
+        ];
     }
 
     /**
