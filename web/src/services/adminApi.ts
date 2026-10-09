@@ -296,6 +296,12 @@ export const adminApi = {
     if (payload.attachment) body.append('attachment', payload.attachment)
     return data(await api.post(`/admin/conversations/${storeId}/messages`, body, { headers: { 'Content-Type': 'multipart/form-data' } }))
   },
+  async editStoreMessage(storeId: number, messageId: number, body: string): Promise<StoreMessageRecord> {
+    return data(await api.patch(`/admin/conversations/${storeId}/messages/${messageId}`, { body }))
+  },
+  async deleteStoreMessage(storeId: number, messageId: number): Promise<StoreMessageRecord> {
+    return data(await api.delete(`/admin/conversations/${storeId}/messages/${messageId}`))
+  },
   async getMessageAttachment(storeId: number, messageId: number): Promise<Blob> {
     return (await api.get(`/admin/conversations/${storeId}/messages/${messageId}/attachment`, { responseType: 'blob' })).data
   },

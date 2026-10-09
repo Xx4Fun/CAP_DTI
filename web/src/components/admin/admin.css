@@ -7050,6 +7050,26 @@ button.regulatory-chip { cursor: pointer; }
 .comms-bubble.vendor{background:#ffffff;color:#0f172a;border:1.5px solid #e2e8f0;border-bottom-left-radius:4px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .comms-bubble.dti{background:#1e3a8a;color:#ffffff;border-bottom-right-radius:4px;box-shadow:0 1px 2px rgba(30,58,138,.15)}
 .comms-bubble.deleted{background:transparent;border:1px dashed #cbd5e1;color:#64748b;font-style:italic;box-shadow:none}
+/* A bubble with its options button beside it. */
+.comms-bubble-line{display:flex;align-items:center;gap:.15rem;max-width:100%}
+.comms-bubble-line .comms-bubble{min-width:0}
+.comms-message-row:has(.comms-bubble-edit){width:100%}
+.comms-message-row:has(.comms-bubble-edit) .comms-bubble-line,.comms-message-row:has(.comms-bubble-edit) .comms-bubble{width:100%}
+.comms-bubble-actions{position:relative;flex-shrink:0}
+.comms-bubble-kebab{display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#64748b;cursor:pointer}
+.comms-bubble-kebab:hover,.comms-bubble-kebab[aria-expanded="true"]{background:#e2e8f0;color:#1e3a8a}
+.comms-bubble-kebab:focus-visible{outline:3px solid rgba(30,58,138,.35);outline-offset:2px}
+@media (hover:hover){
+  .comms-bubble-kebab{opacity:0}
+  .comms-message-row:hover .comms-bubble-kebab,.comms-bubble-kebab:focus-visible,.comms-bubble-kebab[aria-expanded="true"]{opacity:1}
+}
+.comms-bubble-menu{position:absolute;top:100%;left:0;z-index:5;display:grid;min-width:132px;padding:4px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.14)}
+.comms-bubble-menu button{display:flex;align-items:center;gap:.5rem;min-height:38px;padding:0 .65rem;border:0;border-radius:6px;background:transparent;color:#0f172a;font:inherit;font-size:.85rem;text-align:left;cursor:pointer}
+.comms-bubble-menu button:hover,.comms-bubble-menu button:focus-visible{background:#f1f5f9;outline:none}
+.comms-bubble-menu button:last-child{color:#b91c1c}
+.comms-bubble-edit{display:grid;gap:.4rem}
+.comms-bubble-edit textarea{width:100%;padding:.5rem .65rem;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;font:inherit;resize:vertical;box-sizing:border-box}
+.comms-bubble-edit div{display:flex;justify-content:flex-end;gap:.4rem}
 
 .comms-message-meta,
 .comms-bubble-meta{display:flex;align-items:center;gap:.35rem;margin-top:.25rem;padding:0 .35rem;font-size:.72rem;color:#64748b;font-weight:500;line-height:1.2}

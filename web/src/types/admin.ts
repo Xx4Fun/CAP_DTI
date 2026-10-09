@@ -727,6 +727,8 @@ export interface StoreMessageRecord {
   edited_at?: string | null
   /** Set when the vendor deleted the message; the server then returns no body or attachment. */
   deleted_at?: string | null
+  /** True for a DTI message the signed-in staff member sent and may still edit or delete. */
+  can_modify?: boolean
   attachment: { name: string; mime: string; size: number } | null
 }
 

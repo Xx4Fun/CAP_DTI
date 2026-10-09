@@ -11,6 +11,8 @@ vi.mock('../../services/adminApi', () => ({
     getConversation: vi.fn(),
     sendStoreMessage: vi.fn(),
     getMessageAttachment: vi.fn(),
+    editStoreMessage: vi.fn(),
+    deleteStoreMessage: vi.fn(),
   },
 }))
 
@@ -57,6 +59,38 @@ describe('StoreCommunications', () => {
     // Later steps appear as their own timeline entries at the time they happened.
     expect(screen.getByRole('button', { name: /LOI-2026-000011 · Delivery recorded: received/ })).toBeInTheDocument()
     expect(within(list).queryByLabelText('2 unread')).not.toBeInTheDocument()
+  })
+
+  it('edits and deletes only the messages this staff member sent', async () => {
+    const own = { id: 2, sender_side: 'dti' as const, sender_name: 'Evaluator', vendor_user_id: 3, body: 'Reply by Friday.', read_at: null, created_at: '2026-09-28T02:00:00Z', attachment: null, can_modify: true }
+    const colleague = { ...own, id: 3, sender_name: 'Second Evaluator', body: 'Noted by the office.', created_at: '2026-09-28T03:00:00Z', can_modify: false }
+    api.getConversation.mockResolvedValue(thread({ messages: [...thread().messages, own, colleague] }))
+    api.editStoreMessage.mockResolvedValue({ ...own, body: 'Reply by Monday.', edited_at: '2026-09-28T04:00:00Z' })
+    api.deleteStoreMessage.mockResolvedValue({ ...own, body: null, deleted_at: '2026-09-28T05:00:00Z', can_modify: false })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    render(<StoreCommunications />)
+    await user.click(await screen.findByRole('button', { name: /Antique Grocery/ }))
+
+    await screen.findByText('Reply by Friday.')
+    // Neither the vendor's message nor a colleague's carries the menu.
+    expect(screen.getAllByRole('button', { name: 'Message options' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Message options' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }))
+    const editor = screen.getByLabelText('Edit message')
+    await user.clear(editor)
+    await user.type(editor, 'Reply by Monday.')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(api.editStoreMessage).toHaveBeenCalledWith(7, 2, 'Reply by Monday.')
+    expect(await screen.findByText('Reply by Monday.')).toBeInTheDocument()
+    expect(screen.getByText(/Edited/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Message options' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(api.deleteStoreMessage).toHaveBeenCalledWith(7, 2)
+    expect(await screen.findByText('Message deleted')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Message options' })).not.toBeInTheDocument()
   })
 
   it('sends a message and appends it to the thread', async () => {

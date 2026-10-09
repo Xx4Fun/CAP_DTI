@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { ArrowLeft, ExternalLink, FileText, Gavel, MessageSquare, Paperclip, Search, Send, ShieldAlert, X } from 'lucide-react'
+import type { FormEvent, ReactNode } from 'react'
+import { ArrowLeft, ExternalLink, FileText, Gavel, MessageSquare, MoreVertical, Paperclip, Pencil, Search, Send, ShieldAlert, Trash2, X } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import type { ConversationNotice, ConversationSummary, ConversationThread, StoreMessageRecord } from '../../types/admin'
 import type { NavigateTo } from './AdminShell'
@@ -67,6 +67,9 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
   const [sending, setSending] = useState(false)
   const [showRecords, setShowRecords] = useState(false)
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null)
+  const [menuFor, setMenuFor] = useState<number | null>(null)
+  const [editing, setEditing] = useState<{ id: number; text: string; original: string } | null>(null)
+  const [changing, setChanging] = useState(false)
   const selectedRef = useRef<number | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -108,7 +111,7 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
 
   const openStore = (id: number) => {
     selectedRef.current = id
-    setSelectedId(id); setThread(null); setPreviewImage(null); setThreadError(''); setDraft(''); setFile(null); setShowRecords(false)
+    setSelectedId(id); setThread(null); setPreviewImage(null); setThreadError(''); setDraft(''); setFile(null); setShowRecords(false); setMenuFor(null); setEditing(null)
     adminApi.getConversation(id)
       .then((value) => { if (selectedRef.current === id) setThread(value) })
       .catch((reason) => { if (selectedRef.current === id) setThreadError(messageOf(reason, 'This conversation could not be loaded.')) })
@@ -151,6 +154,38 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
       loadList()
     } catch (reason) { setThreadError(messageOf(reason, 'The message could not be sent.')) }
     finally { setSending(false) }
+  }
+
+  useEffect(() => {
+    if (menuFor === null) return
+    const close = (event: Event) => { if (!(event.target as Element).closest?.('.comms-bubble-actions')) setMenuFor(null) }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [menuFor])
+
+  /** The server's copy replaces ours, so the thread shows what the vendor sees. */
+  const change = async (request: Promise<StoreMessageRecord>) => {
+    if (changing) return
+    setChanging(true); setThreadError('')
+    try {
+      const message = await request
+      setThread((current) => current && { ...current, messages: mergeMessages(current.messages, [message]) })
+      setEditing(null)
+      loadList()
+    } catch (reason) { setThreadError(messageOf(reason, 'The message could not be changed.')) }
+    finally { setChanging(false) }
+  }
+
+  const saveEdit = (event?: { preventDefault: () => void }) => {
+    event?.preventDefault()
+    const text = editing?.text.trim()
+    if (!thread || !editing || !text) return
+    if (text === editing.original) { setEditing(null); return }
+    void change(adminApi.editStoreMessage(thread.store.id, editing.id, text))
+  }
+
+  const deleteMessage = (message: StoreMessageRecord) => {
+    if (thread && window.confirm('Delete this message? The vendor will see that a message was deleted.')) void change(adminApi.deleteStoreMessage(thread.store.id, message.id))
   }
 
   const loadEarlier = () => {
@@ -249,22 +284,55 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
             {thread.has_more && <button type="button" className="admin-button secondary comms-more" onClick={loadEarlier}>Load earlier messages</button>}
             {timeline.length ? timeline.map((entry) => entry.message ? (
               <div key={`m${entry.message.id}`} className={`comms-message-row ${entry.message.sender_side}`}>
-                <div className={`comms-bubble ${entry.message.sender_side}${entry.message.deleted_at ? ' deleted' : ''}`}>
-                  {entry.message.deleted_at ? <p>Message deleted</p> : entry.message.body && <p>{entry.message.body}</p>}
-                  {entry.message.attachment && (
-                    isImageAttachment(entry.message.attachment) ? (
-                      <MessageImageAttachment
-                        storeId={thread.store.id}
-                        message={entry.message}
-                        onOpenPreview={(url, name) => setPreviewImage({ url, name })}
-                        onOpenFallback={() => void openAttachment(entry.message!)}
-                      />
-                    ) : (
-                      <button type="button" className="comms-attachment" onClick={() => void openAttachment(entry.message!)}>
-                        <Paperclip size={14} aria-hidden="true" />{entry.message.attachment.name}
-                      </button>
-                    )
+                <div className="comms-bubble-line">
+                  {entry.message.can_modify && !entry.message.deleted_at && editing?.id !== entry.message.id && (
+                    <MessageMenu
+                      open={menuFor === entry.message.id}
+                      onToggle={() => setMenuFor(menuFor === entry.message!.id ? null : entry.message!.id)}
+                      onClose={() => setMenuFor(null)}
+                      items={[
+                        ...(entry.message.body ? [{ label: 'Edit', icon: <Pencil size={15} aria-hidden="true" />, run: () => setEditing({ id: entry.message!.id, text: entry.message!.body!, original: entry.message!.body! }) }] : []),
+                        { label: 'Delete', icon: <Trash2 size={15} aria-hidden="true" />, run: () => deleteMessage(entry.message!) },
+                      ]}
+                    />
                   )}
+                  <div className={`comms-bubble ${entry.message.sender_side}${entry.message.deleted_at ? ' deleted' : ''}`}>
+                    {entry.message.deleted_at ? <p>Message deleted</p> : editing?.id === entry.message.id ? (
+                      <form className="comms-bubble-edit" onSubmit={saveEdit}>
+                        <textarea
+                          aria-label="Edit message"
+                          autoFocus
+                          rows={2}
+                          maxLength={MAX_BODY}
+                          disabled={changing}
+                          value={editing.text}
+                          onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') setEditing(null)
+                            if (event.key === 'Enter' && !event.shiftKey) saveEdit(event)
+                          }}
+                        />
+                        <div>
+                          <button type="button" className="admin-button secondary" disabled={changing} onClick={() => setEditing(null)}>Cancel</button>
+                          <button type="submit" className="admin-button secondary" disabled={changing || !editing.text.trim() || editing.text.trim() === editing.original}>{changing ? 'Saving…' : 'Save'}</button>
+                        </div>
+                      </form>
+                    ) : entry.message.body && <p>{entry.message.body}</p>}
+                    {entry.message.attachment && (
+                      isImageAttachment(entry.message.attachment) ? (
+                        <MessageImageAttachment
+                          storeId={thread.store.id}
+                          message={entry.message}
+                          onOpenPreview={(url, name) => setPreviewImage({ url, name })}
+                          onOpenFallback={() => void openAttachment(entry.message!)}
+                        />
+                      ) : (
+                        <button type="button" className="comms-attachment" onClick={() => void openAttachment(entry.message!)}>
+                          <Paperclip size={14} aria-hidden="true" />{entry.message.attachment.name}
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
                 <div className="comms-message-meta">
                   <span className="sr-only">
@@ -366,6 +434,34 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
           <div className="comms-lightbox-img-wrap" onClick={(e) => e.stopPropagation()}>
             <img src={previewImage.url} alt={previewImage.name} className="comms-lightbox-img" />
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The options button beside one of the staff member's own bubbles. Only one menu is open at a time. */
+function MessageMenu({ open, onToggle, onClose, items }: { open: boolean; onToggle: () => void; onClose: () => void; items: { label: string; icon: ReactNode; run: () => void }[] }) {
+  return (
+    <div className="comms-bubble-actions">
+      <button type="button" className="comms-bubble-kebab" aria-haspopup="menu" aria-expanded={open} aria-label="Message options" onClick={onToggle}>
+        <MoreVertical size={18} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="comms-bubble-menu"
+          role="menu"
+          ref={(node) => { node?.scrollIntoView?.({ block: 'nearest' }) }}
+          onKeyDown={(event) => {
+            const item = document.activeElement as HTMLElement | null
+            if (event.key === 'Escape') { (event.currentTarget.previousElementSibling as HTMLElement).focus(); onClose() }
+            if (event.key === 'ArrowDown') { event.preventDefault(); ((item?.nextElementSibling ?? event.currentTarget.firstElementChild) as HTMLElement).focus() }
+            if (event.key === 'ArrowUp') { event.preventDefault(); ((item?.previousElementSibling ?? event.currentTarget.lastElementChild) as HTMLElement).focus() }
+          }}
+        >
+          {items.map((item, index) => (
+            <button key={item.label} type="button" role="menuitem" autoFocus={index === 0} onClick={() => { onClose(); item.run() }}>{item.icon}{item.label}</button>
+          ))}
         </div>
       )}
     </div>
