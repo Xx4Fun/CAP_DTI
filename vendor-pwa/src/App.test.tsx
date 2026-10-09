@@ -547,6 +547,34 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(screen.queryByRole('button', { name: 'Message options' })).not.toBeInTheDocument();
   });
 
+  it('shows an image attachment in its bubble and opens it in the viewer', async () => {
+    signedIn();
+    api.conversation.mockResolvedValue({
+      store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' }, has_more: false, notices: [],
+      messages: [
+        { id: 3, sender_side: 'dti', sender_name: 'DTI', body: null, read_at: null, created_at: '2026-09-28T01:00:00Z', attachment: { name: 'shelf.png', mime: 'image/png', size: 1200 } },
+        { id: 4, sender_side: 'dti', sender_name: 'DTI', body: null, read_at: null, created_at: '2026-09-28T02:00:00Z', attachment: { name: 'advisory.pdf', mime: 'application/pdf', size: 900 } },
+      ],
+    });
+    api.messageAttachment.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
+    URL.createObjectURL = vi.fn(() => 'blob:shelf');
+    URL.revokeObjectURL = vi.fn();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+    await user.click(await screen.findByRole('button', { name: 'View image shelf.png' }));
+    // Only the image is fetched for display; the PDF stays a file button until it is opened.
+    expect(api.messageAttachment).toHaveBeenCalledTimes(1);
+    expect(api.messageAttachment).toHaveBeenCalledWith('vendor-token', 1, 3);
+    expect(screen.getByRole('button', { name: 'advisory.pdf' })).toBeInTheDocument();
+
+    const viewer = screen.getByRole('dialog', { name: 'Image preview' });
+    expect(within(viewer).getByRole('img', { name: 'shelf.png' })).toHaveAttribute('src', 'blob:shelf');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Image preview' })).not.toBeInTheDocument();
+  });
+
   it('shows a message that has not reached DTI as a bubble that can be discarded', async () => {
     signedIn();
     api.conversation.mockResolvedValue({ store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' }, messages: [], has_more: false, notices: [] });

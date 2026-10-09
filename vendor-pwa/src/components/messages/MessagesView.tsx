@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, FileText, MoreVertical, Paperclip, Pencil, Send, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ExternalLink, FileText, MoreVertical, Paperclip, Pencil, Send, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { Conversation, ConversationNotice, StoreMessage } from '../../app/types';
 import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, OUTCOME_LABELS, formatDate } from '../../app/rules';
 import { apiError, isSessionInvalid, vendorApi } from '../../services/vendorApi';
@@ -40,6 +40,36 @@ const mergeMessages = (current: StoreMessage[], incoming: StoreMessage[]) => {
 /** Changes when a notice is added or changes state, so the portal's notice list can be refreshed to match. */
 const noticeSignature = (conversation: Conversation) => conversation.notices.map((notice) => `${notice.id}:${notice.status}:${notice.delivery_state}`).join('|');
 
+/** An object URL for a private image, loaded once per key and revoked when it is no longer shown. */
+function useBlobUrl(key: string | null, load: () => Promise<Blob>) {
+  const [state, setState] = useState<{ url?: string; failed?: boolean }>({});
+  const loader = useRef(load);
+  loader.current = load;
+  useEffect(() => {
+    setState({});
+    if (!key) return;
+    let active = true;
+    let url: string | undefined;
+    (async () => URL.createObjectURL(await loader.current()))()
+      .then((created) => { if (active) { url = created; setState({ url }); } else URL.revokeObjectURL(created); })
+      .catch(() => { if (active) setState({ failed: true }); });
+    return () => { active = false; if (url) URL.revokeObjectURL(url); };
+  }, [key]);
+  return state;
+}
+
+/** An image attachment shown in its bubble; `fallback` replaces it when the image cannot be loaded. */
+const BubbleImage: React.FC<{ source: string; load: () => Promise<Blob>; name: string; onOpen: (url: string, name: string) => void; fallback: React.ReactNode }> = ({ source, load, name, onOpen, fallback }) => {
+  const image = useBlobUrl(source, load);
+  if (image.failed) return <>{fallback}</>;
+  if (!image.url) return <span className="vendor-bubble-image loading" role="img" aria-label={`Loading image ${name}`} />;
+  return (
+    <button type="button" className="vendor-bubble-image" aria-label={`View image ${name}`} onClick={() => onOpen(image.url!, name)}>
+      <img src={image.url} alt={name} />
+    </button>
+  );
+};
+
 const PENDING_LABELS = { pending: 'Waiting to send', sending: 'Sending…', attention: 'Not sent', received: '' };
 
 /** The options button beside one of the vendor's own bubbles. Only one menu is open at a time. */
@@ -78,10 +108,12 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
   const [menuFor, setMenuFor] = useState<number | string | null>(null);
   const [editing, setEditing] = useState<{ id: number; text: string; original: string } | null>(null);
   const [changing, setChanging] = useState(false);
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
   const composer = useDraft(accountFor(token), `message/${storeId}`, { storeId, draft: '', file: null as File | null }, (value) => !!value.draft || !!value.file);
   const { draft, file } = composer.value;
   const setDraft = (next: string) => composer.update((value) => ({ ...value, draft: next }));
   const setFile = (next: File | null) => composer.update((value) => ({ ...value, file: next }));
+  const filePreview = useBlobUrl(file?.type.startsWith('image/') ? `${file.name}/${file.size}/${file.lastModified}` : null, async () => file!);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const latest = useRef<Conversation | null>(null);
@@ -141,6 +173,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menuFor]);
+
+  useEffect(() => {
+    if (!preview) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setPreview(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [preview]);
 
   /** Edits and deletes need a connection; the server's copy replaces ours, so the thread shows what DTI sees. */
   const change = async (request: Promise<StoreMessage>) => {
@@ -231,11 +270,16 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
             </div>
           </form>
         ) : message.body && <p>{message.body}</p>}
-        {message.attachment && (
-          <button type="button" className="vendor-bubble-file" onClick={() => void openAttachment(message)}>
-            <Paperclip size={14} aria-hidden="true" />{message.attachment.name}
-          </button>
-        )}
+        {message.attachment && (() => {
+          const file = (
+            <button type="button" className="vendor-bubble-file" onClick={() => void openAttachment(message)}>
+              <Paperclip size={14} aria-hidden="true" />{message.attachment.name}
+            </button>
+          );
+          return message.attachment.mime.startsWith('image/')
+            ? <BubbleImage source={`m${message.id}`} load={() => vendorApi.messageAttachment(token, storeId, message.id)} name={message.attachment.name} onOpen={(url, name) => setPreview({ url, name })} fallback={file} />
+            : file;
+        })()}
         <span className="vendor-bubble-meta">
           {mine ? 'You' : 'DTI Antique'} · {formatDate(message.created_at, true)}
           {message.edited_at && !message.deleted_at && ' · Edited'}
@@ -321,7 +365,13 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
               )}
               <div className="vendor-bubble mine pending">
                 {payload.body && <p>{payload.body}</p>}
-                {payload.attachment && <span className="vendor-bubble-file"><Paperclip size={14} aria-hidden="true" />{payload.attachment.name}</span>}
+                {payload.attachment && (() => {
+                  const attachment = payload.attachment;
+                  const file = <span className="vendor-bubble-file"><Paperclip size={14} aria-hidden="true" />{attachment.name}</span>;
+                  return attachment.type.startsWith('image/')
+                    ? <BubbleImage source={`q${entry.uuid}`} load={async () => attachment} name={attachment.name} onOpen={(url, name) => setPreview({ url, name })} fallback={file} />
+                    : file;
+                })()}
                 <span className="vendor-bubble-meta" role={entry.state === 'attention' ? 'alert' : undefined}>
                   You · {PENDING_LABELS[entry.state]}{entry.state === 'attention' && entry.reason ? ` · ${entry.reason}` : ''}
                 </span>
@@ -339,7 +389,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
       <form className="vendor-messages-composer" onSubmit={(event) => void send(event)}>
         {file && (
           <span className="vendor-file-chip">
-            <Paperclip size={14} aria-hidden="true" />{file.name}
+            {filePreview.url ? <img src={filePreview.url} alt="" /> : <Paperclip size={14} aria-hidden="true" />}{file.name}
             <button type="button" onClick={() => setFile(null)} aria-label={`Remove ${file.name}`}><X size={14} /></button>
           </span>
         )}
@@ -371,6 +421,17 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
           </button>
         </div>
       </form>
+
+      {preview && (
+        <div className="vendor-lightbox" role="dialog" aria-modal="true" aria-label="Image preview" onClick={() => setPreview(null)}>
+          <div className="vendor-lightbox-bar" onClick={(event) => event.stopPropagation()}>
+            <span>{preview.name}</span>
+            <button type="button" aria-label="Open original in new tab" onClick={() => window.open(preview.url, '_blank')}><ExternalLink size={18} aria-hidden="true" /></button>
+            <button type="button" autoFocus aria-label="Close image preview" onClick={() => setPreview(null)}><X size={20} aria-hidden="true" /></button>
+          </div>
+          <img src={preview.url} alt={preview.name} onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
     </section>
   );
 };
