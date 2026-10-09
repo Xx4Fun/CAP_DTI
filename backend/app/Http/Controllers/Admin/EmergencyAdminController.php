@@ -9,6 +9,7 @@ use App\Models\RegulatoryPriceRecord;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\EmergencyApcPreparationService;
+use App\Services\Admin\EmergencyLifecycleService;
 use App\Services\Admin\EmergencyPriceResolver;
 use App\Services\Admin\SensitiveActionGuard;
 use App\Services\FieldNotificationService;
@@ -18,7 +19,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class EmergencyAdminController extends Controller
 {
@@ -36,6 +36,7 @@ class EmergencyAdminController extends Controller
                         'status', 'preparation_hash',
                     ]),
                     'effective_state' => $this->effectiveState($emergency, $effectiveIds->has($emergency->id)),
+                    ...app(EmergencyLifecycleService::class)->flags($emergency),
                     'official_prices' => $this->officialPricesPayload($emergency),
                 ])->values()]);
         }
@@ -83,6 +84,7 @@ class EmergencyAdminController extends Controller
         return [
             ...$emergency->toArray(),
             'effective_state' => $this->effectiveState($emergency),
+            ...app(EmergencyLifecycleService::class)->flags($emergency),
             'covered_commodity_keys' => $coveredCommodityKeys,
             'srp_fallbacks' => $preparations->srpFallbacks($coveredBulletins, $emergency->candidates->pluck('commodity_key')),
             // Read only by admin tabs still on the build that required every product in the cutoff week: it keeps their
@@ -141,7 +143,7 @@ class EmergencyAdminController extends Controller
             return 'scheduled';
         }
         if ($emergency->ends_on && $emergency->ends_on->toDateString() < $today) {
-            return $emergency->status === 'active' ? 'expired' : $emergency->status;
+            return 'expired';
         }
 
         return ($effective ?? RegulatoryEmergency::query()->whereKey($emergency->id)->effectiveAt(now('UTC'))->exists()) ? 'in_effect' : 'scheduled';
@@ -161,7 +163,7 @@ class EmergencyAdminController extends Controller
         return response()->json(['data' => $this->detailPayload($preparations->prepare($emergency, $request->user()))]);
     }
 
-    public function activate(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard, FieldNotificationService $notifications, EmergencyApcPreparationService $preparations)
+    public function activate(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, AuditTrailService $audit, SensitiveActionGuard $guard, FieldNotificationService $notifications, EmergencyApcPreparationService $preparations, EmergencyLifecycleService $lifecycle)
     {
         $auth->requireManager($request->user());
         $guard->requireRecentReauthentication($request);
@@ -171,12 +173,13 @@ class EmergencyAdminController extends Controller
         ]);
 
         try {
-            $emergency = DB::transaction(function () use ($emergency, $data, $request, $audit, $notifications, $preparations) {
+            $emergency = DB::transaction(function () use ($emergency, $data, $request, $audit, $notifications, $preparations, $lifecycle) {
                 // Same order as prepare(): this lock, then the declaration row. An SRP rename or unit change waits here, so it
                 // cannot commit between the snapshot and the official records written from it.
                 EmergencyApcPreparationService::lock();
                 $emergency = RegulatoryEmergency::query()->lockForUpdate()->findOrFail($emergency->id);
                 abort_unless($emergency->status === 'draft', 422, 'Only a draft declaration can be activated.');
+                $lifecycle->requireUnexpiredDates($emergency);
                 // One snapshot supplies both the hash check and the SRP values written below, so a revision committed during
                 // this request cannot put an unreviewed price into an official record.
                 $snapshot = $preparations->snapshot($emergency);
@@ -198,6 +201,13 @@ class EmergencyAdminController extends Controller
                         'missing_commodity_keys' => $withoutReference,
                     ], 422));
                 }
+
+                if ($blocker = $lifecycle->recoverExpiredLocksAndFindBlocker($request)) {
+                    $this->activationBlocked($blocker);
+                }
+
+                // Preparation and row-lock waits may cross Manila midnight. Recheck at the write boundary.
+                $lifecycle->requireUnexpiredDates($emergency);
 
                 $official = fn (array $attributes) => RegulatoryPriceRecord::create([
                     'regulatory_emergency_id' => $emergency->id,
@@ -237,9 +247,55 @@ class EmergencyAdminController extends Controller
 
                 return $emergency->fresh(['candidates', 'priceRecords']);
             });
-        } catch (QueryException) {
-            throw ValidationException::withMessages(['emergency' => ['End or cancel the active emergency before activating another.']]);
+        } catch (QueryException $error) {
+            // Only the two activation constraints describe a real activation conflict. Storage, notification,
+            // and other database errors must retain their ordinary exception reporting and rollback behavior.
+            $constraint = $error->errorInfo[2] ?? '';
+            if (($error->errorInfo[0] ?? null) === '23505'
+                && (str_contains($constraint, 'regulatory_emergencies_one_active')
+                    || str_contains($constraint, 'regulatory_emergencies_active_scope_key_unique'))) {
+                $blocker = RegulatoryEmergency::query()->where('id', '!=', $emergency->id)
+                    ->where(fn ($query) => $query->where('status', 'active')->orWhereNotNull('active_scope_key'))->first();
+                if ($blocker) {
+                    $this->activationBlocked($blocker);
+                }
+            }
+            throw $error;
         }
+
+        return response()->json(['data' => $this->detailPayload($emergency)]);
+    }
+
+    private function activationBlocked(RegulatoryEmergency $blocker): never
+    {
+        $state = $this->effectiveState($blocker);
+        $description = $state === 'scheduled' ? 'Scheduled declaration' : 'Declaration';
+        throw new HttpResponseException(response()->json([
+            'status' => 'EMERGENCY_ACTIVATION_BLOCKED',
+            'message' => $description.' '.$blocker->declaration_reference.' reserves activation ('.$state.'). End or cancel it before confirming another declaration.',
+            'blocking_emergency' => [
+                'id' => $blocker->id, 'declaration_reference' => $blocker->declaration_reference,
+                'starts_on' => $blocker->starts_on?->toDateString(), 'ends_on' => $blocker->ends_on?->toDateString(),
+                'effective_state' => $state,
+            ],
+        ], 409));
+    }
+
+    public function releaseExpiredLock(Request $request, RegulatoryEmergency $emergency, AdminAuthorizationService $auth, SensitiveActionGuard $guard, EmergencyLifecycleService $lifecycle)
+    {
+        $auth->requireManager($request->user());
+        $guard->requireRecentReauthentication($request);
+        $request->validate(['confirmed' => ['required', 'accepted']]);
+        $emergency = DB::transaction(function () use ($emergency, $request, $lifecycle) {
+            EmergencyApcPreparationService::lock();
+            $emergency = RegulatoryEmergency::query()->lockForUpdate()->findOrFail($emergency->id);
+            if ($emergency->status === 'ended' && $lifecycle->dateExpired($emergency) && ! $lifecycle->lockHeld($emergency)) {
+                return $emergency;
+            }
+            $lifecycle->releaseExpiredLock($emergency, $request, 'manual');
+
+            return $emergency;
+        });
 
         return response()->json(['data' => $this->detailPayload($emergency)]);
     }

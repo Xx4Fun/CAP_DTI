@@ -161,6 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/emergencies/{emergency}', [EmergencyAdminController::class, 'show']);
         Route::post('/emergencies/{emergency}/prepare', [EmergencyAdminController::class, 'prepare']);
         Route::post('/emergencies/{emergency}/activate', [EmergencyAdminController::class, 'activate']);
+        Route::post('/emergencies/{emergency}/release-expired-lock', [EmergencyAdminController::class, 'releaseExpiredLock']);
         Route::patch('/emergencies/{emergency}', [EmergencyAdminController::class, 'update']);
         Route::get('/emergency-prices/resolve', [EmergencyAdminController::class, 'resolve']);
         Route::get('/legal-notices', [AdminLegalNoticeController::class, 'index']);

@@ -17,10 +17,12 @@ use App\Services\Admin\SrpCatalogService;
 use App\Services\FieldNotificationService;
 use App\Support\MonitoringPeriod;
 use App\Support\MonitoringWeek;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class MonitoringRecordController extends Controller
@@ -93,11 +95,7 @@ class MonitoringRecordController extends Controller
         $query = MonitoringRecord::query()->where('status', 'accepted')
             ->with(['officer:id,name,email', 'store:id,store_name,address'])
             ->withCount(['items', 'items as anomaly_count' => fn ($items) => $items->where('is_anomaly', true)]);
-        if ($search = trim($filters['search'] ?? '')) {
-            $query->where(fn ($nested) => $nested
-                ->whereHas('officer', fn ($officer) => $officer->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"))
-                ->orWhereHas('store', fn ($store) => $store->where('store_name', 'like', "%{$search}%")));
-        }
+        $this->applyRecordSearch($query, $filters['search'] ?? '');
         if (($filters['anomaly'] ?? 'all') !== 'all') {
             $query->{($filters['anomaly'] === 'yes' ? 'whereHas' : 'whereDoesntHave')}('items', fn ($items) => $items->where('is_anomaly', true));
         }
@@ -118,6 +116,7 @@ class MonitoringRecordController extends Controller
     {
         $auth->requireManager($request->user());
         $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
             'period' => ['nullable', Rule::in(['this_week', 'last_4_weeks', 'this_month', 'last_month', 'all_time', 'custom'])],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
@@ -149,6 +148,7 @@ class MonitoringRecordController extends Controller
                 'items:id,monitoring_record_id,srp_id,recorded_price,baseline_price,is_anomaly,finding_basis',
             ]);
 
+        $this->applyRecordSearch($query, $filters['search'] ?? '');
         $dates = $this->parsePeriodDates($request);
         $this->applyPeriodConstraint($query, $dates, 'finalized_at');
 
@@ -664,6 +664,21 @@ class MonitoringRecordController extends Controller
         ]));
 
         return response()->json(['data' => $findings]);
+    }
+
+    private function applyRecordSearch(Builder $query, string $search): void
+    {
+        $search = trim($search);
+        if ($search === '') {
+            return;
+        }
+
+        $term = '%'.Str::lower($search).'%';
+        $query->where(fn ($nested) => $nested
+            ->whereHas('officer', fn ($officer) => $officer
+                ->whereRaw('LOWER(name) LIKE ?', [$term])
+                ->orWhereRaw('LOWER(email) LIKE ?', [$term]))
+            ->orWhereHas('store', fn ($store) => $store->whereRaw('LOWER(store_name) LIKE ?', [$term])));
     }
 
     private function parsePeriodDates(Request $request, string $defaultPreset = 'all_time'): ?array

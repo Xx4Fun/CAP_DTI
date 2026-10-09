@@ -11,3 +11,15 @@ add.png
 receipt-samples/
 .vercel
 .env*
+
+# Local working files, screenshots, and agent state
+scratch/
+sample/
+.claude/
+/PLAN*.md
+/*.png
+web/fm-preview.html
+web/src/fm-preview.tsx
+
+# Removed Flutter client (2026-09-28); only local build folders remain
+mobile/

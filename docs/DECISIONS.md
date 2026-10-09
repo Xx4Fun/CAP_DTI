@@ -14,6 +14,12 @@ Only record choices that should constrain future work. Newest entries go first a
 - `stores:import-photos` previews by default. Explicit apply changes only missing photo fields with transactional audits, verifies uploaded bytes, rejects conflicts and reuses matching objects on retry. The full establishment seeder is not the production photo-import path.
 - Source assets, commands, verification and the production release procedure: [[plans/store-photos/README]].
 
+## 2026-10-09 — Price Freeze activation and expired-lock recovery
+
+- Expired drafts cannot be activated. A valid activation automatically releases expired active/ended locks under the existing transaction/advisory lock; Admin also has an authenticated, password-reconfirmed recovery action. Current, scheduled, and open-ended declarations retain their reservation.
+- Recovery preserves recorded dates, confirmation, manual cutoff, and saved prices; natural expiry remains historical and audited. Reads never repair records, and failures roll back recovery with activation.
+- Admin separates today's protocol from retained locks. Uncertain activation responses require status verification, with no automatic repeat write. Local verification and release boundaries: [[plans/emergency-activation-recovery/README]].
+
 ## 2026-10-09 — Selected-declaration Price Freeze prices
 
 - Admin uses one pricing section: proposed APC/SRP-held ceilings for a draft and saved official ceilings for the selected confirmed or historical declaration. Historical prices remain accessible through the Declarations list.
