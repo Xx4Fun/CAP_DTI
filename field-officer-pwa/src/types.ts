@@ -26,8 +26,9 @@ export interface Bulletin {
 export interface RecentPrice { store_id: number; srp_id: number; recorded_price: number | string; inspection_timestamp: string }
 export interface MonitoringProtocol {
   labels_are_provisional: boolean
-  standard_review_threshold_percent: number
+  standard_review_rule: string
   emergency_review_rule: string
+  previous_price_review_threshold_percent: number
   mode: 'standard' | 'emergency'
   declaration_reference: string | null
   starts_on: string | null
@@ -137,7 +138,10 @@ export interface MonitoringRecordDetail {
   items: Array<VisitItem & {
     id: number; commodity_name: string | null; unit: string | null; category?: string | null; regulatory_classification?: string | null
     recorded_price: number; previous_price: number | null
-    variance_percent: number | null; is_anomaly: boolean; reference_status: 'available' | 'unavailable'
+    variance_percent: number | null; is_anomaly: boolean
+    previous_price_variance_percent?: number | null; is_previous_price_spike?: boolean
+    finding_basis?: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
+    reference_status: 'available' | 'unavailable'
     reference_type: 'standard_srp' | 'emergency_ceiling'; reference_label: string | null; reference_value: number | null
     reference_source_id: number | null; reference_source: string | null; reference_effective_date: string | null; reference_version: string | null
   }>

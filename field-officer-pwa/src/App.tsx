@@ -1274,6 +1274,10 @@ function VisitWizard({
       })
   }, [bootstrap.stores, officerPosition, query, routineStatus])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
+  // This store's last verified price per commodity — the second basis the officer is reviewed against.
+  const previousPrices = useMemo(() => new Map<number, number | null>(bootstrap.recent_prices
+    .filter((price) => String(price.store_id) === String(draft.store_id))
+    .map((price) => [price.srp_id, Number(price.recorded_price)])), [bootstrap.recent_prices, draft.store_id])
   const missingRequirements = canFinalizeVisit(draft)
   const referencesChanged = changedVisitReferences(draft, bootstrap)
   useEffect(() => {
@@ -1568,6 +1572,7 @@ function VisitWizard({
               protocol={bootstrap.protocol}
               regulatoryPrices={bootstrap.regulatory_prices}
               monitoringReferences={bootstrap.monitoring_references}
+              previousPrices={previousPrices}
               onUpdatePrice={handleUpdatePrice}
               onPrevious={() => {
                 setError('')

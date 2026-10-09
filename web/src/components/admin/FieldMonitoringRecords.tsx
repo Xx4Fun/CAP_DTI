@@ -1213,7 +1213,7 @@ function PriceDeltaBanner({ row }: { row: MonitoringPriceHistoryRow }) {
       <div className="comparison-metric evaluation">
         <span className="metric-label">Comparison with reference</span>
         <strong className={`metric-val status-text ${isAnomaly ? 'anomaly' : 'compliant'}`}>
-          {diff === null ? 'Reference unavailable' : isAnomaly ? 'Above review threshold (For Review)' : diff > 0 ? 'Above reference · within tolerance' : 'Within reference'}
+          {diff === null ? 'Reference unavailable' : isAnomaly ? (row.finding_basis === 'previous_price_spike' ? 'Up over the previous record (For Review)' : 'Above the reference (For Review)') : 'Within reference'}
         </strong>
         <small className="metric-sub">{row.protocol_mode === 'emergency' ? 'Emergency Protocol (0% Tolerance)' : 'Standard Market Protocol'}</small>
       </div>
@@ -1884,11 +1884,14 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onO
     setSignatureModal(null)
   }
 
-  // Mirrors the capture rule (FieldMonitoringController): standard SRP flags only above +10%, an emergency
-  // ceiling flags anything above it. A price over SRP but inside the tolerance is not an anomaly.
-  const statusOf = (item: MonitoringRecordItem) => item.is_anomaly ? 'flagged'
-    : item.reference_value == null ? 'unavailable'
-      : Number(item.recorded_price) > Number(item.reference_value) ? 'tolerated' : 'within'
+  // Mirrors the capture rule (FieldMonitoringController): a price above the reference in force is flagged with no
+  // tolerance, and a price still within reference is flagged when it rose more than 10% over this store's last
+  // record. 'tolerated' only occurs on visits accepted while standard SRP allowed a 10% tolerance.
+  const statusOf = (item: MonitoringRecordItem) => item.finding_basis === 'previous_price_spike' ? 'spike'
+    : item.is_anomaly ? 'flagged'
+      : item.reference_value == null ? 'unavailable'
+        : Number(item.recorded_price) > Number(item.reference_value) ? 'tolerated' : 'within'
+  const spiked = record.items.filter((item) => statusOf(item) === 'spike').length
   const tolerated = record.items.filter((item) => statusOf(item) === 'tolerated').length
   const withReference = record.items.filter((item) => statusOf(item) === 'within').length
   const unavailable = record.items.filter((item) => statusOf(item) === 'unavailable').length
@@ -1906,8 +1909,8 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onO
     const reference = Number(item.reference_value)
     const difference = Number(item.recorded_price) - reference
     const status = statusOf(item)
-    // Colour follows the observation, not the sign: red flagged, yellow tolerated, green within reference.
-    const tone = status === 'flagged' ? 'diff-high' : status === 'tolerated' ? 'diff-tolerance' : 'diff-match'
+    // Colour follows the observation, not the sign: red flagged, yellow spike or legacy tolerance, green within.
+    const tone = status === 'flagged' ? 'diff-high' : status === 'spike' || status === 'tolerated' ? 'diff-tolerance' : 'diff-match'
     return (
       <span className="visit-diff">
         <span className={`diff-pill ${tone}`}>{difference > 0 ? '+' : difference < 0 ? '−' : ''}{money(Math.abs(difference))}</span>
@@ -1917,7 +1920,8 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onO
   }
   const observationBadge = (item: MonitoringRecordItem) => {
     const status = statusOf(item)
-    if (status === 'tolerated') return <span className="monitor-observation tolerance"><CircleAlert size={13} />Above reference · within tolerance</span>
+    if (status === 'spike') return <span className="monitor-observation tolerance"><TrendingUp size={13} />Within reference · up {item.previous_price_variance_percent == null ? '' : `${Number(item.previous_price_variance_percent).toFixed(1)}% `}over the previous record{item.previous_price != null && <small>Previous {money(item.previous_price)}</small>}</span>
+    if (status === 'tolerated') return <span className="monitor-observation tolerance"><CircleAlert size={13} />Above reference · recorded under the former 10% tolerance</span>
     if (status === 'flagged') return <span className="monitor-observation danger"><TriangleAlert size={13} />With observations{item.finding && <small className="monitor-decision">{decisionLabel(item.finding.decision)}{decidedBy(item.finding.decider?.name, item.finding.decided_at)}{item.finding.decision === 'no_action' && item.finding.reason ? `: ${item.finding.reason}` : ''}</small>}</span>
     return <Observation value={status === 'unavailable' ? 'reference_unavailable' : 'no_observations'} />
   }
@@ -1952,7 +1956,8 @@ function VisitReview({ record, error, backLabel, onBack, onRegulatoryAction, onO
             <dl className="visit-items-stats">
               <div><dt>Total items</dt><dd>{record.items.length}</dd></div>
               <div className="attention"><dt>With observations</dt><dd>{affected.length}</dd></div>
-              {tolerated > 0 && <div className="tolerance"><dt>Within tolerance</dt><dd>{tolerated}</dd></div>}
+              {spiked > 0 && <div className="tolerance"><dt>Up over previous record</dt><dd>{spiked}</dd></div>}
+              {tolerated > 0 && <div className="tolerance"><dt>Within former tolerance</dt><dd>{tolerated}</dd></div>}
               <div className="compliant"><dt>Within reference</dt><dd>{withReference}</dd></div>
               {unavailable > 0 && <div><dt>Reference unavailable</dt><dd>{unavailable}</dd></div>}
             </dl>

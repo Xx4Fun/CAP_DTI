@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Field;
 use App\Http\Controllers\Controller;
 use App\Models\FieldVerificationRequest;
 use App\Models\MonitoringRecord;
+use App\Models\MonitoringRecordItem;
 use App\Models\RegulatoryEmergency;
 use App\Models\RegulatoryPriceRecord;
 use App\Models\SrpBulletin;
@@ -53,7 +54,6 @@ class FieldDataController extends Controller
         $latestPerPair = TemporalInspection::query()
             ->select('store_id', 'srp_id')->selectRaw('max(inspection_timestamp) as latest_at')
             ->where('validation_status', 'verified')
-            ->where('inspection_timestamp', '>=', now()->subWeeks(3))
             ->groupBy('store_id', 'srp_id');
         $recentPrices = $isCurrent ? collect() : TemporalInspection::query()
             ->joinSub($latestPerPair, 'latest', fn ($join) => $join
@@ -74,8 +74,9 @@ class FieldDataController extends Controller
                 'is_delta' => $isCurrent,
                 'protocol' => [
                     'labels_are_provisional' => true,
-                    'standard_review_threshold_percent' => 10,
+                    'standard_review_rule' => 'recorded_price_above_srp',
                     'emergency_review_rule' => 'recorded_price_above_ceiling',
+                    'previous_price_review_threshold_percent' => MonitoringRecordItem::PREVIOUS_PRICE_THRESHOLD,
                     'mode' => $effectiveEmergency ? 'emergency' : 'standard',
                     'declaration_reference' => $effectiveEmergency?->declaration_reference,
                     'starts_on' => $effectiveEmergency?->starts_on?->toDateString(),

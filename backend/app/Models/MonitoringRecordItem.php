@@ -11,17 +11,31 @@ class MonitoringRecordItem extends Model
     /** regulatory_findings.source_type for a DTI decision on a field monitoring item. */
     public const FINDING_SOURCE = 'monitoring_record_item';
 
+    /** finding_basis when the flag rests on the price rising more than the threshold over this store's last verified price. */
+    public const SPIKE_BASIS = 'previous_price_spike';
+
+    /** Percent over the store's previous verified price that makes an increase reviewable (DTI interview). */
+    public const PREVIOUS_PRICE_THRESHOLD = 10;
+
+    /** The rule this flag rests on. Rows accepted before finding_basis existed fall back to the reference kind. */
+    public function basis(): ?string
+    {
+        return $this->finding_basis ?? $this->reference_type;
+    }
+
     protected $fillable = [
         'monitoring_record_id', 'srp_id', 'recorded_price', 'baseline_price',
         'previous_price', 'variance_percent', 'is_anomaly', 'reference_status',
         'reference_type', 'reference_label', 'reference_value', 'reference_source',
         'reference_effective_date', 'reference_source_id', 'reference_version',
+        'previous_price_variance_percent', 'is_previous_price_spike', 'finding_basis',
     ];
 
     protected $casts = [
         'recorded_price' => 'float', 'baseline_price' => 'float', 'previous_price' => 'float',
         'variance_percent' => 'float', 'is_anomaly' => 'boolean', 'reference_value' => 'float',
         'reference_effective_date' => 'date',
+        'previous_price_variance_percent' => 'float', 'is_previous_price_spike' => 'boolean',
     ];
 
     public function record(): BelongsTo
@@ -40,10 +54,17 @@ class MonitoringRecordItem extends Model
         return $this->hasOne(RegulatoryFinding::class, 'source_id')->where('source_type', self::FINDING_SOURCE);
     }
 
-    /** Flagged with an available captured reference: an item a notice may cite. */
+    /**
+     * Flagged with the comparison value its basis is cited against: an item a notice may cite.
+     * A spike is cited against the store's previous price, so it stands even where the reference was unavailable.
+     */
     public function scopeEligible($query)
     {
-        return $query->where('is_anomaly', true)->where('reference_status', 'available')->whereNotNull('reference_value');
+        return $query->where('is_anomaly', true)->where(fn ($basis) => $basis
+            ->where(fn ($spike) => $spike->where('finding_basis', self::SPIKE_BASIS)->whereNotNull('previous_price'))
+            ->orWhere(fn ($reference) => $reference
+                ->where(fn ($other) => $other->where('finding_basis', '!=', self::SPIKE_BASIS)->orWhereNull('finding_basis'))
+                ->where('reference_status', 'available')->whereNotNull('reference_value')));
     }
 
     /**

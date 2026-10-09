@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Building2, Search, SearchX, TriangleAlert, X } from 'lucide-react'
-import { analyzeWithReference, resolveVisitReference } from '../app/workflow'
+import { ArrowLeft, ArrowRight, Building2, CircleCheck, CircleSlash, Search, SearchX, TrendingUp, TriangleAlert, X } from 'lucide-react'
+import { analyzePreviousPrice, analyzeWithReference, PREVIOUS_PRICE_THRESHOLD, resolveVisitReference } from '../app/workflow'
 import type { Bulletin, MonitoringProtocol, MonitoringReference, ReferenceSnapshot, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
 
 interface DtiMonitoringSheetProps {
@@ -11,6 +11,8 @@ interface DtiMonitoringSheetProps {
   regulatoryPrices?: RegulatoryPrice[]
   monitoringReferences?: MonitoringReference[]
   onUpdatePrice: (srpId: number, price: number | null, reference?: ReferenceSnapshot) => void
+  // This store's last verified price per commodity. Drives the second basis; absent entries mean no prior record.
+  previousPrices?: Map<number, number | null>
   onProceedToReview?: () => void
   onPrevious?: () => void
   // View-only: show a submitted visit; prices can't change and references are the ones captured at submission.
@@ -25,11 +27,13 @@ export function DtiMonitoringSheet({
   regulatoryPrices = [],
   monitoringReferences = [],
   onUpdatePrice,
+  previousPrices,
   onProceedToReview,
   onPrevious,
   readOnly = false,
 }: DtiMonitoringSheetProps) {
   const referenceWord = readOnly ? 'captured' : 'active'
+  const referenceName = protocol?.mode === 'emergency' ? 'price ceiling' : 'SRP'
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
   const [filterMode, setFilterMode] = useState<'all' | 'encoded' | 'compliant' | 'anomalies'>('all')
@@ -52,24 +56,42 @@ export function DtiMonitoringSheet({
   const referenceFor = (bulletin: Bulletin, line = draft.items.find((item) => item.srp_id === bulletin.id)) =>
     resolveVisitReference(line, bulletin, protocol?.mode || 'standard', regulatoryPrices, monitoringReferences)
 
-  // Count anomalies & compliance
+  /**
+   * One row's standing under both DTI bases: above the reference in force, and more than the threshold over this
+   * store's previous record. Shared by the counters, the view filters and the row itself so they cannot disagree.
+   */
+  const rowStatus = (bulletin: Bulletin) => {
+    const recorded = recordedMap.get(bulletin.id)
+    const hasRecorded = recorded !== undefined && Number.isFinite(recorded)
+    const line = draft.items.find((item) => item.srp_id === bulletin.id)
+    const reference = referenceFor(bulletin, line)
+    const analysis = hasRecorded
+      ? analyzeWithReference({ srp_id: bulletin.id, recorded_price: recorded as number }, reference)
+      : null
+    const previous = previousPrices?.get(bulletin.id) ?? null
+    const spike = hasRecorded
+      ? analyzePreviousPrice(recorded as number, previous)
+      : { variance_percent: null, is_spike: false }
+    return {
+      recorded, hasRecorded, reference, analysis, previous, spike,
+      aboveReference: analysis?.is_anomaly ?? false,
+      needsReview: (analysis?.is_anomaly ?? false) || spike.is_spike,
+      withinBoth: analysis?.label === 'Within reference' && !spike.is_spike,
+    }
+  }
+
+  // Count rows needing review under either basis, and rows clean under both
   const { encodedCount, anomalyCount, compliantCount } = useMemo(() => {
-    let anomalies = 0
-    draft.items.forEach((item) => {
-      const bulletin = bulletinMap.get(item.srp_id)
-      if (bulletin) {
-        if (analyzeWithReference(item, referenceFor(bulletin, item)).is_anomaly) anomalies++
-      }
-    })
+    const statuses = draft.items
+      .map((item) => bulletinMap.get(item.srp_id))
+      .filter((bulletin): bulletin is Bulletin => Boolean(bulletin))
+      .map(rowStatus)
     return {
       encodedCount: draft.items.length,
-      anomalyCount: anomalies,
-      compliantCount: draft.items.filter((item) => {
-        const bulletin = bulletinMap.get(item.srp_id)
-        return bulletin && analyzeWithReference(item, referenceFor(bulletin, item)).label === 'Within reference'
-      }).length,
+      anomalyCount: statuses.filter((status) => status.needsReview).length,
+      compliantCount: statuses.filter((status) => status.withinBoth).length,
     }
-  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices, monitoringReferences])
+  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices])
 
   // Distinct categories
   const uniqueCategories = useMemo(() => {
@@ -98,26 +120,21 @@ export function DtiMonitoringSheet({
       }
 
       // 3. View Filter (All / Encoded / In Compliance / Flagged)
-      const recorded = recordedMap.get(item.id)
-      const isRecorded = recorded !== undefined
-      const recordedLine = draft.items.find((line) => line.srp_id === item.id)
-      const reference = referenceFor(item, recordedLine)
-      const analysis = isRecorded ? analyzeWithReference({ srp_id: item.id, recorded_price: recorded }, reference) : null
-      const isAnomaly = analysis?.is_anomaly || false
+      const status = rowStatus(item)
 
-      if (filterMode === 'encoded' && !isRecorded) {
+      if (filterMode === 'encoded' && !status.hasRecorded) {
         return false
       }
       if (filterMode === 'compliant') {
-        if (!isRecorded || isAnomaly || analysis?.label !== 'Within reference') return false
+        if (!status.hasRecorded || !status.withinBoth) return false
       }
       if (filterMode === 'anomalies') {
-        if (!isRecorded || !isAnomaly) return false
+        if (!status.hasRecorded || !status.needsReview) return false
       }
 
       return true
     })
-  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, draft.items, protocol?.mode, regulatoryPrices, monitoringReferences])
+  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, draft.items, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices])
 
   // Group filtered bulletins by Major Classification -> Category
   const groupedSections = useMemo(() => {
@@ -236,7 +253,27 @@ export function DtiMonitoringSheet({
           </div>
         </div>
 
-        {/* Row 2: 4 Dedicated Review Filter Pills */}
+        {/* Row 2: What each status means — DTI reviews a price on two bases */}
+        <ul className="dti-matrix-legend" aria-label="What each price status means">
+          <li className="legend-ok">
+            <CircleCheck size={13} aria-hidden="true" />
+            <span>At or below {referenceName}, and within {PREVIOUS_PRICE_THRESHOLD}% of this store&apos;s last record</span>
+          </li>
+          <li className="legend-anomaly">
+            <TriangleAlert size={13} aria-hidden="true" />
+            <span>Above the {referenceName}</span>
+          </li>
+          <li className="legend-spike">
+            <TrendingUp size={13} aria-hidden="true" />
+            <span>Within {referenceName} but more than {PREVIOUS_PRICE_THRESHOLD}% over this store&apos;s last record</span>
+          </li>
+          <li className="legend-none">
+            <CircleSlash size={13} aria-hidden="true" />
+            <span>No basis: {referenceWord} reference unavailable, or first record for this store</span>
+          </li>
+        </ul>
+
+        {/* Row 3: 4 Dedicated Review Filter Pills */}
         <div className="dti-matrix-filter-row">
           <div className="dti-matrix-filter-pills" role="tablist" aria-label="Inspection record review filter">
             <button
@@ -293,20 +330,21 @@ export function DtiMonitoringSheet({
 
       {/* 3. Dedicated 5-Column DTI Price Monitoring Table */}
       <div className="dti-matrix-table-container">
-        <table className="dti-matrix-table dti-5col-table">
+        <table className="dti-matrix-table dti-6col-table">
           <thead>
             <tr>
               <th className="col-commodity">BASIC NECESSITIES AND PRIME COMMODITIES</th>
               <th className="col-unit">UNIT</th>
               <th className="col-srp">{readOnly ? 'CAPTURED REFERENCE' : 'ACTIVE REFERENCE'}</th>
               <th className="col-price">MONITORED PRICE</th>
-              <th className="col-status">VARIANCE</th>
+              <th className="col-status">VS {referenceName.toUpperCase()}</th>
+              <th className="col-previous">VS PREVIOUS</th>
             </tr>
           </thead>
           <tbody>
             {groupedSections.length === 0 ? (
               <tr className="dti-matrix-empty-row">
-                <td colSpan={5} className="dti-matrix-empty">
+                <td colSpan={6} className="dti-matrix-empty">
                   <div className="dti-matrix-empty-content">
                     <SearchX size={36} className="dti-matrix-empty-icon" aria-hidden="true" />
                     <p className="dti-matrix-empty-text">No commodities found matching current filters</p>
@@ -329,7 +367,7 @@ export function DtiMonitoringSheet({
                 <React.Fragment key={section.classification}>
                   {/* Major Classification Banner */}
                   <tr className="dti-classification-banner">
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <span>{section.classification}</span>
                     </td>
                   </tr>
@@ -338,26 +376,27 @@ export function DtiMonitoringSheet({
                   {section.categories.map((catGroup) => (
                     <React.Fragment key={catGroup.categoryName}>
                       <tr className="dti-category-banner">
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <span>{catGroup.categoryName}</span>
                         </td>
                       </tr>
 
                       {/* Item Rows (5 Columns) */}
                       {catGroup.items.map((item) => {
-                        const recordedPrice = recordedMap.get(item.id)
-                        const hasRecorded = recordedPrice !== undefined && Number.isFinite(recordedPrice)
+                        const status = rowStatus(item)
+                        const recordedPrice = status.recorded
+                        const hasRecorded = status.hasRecorded
                         const recordedLine = draft.items.find((line) => line.srp_id === item.id)
-                        const reference = referenceFor(item, recordedLine)
+                        const reference = status.reference
                         const displayedReference = reference.value
-                        const analysis = hasRecorded ? analyzeWithReference({ srp_id: item.id, recorded_price: recordedPrice }, reference) : null
-                        const isAnomaly = analysis?.is_anomaly || false
+                        const analysis = status.analysis
+                        const isAnomaly = status.aboveReference
                         const variance = analysis?.variance_percent ?? null
 
                         return (
                           <tr
                             key={item.id}
-                            className={`dti-item-row ${hasRecorded ? 'is-recorded' : ''} ${isAnomaly ? 'is-anomaly' : ''}`}
+                            className={`dti-item-row ${hasRecorded ? 'is-recorded' : ''} ${isAnomaly ? 'is-anomaly' : ''} ${status.spike.is_spike && !isAnomaly ? 'is-spike' : ''}`}
                           >
                             {/* Col 1: Commodity Name */}
                             <td className="dti-item-desc">
@@ -420,17 +459,34 @@ export function DtiMonitoringSheet({
                               </div>
                             </td>
 
-                            {/* Col 5: Compact Variance Percentage Tag */}
+                            {/* Col 5: Variance against the reference in force (basis 1) */}
                             <td className="dti-item-status-cell">
                               {hasRecorded && reference.status === 'unavailable' ? <span className="dti-variance-pill pill-unavailable">Reference unavailable</span> : hasRecorded && variance !== null ? (
                                 <span
                                   className={`dti-variance-pill ${isAnomaly ? 'pill-anomaly' : variance === 0 ? 'pill-exact' : variance > 0 ? 'pill-ok' : 'pill-discount'}`}
-                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the ${readOnly ? 'reference captured at submission' : 'current reference'} and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to the ${referenceWord} reference`}
+                                  title={isAnomaly ? `+${variance.toFixed(1)}% above the ${readOnly ? `${referenceName} captured at submission` : `current ${referenceName}`} and requires review` : `${variance >= 0 ? '+' : ''}${variance.toFixed(1)}% relative to the ${referenceWord} ${referenceName}`}
                                 >
                                   {variance > 0 ? `+${variance.toFixed(1)}%` : `${variance.toFixed(1)}%`}
                                 </span>
                               ) : (
                                 <span className="dti-unrecorded-dash" title="Unrecorded price">—</span>
+                              )}
+                            </td>
+
+                            {/* Col 6: Movement against this store's previous record (basis 2) */}
+                            <td className="dti-item-previous-cell">
+                              {!hasRecorded ? (
+                                <span className="dti-unrecorded-dash" title="Unrecorded price">—</span>
+                              ) : status.spike.variance_percent === null ? (
+                                <span className="dti-unrecorded-dash" title="First record for this store">—</span>
+                              ) : (
+                                <span
+                                  className={`dti-previous-pill ${status.spike.is_spike ? 'pill-spike' : 'pill-steady'}`}
+                                  title={`₱${(status.previous as number).toFixed(2)} at the last visit · ${status.spike.variance_percent >= 0 ? '+' : ''}${status.spike.variance_percent.toFixed(1)}%${status.spike.is_spike ? `, more than ${PREVIOUS_PRICE_THRESHOLD}% over it and requires review` : ''}`}
+                                >
+                                  {status.spike.is_spike && <TrendingUp size={11} aria-hidden="true" />}
+                                  {status.spike.variance_percent > 0 ? `+${status.spike.variance_percent.toFixed(1)}%` : `${status.spike.variance_percent.toFixed(1)}%`}
+                                </span>
                               )}
                             </td>
                           </tr>

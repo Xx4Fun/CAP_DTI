@@ -2,9 +2,16 @@
 <section class="legal-schedule">
   <h1>{{ $annexLabel ?? 'Monitoring Schedule' }}</h1>
   <p>Monitoring record: {{ data_get($notice->source_snapshot, 'monitoring_record_number') ?: 'Not recorded' }}</p>
-  <table><thead><tr><th>Product</th><th>Observed price</th><th>Captured reference</th><th>Reference</th></tr></thead><tbody>
+  <table><thead><tr><th>Product</th><th>Observed price</th><th>Compared against</th><th>Basis</th></tr></thead><tbody>
   @foreach(data_get($notice->source_snapshot, 'items', []) as $item)
-    <tr><td>{{ $item['commodity_name'] ?: 'Not recorded' }} {{ $item['unit'] ? '('.$item['unit'].')' : '' }}</td><td>₱{{ number_format($item['observed_price'], 2) }}</td><td>₱{{ number_format($item['reference_value'], 2) }}</td><td>{{ $item['reference_label'] ?: 'Not recorded' }} · {{ $item['reference_source'] ?: 'Source not recorded' }} · {{ $item['reference_effective_date'] ?: 'Date not recorded' }}</td></tr>
+    @php($spike = ($item['finding_basis'] ?? null) === 'previous_price_spike')
+    <tr><td>{{ $item['commodity_name'] ?: 'Not recorded' }} {{ $item['unit'] ? '('.$item['unit'].')' : '' }}</td><td>₱{{ number_format($item['observed_price'], 2) }}</td>
+    @if($spike)
+      <td>₱{{ $item['previous_price'] === null ? '—' : number_format($item['previous_price'], 2) }}</td><td>This store's previous verified price, recorded in an earlier DTI monitoring visit</td>
+    @else
+      <td>₱{{ number_format($item['reference_value'], 2) }}</td><td>{{ $item['reference_label'] ?: 'Not recorded' }} · {{ $item['reference_source'] ?: 'Source not recorded' }} · {{ $item['reference_effective_date'] ?: 'Date not recorded' }}</td>
+    @endif
+    </tr>
   @endforeach
   </tbody></table>
   <p><strong>Evaluator review required; this is not an automatic legal finding.</strong></p>

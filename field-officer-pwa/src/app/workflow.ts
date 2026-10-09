@@ -45,9 +45,19 @@ export function isActionableDraft(draft: VisitDraft): boolean {
   return hasDraftActivity(draft) || draft.verification_request_id !== undefined
 }
 
-export function analyzeLine(line: VisitItem, baseline: number) {
-  const variance = baseline > 0 ? ((line.recorded_price - baseline) / baseline) * 100 : 0
-  return { variance_percent: Number(variance.toFixed(2)), is_anomaly: baseline > 0 && line.recorded_price > baseline * 1.1 }
+/** Percent over the store's previous verified price that makes an increase reviewable. Mirrors the server's threshold. */
+export const PREVIOUS_PRICE_THRESHOLD = 10
+
+/** Basis 2: the price rose more than the threshold over this store's own last verified price for the commodity. */
+export function analyzePreviousPrice(recordedPrice: number, previousPrice: number | null | undefined) {
+  if (previousPrice === null || previousPrice === undefined || !(previousPrice > 0)) {
+    return { variance_percent: null, is_spike: false }
+  }
+  const variance = ((recordedPrice - previousPrice) / previousPrice) * 100
+  return {
+    variance_percent: Number(variance.toFixed(2)),
+    is_spike: recordedPrice > previousPrice * (1 + PREVIOUS_PRICE_THRESHOLD / 100),
+  }
 }
 
 export function analyzeWithReference(
@@ -58,9 +68,8 @@ export function analyzeWithReference(
     return { variance_percent: null, is_anomaly: false, label: 'Regulatory reference unavailable' as const }
   }
   const variance = ((line.recorded_price - reference.value) / reference.value) * 100
-  const isAnomaly = reference.type === 'emergency_ceiling'
-    ? line.recorded_price > reference.value
-    : line.recorded_price > reference.value * 1.1
+  // Basis 1: above the reference in force, with no tolerance. Both modes are strict (owner decision 2026-10-09).
+  const isAnomaly = line.recorded_price > reference.value
   return { variance_percent: Number(variance.toFixed(2)), is_anomaly: isAnomaly, label: isAnomaly ? 'For review' as const : 'Within reference' as const }
 }
 

@@ -21,6 +21,11 @@ export function ReadOnlyVisit({ record, onClose }: { record: RoutineRecordView; 
     source_reference: item.reference_source,
   })), [record.items])
 
+  // The previous price captured at submission, not today's, so the second basis reads as it did on the day.
+  const previousPrices = useMemo(() => new Map<number, number | null>(
+    record.items.map((item) => [item.srp_id, item.previous_price === null ? null : Number(item.previous_price)]),
+  ), [record.items])
+
   // Display-only draft: never synced or persisted. Legacy visits have no reference version, kept as ''.
   const draft = useMemo<VisitDraft>(() => ({
     client_uuid: record.client_uuid,
@@ -84,6 +89,7 @@ export function ReadOnlyVisit({ record, onClose }: { record: RoutineRecordView; 
               bulletins={bulletins}
               regulatoryPrices={[]}
               monitoringReferences={[]}
+              previousPrices={previousPrices}
               onUpdatePrice={() => {}}
               onPrevious={onClose}
               onProceedToReview={() => setStep(2)}

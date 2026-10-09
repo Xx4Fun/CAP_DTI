@@ -60,6 +60,7 @@ export interface GisPrice {
   reference_status: string | null
   variance_percent: number | null
   is_anomaly: boolean
+  finding_basis?: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
 }
 
 export interface GisStoreRecord extends StoreRecord {
@@ -115,6 +116,9 @@ export interface MonitoringRecordItem {
   previous_price?: number | string | null
   variance_percent: number | null
   is_anomaly: boolean
+  previous_price_variance_percent?: number | null
+  is_previous_price_spike?: boolean
+  finding_basis?: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
   reference_status?: string | null
   reference_type?: string | null
   reference_label?: string | null
@@ -269,6 +273,10 @@ export interface MonitoringPriceHistoryRow {
   difference: number | string | null
   variance_percent: number | null
   is_anomaly: boolean
+  previous_price?: number | string | null
+  previous_price_variance_percent?: number | null
+  is_previous_price_spike?: boolean
+  finding_basis?: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
 }
 
 export interface MonitoringPriceHistoryPage {
@@ -301,6 +309,10 @@ export interface MonitoringFindingItem {
   difference: number | string | null
   variance_percent: number | null
   is_anomaly?: boolean
+  previous_price?: number | string | null
+  previous_price_variance_percent?: number | null
+  is_previous_price_spike?: boolean
+  finding_basis?: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
   protocol_mode?: 'standard' | 'emergency' | null
   reference_label?: string | null
   reference_source?: string | null

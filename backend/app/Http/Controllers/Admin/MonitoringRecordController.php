@@ -146,7 +146,7 @@ class MonitoringRecordController extends Controller
             ->where('status', 'accepted')
             ->with([
                 'store:id,store_name,address',
-                'items:id,monitoring_record_id,srp_id,recorded_price,baseline_price,is_anomaly',
+                'items:id,monitoring_record_id,srp_id,recorded_price,baseline_price,is_anomaly,finding_basis',
             ]);
 
         $dates = $this->parsePeriodDates($request);
@@ -437,7 +437,9 @@ class MonitoringRecordController extends Controller
             'recorded_price' => $item->recorded_price,
             'difference' => $item->reference_value === null ? null : round($item->recorded_price - $item->reference_value, 2),
             'variance_percent' => $item->variance_percent,
-            'is_anomaly' => $item->is_anomaly,
+            'is_anomaly' => $item->is_anomaly, 'finding_basis' => $item->finding_basis,
+            'previous_price' => $item->previous_price, 'previous_price_variance_percent' => $item->previous_price_variance_percent,
+            'is_previous_price_spike' => $item->is_previous_price_spike,
         ]));
 
         return response()->json(['data' => $history]);
@@ -648,7 +650,9 @@ class MonitoringRecordController extends Controller
             'reference_value' => $item->reference_value,
             'difference' => $item->reference_value === null ? null : round($item->recorded_price - $item->reference_value, 2),
             'variance_percent' => $item->variance_percent,
-            'is_anomaly' => (bool) $item->is_anomaly,
+            'is_anomaly' => (bool) $item->is_anomaly, 'finding_basis' => $item->finding_basis,
+            'previous_price' => $item->previous_price, 'previous_price_variance_percent' => $item->previous_price_variance_percent,
+            'is_previous_price_spike' => (bool) $item->is_previous_price_spike,
             'protocol_mode' => $item->record->protocol_mode,
             'reference_label' => $item->reference_label,
             'reference_source' => $item->reference_source,

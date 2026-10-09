@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLine, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative, resolveClientReference, changedVisitReferences, refreshVisitReferences } from './workflow'
+import { analyzePreviousPrice, analyzeWithReference, canFinalizeVisit, createDraft, isActionableDraft, isBlankDraft, mergeBootstrapDelta, prefillRepresentative, resolveClientReference, changedVisitReferences, refreshVisitReferences } from './workflow'
 
 describe('field visit workflow', () => {
   it('requires review of changed references, retains prices, clears signing and preserves finalized evidence', () => {
@@ -38,9 +38,22 @@ describe('field visit workflow', () => {
     expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
-  it('marks prices above ten percent of SRP as an observation requiring attention', () => {
-    expect(analyzeLine({ srp_id: 1, recorded_price: 111 }, 100)).toMatchObject({ is_anomaly: true, variance_percent: 11 })
-    expect(analyzeLine({ srp_id: 1, recorded_price: 110 }, 100).is_anomaly).toBe(false)
+  it('marks prices above ten percent of the store previous record as an observation requiring attention', () => {
+    expect(analyzePreviousPrice(111, 100)).toMatchObject({ is_spike: true, variance_percent: 11 })
+    expect(analyzePreviousPrice(110, 100).is_spike).toBe(false)
+    expect(analyzePreviousPrice(90, 100)).toMatchObject({ is_spike: false, variance_percent: -10 })
+  })
+
+  it('reports no previous-price movement when the store has no prior record', () => {
+    expect(analyzePreviousPrice(50, null)).toEqual({ variance_percent: null, is_spike: false })
+    expect(analyzePreviousPrice(50, 0)).toEqual({ variance_percent: null, is_spike: false })
+  })
+
+  it('flags any price above the SRP, with no tolerance', () => {
+    expect(analyzeWithReference({ srp_id: 1, recorded_price: 100.01 }, { status: 'available', type: 'standard_srp', value: 100 }))
+      .toMatchObject({ label: 'For review', is_anomaly: true })
+    expect(analyzeWithReference({ srp_id: 1, recorded_price: 100 }, { status: 'available', type: 'standard_srp', value: 100 }))
+      .toMatchObject({ label: 'Within reference', is_anomaly: false, variance_percent: 0 })
   })
 
   it('uses emergency ceilings without falling back to SRP', () => {

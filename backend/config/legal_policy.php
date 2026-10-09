@@ -3,13 +3,17 @@
 // Values come from the DTI forms (FM-PSM-03 LOI; FTEB Show Cause Order) and were approved for use on 2026-09-28.
 // Signatory names are deployment settings, one per notice type: an LOI can be issued once the LOI name is set, an
 // SCO once the SCO name is set. While a type's name is blank, that type reports the policy as unavailable.
-$reasons = ['Prices above SRP', 'Prices above price ceiling'];
+// pending DTI approval of wording: a spike item can sit below SRP, so neither SRP reason states it truthfully.
+$spikeReason = 'Unreasonable increase over the previous verified price';
+$reasons = ['Prices above SRP', 'Prices above price ceiling', $spikeReason];
 $legalBases = ['RA 7581 (Price Act)', 'RA 7394 (Consumer Act)', 'DAO No. 6, s. 2007', 'DO No. 18-122'];
-// What each kind of captured price reference supports. Monitoring records price comparisons only, so the Price Act is
+// What each flag basis supports. Monitoring records price comparisons only, so the Price Act is
 // the one law derived from them; the evaluator may add the others (owner decisions E1 and E2, 2026-10-07).
 $findings = [
     'standard_srp' => ['reason' => 'Prices above SRP', 'legal_bases' => ['RA 7581 (Price Act)']],
     'emergency_ceiling' => ['reason' => 'Prices above price ceiling', 'legal_bases' => ['RA 7581 (Price Act)']],
+    // Cited against the store's own previous verified price, not a published reference.
+    'previous_price_spike' => ['reason' => $spikeReason, 'legal_bases' => ['RA 7581 (Price Act)']],
 ];
 
 return [

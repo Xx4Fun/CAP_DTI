@@ -22,6 +22,7 @@ use App\Services\Admin\SensitiveActionGuard;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -74,15 +75,17 @@ class LegalNoticeController extends Controller
         $existing = LegalNotice::where('monitoring_record_id', $record->id)->whereIn('status', self::OPEN_STATUSES)->value('id');
         if ($existing) abort(response()->json(['message' => 'An open notice already exists for this monitoring visit.', 'existing_notice_id' => $existing], 409));
         $items = $record->items->whereIn('id', $itemIds);
-        abort_if($items->count() !== count($itemIds) || $items->contains(fn ($item) => ! $item->is_anomaly || $item->reference_status !== 'available' || $item->reference_value === null), 422, 'Every selected item must be an eligible captured observation.');
+        abort_if($items->count() !== count($itemIds) || $items->contains(fn ($item) => ! $item->is_anomaly || ! $this->citable($item)), 422, 'Every selected item must be an eligible captured observation.');
         // A notice closure already decided these items; a later notice must not overwrite that decision.
         $decided = $items->filter(fn ($item) => in_array($item->finding?->decision, ['confirmed', 'not_confirmed'], true));
         if ($decided->isNotEmpty()) {
             abort(response()->json(['status' => 'ITEM_ALREADY_DECIDED', 'message' => 'DTI already recorded a final decision on: '.$decided->map(fn ($item) => $item->bulletin?->commodity_name ?? 'item #'.$item->id)->implode(', ').'.'], 409));
         }
-        $types = $items->pluck('reference_type')->unique()->values();
-        abort_if($types->count() > 1, 422, 'SRP items and price-ceiling items need separate notices: select items of one kind.');
-        if ($type === 'SCO') $this->assertDirectScoAllowed($record->protocol_mode, $types->all());
+        // Grouped by the rule each flag rests on, not the reference kind: a price within SRP that rose over the store's
+        // previous price is a different claim, so it cannot share a notice with an SRP or ceiling breach.
+        $bases = $items->map(fn (MonitoringRecordItem $item) => $item->basis())->unique()->values();
+        abort_if($bases->count() > 1, 422, 'SRP items, price-ceiling items and previous-price increases need separate notices: select items of one basis.');
+        if ($type === 'SCO') $this->assertDirectScoAllowed($record->protocol_mode, $bases->all());
 
         // A no-action triage on a cited item is replaced when this notice closes; its history is frozen here.
         $triaged = $items->filter(fn ($item) => $item->finding?->decision === 'no_action')->values();
@@ -99,6 +102,7 @@ class LegalNoticeController extends Controller
                 'reference_type' => $item->reference_type, 'reference_label' => $item->reference_label, 'reference_source' => $item->reference_source,
                 'reference_source_id' => $item->reference_source_id, 'reference_version' => $item->reference_version,
                 'reference_effective_date' => $item->reference_effective_date?->toDateString(), 'variance_percent' => $item->variance_percent,
+                'finding_basis' => $item->basis(), 'previous_price_variance_percent' => $item->previous_price_variance_percent,
             ])->all(),
             'prior_triage' => $triaged->map(fn ($item) => [
                 'item_id' => $item->id, 'reason' => $item->finding->reason, 'decided_by' => $item->finding->decided_by,
@@ -106,7 +110,7 @@ class LegalNoticeController extends Controller
             ])->all(),
         ];
         $owner = $record->store->owner_name;
-        $derived = app(LegalPolicyService::class)->derive($types->all(), $type);
+        $derived = app(LegalPolicyService::class)->derive($bases->all(), $type);
         $notice = LegalNotice::create([
             'store_id' => $record->store_id, 'monitoring_record_id' => $record->id, 'preceding_notice_id' => null,
             'notice_type' => $type, 'prepared_by' => $request->user()->id, 'status' => 'draft', 'source_snapshot' => $snapshot,
@@ -120,9 +124,17 @@ class LegalNoticeController extends Controller
     }
 
     /** An SCO without a preceding LOI is allowed only for a price-freeze visit citing price ceilings (owner decision D1). */
-    private function assertDirectScoAllowed(?string $protocolMode, array $referenceTypes): void
+    /** An item carries the comparison value its basis is cited against: a spike against the store's previous price. */
+    private function citable(MonitoringRecordItem $item): bool
     {
-        if ($protocolMode === 'emergency' && $referenceTypes === ['emergency_ceiling']) return;
+        return $item->basis() === MonitoringRecordItem::SPIKE_BASIS
+            ? $item->previous_price !== null
+            : $item->reference_status === 'available' && $item->reference_value !== null;
+    }
+
+    private function assertDirectScoAllowed(?string $protocolMode, array $findingBases): void
+    {
+        if ($protocolMode === 'emergency' && $findingBases === ['emergency_ceiling']) return;
         abort(response()->json(['status' => 'SCO_REQUIRES_ESCALATION', 'message' => 'An SCO is issued by escalating an LOI, or directly only for a price-freeze visit citing price ceilings.'], 422));
     }
 
@@ -207,12 +219,12 @@ class LegalNoticeController extends Controller
                 abort_if(empty($notice->source_snapshot['items']), 422, 'At least one eligible item is required.');
                 abort_if(mb_strlen((string) data_get($notice->source_snapshot, 'store.store_name')) > self::STORE_NAME_LIMIT, 422, 'The store name is too long for the printed form; shorten it in Store records and prepare a new draft.');
                 abort_unless(in_array($notice->draft_payload['reason'] ?? null, $rules['reasons'], true), 422, 'Reason is not permitted by policy.');
-                $types = collect($notice->source_snapshot['items'])->pluck('reference_type')->unique()->values();
-                abort_if($types->count() !== 1 || $types->first() === null, 422, 'This draft does not record one kind of price reference; prepare a new draft.');
-                $expected = $policy->derive($types->all(), $notice->notice_type)['reason'] ?? null;
+                $bases = self::snapshotBases($notice);
+                abort_if($bases->count() !== 1 || $bases->first() === null, 422, 'This draft does not record one flag basis; prepare a new draft.');
+                $expected = $policy->derive($bases->all(), $notice->notice_type)['reason'] ?? null;
                 abort_if($expected && $notice->draft_payload['reason'] !== $expected, 422, "The evidence supports the reason \"$expected\"; the notice cannot state a different one.");
-                $bases = $notice->draft_payload['legal_bases'] ?? [];
-                abort_if(array_diff($bases, $rules['legal_bases']) || count($bases) !== count(array_unique($bases)) || count($bases) > 4, 422, 'Legal basis is not permitted by policy.');
+                $legalBases = $notice->draft_payload['legal_bases'] ?? [];
+                abort_if(array_diff($legalBases, $rules['legal_bases']) || count($legalBases) !== count(array_unique($legalBases)) || count($legalBases) > 4, 422, 'Legal basis is not permitted by policy.');
                 $payload = $notice->draft_payload ?? [];
                 if (! array_key_exists('linked_vendor_user_id', $payload) || (int) $payload['linked_vendor_user_id'] !== (int) $store->vendor_user_id) {
                     abort(response()->json(['status' => 'RECIPIENT_REVIEW_REQUIRED', 'message' => "The store's vendor account changed after this draft was prepared. Review the recipient and confirm it before issuing."], 409));
@@ -223,7 +235,7 @@ class LegalNoticeController extends Controller
                 }
                 if ($notice->notice_type === 'SCO' && ! $notice->preceding_notice_id) {
                     // Re-applied here so a direct SCO drafted before the rule existed cannot be issued around it.
-                    $this->assertDirectScoAllowed(MonitoringRecord::whereKey($notice->monitoring_record_id)->value('protocol_mode'), $types->all());
+                    $this->assertDirectScoAllowed(MonitoringRecord::whereKey($notice->monitoring_record_id)->value('protocol_mode'), $bases->all());
                 }
                 abort_unless($notice->intended_delivery_method === 'portal', 422, 'Notices are issued through the vendor portal only. Choose "Vendor portal" as the delivery method.');
                 $activeVendor = $vendor && $vendor->role === 'vendor' && $vendor->is_active ? $vendor : null;
@@ -547,7 +559,14 @@ class LegalNoticeController extends Controller
     /** The reason and legal bases this notice's cited products support (LegalPolicyService::derive). */
     private function derived(LegalNotice $notice, ?string $noticeType = null): ?array
     {
-        return app(LegalPolicyService::class)->derive(collect($notice->source_snapshot['items'] ?? [])->pluck('reference_type')->all(), $noticeType ?? $notice->notice_type);
+        return app(LegalPolicyService::class)->derive(self::snapshotBases($notice)->all(), $noticeType ?? $notice->notice_type);
+    }
+
+    /** The flag bases a draft cites. Snapshots frozen before finding_basis existed fall back to the reference kind. */
+    private static function snapshotBases(LegalNotice $notice): Collection
+    {
+        return collect($notice->source_snapshot['items'] ?? [])
+            ->map(fn ($item) => $item['finding_basis'] ?? $item['reference_type'] ?? null)->unique()->values();
     }
 
     private function detail(LegalNotice $notice): array

@@ -313,6 +313,41 @@ class LegalNoticeLifecycleTest extends TestCase
             ->assertJsonPath('data.policy.derived.reason', 'Prices above price ceiling');
     }
 
+    public function test_a_previous_price_increase_is_citable_and_cannot_share_a_notice_with_a_reference_breach(): void
+    {
+        // Still inside its SRP, but flagged for rising over the store's own previous verified price.
+        $this->items[1]->update([
+            'recorded_price' => 45, 'variance_percent' => -11.76, 'previous_price' => 38,
+            'previous_price_variance_percent' => 18.42, 'is_previous_price_spike' => true,
+            'finding_basis' => MonitoringRecordItem::SPIKE_BASIS,
+        ]);
+
+        // One notice states one claim.
+        $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => collect($this->items)->pluck('id')->all()])
+            ->assertUnprocessable();
+
+        $spike = $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => [$this->items[1]->id]])
+            ->assertCreated()
+            ->assertJsonPath('data.draft_payload.reason', 'Unreasonable increase over the previous verified price')
+            ->assertJsonPath('data.draft_payload.legal_bases', ['RA 7581 (Price Act)'])
+            ->assertJsonPath('data.source_snapshot.items.0.finding_basis', MonitoringRecordItem::SPIKE_BASIS)
+            ->assertJsonPath('data.source_snapshot.items.0.previous_price', 38)
+            ->json('data.id');
+        $this->assertSame('draft', LegalNotice::find($spike)->status);
+    }
+
+    public function test_a_previous_price_increase_stays_citable_when_its_reference_was_unavailable(): void
+    {
+        $this->items[1]->update([
+            'reference_status' => 'unavailable', 'reference_value' => null, 'variance_percent' => null,
+            'previous_price' => 38, 'previous_price_variance_percent' => 18.42,
+            'is_previous_price_spike' => true, 'finding_basis' => MonitoringRecordItem::SPIKE_BASIS,
+        ]);
+
+        $this->asAdmin()->postJson('/api/admin/legal-notices', ['monitoring_record_id' => $this->record->id, 'notice_type' => 'LOI', 'item_ids' => [$this->items[1]->id]])
+            ->assertCreated()->assertJsonPath('data.draft_payload.reason', 'Unreasonable increase over the previous verified price');
+    }
+
     public function test_escalated_sco_starts_with_the_legal_basis_its_evidence_supports(): void
     {
         $sco = $this->escalatedSco();

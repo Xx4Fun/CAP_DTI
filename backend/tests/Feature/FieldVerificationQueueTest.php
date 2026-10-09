@@ -190,7 +190,8 @@ class FieldVerificationQueueTest extends TestCase
             ->assertJsonMissingPath('data.signatures.officer_path');
 
         $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()
-            ->assertJsonPath('data.protocol.standard_review_threshold_percent', 10)
+            ->assertJsonPath('data.protocol.standard_review_rule', 'recorded_price_above_srp')
+            ->assertJsonPath('data.protocol.previous_price_review_threshold_percent', 10)
             ->assertJsonPath('data.accepted_today', 1)
             ->assertJsonStructure(['data' => ['reference_version', 'regulatory_prices']]);
     }

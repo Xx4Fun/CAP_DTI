@@ -13,8 +13,14 @@ export const DELIVERY_METHODS: Record<DeliveryMethod, { label: string; help: str
   hand_copy: { label: 'Printed copy only (older notices)', help: 'Issued before notices became portal-only.' },
 }
 
-/** What a captured price reference of each kind shows; a comparison, not a legal finding. */
-export const COMPARISONS: Record<string, string> = { standard_srp: 'Above SRP', emergency_ceiling: 'Above price ceiling' }
+/** What a flag of each basis shows; a comparison, not a legal finding. */
+export const COMPARISONS: Record<string, string> = {
+  standard_srp: 'Above SRP', emergency_ceiling: 'Above price ceiling',
+  previous_price_spike: 'Up over the previous record',
+}
+/** The rule a flag rests on. Items frozen before finding_basis existed fall back to the reference kind. */
+export const basisOf = (item: { finding_basis?: string | null; reference_type?: string | null }) =>
+  item.finding_basis ?? item.reference_type ?? null
 /** How far an observed price is over its reference, e.g. "+₱12.00 (24.0%)". */
 export const overReference = (observed: number, reference: number) => {
   const over = observed - reference

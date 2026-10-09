@@ -59,6 +59,14 @@ class FieldMonitoringRecordTest extends TestCase
         ]);
     }
 
+    private function priorInspection(Store $store, SrpBulletin $bulletin, float $price, ?Carbon $at = null): TemporalInspection
+    {
+        return TemporalInspection::create([
+            'store_id' => $store->id, 'srp_id' => $bulletin->id, 'recorded_price' => $price, 'is_flagged' => false,
+            'inspection_timestamp' => $at ?? now()->subDays(7), 'officer_signature' => 'signed', 'validation_status' => 'verified',
+        ]);
+    }
+
     private function payload(Store $store, array $bulletins, string $uuid = '4cb0a181-a590-4f95-b96e-aadab8e09a67', ?Carbon $finalizedAt = null): array
     {
         $finalizedAt ??= now()->subMinute();
@@ -442,20 +450,98 @@ class FieldMonitoringRecordTest extends TestCase
         ]);
     }
 
-    public function test_standard_reference_does_not_flag_the_exact_ten_percent_boundary(): void
+    public function test_standard_reference_flags_any_price_above_the_srp_and_not_the_srp_itself(): void
     {
         Storage::fake('receipt_evidence');
         [, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
         $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
         $payload = $this->payload($store, $bulletins);
-        $payload['records'][0]['items'][0]['recorded_price'] = 110;
+        $payload['records'][0]['items'][0]['recorded_price'] = 100.01;
+        $payload['records'][0]['items'][1]['recorded_price'] = 50;
 
         $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
             ->assertCreated()->json('data.results.0.record_id');
 
         $this->assertDatabaseHas('monitoring_record_items', [
-            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id, 'is_anomaly' => false,
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'is_anomaly' => true, 'finding_basis' => 'standard_srp',
+        ]);
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[1]->id,
+            'is_anomaly' => false, 'finding_basis' => null,
+        ]);
+    }
+
+    public function test_a_price_within_the_srp_is_flagged_when_it_rose_more_than_ten_percent_over_the_store_previous_price(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+
+        // Earlier verified visits recorded rice at 80 and milk at 40.
+        $this->priorInspection($store, $bulletins[0], 80);
+        $this->priorInspection($store, $bulletins[1], 40);
+
+        // 90 is still inside the 100 SRP but is a 12.5% increase over the 80 recorded last time.
+        $payload = $this->payload($store, $bulletins);
+        $payload['records'][0]['items'][0]['recorded_price'] = 90;
+        $payload['records'][0]['items'][1]['recorded_price'] = 44;
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'previous_price' => 80, 'previous_price_variance_percent' => 12.50,
+            'is_previous_price_spike' => true, 'is_anomaly' => true,
+            'finding_basis' => 'previous_price_spike',
+        ]);
+        // 44 over 40 is a 10% increase exactly: at the threshold, not over it.
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[1]->id,
+            'previous_price' => 40, 'previous_price_variance_percent' => 10.00,
+            'is_previous_price_spike' => false, 'is_anomaly' => false, 'finding_basis' => null,
+        ]);
+    }
+
+    public function test_a_first_visit_records_no_previous_price_movement(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+        $payload = $this->payload($store, $bulletins);
+        $payload['records'][0]['items'][0]['recorded_price'] = 90;
+
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'previous_price' => null, 'previous_price_variance_percent' => null,
+            'is_previous_price_spike' => false, 'is_anomaly' => false, 'finding_basis' => null,
+        ]);
+    }
+
+    public function test_a_reference_breach_names_the_finding_basis_even_when_the_price_also_spiked(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 100), $this->bulletin('Milk', 50)];
+
+        $this->priorInspection($store, $bulletins[0], 80);
+
+        // 130 is above the 100 SRP and also 62.5% over the 80 recorded last visit: the reference is the stronger basis.
+        $payload = $this->payload($store, $bulletins);
+        $payload['records'][0]['items'][0]['recorded_price'] = 130;
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'is_previous_price_spike' => true, 'is_anomaly' => true, 'finding_basis' => 'standard_srp',
         ]);
     }
 
@@ -627,13 +713,26 @@ class FieldMonitoringRecordTest extends TestCase
         $inspect($rice, 101, $shared); // stale rice row sharing milk's latest timestamp
         $inspect($rice, 108, now()->subDay()->startOfSecond());
         $inspect($rice, 200, now()->subHour()->startOfSecond(), 'pending');
-        $inspect($milk, 55, now()->subWeeks(4)); // outside the three-week window
+        $inspect($milk, 55, now()->subWeeks(4)); // superseded by the newer milk row below
         $inspect($milk, 52, $shared);
 
         $prices = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'))
             ->mapWithKeys(fn (array $row) => [$row['srp_id'] => (float) $row['recorded_price']])->all();
 
         $this->assertSame([$rice->id => 108.0, $milk->id => 52.0], $prices);
+    }
+
+    public function test_bootstrap_recent_prices_reach_back_past_three_weeks_so_the_officer_sees_what_the_server_compares(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $this->priorInspection($store, $rice, 77, now()->subMonths(2));
+
+        $prices = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'))
+            ->mapWithKeys(fn (array $row) => [$row['srp_id'] => (float) $row['recorded_price']])->all();
+
+        $this->assertSame([$rice->id => 77.0], $prices);
     }
 
     public function test_a_visit_finalized_before_manila_midnight_and_synced_after_it_keeps_its_week_and_srp(): void

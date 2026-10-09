@@ -6,7 +6,7 @@ import { adminApi } from '../../services/adminApi'
 import type { ItemDecision, LegalNoticeOutcome, LegalNoticePage, LegalNoticeRecord, MonitoringRecordPage, MonitoringRecordRecord } from '../../types/admin'
 import type { NavigateTo } from './AdminShell'
 import { Fact, LegalNoticeDetail, StatusChip } from './LegalNoticeDetail'
-import { COMPARISONS, DELIVERY_METHODS, humanize, overReference } from './legalNotice'
+import { basisOf, COMPARISONS, DELIVERY_METHODS, humanize, overReference } from './legalNotice'
 import type { DeliveryMethod, DeliveryState, IssueOutcome, OfflineResponse } from './legalNotice'
 
 type View = 'review' | 'queue' | 'prepare' | 'issued' | 'detail'
@@ -47,7 +47,10 @@ const CLOSE_OUTCOMES: Record<CloseOutcome, { label: string; decision: ItemDecisi
 const RECIPIENT_NAME_LIMIT = 70
 const POLICY_OFF = 'Issuing is turned off until an approved legal policy is configured for this notice type.'
 
-const eligibleItems = (value: MonitoringRecordRecord) => value.items.filter((item) => item.is_anomaly && item.reference_status === 'available' && item.reference_value != null)
+const eligibleItems = (value: MonitoringRecordRecord) => value.items.filter((item) => item.is_anomaly
+  && (basisOf(item) === 'previous_price_spike'
+    ? item.previous_price != null
+    : item.reference_status === 'available' && item.reference_value != null))
 const missingReadiness = (readiness: Record<string, boolean> = {}) => READINESS.filter((item) => !readiness[item.key])
 // Scroll only the Admin panel; scrollIntoView/focus would also scroll the overflow-hidden shell and body,
 // shoving the whole layout up. Then focus the section's first field without any further scrolling.
@@ -150,10 +153,12 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
   const eligible = useMemo(() => record ? eligibleItems(record) : [], [record])
   // Products a new notice may cite: eligible and not already decided by DTI (a no-action triage may still be cited).
   const citable = (value: MonitoringRecordRecord) => eligibleItems(value).filter((item) => !value.undecided_item_ids || value.undecided_item_ids.includes(item.id) || item.finding?.decision === 'no_action')
+  const selectedBases = useMemo(() => [...new Set(eligible.filter((item) => selectedIds.includes(item.id)).map(basisOf))], [eligible, selectedIds])
+  const mixedBases = selectedBases.length > 1
   const choosingVisit = (view === 'prepare' && !record && !notice && !sourceId) || view === 'review'
   // An SCO without a preceding LOI only for a price-freeze visit citing price ceilings; otherwise escalate an LOI.
   const scoAllowed = !!record && record.protocol_mode === 'emergency' && selectedIds.length > 0
-    && eligible.filter((item) => selectedIds.includes(item.id)).every((item) => item.reference_type === 'emergency_ceiling')
+    && selectedBases.every((basis) => basis === 'emergency_ceiling')
   useEffect(() => { if (!notice && noticeType === 'SCO' && !scoAllowed) setNoticeType('LOI') }, [notice, noticeType, scoAllowed])
 
   useEffect(() => {
@@ -161,7 +166,10 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
     void adminApi.getMonitoringRecord(sourceId).then((value) => {
       // A notice of another visit opened meanwhile (both named in the URL on reload): its own snapshot stays.
       if (noticeVisit.current && noticeVisit.current !== value.id) return
-      setRecord(value); setSelectedIds(citable(value).map((item) => item.id))
+      setRecord(value)
+      const groups = new Map<string | null, number[]>()
+      citable(value).forEach((item) => groups.set(basisOf(item), [...(groups.get(basisOf(item)) ?? []), item.id]))
+      setSelectedIds([...groups.values()].sort((left, right) => right.length - left.length)[0] ?? [])
     }).catch((reason) => setError(messageOf(reason, 'The source monitoring record could not be loaded.'))).finally(() => setLoading(false))
   }, [sourceId])
 
@@ -687,7 +695,8 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
             {!notice && !scoAllowed && <small className="legal-field-hint">An SCO is issued by escalating an LOI, or directly during a price freeze for price-ceiling products.</small>}
             {!notice && <div className="legal-start">
               <p>{selectedIds.length ? `Uses the ${selectedIds.length} selected product${selectedIds.length === 1 ? '' : 's'} in Evidence below.` : 'Select at least one product in Evidence below.'}</p>
-              <button type="button" className="admin-button primary" disabled={!record || !selectedIds.length || busy} onClick={() => void createDraft()}>{busy ? 'Starting…' : `Start ${noticeType} draft`}</button>
+              {mixedBases && <p role="alert">One notice states one claim. Products above the reference and products that only rose over the store's previous record need separate notices.</p>}
+              <button type="button" className="admin-button primary" disabled={!record || !selectedIds.length || mixedBases || busy} onClick={() => void createDraft()}>{busy ? 'Starting…' : `Start ${noticeType} draft`}</button>
             </div>}
             {notice && <div className="legal-input-grid">
               {derived ? <div className="legal-derived" role="group" aria-label="Reason for issuance">
@@ -725,8 +734,8 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
 
           <Section id="legal-section-4" number="4" title="Evidence & Attachments" subtitle="Monitoring evidence is original; supplemental files can be removed while drafting.">
             <div className="legal-evidence-list">
-              {!notice && eligible.map((item) => <label key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} disabled={!citable(record!).includes(item)} onChange={(event) => setSelectedIds(event.target.checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))}/><span><strong>{item.bulletin?.commodity_name || `SRP #${item.srp_id}`}</strong><small>Observed ₱{Number(item.recorded_price).toFixed(2)} · captured reference ₱{Number(item.reference_value).toFixed(2)} · {item.reference_label || 'Reference label not recorded'}</small><small>{overReference(Number(item.recorded_price), Number(item.reference_value))}</small></span><span className="legal-evidence-tags"><span className="monitor-observation attention">{COMPARISONS[item.reference_type ?? ''] ?? 'Above reference'}</span><span className="legal-locked">{item.finding && item.finding.decision !== 'no_action' ? 'Decided' : 'Original'}</span></span></label>)}
-              {notice?.source_snapshot.items.map((item, index) => <div className="legal-snapshot-evidence" key={String(item.id ?? index)}><span><strong>{String(item.commodity_name || `Item #${item.id || index + 1}`)}</strong><small>Observed ₱{Number(item.observed_price).toFixed(2)} · captured reference ₱{Number(item.reference_value).toFixed(2)} · {String(item.reference_label || 'Reference label not recorded')}</small><small>{overReference(Number(item.observed_price), Number(item.reference_value))}</small></span><span className="legal-evidence-tags"><span className="monitor-observation attention">{COMPARISONS[String(item.reference_type ?? '')] ?? 'Above reference'}</span><span className="legal-locked">Original</span></span></div>)}
+              {!notice && eligible.map((item) => <label key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} disabled={!citable(record!).includes(item)} onChange={(event) => setSelectedIds(event.target.checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))}/><span><strong>{item.bulletin?.commodity_name || `SRP #${item.srp_id}`}</strong><small>Observed ₱{Number(item.recorded_price).toFixed(2)} · captured reference ₱{Number(item.reference_value).toFixed(2)} · {item.reference_label || 'Reference label not recorded'}</small><small>{overReference(Number(item.recorded_price), Number(item.reference_value))}</small></span><span className="legal-evidence-tags"><span className="monitor-observation attention">{COMPARISONS[basisOf(item) ?? ''] ?? 'Above reference'}</span><span className="legal-locked">{item.finding && item.finding.decision !== 'no_action' ? 'Decided' : 'Original'}</span></span></label>)}
+              {notice?.source_snapshot.items.map((item, index) => <div className="legal-snapshot-evidence" key={String(item.id ?? index)}><span><strong>{String(item.commodity_name || `Item #${item.id || index + 1}`)}</strong><small>Observed ₱{Number(item.observed_price).toFixed(2)} · captured reference ₱{Number(item.reference_value).toFixed(2)} · {String(item.reference_label || 'Reference label not recorded')}</small><small>{overReference(Number(item.observed_price), Number(item.reference_value))}</small></span><span className="legal-evidence-tags"><span className="monitor-observation attention">{COMPARISONS[String(item.finding_basis ?? item.reference_type ?? '')] ?? 'Above reference'}</span><span className="legal-locked">Original</span></span></div>)}
             </div>
             {notice && <><label className="legal-upload"><Paperclip size={18}/>Add supplemental PDF, JPEG, or PNG<input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => void addAttachment(event.target.files?.[0])}/></label>{notice.attachments?.map((attachment) => <div className="legal-attachment" key={attachment.id}><span>{attachment.original_name}</span><button type="button" aria-label={`Remove ${attachment.original_name}`} onClick={() => void removeAttachment(attachment.id)}><X size={16}/></button></div>)}</>}
           </Section>
@@ -739,7 +748,7 @@ export const LegalNoticeManager = ({ onNavigate }: { onNavigate?: NavigateTo } =
         <aside className="legal-issuance-panel" aria-label="Issuance Panel">
           <h3>Issuance Panel</h3>
           <div className="legal-status"><span>Status</span><strong>{notice?.status === 'draft' ? 'Drafting' : notice ? humanize(notice.status) : 'Not started'}</strong></div>
-          {!notice && <button type="button" className="admin-button primary" disabled={!record || !selectedIds.length || busy} onClick={() => void createDraft()}>{`Start ${noticeType} draft`}</button>}
+          {!notice && <button type="button" className="admin-button primary" disabled={!record || !selectedIds.length || mixedBases || busy} onClick={() => void createDraft()}>{`Start ${noticeType} draft`}</button>}
           {notice && <>
             <h4>Checklist</h4>
             <ul className="legal-checklist">{READINESS.map((item) => <li key={item.key} className={readiness[item.key] ? 'done' : ''}>{readiness[item.key] ? <><Check size={16}/>{item.label}</> : <button type="button" onClick={() => focusSection(item.section)}><span aria-hidden="true"/>{item.label}</button>}</li>)}</ul>

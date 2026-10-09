@@ -53,8 +53,8 @@ const mockDraft: VisitDraft = {
   offline_lease_id: 'lease-1',
   started_at: '2026-08-30T00:00:00Z',
   items: [
-    { srp_id: 1, recorded_price: 12.0 }, // Compliant: 12 <= 12 * 1.1
-    { srp_id: 2, recorded_price: 20.0 }, // Anomaly: 20 > 17 * 1.1 (18.70)
+    { srp_id: 1, recorded_price: 12.0 }, // Within reference: 12 is not above the ₱12.00 SRP
+    { srp_id: 2, recorded_price: 20.0 }, // For review: 20 is above the ₱17.00 SRP
   ],
   representative: { name: '', title: '' },
   signatures: { officer_png_base64: '', representative_png_base64: '' },
@@ -66,7 +66,7 @@ const mockDraft: VisitDraft = {
 describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
   afterEach(cleanup)
 
-  it('renders store identity strip with live stats and 5-column table structure', () => {
+  it('renders store identity strip with live stats and 6-column table structure', () => {
     const updatePrice = vi.fn()
     const onPrev = vi.fn()
     const onProceed = vi.fn()
@@ -94,12 +94,18 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByRole('tab', { name: /Within reference \(1\)/i })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /For review \(1\)/i })).toBeInTheDocument()
 
-    // 5 Columns
+    // 6 Columns, one per basis
     expect(screen.getByText('BASIC NECESSITIES AND PRIME COMMODITIES')).toBeInTheDocument()
     expect(screen.getByText('UNIT')).toBeInTheDocument()
     expect(screen.getByText('ACTIVE REFERENCE')).toBeInTheDocument()
     expect(screen.getByText('MONITORED PRICE')).toBeInTheDocument()
-    expect(screen.getByText('VARIANCE')).toBeInTheDocument()
+    expect(screen.getByText('VS SRP')).toBeInTheDocument()
+    expect(screen.getByText('VS PREVIOUS')).toBeInTheDocument()
+
+    // Legend naming both bases
+    expect(screen.getByRole('list', { name: /What each price status means/i })).toBeInTheDocument()
+    expect(screen.getByText(/Above the SRP/i)).toBeInTheDocument()
+    expect(screen.getByText(/more than 10% over this store's last record/i)).toBeInTheDocument()
 
     // Category dropdown
     expect(screen.getByRole('combobox', { name: /Filter by commodity category/i })).toBeInTheDocument()
@@ -303,6 +309,43 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
     expect(screen.queryByText('No commodities found matching current filters')).not.toBeInTheDocument()
     expect(screen.getByText('Argentina Corned Beef (150g)')).toBeInTheDocument()
+  })
+
+  it('flags a price within the SRP that rose more than ten percent over the store previous record', () => {
+    const draft: VisitDraft = {
+      ...mockDraft,
+      // ₱11.00 is below the ₱12.00 SRP, but ₱9.00 last visit makes it a 22.2% increase.
+      items: [{ srp_id: 1, recorded_price: 11.0 }],
+    }
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={draft}
+        bulletins={mockBulletins}
+        previousPrices={new Map([[1, 9.0]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('-8.3%')).toBeInTheDocument() // within the SRP
+    expect(screen.getByText('+22.2%')).toBeInTheDocument() // over the previous record
+    expect(screen.getByRole('tab', { name: /For review \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Within reference \(0\)/i })).toBeInTheDocument()
+  })
+
+  it('shows no previous-price movement for a commodity the store has never had recorded', () => {
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={{ ...mockDraft, items: [{ srp_id: 1, recorded_price: 11.0 }] }}
+        bulletins={[mockBulletins[0]]}
+        previousPrices={new Map()}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTitle('First record for this store')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /For review \(0\)/i })).toBeInTheDocument()
   })
 })
 

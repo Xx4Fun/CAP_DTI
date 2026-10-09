@@ -3328,11 +3328,12 @@ html, body, #root {
   letter-spacing: 0.04em;
 }
 
-.dti-5col-table th.col-commodity { width: 38%; }
-.dti-5col-table th.col-unit { width: 10%; text-align: center; }
-.dti-5col-table th.col-srp { width: 16%; text-align: right; }
-.dti-5col-table th.col-price { width: 20%; text-align: right; }
-.dti-5col-table th.col-status { width: 16%; text-align: center; }
+.dti-6col-table th.col-commodity { width: 30%; }
+.dti-6col-table th.col-unit { width: 9%; text-align: center; }
+.dti-6col-table th.col-srp { width: 15%; text-align: right; }
+.dti-6col-table th.col-price { width: 18%; text-align: right; }
+.dti-6col-table th.col-status { width: 14%; text-align: center; }
+.dti-6col-table th.col-previous { width: 14%; text-align: center; }
 
 /* Category Banners matching paper form (Warm Yellow Highlights) */
 .dti-classification-banner td {
@@ -3379,6 +3380,10 @@ html, body, #root {
 
 .dti-item-row.is-anomaly {
   background-color: #fef2f2;
+}
+
+.dti-item-row.is-spike {
+  background-color: #fffbeb;
 }
 
 .dti-item-desc {
@@ -3536,6 +3541,65 @@ html, body, #root {
   border: 1px solid #fecaca;
   font-weight: 900;
 }
+
+.dti-item-previous-cell {
+  padding: 5px 8px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.dti-previous-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 52px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.pill-steady {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.pill-spike {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  font-weight: 900;
+}
+
+/* Both bases, named where the officer records the price */
+.dti-matrix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dti-matrix-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.3;
+  color: #475569;
+}
+
+.dti-matrix-legend .legend-ok { color: #15803d; }
+.dti-matrix-legend .legend-anomaly { color: #b91c1c; }
+.dti-matrix-legend .legend-spike { color: #b45309; }
+.dti-matrix-legend .legend-none { color: #64748b; }
 
 .dti-unrecorded-dash {
   color: #cbd5e1;
@@ -3878,7 +3942,8 @@ html, body, #root {
     grid-template-columns: minmax(78px, 1fr) minmax(100px, 1.25fr) minmax(68px, 0.95fr);
     grid-template-areas:
       "desc desc desc"
-      "srp input status";
+      "srp input status"
+      "previous previous previous";
     gap: 6px 8px;
     padding: 10px 12px;
     margin-bottom: 8px;
@@ -4059,6 +4124,27 @@ html, body, #root {
     font-weight: 700;
     box-sizing: border-box;
   }
+  .dti-item-previous-cell {
+    grid-area: previous;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #64748b;
+  }
+  .dti-item-previous-cell::before {
+    content: 'vs previous';
+    flex: 0 0 auto;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .dti-item-previous-cell .dti-unrecorded-dash {
+    font-size: 0.8rem;
+  }
+
   .dti-variance-pill {
     width: 100%;
     height: 38px;

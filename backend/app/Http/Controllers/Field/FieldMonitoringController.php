@@ -132,6 +132,8 @@ class FieldMonitoringController extends Controller
                 'category' => $item->bulletin?->category, 'regulatory_classification' => $item->bulletin?->regulatory_classification,
                 'recorded_price' => $item->recorded_price, 'previous_price' => $item->previous_price,
                 'variance_percent' => $item->variance_percent, 'is_anomaly' => $item->is_anomaly,
+                'previous_price_variance_percent' => $item->previous_price_variance_percent,
+                'is_previous_price_spike' => $item->is_previous_price_spike, 'finding_basis' => $item->finding_basis,
                 'reference_status' => $item->reference_status, 'reference_type' => $item->reference_type,
                 'reference_label' => $item->reference_label, 'reference_value' => $item->reference_value,
                 'reference_source' => $item->reference_source,
@@ -275,19 +277,26 @@ class FieldMonitoringController extends Controller
                 $previous = TemporalInspection::query()->where('store_id', $record->store_id)
                     ->where('srp_id', $bulletin->id)->where('validation_status', 'verified')
                     ->where('inspection_timestamp', '<', $record->finalized_at)->latest('inspection_timestamp')->value('recorded_price');
+                $previous = $previous === null ? null : (float) $previous;
                 $baseline = (float) $bulletin->baseline_price;
                 $recorded = (float) $itemPayload['recorded_price'];
                 $reference = $itemPayload['reference'];
                 $comparisonValue = $reference['value'];
                 $variance = $comparisonValue > 0 ? (($recorded - $comparisonValue) / $comparisonValue) * 100 : null;
-                $isAnomaly = $comparisonValue !== null && ($reference['type'] === 'emergency_ceiling'
-                    ? $recorded > $comparisonValue
-                    : $comparisonValue > 0 && $recorded > $comparisonValue * 1.10);
+                // Basis 1: above the reference in force, with no tolerance (DTI interview, owner decision 2026-10-09).
+                $breachesReference = $comparisonValue !== null && $comparisonValue > 0 && $recorded > $comparisonValue;
+                // Basis 2: more than the threshold over this store's own last verified price for the commodity.
+                $previousVariance = $previous > 0 ? (($recorded - $previous) / $previous) * 100 : null;
+                $isSpike = $previous > 0 && $recorded > $previous * (1 + MonitoringRecordItem::PREVIOUS_PRICE_THRESHOLD / 100);
                 $item = MonitoringRecordItem::create([
                     'monitoring_record_id' => $record->id, 'srp_id' => $bulletin->id,
                     'recorded_price' => $recorded, 'baseline_price' => $baseline,
                     'previous_price' => $previous, 'variance_percent' => $variance,
-                    'is_anomaly' => $isAnomaly,
+                    'previous_price_variance_percent' => $previousVariance,
+                    'is_previous_price_spike' => $isSpike,
+                    // A reference breach is the stronger basis; a spike only names the finding when the price is within reference.
+                    'finding_basis' => $breachesReference ? $reference['type'] : ($isSpike ? MonitoringRecordItem::SPIKE_BASIS : null),
+                    'is_anomaly' => $breachesReference || $isSpike,
                     'reference_status' => $reference['status'], 'reference_type' => $reference['type'],
                     'reference_label' => $reference['label'], 'reference_value' => $reference['value'],
                     'reference_source' => $reference['source'], 'reference_effective_date' => $reference['effective_date'],
