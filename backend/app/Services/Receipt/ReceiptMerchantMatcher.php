@@ -12,8 +12,9 @@ class ReceiptMerchantMatcher
     private const RECEIPT_NOISE = ['vat', 'tin', 'reg', 'min', 'pos', 'ptu', 'tel', 'non', 'sn', 'or', 'si', 'no',
         'official', 'sales', 'invoice', 'receipt', 'cashier', 'date', 'time', 'total', 'address'];
 
-    public function match(?string $storeName, ?string $ownerName, array $headerLines): array
+    public function match(?string $storeName, ?string $ownerName, array $headerLines, ?string $address = null): array
     {
+        $locality = $this->words((string) $address);
         $observed = array_values(array_filter(
             array_map('trim', array_slice($headerLines, 0, 6)),
             fn (string $line) => $line !== '' && preg_match('/\d+[.,]\d{2}\s*$/', $line) !== 1,
@@ -21,10 +22,10 @@ class ReceiptMerchantMatcher
 
         $partial = false;
         foreach (array_filter([$storeName, $ownerName]) as $expected) {
-            $result = $this->nameMatches((string) $expected, $observed);
+            $result = $this->nameMatches((string) $expected, $observed, $locality);
             $partial = $partial || $result === 'partial';
             if ($result === 'matched') {
-                $matchingLines = array_values(array_unique(array_filter($observed, fn (string $line) => $this->nameMatches((string) $expected, [$line]) === 'matched')));
+                $matchingLines = array_values(array_unique(array_filter($observed, fn (string $line) => $this->nameMatches((string) $expected, [$line], $locality) === 'matched')));
 
                 return [
                     'status' => 'matched',
@@ -63,12 +64,16 @@ class ReceiptMerchantMatcher
      * ponytail: naive abbreviation rules; add a per-store alias column if real receipts still miss.
      *
      * @param  array<int, string>  $lines
+     * @param  array<int, string>  $locality  words of the store's own address
      * @return 'matched'|'partial'|null partial: a strong word matched but below the 0.5 threshold
      */
-    private function nameMatches(string $expected, array $lines): ?string
+    private function nameMatches(string $expected, array $lines, array $locality = []): ?string
     {
         $all = array_values(array_filter($this->words($expected), fn (string $word) => ! ctype_digit($word)));
         $distinct = array_values(array_unique(array_diff($all, self::GENERIC_TOKENS, self::LEGAL_TOKENS)));
+        // A place name ("Antique" in "CPT Mart- Antique Branch") is printed on every receipt in that place.
+        // ponytail: a store named only after its place still matches any receipt naming the place; add a per-store alias column if that misfires.
+        $distinct = array_values(array_diff($distinct, $locality)) ?: $distinct;
         $generic = array_values(array_unique(array_intersect($all, self::GENERIC_TOKENS)));
         $lineWords = array_map(fn (string $line) => $this->words($line), $lines);
 

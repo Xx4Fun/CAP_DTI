@@ -412,7 +412,7 @@ class ReceiptReportController extends Controller
             $oldMerchant = $result['merchant'] ?? ($raw['merchant'] ?? []);
             // Recheck only server-saved extraction. Customer-supplied receipt values are prohibited above.
             $header = ! empty($oldMerchant['display_name']) ? [$oldMerchant['display_name']] : ($oldMerchant['observed'] ?? []);
-            $merchant = $matcher->match($target->store_name, $target->owner_name, $header);
+            $merchant = $matcher->match($target->store_name, $target->owner_name, $header, $target->address);
             $merchant['observed'] = $oldMerchant['observed'] ?? $merchant['observed'];
             $merchant['display_name'] = $oldMerchant['display_name'] ?? ($merchant['display_name'] ?? null);
             $merchant['uncertain'] = (bool) ($oldMerchant['uncertain'] ?? false);

@@ -27,7 +27,7 @@ class ReceiptExtractionValidator
 
     /**
      * @param  array<string, mixed>  $payload  Structure already checked by ReceiptExtractionSchema.
-     * @param  array{store_name?: ?string, owner_name?: ?string, frame_count?: int, prior_recapture_reasons?: array<int, string>}  $context
+     * @param  array{store_name?: ?string, owner_name?: ?string, address?: ?string, frame_count?: int, prior_recapture_reasons?: array<int, string>}  $context
      * @return array<string, mixed> Result in the pipeline's result shape.
      */
     public function validate(array $payload, array $context): array
@@ -181,7 +181,7 @@ class ReceiptExtractionValidator
 
         $merchantText = $payload['merchant']['text'];
         $merchant = $this->merchantMatcher->match($context['store_name'] ?? null, $context['owner_name'] ?? null,
-            is_string($merchantText) && trim($merchantText) !== '' ? [trim($merchantText)] : []);
+            is_string($merchantText) && trim($merchantText) !== '' ? [trim($merchantText)] : [], $context['address'] ?? null);
         $merchant['display_name'] = is_string($merchantText) ? ReceiptWarning::cleanDisplayName($merchantText) : null;
         $merchant['uncertain'] = (bool) $payload['merchant']['uncertain'];
 

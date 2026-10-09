@@ -43,6 +43,19 @@ class ReceiptMerchantMatcherTest extends TestCase
         $this->assertSame('PUREGOLD', $matcher->match('Puregold', null, ['PUREGOLD', 'PUREGOLD'])['display_name']);
     }
 
+    public function test_locality_words_from_the_store_address_are_not_brand_evidence(): void
+    {
+        $matcher = new ReceiptMerchantMatcher;
+        $address = 'Tobias Fornier St., San Jose, Antique';
+        $gaisano = ['GAISANO GRAND MALL OF ANTIQUE'];
+
+        $this->assertSame('mismatch', $matcher->match('CPT Mart- Antique Branch', null, $gaisano, $address)['status']);
+        $this->assertSame('matched', $matcher->match('CPT Mart- Antique Branch', null, ['CPT MART ANTIQUE'], $address)['status']);
+        $this->assertSame('mismatch', $matcher->match('Antique City Square', null, $gaisano, $address)['status']);
+        // A store named only after its place keeps that name as its evidence.
+        $this->assertSame('matched', $matcher->match('Antique Supermarket', null, ['ANTIQUE SUPERMARKET'], $address)['status']);
+    }
+
     public static function receiptShortcuts(): array
     {
         return [

@@ -242,7 +242,7 @@ class ReceiptEvidencePipeline
             $headerLines = $headerFrames === [] ? [] : array_merge(...$headerFrames);
             $merchant = $headerLines === []
                 ? ['status' => 'unverified']
-                : $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines);
+                : $this->merchantMatcher->match($report->store?->store_name, $report->store?->owner_name, $headerLines, $report->store?->address);
             if ($merchant['status'] !== 'matched') {
                 $warnings[] = ReceiptWarning::make('STORE_NOT_CONFIRMED');
             }
@@ -342,6 +342,7 @@ class ReceiptEvidencePipeline
         $result = $this->extractionValidator->validate($extraction->payload, [
             'store_name' => $report->store?->store_name,
             'owner_name' => $report->store?->owner_name,
+            'address' => $report->store?->address,
             'frame_count' => count($frames),
             'prior_recapture_reasons' => ReceiptEvidenceBundle::query()
                 ->where('consumer_report_id', $report->id)
