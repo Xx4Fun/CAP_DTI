@@ -73,7 +73,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({
 
   // Form State
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean>(false);
-  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
+  const [stores, setStores] = useState<Establishment[]>([]);
+  const [storesLoading, setStoresLoading] = useState(true);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(null);
   const [openingStoreId, setOpeningStoreId] = useState<number | null>(null);
   const openingStoreRef = useRef<number | null>(null);
@@ -225,6 +226,8 @@ export const FormalReport: React.FC<FormalReportProps> = ({
         ? handoffRef.current.storeId
         : undefined;
       setSelectedStore(defaultStoresList.find((store: Establishment) => store.id === requestedStoreId) || null);
+    } finally {
+      setStoresLoading(false);
     }
   };
 
@@ -994,6 +997,7 @@ export const FormalReport: React.FC<FormalReportProps> = ({
       {currentView === 'select-store' && (
         <StoreSelectionView
           subtitle="Where did you make this purchase?"
+          isLoading={storesLoading}
           backAction={{ label: 'Back to reports', onActivate: handleReportStepBack }}
           searchValue={searchQuery}
           onSearchChange={setSearchQuery}

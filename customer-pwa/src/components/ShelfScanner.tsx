@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   apiClient,
-  defaultStoresList,
   type Establishment,
   type Commodity,
   type ScanCandidate,
@@ -173,7 +172,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
   const [scannerState, setScannerState] = useState<ScannerStepState>(() => (initialComparison ? 'RESULT' : 'SELECT_STORE'));
 
   // Store Selection State
-  const [stores, setStores] = useState<Establishment[]>(defaultStoresList);
+  const [stores, setStores] = useState<Establishment[]>([]);
+  const [storesLoading, setStoresLoading] = useState(true);
   const [selectedStore, setSelectedStore] = useState<Establishment | null>(() => {
     if (initialComparison?.store) {
       return {
@@ -345,6 +345,8 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
       setStores([]);
       if (!initialComparison) setSelectedStore(null);
       setErrorMessage('Unable to connect to regulatory store server. Please check your network connection.');
+    } finally {
+      setStoresLoading(false);
     }
   };
 
@@ -960,6 +962,7 @@ export const ShelfScanner: React.FC<ShelfScannerProps> = ({
           <div className="store-selection-screen">
             <StoreSelectionView
               subtitle="Where are you checking the shelf price?"
+              isLoading={storesLoading}
               searchValue={searchTerm}
               onSearchChange={setSearchTerm}
               activeFilter={activeFilterChip}

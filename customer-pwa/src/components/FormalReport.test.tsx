@@ -87,6 +87,20 @@ describe('FormalReport legacy accessibility', () => {
     expect(screen.queryByText('Nearest first')).not.toBeInTheDocument();
   });
 
+  it('shows loading placeholders, not bundled stores, until the store directory responds', async () => {
+    vi.spyOn(apiClient, 'get').mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+
+    render(<FormalReport />);
+    await user.click(screen.getByRole('button', { name: /Submit a new report/i }));
+    await user.click(screen.getByRole('checkbox', { name: /agree to the privacy notice/i }));
+    await user.click(screen.getByRole('dialog', { name: /Before you submit a receipt/i }).querySelector('.btn-primary')!);
+
+    expect(await screen.findByRole('heading', { name: 'Choose a store' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('store-card-skeleton')).toHaveLength(3);
+    expect(screen.queryByText('Gaisano Grand Antique')).not.toBeInTheDocument();
+  });
+
   it('shows the empty state when a public store payload does not match the search', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [publicStore] } });
     const user = userEvent.setup();

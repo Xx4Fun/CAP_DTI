@@ -71,6 +71,21 @@ describe('ShelfScanner Option A Honest Recovery State Machine', () => {
     expect(screen.queryByText('Nearest first')).not.toBeInTheDocument();
   });
 
+  it('shows loading placeholders, not bundled stores, until the store directory responds', async () => {
+    let respond: (value: unknown) => void = () => undefined;
+    vi.spyOn(apiClient, 'get').mockReturnValue(new Promise((resolve) => { respond = resolve; }));
+
+    render(<ShelfScanner />);
+
+    expect(screen.getAllByTestId('store-card-skeleton')).toHaveLength(3);
+    expect(screen.queryByText('Gaisano Grand Antique')).not.toBeInTheDocument();
+
+    await act(async () => { respond({ data: { success: true, data: [store] } }); });
+
+    expect(await screen.findByText('Verified API Store')).toBeInTheDocument();
+    expect(screen.queryByTestId('store-card-skeleton')).not.toBeInTheDocument();
+  });
+
   it('shows the empty state when a public store payload does not match the search', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { success: true, data: [publicStore] } });
     const user = userEvent.setup();
