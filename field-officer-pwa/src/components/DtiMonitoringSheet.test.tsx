@@ -20,6 +20,7 @@ const mockBulletins: Bulletin[] = [
     commodity_name: 'ABSOLUTE PURE Distilled Drinking Water (350ml)',
     category: 'Bottled Water- Distilled Water',
     unit: '350ml',
+    comparability_key: 'c1|350ml',
     baseline_price: 12.0,
     source_reference: 'DTI SRP Bulletin 2026-08',
     effective_date: '2026-08-01',
@@ -30,6 +31,7 @@ const mockBulletins: Bulletin[] = [
     commodity_name: 'WILKINS Distilled (500mL)',
     category: 'Bottled Water- Distilled Water',
     unit: '500mL',
+    comparability_key: 'c2|500ml',
     baseline_price: 17.0,
     source_reference: 'DTI SRP Bulletin 2026-08',
     effective_date: '2026-08-01',
@@ -40,6 +42,7 @@ const mockBulletins: Bulletin[] = [
     commodity_name: 'Argentina Corned Beef (150g)',
     category: 'Canned Meat',
     unit: '150g',
+    comparability_key: 'c3|150g',
     baseline_price: 42.0,
     source_reference: 'DTI SRP Bulletin 2026-08',
     effective_date: '2026-08-01',
@@ -99,8 +102,8 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
     expect(screen.getByText('UNIT')).toBeInTheDocument()
     expect(screen.getByText('ACTIVE REFERENCE')).toBeInTheDocument()
     expect(screen.getByText('MONITORED PRICE')).toBeInTheDocument()
-    expect(screen.getByText('VS SRP')).toBeInTheDocument()
-    expect(screen.getByText('VS PREVIOUS')).toBeInTheDocument()
+    expect(screen.getByText('SRP DIFF')).toBeInTheDocument()
+    expect(screen.getByText('PREVIOUS DIFF')).toBeInTheDocument()
 
     // Legend naming both bases
     expect(screen.getByRole('list', { name: /What each price status means/i })).toBeInTheDocument()
@@ -322,13 +325,14 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
         store={mockStore}
         draft={draft}
         bulletins={mockBulletins}
-        previousPrices={new Map([[1, 9.0]])}
+        previousPrices={new Map([['c1|350ml', 9.0]])}
         onUpdatePrice={vi.fn()}
       />
     )
 
     expect(screen.getByText('-8.3%')).toBeInTheDocument() // within the SRP
     expect(screen.getByText('+22.2%')).toBeInTheDocument() // over the previous record
+    expect(screen.getByText('from ₱9.00')).toBeInTheDocument() // the comparison value, not hidden in a tooltip
     expect(screen.getByRole('tab', { name: /For review \(1\)/i })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Within reference \(0\)/i })).toBeInTheDocument()
   })
@@ -344,7 +348,11 @@ describe('DtiMonitoringSheet (FM-PSM-02 Digital Form)', () => {
       />
     )
 
-    expect(screen.getByTitle('First record for this store')).toBeInTheDocument()
+    // Readable without hover, and 'comparable' is load-bearing: a record may exist on a different unit.
+    const cell = screen.getByText('No comparable record').closest('.dti-previous-none')!
+    expect(cell).toBeVisible()
+    // Rendered on two lines, so textContent carries no separator between them.
+    expect(cell).toHaveTextContent(/No comparable record\s*in the current or previous monitoring period/)
     expect(screen.getByRole('tab', { name: /For review \(0\)/i })).toBeInTheDocument()
   })
 })
@@ -372,5 +380,137 @@ describe('DtiMonitoringSheet read-only', () => {
     expect(onUpdatePrice).not.toHaveBeenCalled()
     expect(screen.getByText('CAPTURED REFERENCE')).toBeInTheDocument()
     expect(screen.queryByText('ACTIVE REFERENCE')).not.toBeInTheDocument()
+  })
+
+  const capturedDraft = (recordedPrice: number): VisitDraft => ({
+    ...mockDraft,
+    items: [{ srp_id: 1, recorded_price: recordedPrice, reference_snapshot: {
+      status: 'available', type: 'standard_srp', source_id: 1, value: 12, label: 'SRP',
+      source_reference: 'DTI SRP Bulletin 2026-08', effective_date: '2026-08-01', reference_version: '',
+    } }],
+  })
+
+  // A visit accepted before a rule changed must render as it was signed, not as today's rules would judge it.
+  it('renders the captured classification instead of recomputing under current rules', () => {
+    render(
+      <DtiMonitoringSheet
+        readOnly
+        store={mockStore}
+        draft={capturedDraft(11)}
+        bulletins={[mockBulletins[0]]}
+        capturedStatus={new Map([[1, {
+          is_anomaly: false, variance_percent: -8.33, previous_price: 9,
+          previous_price_variance_percent: null, is_previous_price_spike: false, finding_basis: null,
+        }]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    // Today's rule would call 11 vs 9 a 22.2% spike; the visit recorded no such assessment.
+    expect(screen.getByRole('tab', { name: /For review \(0\)/i })).toBeInTheDocument()
+    expect(screen.getByTitle('Previous-price assessment was not captured')).toBeInTheDocument()
+    expect(screen.getByText('was ₱9.00')).toBeInTheDocument()
+  })
+
+  it('styles a captured spike-only row as a previous-record finding, not an above-reference one', () => {
+    render(
+      <DtiMonitoringSheet
+        readOnly
+        store={mockStore}
+        draft={capturedDraft(11)}
+        bulletins={[mockBulletins[0]]}
+        capturedStatus={new Map([[1, {
+          is_anomaly: true, variance_percent: -8.33, previous_price: 9,
+          previous_price_variance_percent: 22.22, is_previous_price_spike: true,
+          finding_basis: 'previous_price_spike',
+        }]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('tab', { name: /For review \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByText('+22.2%')).toBeInTheDocument()
+    // The SRP pill must not claim a breach: the price was under its reference.
+    expect(screen.getByText('-8.3%')).toHaveClass('pill-discount')
+    expect(screen.getByText('+22.2%')).toHaveClass('pill-spike')
+  })
+
+  it('treats a captured flag with no recorded basis as an above-reference finding', () => {
+    render(
+      <DtiMonitoringSheet
+        readOnly
+        store={mockStore}
+        draft={capturedDraft(15)}
+        bulletins={[mockBulletins[0]]}
+        // What the seeders and pre-2026-10-09 visits produce: flagged, with no finding_basis.
+        capturedStatus={new Map([[1, {
+          is_anomaly: true, variance_percent: 25, previous_price: null,
+          previous_price_variance_percent: null, is_previous_price_spike: false, finding_basis: null,
+        }]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('tab', { name: /For review \(1\)/i })).toBeInTheDocument()
+    expect(screen.getByText('+25.0%')).toHaveClass('pill-anomaly')
+  })
+
+  it('renders a captured previous variance with no captured price without throwing', () => {
+    render(
+      <DtiMonitoringSheet
+        readOnly
+        store={mockStore}
+        draft={capturedDraft(11)}
+        bulletins={[mockBulletins[0]]}
+        capturedStatus={new Map([[1, {
+          is_anomaly: true, variance_percent: -8.33, previous_price: null,
+          previous_price_variance_percent: 22.22, is_previous_price_spike: true,
+          finding_basis: 'previous_price_spike',
+        }]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('+22.2%')).toBeInTheDocument()
+    expect(screen.queryByText(/from ₱/)).not.toBeInTheDocument()
+  })
+
+  it('claims no comparator for a bulletin the server did not key, rather than guessing one', () => {
+    // A payload cached before the server emitted comparability_key. Guessing a key here is what reproduced the
+    // reported +81.2%: the cached observation was chosen under the old, unbounded window.
+    const unkeyed = { ...mockBulletins[0], comparability_key: undefined }
+    render(
+      <DtiMonitoringSheet
+        store={mockStore}
+        draft={{ ...mockDraft, items: [{ srp_id: 1, recorded_price: 11.0 }] }}
+        bulletins={[unkeyed]}
+        previousPrices={new Map([['id:1', 9.0], ['c1|350ml', 9.0]])}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('+22.2%')).not.toBeInTheDocument()
+    expect(screen.getByText('No comparable record')).toBeVisible()
+    expect(screen.getByRole('tab', { name: /For review \(0\)/i })).toBeInTheDocument()
+  })
+
+  it('names the captured price ceiling when the visit ran under an emergency protocol', () => {
+    render(
+      <DtiMonitoringSheet
+        readOnly
+        store={mockStore}
+        draft={capturedDraft(11)}
+        bulletins={[mockBulletins[0]]}
+        protocol={{
+          labels_are_provisional: true, standard_review_rule: 'recorded_price_above_srp',
+          emergency_review_rule: 'recorded_price_above_ceiling', previous_price_review_threshold_percent: 10,
+          mode: 'emergency', declaration_reference: 'PF-2026-01', starts_on: null, ends_on: null,
+        }}
+        onUpdatePrice={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('CEILING DIFF')).toBeInTheDocument()
+    expect(screen.queryByText('SRP DIFF')).not.toBeInTheDocument()
   })
 })

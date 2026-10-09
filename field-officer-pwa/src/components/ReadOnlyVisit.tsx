@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeft, Check, CheckCircle2, Eye, X } from 'lucide-react'
 import { DtiMonitoringSheet } from './DtiMonitoringSheet'
-import type { Bulletin, RoutineRecordView, VisitDraft } from '../types'
+import type { Bulletin, CapturedItemStatus, RoutineRecordView, VisitDraft } from '../types'
 
 const steps = ['Choose Store', 'Record Prices', 'Review & Sign']
 
@@ -21,9 +21,17 @@ export function ReadOnlyVisit({ record, onClose }: { record: RoutineRecordView; 
     source_reference: item.reference_source,
   })), [record.items])
 
-  // The previous price captured at submission, not today's, so the second basis reads as it did on the day.
-  const previousPrices = useMemo(() => new Map<number, number | null>(
-    record.items.map((item) => [item.srp_id, item.previous_price === null ? null : Number(item.previous_price)]),
+  // What the visit recorded, rendered as-is. A visit accepted before a rule changed must not be re-judged under it.
+  const capturedStatus = useMemo(() => new Map<number, CapturedItemStatus>(
+    record.items.map((item) => [item.srp_id, {
+      is_anomaly: Boolean(item.is_anomaly),
+      variance_percent: item.variance_percent === null || item.variance_percent === undefined ? null : Number(item.variance_percent),
+      previous_price: item.previous_price === null || item.previous_price === undefined ? null : Number(item.previous_price),
+      previous_price_variance_percent: item.previous_price_variance_percent === null || item.previous_price_variance_percent === undefined
+        ? null : Number(item.previous_price_variance_percent),
+      is_previous_price_spike: Boolean(item.is_previous_price_spike),
+      finding_basis: item.finding_basis ?? null,
+    }]),
   ), [record.items])
 
   // Display-only draft: never synced or persisted. Legacy visits have no reference version, kept as ''.
@@ -89,7 +97,16 @@ export function ReadOnlyVisit({ record, onClose }: { record: RoutineRecordView; 
               bulletins={bulletins}
               regulatoryPrices={[]}
               monitoringReferences={[]}
-              previousPrices={previousPrices}
+              capturedStatus={capturedStatus}
+              protocol={{
+                labels_are_provisional: true,
+                standard_review_rule: 'recorded_price_above_srp',
+                emergency_review_rule: 'recorded_price_above_ceiling',
+                previous_price_review_threshold_percent: 10,
+                // The protocol this visit ran under, so its captured reference is named correctly years later.
+                mode: record.protocol_mode === 'emergency' ? 'emergency' : 'standard',
+                declaration_reference: null, starts_on: null, ends_on: null,
+              }}
               onUpdatePrice={() => {}}
               onPrevious={onClose}
               onProceedToReview={() => setStep(2)}

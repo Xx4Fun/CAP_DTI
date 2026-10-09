@@ -37,6 +37,21 @@ final class MonitoringPeriod
         return self::for(now(MonitoringWeek::TIMEZONE));
     }
 
+    /**
+     * Earliest instant a prior observation may carry and still count as "the previous record": the start of the
+     * period preceding the one containing $at. Crossing a cadence change (an emergency declared between visits)
+     * yields a daily preceding period, so a weekly-era observation falls out of window sooner. That follows the
+     * period model and is intended.
+     */
+    public static function comparableSince(CarbonInterface|string $at): CarbonImmutable
+    {
+        $current = self::for(CarbonImmutable::parse($at, MonitoringWeek::TIMEZONE));
+
+        return CarbonImmutable::instance(self::for(
+            CarbonImmutable::instance($current['starts_at'])->subSecond()
+        )['starts_at']);
+    }
+
     // Records that count toward a period's routine completion: same protocol, finalized inside the window.
     public static function constrainPeriod($query, array $period)
     {

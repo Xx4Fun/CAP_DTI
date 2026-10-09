@@ -1274,10 +1274,23 @@ function VisitWizard({
       })
   }, [bootstrap.stores, officerPosition, query, routineStatus])
   const selectedStore = bootstrap.stores.find((store) => String(store.id) === String(draft.store_id))
-  // This store's last verified price per commodity — the second basis the officer is reviewed against.
-  const previousPrices = useMemo(() => new Map<number, number | null>(bootstrap.recent_prices
-    .filter((price) => String(price.store_id) === String(draft.store_id))
-    .map((price) => [price.srp_id, Number(price.recorded_price)])), [bootstrap.recent_prices, draft.store_id])
+  // This store's last verified price per comparable commodity — the second basis the officer is reviewed against.
+  // Keyed exactly as the server grouped the payload, so one entry exists per commodity even across SRP revisions.
+  //
+  // Withheld rather than guessed when the payload cannot be trusted: a cache taken before comparable_since existed
+  // carries observations chosen under the old unbounded window (that is how a month-old price produced a +81%
+  // reading), and a cache whose monitoring period has closed was filtered against a window that has since moved.
+  // In both cases the rows are shown as no comparable record until a refresh, never as a comparison.
+  const previousPrices = useMemo(() => {
+    const since = bootstrap.comparable_since ? Date.parse(bootstrap.comparable_since) : NaN
+    const periodEnds = bootstrap.monitoring_period?.ends_at ? Date.parse(bootstrap.monitoring_period.ends_at) : NaN
+    if (Number.isNaN(since) || Number.isNaN(periodEnds) || Date.now() >= periodEnds) return new Map<string, number | null>()
+    return new Map<string, number | null>(bootstrap.recent_prices
+      .filter((price) => String(price.store_id) === String(draft.store_id)
+        && price.comparability_key !== undefined
+        && Date.parse(price.inspection_timestamp) >= since)
+      .map((price) => [price.comparability_key as string, Number(price.recorded_price)]))
+  }, [bootstrap.recent_prices, bootstrap.comparable_since, bootstrap.monitoring_period?.ends_at, draft.store_id])
   const missingRequirements = canFinalizeVisit(draft)
   const referencesChanged = changedVisitReferences(draft, bootstrap)
   useEffect(() => {

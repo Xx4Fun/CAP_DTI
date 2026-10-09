@@ -113,6 +113,7 @@ class FieldMonitoringController extends Controller
             'finalized_at' => $monitoringRecord->finalized_at,
             'received_at' => $monitoringRecord->received_at,
             'sync_source' => $monitoringRecord->sync_source,
+            'protocol_mode' => $monitoringRecord->protocol_mode,
             'field_verification_request_id' => $monitoringRecord->field_verification_request_id,
             'store' => $monitoringRecord->store,
             'location' => [
@@ -133,7 +134,7 @@ class FieldMonitoringController extends Controller
                 'recorded_price' => $item->recorded_price, 'previous_price' => $item->previous_price,
                 'variance_percent' => $item->variance_percent, 'is_anomaly' => $item->is_anomaly,
                 'previous_price_variance_percent' => $item->previous_price_variance_percent,
-                'is_previous_price_spike' => $item->is_previous_price_spike, 'finding_basis' => $item->finding_basis,
+                'is_previous_price_spike' => $item->is_previous_price_spike, 'finding_basis' => $item->basis(),
                 'reference_status' => $item->reference_status, 'reference_type' => $item->reference_type,
                 'reference_label' => $item->reference_label, 'reference_value' => $item->reference_value,
                 'reference_source' => $item->reference_source,
@@ -274,9 +275,16 @@ class FieldMonitoringController extends Controller
 
             foreach ($canonical['items'] as $itemPayload) {
                 $bulletin = $bulletins->get($itemPayload['srp_id']);
+                // Comparable across SRP revisions of the same commodity at the same unit, and only back to the
+                // preceding monitoring period: an older one-off is not "the previous record". Explicit id tie-break
+                // so this and the bootstrap payload resolve the same observation.
                 $previous = TemporalInspection::query()->where('store_id', $record->store_id)
-                    ->where('srp_id', $bulletin->id)->where('validation_status', 'verified')
-                    ->where('inspection_timestamp', '<', $record->finalized_at)->latest('inspection_timestamp')->value('recorded_price');
+                    ->whereIn('srp_id', SrpBulletin::comparableIds($bulletin))
+                    ->where('validation_status', 'verified')
+                    ->where('inspection_timestamp', '>=', MonitoringPeriod::comparableSince($record->finalized_at))
+                    ->where('inspection_timestamp', '<', $record->finalized_at)
+                    ->orderByDesc('inspection_timestamp')->orderByDesc('id')
+                    ->value('recorded_price');
                 $previous = $previous === null ? null : (float) $previous;
                 $baseline = (float) $bulletin->baseline_price;
                 $recorded = (float) $itemPayload['recorded_price'];

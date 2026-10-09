@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Building2, CircleCheck, CircleSlash, Search, SearchX, TrendingUp, TriangleAlert, X } from 'lucide-react'
 import { analyzePreviousPrice, analyzeWithReference, PREVIOUS_PRICE_THRESHOLD, resolveVisitReference } from '../app/workflow'
-import type { Bulletin, MonitoringProtocol, MonitoringReference, ReferenceSnapshot, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
+import type { Bulletin, CapturedItemStatus, MonitoringProtocol, MonitoringReference, ReferenceSnapshot, RegulatoryPrice, StoreRecord, VisitDraft } from '../types'
 
 interface DtiMonitoringSheetProps {
   store: StoreRecord | undefined
@@ -11,8 +11,10 @@ interface DtiMonitoringSheetProps {
   regulatoryPrices?: RegulatoryPrice[]
   monitoringReferences?: MonitoringReference[]
   onUpdatePrice: (srpId: number, price: number | null, reference?: ReferenceSnapshot) => void
-  // This store's last verified price per commodity. Drives the second basis; absent entries mean no prior record.
-  previousPrices?: Map<number, number | null>
+  // This store's last comparable price, keyed by the server's comparability_key. Drives the second basis.
+  previousPrices?: Map<string, number | null>
+  // Submitted visits only: what each item recorded, keyed by srp_id. Rendered instead of recomputing under today's rules.
+  capturedStatus?: Map<number, CapturedItemStatus>
   onProceedToReview?: () => void
   onPrevious?: () => void
   // View-only: show a submitted visit; prices can't change and references are the ones captured at submission.
@@ -28,12 +30,15 @@ export function DtiMonitoringSheet({
   monitoringReferences = [],
   onUpdatePrice,
   previousPrices,
+  capturedStatus,
   onProceedToReview,
   onPrevious,
   readOnly = false,
 }: DtiMonitoringSheetProps) {
   const referenceWord = readOnly ? 'captured' : 'active'
   const referenceName = protocol?.mode === 'emergency' ? 'price ceiling' : 'SRP'
+  // Column heading, chosen per protocol: the prose name does not fit a 15% column on a tablet.
+  const referenceHeading = protocol?.mode === 'emergency' ? 'CEILING' : 'SRP'
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
   const [filterMode, setFilterMode] = useState<'all' | 'encoded' | 'compliant' | 'anomalies'>('all')
@@ -65,15 +70,40 @@ export function DtiMonitoringSheet({
     const hasRecorded = recorded !== undefined && Number.isFinite(recorded)
     const line = draft.items.find((item) => item.srp_id === bulletin.id)
     const reference = referenceFor(bulletin, line)
+    const captured = capturedStatus?.get(bulletin.id)
+
+    if (captured) {
+      // A submitted visit is evidence under signature. Each field comes from its own captured column, never from a
+      // rule that may have changed since: stored is_anomaly means reference breach OR spike, which is not the same
+      // thing as aboveReference. An unattributable captured flag is a reference flag, the only meaning is_anomaly
+      // had before the second basis existed.
+      const spikeBasis = captured.finding_basis === 'previous_price_spike'
+      const assessed = captured.previous_price_variance_percent !== null
+      return {
+        recorded, hasRecorded, reference, captured,
+        analysis: { variance_percent: captured.variance_percent, is_anomaly: captured.is_anomaly, label: '' as const },
+        previous: captured.previous_price,
+        spike: { variance_percent: captured.previous_price_variance_percent, is_spike: captured.is_previous_price_spike },
+        // Accepted before the second basis existed: previous_price may be stored with no assessment of it.
+        unassessedPrevious: !assessed && captured.previous_price !== null,
+        aboveReference: captured.is_anomaly && !spikeBasis,
+        needsReview: captured.is_anomaly,
+        withinBoth: !captured.is_anomaly && reference.status === 'available',
+      }
+    }
+
     const analysis = hasRecorded
       ? analyzeWithReference({ srp_id: bulletin.id, recorded_price: recorded as number }, reference)
       : null
-    const previous = previousPrices?.get(bulletin.id) ?? null
+    // Both sides use the key the server computed; App.tsx withholds the map entirely when it cannot be trusted.
+    const previous = (bulletin.comparability_key ? previousPrices?.get(bulletin.comparability_key) : undefined) ?? null
     const spike = hasRecorded
       ? analyzePreviousPrice(recorded as number, previous)
       : { variance_percent: null, is_spike: false }
     return {
       recorded, hasRecorded, reference, analysis, previous, spike,
+      captured: undefined as CapturedItemStatus | undefined,
+      unassessedPrevious: false,
       aboveReference: analysis?.is_anomaly ?? false,
       needsReview: (analysis?.is_anomaly ?? false) || spike.is_spike,
       withinBoth: analysis?.label === 'Within reference' && !spike.is_spike,
@@ -91,7 +121,7 @@ export function DtiMonitoringSheet({
       anomalyCount: statuses.filter((status) => status.needsReview).length,
       compliantCount: statuses.filter((status) => status.withinBoth).length,
     }
-  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices])
+  }, [draft.items, bulletinMap, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices, capturedStatus])
 
   // Distinct categories
   const uniqueCategories = useMemo(() => {
@@ -134,7 +164,7 @@ export function DtiMonitoringSheet({
 
       return true
     })
-  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, draft.items, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices])
+  }, [bulletins, searchQuery, selectedCategory, filterMode, recordedMap, draft.items, protocol?.mode, regulatoryPrices, monitoringReferences, previousPrices, capturedStatus])
 
   // Group filtered bulletins by Major Classification -> Category
   const groupedSections = useMemo(() => {
@@ -257,19 +287,23 @@ export function DtiMonitoringSheet({
         <ul className="dti-matrix-legend" aria-label="What each price status means">
           <li className="legend-ok">
             <CircleCheck size={13} aria-hidden="true" />
-            <span>At or below {referenceName}, and within {PREVIOUS_PRICE_THRESHOLD}% of this store&apos;s last record</span>
+            <span className="dti-pill-label-desktop">At or below {referenceName}, and within {PREVIOUS_PRICE_THRESHOLD}% of this store&apos;s last record</span>
+            <span className="dti-pill-label-mobile">Within both</span>
           </li>
           <li className="legend-anomaly">
             <TriangleAlert size={13} aria-hidden="true" />
-            <span>Above the {referenceName}</span>
+            <span className="dti-pill-label-desktop">Above the {referenceName}</span>
+            <span className="dti-pill-label-mobile">Above {referenceName}</span>
           </li>
           <li className="legend-spike">
             <TrendingUp size={13} aria-hidden="true" />
-            <span>Within {referenceName} but more than {PREVIOUS_PRICE_THRESHOLD}% over this store&apos;s last record</span>
+            <span className="dti-pill-label-desktop">Within {referenceName} but more than {PREVIOUS_PRICE_THRESHOLD}% over this store&apos;s last record</span>
+            <span className="dti-pill-label-mobile">Up &gt;{PREVIOUS_PRICE_THRESHOLD}% vs last</span>
           </li>
           <li className="legend-none">
             <CircleSlash size={13} aria-hidden="true" />
-            <span>No basis: {referenceWord} reference unavailable, or first record for this store</span>
+            <span className="dti-pill-label-desktop">No basis: {referenceWord} reference unavailable, or no comparable record in the current or previous monitoring period</span>
+            <span className="dti-pill-label-mobile">No basis</span>
           </li>
         </ul>
 
@@ -337,8 +371,8 @@ export function DtiMonitoringSheet({
               <th className="col-unit">UNIT</th>
               <th className="col-srp">{readOnly ? 'CAPTURED REFERENCE' : 'ACTIVE REFERENCE'}</th>
               <th className="col-price">MONITORED PRICE</th>
-              <th className="col-status">VS {referenceName.toUpperCase()}</th>
-              <th className="col-previous">VS PREVIOUS</th>
+              <th className="col-status">{referenceHeading} DIFF</th>
+              <th className="col-previous">PREVIOUS DIFF</th>
             </tr>
           </thead>
           <tbody>
@@ -477,15 +511,28 @@ export function DtiMonitoringSheet({
                             <td className="dti-item-previous-cell">
                               {!hasRecorded ? (
                                 <span className="dti-unrecorded-dash" title="Unrecorded price">—</span>
+                              ) : status.unassessedPrevious ? (
+                                // Accepted before the second basis existed: it holds a comparator but never judged it.
+                                <span className="dti-previous-none" title="Previous-price assessment was not captured">
+                                  <span className="dti-previous-none-label">Not assessed</span>
+                                  {status.previous !== null && <small>was ₱{status.previous.toFixed(2)}</small>}
+                                </span>
                               ) : status.spike.variance_percent === null ? (
-                                <span className="dti-unrecorded-dash" title="First record for this store">—</span>
+                                <span className="dti-previous-none">
+                                  <span className="dti-previous-none-label">No comparable record</span>
+                                  <small>in the current or previous monitoring period</small>
+                                </span>
                               ) : (
-                                <span
-                                  className={`dti-previous-pill ${status.spike.is_spike ? 'pill-spike' : 'pill-steady'}`}
-                                  title={`₱${(status.previous as number).toFixed(2)} at the last visit · ${status.spike.variance_percent >= 0 ? '+' : ''}${status.spike.variance_percent.toFixed(1)}%${status.spike.is_spike ? `, more than ${PREVIOUS_PRICE_THRESHOLD}% over it and requires review` : ''}`}
-                                >
-                                  {status.spike.is_spike && <TrendingUp size={11} aria-hidden="true" />}
-                                  {status.spike.variance_percent > 0 ? `+${status.spike.variance_percent.toFixed(1)}%` : `${status.spike.variance_percent.toFixed(1)}%`}
+                                <span className="dti-previous-reading">
+                                  <span
+                                    className={`dti-previous-pill ${status.spike.is_spike ? 'pill-spike' : 'pill-steady'}`}
+                                    title={`${status.spike.variance_percent >= 0 ? '+' : ''}${status.spike.variance_percent.toFixed(1)}% against this store's last record${status.spike.is_spike ? `, more than ${PREVIOUS_PRICE_THRESHOLD}% over it and requires review` : ''}`}
+                                  >
+                                    {status.spike.is_spike && <TrendingUp size={11} aria-hidden="true" />}
+                                    {status.spike.variance_percent > 0 ? `+${status.spike.variance_percent.toFixed(1)}%` : `${status.spike.variance_percent.toFixed(1)}%`}
+                                  </span>
+                                  {/* Shown, not hovered: these devices have no hover, so the comparison value must be visible. */}
+                                  {status.previous !== null && <small>from ₱{status.previous.toFixed(2)}</small>}
                                 </span>
                               )}
                             </td>

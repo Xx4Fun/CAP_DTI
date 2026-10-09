@@ -19,11 +19,26 @@ export interface Bulletin {
   category?: string | null
   regulatory_classification?: string | null
   commodity_key?: string | null
+  comparability_key?: string
   price_freeze_applicable?: boolean
   effective_date?: string | null
   source_reference?: string | null
 }
-export interface RecentPrice { store_id: number; srp_id: number; recorded_price: number | string; inspection_timestamp: string }
+export interface RecentPrice {
+  store_id: number; srp_id: number; recorded_price: number | string; inspection_timestamp: string
+  // Group identity: a prior price is comparable only across SRP revisions of the same commodity at the same unit.
+  // Computed server-side so both runtimes group identically; PHP and JavaScript trim Unicode whitespace differently.
+  commodity_key?: string | null; unit?: string | null; comparability_key?: string
+}
+/** What a submitted visit recorded, so a read-only view never re-judges it under today's rules. */
+export interface CapturedItemStatus {
+  is_anomaly: boolean
+  variance_percent: number | null
+  previous_price: number | null
+  previous_price_variance_percent: number | null
+  is_previous_price_spike: boolean
+  finding_basis: 'standard_srp' | 'emergency_ceiling' | 'previous_price_spike' | null
+}
 export interface MonitoringProtocol {
   labels_are_provisional: boolean
   standard_review_rule: string
@@ -69,6 +84,8 @@ export interface ReferenceSnapshot {
 export interface BootstrapData {
   version: string; reference_version?: string; is_delta: boolean; stores: StoreRecord[]; srp_bulletins: Bulletin[]
   regulatory_prices?: RegulatoryPrice[]; monitoring_references?: MonitoringReference[]; recent_prices: RecentPrice[]; accepted_today?: number; protocol?: MonitoringProtocol
+  // Window a previous observation must fall in. Absent on a payload cached before this existed.
+  comparable_since?: string | null
   monitoring_week?: { timezone: 'Asia/Manila'; starts_at: string; ends_at: string }
   monitoring_period?: MonitoringPeriodInfo
 }
@@ -131,6 +148,8 @@ export interface MonitoringRecord {
 export interface MonitoringRecordDetail {
   id: number; client_uuid: string; status: string; started_at: string; finalized_at: string; received_at: string
   sync_source: string; field_verification_request_id: number | null
+  // The protocol the visit was conducted under, so a reopened visit names its own reference, not today's.
+  protocol_mode?: 'standard' | 'emergency' | null
   store: StoreRecord
   location: VisitLocation
   representative: { name: string; title: string | null }

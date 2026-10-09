@@ -3574,6 +3574,40 @@ html, body, #root {
   font-weight: 900;
 }
 
+/* The comparison value sits under the percent: no hover exists on these devices, so it cannot live in a tooltip. */
+.dti-previous-reading,
+.dti-previous-none {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+.dti-previous-reading small,
+.dti-previous-none small {
+  color: #64748b;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+/* A peso amount is short and must not break mid-figure; the absence caption is a sentence and wraps. */
+.dti-previous-reading small {
+  white-space: nowrap;
+}
+
+.dti-previous-none small {
+  white-space: normal;
+  text-wrap: balance;
+}
+
+.dti-previous-none-label {
+  color: #94a3b8;
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
 /* Both bases, named where the officer records the price */
 .dti-matrix-legend {
   display: flex;
@@ -5563,3 +5597,141 @@ html, body, #root {
 .representative-confirmation { display: flex; align-items: flex-start; gap: 0.75rem; margin: 1rem 0; }
 .representative-confirmation input { width: 1.25rem; height: 1.25rem; flex-shrink: 0; }
 .representative-suggestion { margin: 0.75rem 0; }
+
+/* Tablets (iPad, Infinix XPAD): restore the one-row table the desktop sheet uses. The max-width:768px block above
+   turns the matrix into cards, which stacks a commodity across three rows; that is right for a phone and wrong for
+   a tablet. Only the table subtree is restored here - the store strip, toolbar and bottom bar stay compact. */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .dti-matrix-table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+  }
+  .dti-matrix-table thead {
+    display: table-header-group;
+  }
+  .dti-matrix-table tbody {
+    display: table-row-group;
+    width: auto;
+  }
+  /* Higher specificity than the plain selectors above, matching the global :has rules it must beat. */
+  .dti-matrix-table:has(.dti-matrix-empty) {
+    display: table;
+    flex: none;
+    /* Fill the container so the empty cell can centre in it, as the global :has rules do with flex. */
+    height: 100%;
+  }
+  .dti-matrix-table:has(.dti-matrix-empty) tbody {
+    display: table-row-group;
+    flex: none;
+    height: 100%;
+  }
+  .dti-matrix-empty-row {
+    display: table-row !important;
+    width: auto !important;
+    height: 100%;
+  }
+  .dti-matrix-empty {
+    display: table-cell !important;
+    width: auto !important;
+    height: 100%;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .dti-classification-banner,
+  .dti-category-banner {
+    display: table-row;
+    width: auto;
+  }
+  .dti-classification-banner td,
+  .dti-category-banner td {
+    display: table-cell;
+    width: auto;
+  }
+
+  .dti-item-row {
+    display: table-row;
+    grid-template-areas: none;
+    gap: 0;
+    padding: 0;
+    margin-bottom: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .dti-item-desc,
+  .dti-item-srp,
+  .dti-item-input-cell,
+  .dti-item-status-cell,
+  .dti-item-previous-cell {
+    display: table-cell;
+    grid-area: auto;
+    width: auto;
+    height: auto;
+    vertical-align: middle;
+    padding: 6px 8px;
+  }
+
+  /* The unit is the column to drop at this width; the card block only hides it up to 768px, and never its header. */
+  .dti-matrix-table th.col-unit,
+  .dti-item-unit {
+    display: none !important;
+  }
+
+  .dti-matrix-table th.col-commodity { width: 34%; }
+  .dti-matrix-table th.col-srp { width: 16%; text-align: right; }
+  .dti-matrix-table th.col-price { width: 20%; text-align: right; }
+  .dti-matrix-table th.col-status { width: 15%; text-align: center; }
+  .dti-matrix-table th.col-previous { width: 15%; text-align: center; }
+
+  .dti-item-srp { text-align: right; }
+  .dti-item-srp .srp-value,
+  .dti-item-srp .srp-none {
+    display: inline;
+    width: auto;
+    height: auto;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  /* The restored header row carries these labels. */
+  .dti-item-srp .srp-value::before,
+  .dti-item-srp .srp-none::before,
+  .dti-item-previous-cell::before {
+    content: none;
+  }
+
+  .dti-item-status-cell,
+  .dti-item-previous-cell {
+    text-align: center;
+  }
+  .dti-item-status-cell .dti-unrecorded-dash {
+    display: inline;
+    width: auto;
+    height: auto;
+    background: none;
+    border: none;
+  }
+  .dti-variance-pill,
+  .dti-previous-pill {
+    display: inline-flex;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    padding: 2px 5px;
+    font-size: 0.7rem;
+    /* 'Reference unavailable' carries nowrap from the card block; in a 15% column it would overrun its cell. */
+    white-space: normal;
+    text-align: center;
+  }
+  .dti-previous-reading,
+  .dti-previous-none {
+    align-items: center;
+  }
+
+  /* Legend sentences wrap badly at this width; the short forms carry the same meaning. */
+  .dti-matrix-legend .dti-pill-label-desktop { display: none; }
+  .dti-matrix-legend .dti-pill-label-mobile { display: inline; }
+}

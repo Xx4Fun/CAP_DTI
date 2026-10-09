@@ -45,21 +45,48 @@ class SyncController extends Controller {
         ]);
 
         DB::transaction(function () use ($request) {
+            // Serialize against FieldMonitoringController::sync, which locks the same store row. Without it a
+            // concurrent accepted visit can insert the tuple between the protection check and the write, and the
+            // write would then land on signed evidence. Ascending store id so two legacy batches cannot deadlock.
+            $storeIds = collect($request->inspections)->pluck('store_id')->map(fn ($id) => (int) $id)->unique()->sort()->values();
+            foreach ($storeIds as $storeId) {
+                Store::query()->whereKey($storeId)->lockForUpdate()->firstOrFail();
+            }
+
             foreach ($request->inspections as $insData) {
-                TemporalInspection::updateOrCreate(
-                    [
+                $existing = TemporalInspection::query()
+                    ->where('store_id', $insData['store_id'])
+                    ->where('srp_id', $insData['srp_id'])
+                    ->where('inspection_timestamp', $insData['inspection_timestamp'])
+                    ->lockForUpdate()->first();
+
+                // Accepted field monitoring is signed evidence a later notice may cite. This legacy route may create
+                // and amend its own unverified rows; it may never rewrite an observation DTI has accepted.
+                if ($existing && ($existing->validation_status === 'verified' || $existing->monitoring_record_id !== null)) {
+                    abort(response()->json([
+                        'status' => 'OBSERVATION_ALREADY_ACCEPTED',
+                        'message' => "An accepted monitoring observation already exists for store {$insData['store_id']}, commodity {$insData['srp_id']} at {$insData['inspection_timestamp']}. Accepted evidence cannot be overwritten.",
+                    ], 422));
+                }
+
+                $attributes = [
+                    'recorded_price' => $insData['recorded_price'],
+                    'is_flagged' => $insData['is_flagged'],
+                    'officer_signature' => $insData['officer_signature'] ?? null,
+                    'vendor_signature' => $insData['vendor_signature'] ?? null,
+                    'sync_timestamp' => now(),
+                ];
+
+                // Explicit update/insert, never updateOrCreate: that would re-resolve a row appearing after the check.
+                if ($existing) {
+                    $existing->update($attributes);
+                } else {
+                    TemporalInspection::create($attributes + [
                         'store_id' => $insData['store_id'],
                         'srp_id' => $insData['srp_id'],
-                        'inspection_timestamp' => $insData['inspection_timestamp']
-                    ],
-                    [
-                        'recorded_price' => $insData['recorded_price'],
-                        'is_flagged' => $insData['is_flagged'],
-                        'officer_signature' => $insData['officer_signature'] ?? null,
-                        'vendor_signature' => $insData['vendor_signature'] ?? null,
-                        'sync_timestamp' => now()
-                    ]
-                );
+                        'inspection_timestamp' => $insData['inspection_timestamp'],
+                    ]);
+                }
             }
         });
 

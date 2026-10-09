@@ -722,17 +722,143 @@ class FieldMonitoringRecordTest extends TestCase
         $this->assertSame([$rice->id => 108.0, $milk->id => 52.0], $prices);
     }
 
-    public function test_bootstrap_recent_prices_reach_back_past_three_weeks_so_the_officer_sees_what_the_server_compares(): void
+    public function test_bootstrap_recent_prices_drop_observations_older_than_the_preceding_period(): void
     {
         [, $token, $this->leaseId] = $this->fieldSession();
         $store = $this->store();
         $rice = $this->bulletin('Rice', 100);
+        // Two months back: the reported case, where a stale one-off drove an +81% flag on a price at its SRP.
         $this->priorInspection($store, $rice, 77, now()->subMonths(2));
+
+        $this->assertSame([], $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'));
+    }
+
+    public function test_bootstrap_recent_prices_exclude_future_observations_and_keep_the_newest_in_window(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $rice = $this->bulletin('Rice', 100);
+        $this->priorInspection($store, $rice, 90, now()->subHours(2));
+        // Reachable: finalized_at is validated only as a date and a lease runs 24 hours.
+        $this->priorInspection($store, $rice, 300, now()->addHour());
 
         $prices = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'))
             ->mapWithKeys(fn (array $row) => [$row['srp_id'] => (float) $row['recorded_price']])->all();
 
-        $this->assertSame([$rice->id => 77.0], $prices);
+        $this->assertSame([$rice->id => 90.0], $prices);
+    }
+
+    public function test_bootstrap_publishes_the_comparison_window_and_a_canonical_group_key(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        // PHP trim() keeps a non-breaking space where JavaScript trim() strips it, so the key cannot be recomputed
+        // on the client: both sides must consume the one the server published.
+        $rice = $this->bulletin('Rice', 100);
+        $rice->update(['unit' => "100g "]);
+        $this->priorInspection($store, $rice, 90, now()->subHours(2));
+
+        $data = $this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data');
+
+        $this->assertNotNull($data['comparable_since']);
+        $expected = SrpBulletin::comparabilityKey($rice->commodity_key, $rice->unit, $rice->id);
+        $this->assertSame($expected, collect($data['srp_bulletins'])->firstWhere('id', $rice->id)['comparability_key']);
+        $this->assertSame($expected, collect($data['recent_prices'])->firstWhere('srp_id', $rice->id)['comparability_key']);
+        $this->assertStringContainsString(" ", $expected);
+    }
+
+    public function test_bootstrap_recent_prices_return_one_row_per_commodity_across_srp_revisions(): void
+    {
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $old = $this->bulletin('Rice', 100);
+        $new = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 120, 'unit' => $old->unit,
+            'effective_date' => now()->toDateString(), 'source_reference' => 'SRP-RICE-NEW', 'is_active' => true,
+        ]);
+        $this->priorInspection($store, $old, 95, now()->subHours(5));
+        $this->priorInspection($store, $new, 110, now()->subHours(2));
+
+        $rows = collect($this->withToken($token)->getJson('/api/field/bootstrap')->assertOk()->json('data.recent_prices'))
+            ->filter(fn (array $row) => $row['commodity_key'] === 'rice')->values();
+
+        // One comparator for the commodity, the newest observation, carrying the group identity the PWA rebuilds.
+        $this->assertCount(1, $rows);
+        $this->assertSame(110.0, (float) $rows[0]['recorded_price']);
+        $this->assertSame($new->id, $rows[0]['srp_id']);
+    }
+
+    public function test_a_previous_observation_on_an_earlier_srp_revision_of_the_same_unit_is_compared(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $old = $this->bulletin('Rice', 100);
+        $current = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 120, 'unit' => $old->unit,
+            'effective_date' => now()->toDateString(), 'source_reference' => 'SRP-RICE-NEW', 'is_active' => true,
+        ]);
+        $milk = $this->bulletin('Milk', 50);
+        $this->priorInspection($store, $old, 80, now()->subHours(3));
+
+        $payload = $this->payload($store, [$current, $milk]);
+        $payload['records'][0]['items'][0]['recorded_price'] = 100;
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $current->id,
+            'previous_price' => 80, 'is_previous_price_spike' => true,
+            'finding_basis' => 'previous_price_spike',
+        ]);
+    }
+
+    public function test_a_previous_observation_whose_unit_changed_is_not_compared(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $old = $this->bulletin('Rice', 100);
+        $old->update(['unit' => '100g']);
+        $current = SrpBulletin::create([
+            'commodity_name' => 'Rice', 'commodity_key' => 'rice', 'baseline_price' => 120, 'unit' => '200g',
+            'effective_date' => now()->toDateString(), 'source_reference' => 'SRP-RICE-NEW', 'is_active' => true,
+        ]);
+        $milk = $this->bulletin('Milk', 50);
+        $this->priorInspection($store, $old, 80, now()->subHours(3));
+
+        $payload = $this->payload($store, [$current, $milk]);
+        $payload['records'][0]['items'][0]['recorded_price'] = 100;
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        // A 100g price is not a comparator for a 200g pack; no movement is claimed.
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $current->id,
+            'previous_price' => null, 'previous_price_variance_percent' => null,
+            'is_previous_price_spike' => false, 'finding_basis' => null,
+        ]);
+    }
+
+    public function test_an_observation_older_than_the_preceding_period_does_not_flag_a_price_at_its_srp(): void
+    {
+        Storage::fake('receipt_evidence');
+        [, $token, $this->leaseId] = $this->fieldSession();
+        $store = $this->store();
+        $bulletins = [$this->bulletin('Rice', 117.75), $this->bulletin('Milk', 50)];
+        // The reported case: store 10's month-old 65.00 against a price entered at exactly the 117.75 SRP.
+        $this->priorInspection($store, $bulletins[0], 65, now()->subMonths(1));
+
+        $payload = $this->payload($store, $bulletins);
+        $payload['records'][0]['items'][0]['recorded_price'] = 117.75;
+        $recordId = $this->withToken($token)->postJson('/api/field/monitoring-records/sync', $payload)
+            ->assertCreated()->json('data.results.0.record_id');
+
+        $this->assertDatabaseHas('monitoring_record_items', [
+            'monitoring_record_id' => $recordId, 'srp_id' => $bulletins[0]->id,
+            'previous_price' => null, 'previous_price_variance_percent' => null,
+            'is_previous_price_spike' => false, 'is_anomaly' => false, 'finding_basis' => null,
+        ]);
     }
 
     public function test_a_visit_finalized_before_manila_midnight_and_synced_after_it_keeps_its_week_and_srp(): void

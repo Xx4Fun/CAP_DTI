@@ -51,20 +51,33 @@ class FieldDataController extends Controller
             ->unique(fn ($bulletin) => $bulletin->commodity_key ?: 'id:'.$bulletin->id)
             ->sortBy('commodity_name')->values();
 
-        $latestPerPair = TemporalInspection::query()
-            ->select('store_id', 'srp_id')->selectRaw('max(inspection_timestamp) as latest_at')
-            ->where('validation_status', 'verified')
-            ->groupBy('store_id', 'srp_id');
+        // One comparator per store and comparable commodity: newest first, reduced on the same group identity the
+        // field PWA rebuilds, so the officer's live indicator and the server's stored flag cannot disagree. Bounded
+        // at both ends against one as-of instant — finalized_at is validated only as a date, so a future-dated
+        // verified observation is reachable and must not become the comparator.
+        // Bound in UTC: Eloquent binds a Carbon's wall-clock string, so a Manila-local bound would sit 8 hours
+        // ahead of the UTC timestamps stored on the rows and let future observations through.
+        $asOf = now('Asia/Manila')->utc();
+        $comparableSince = MonitoringPeriod::comparableSince($asOf);
         $recentPrices = $isCurrent ? collect() : TemporalInspection::query()
-            ->joinSub($latestPerPair, 'latest', fn ($join) => $join
-                ->on('temporal_inspections.store_id', '=', 'latest.store_id')
-                ->on('temporal_inspections.srp_id', '=', 'latest.srp_id')
-                ->on('temporal_inspections.inspection_timestamp', '=', 'latest.latest_at'))
+            ->join('srp_bulletins', 'srp_bulletins.id', '=', 'temporal_inspections.srp_id')
             ->where('temporal_inspections.validation_status', 'verified')
+            ->where('temporal_inspections.inspection_timestamp', '>=', $comparableSince)
+            ->where('temporal_inspections.inspection_timestamp', '<', $asOf)
             ->orderByDesc('temporal_inspections.inspection_timestamp')->orderByDesc('temporal_inspections.id')
-            ->get(['temporal_inspections.store_id', 'temporal_inspections.srp_id', 'temporal_inspections.recorded_price', 'temporal_inspections.inspection_timestamp'])
-            // Only rows sharing a pair's exact latest timestamp reach here; keep the newest id.
-            ->unique(fn ($inspection) => $inspection->store_id.':'.$inspection->srp_id)
+            ->get([
+                'temporal_inspections.store_id', 'temporal_inspections.srp_id', 'temporal_inspections.recorded_price',
+                'temporal_inspections.inspection_timestamp', 'srp_bulletins.commodity_key', 'srp_bulletins.unit',
+            ])
+            ->unique(fn ($row) => $row->store_id.':'.SrpBulletin::comparabilityKey($row->commodity_key, $row->unit, $row->srp_id))
+            // Emit the group key the server computed. PHP trim() and JavaScript trim() disagree on Unicode
+            // whitespace, so a unit carrying a non-breaking space would otherwise group differently on each side.
+            ->map(fn ($row) => [
+                'store_id' => $row->store_id, 'srp_id' => $row->srp_id,
+                'recorded_price' => $row->recorded_price, 'inspection_timestamp' => $row->inspection_timestamp,
+                'commodity_key' => $row->commodity_key, 'unit' => $row->unit,
+                'comparability_key' => SrpBulletin::comparabilityKey($row->commodity_key, $row->unit, $row->srp_id),
+            ])
             ->values();
 
         return response()->json([
@@ -82,6 +95,9 @@ class FieldDataController extends Controller
                     'starts_on' => $effectiveEmergency?->starts_on?->toDateString(),
                     'ends_on' => $effectiveEmergency?->ends_on?->toDateString(),
                 ],
+                // The window a previous observation must fall in to be comparable. A cached payload without it
+                // cannot have its observations validated, so the officer's device treats them as unavailable.
+                'comparable_since' => $isCurrent ? null : $comparableSince->toIso8601String(),
                 'monitoring_week' => [
                     'timezone' => $week['timezone'], 'starts_at' => $week['starts_at']->toIso8601String(), 'ends_at' => $week['ends_at']->toIso8601String(),
                 ],
@@ -101,7 +117,10 @@ class FieldDataController extends Controller
                         'has_prior_routine_monitoring' => (bool) $store->has_prior_routine_monitoring,
                         'latest_routine_monitoring_at' => $store->latestRoutineMonitoringRecord?->finalized_at,
                     ]),
-                'srp_bulletins' => $bulletins,
+                'srp_bulletins' => $bulletins->map(fn (SrpBulletin $bulletin) => [
+                    ...$bulletin->toArray(),
+                    'comparability_key' => SrpBulletin::comparabilityKey($bulletin->commodity_key, $bulletin->unit, $bulletin->id),
+                ]),
                 'monitoring_references' => $bulletins->map(function (SrpBulletin $bulletin) use ($references) {
                     $reference = $references->resolve($bulletin, now('Asia/Manila'));
 
