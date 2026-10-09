@@ -17,12 +17,12 @@ class StoreMessage extends Model
 
     protected $fillable = [
         'store_id', 'vendor_user_id', 'sender_id', 'sender_side', 'body', 'attachment_disk', 'attachment_path',
-        'attachment_name', 'attachment_mime', 'attachment_size', 'attachment_sha256', 'read_at',
+        'attachment_name', 'attachment_mime', 'attachment_size', 'attachment_sha256', 'read_at', 'edited_at', 'deleted_at',
     ];
 
     protected $hidden = ['attachment_disk', 'attachment_path'];
 
-    protected $casts = ['read_at' => 'datetime', 'attachment_size' => 'integer'];
+    protected $casts = ['read_at' => 'datetime', 'edited_at' => 'datetime', 'deleted_at' => 'datetime', 'attachment_size' => 'integer'];
 
     public function store(): BelongsTo { return $this->belongsTo(Store::class); }
     public function sender(): BelongsTo { return $this->belongsTo(User::class, 'sender_id'); }
@@ -73,20 +73,23 @@ class StoreMessage extends Model
 
     public function attachmentResponse()
     {
-        abort_unless($this->attachment_path && Storage::disk($this->attachment_disk)->exists($this->attachment_path), 404);
+        abort_unless(! $this->deleted_at && $this->attachment_path && Storage::disk($this->attachment_disk)->exists($this->attachment_path), 404);
         // Images preview inline; anything else downloads so the browser never renders it as a page.
         $inline = in_array($this->attachment_mime, ['image/jpeg', 'image/png', 'image/webp'], true);
         return Storage::disk($this->attachment_disk)->response($this->attachment_path, $this->attachment_name,
             ['Content-Type' => $this->attachment_mime, 'X-Content-Type-Options' => 'nosniff'], $inline ? 'inline' : 'attachment');
     }
 
+    /** A deleted message is returned as a placeholder: its text and attachment stay on the row but are never served. */
     public function toThreadArray(): array
     {
+        $deleted = (bool) $this->deleted_at;
         return [
             'id' => $this->id, 'sender_side' => $this->sender_side, 'sender_name' => $this->sender?->name,
-            'vendor_user_id' => $this->vendor_user_id, 'body' => $this->body, 'read_at' => $this->read_at?->toIso8601String(),
+            'vendor_user_id' => $this->vendor_user_id, 'body' => $deleted ? null : $this->body, 'read_at' => $this->read_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
-            'attachment' => $this->attachment_path ? ['name' => $this->attachment_name, 'mime' => $this->attachment_mime, 'size' => $this->attachment_size] : null,
+            'edited_at' => $this->edited_at?->toIso8601String(), 'deleted_at' => $this->deleted_at?->toIso8601String(),
+            'attachment' => $this->attachment_path && ! $deleted ? ['name' => $this->attachment_name, 'mime' => $this->attachment_mime, 'size' => $this->attachment_size] : null,
         ];
     }
 }

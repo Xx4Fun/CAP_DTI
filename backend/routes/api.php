@@ -106,6 +106,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/notices/{id}/response', [LegalNoticeController::class, 'response']);
         Route::get('/conversations/{store}', [VendorMessageController::class, 'show']);
         Route::post('/conversations/{store}/messages', [VendorMessageController::class, 'send'])->middleware('throttle:30,1');
+        Route::patch('/conversations/{store}/messages/{message}', [VendorMessageController::class, 'update'])->middleware('throttle:30,1');
+        Route::delete('/conversations/{store}/messages/{message}', [VendorMessageController::class, 'destroy'])->middleware('throttle:30,1');
         Route::get('/conversations/{store}/messages/{message}/attachment', [VendorMessageController::class, 'attachment']);
     });
     Route::prefix('admin')->middleware('dti.role:super_admin,dti_evaluator,field_officer')->group(function () {

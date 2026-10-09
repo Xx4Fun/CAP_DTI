@@ -81,6 +81,43 @@ class VendorMessageController extends Controller
         return $message->attachmentResponse();
     }
 
+    public function update(Request $request, int $store, int $message, AuditTrailService $audit)
+    {
+        $user = $this->vendorUser($request);
+        $store = $this->linkedStore($user, $store);
+        $data = $request->validate(['body' => ['required', 'string', 'max:'.StoreMessage::BODY_MAX]]);
+        $message = DB::transaction(function () use ($request, $store, $user, $message, $data, $audit) {
+            $message = $this->ownMessage($user, $store, $message);
+            // The replaced text survives only here.
+            $audit->recordOrFail($request, 'vendor.message_edited', $message, ['store_id' => $store->id, 'previous_body' => $message->body]);
+            $message->update(['body' => $data['body'], 'edited_at' => now()]);
+            return $message;
+        });
+
+        return response()->json(['data' => $message->load('sender:id,name')->toThreadArray()]);
+    }
+
+    public function destroy(Request $request, int $store, int $message, AuditTrailService $audit)
+    {
+        $user = $this->vendorUser($request);
+        $store = $this->linkedStore($user, $store);
+        $message = DB::transaction(function () use ($request, $store, $user, $message, $audit) {
+            $message = $this->ownMessage($user, $store, $message);
+            $audit->recordOrFail($request, 'vendor.message_deleted', $message, ['store_id' => $store->id]);
+            $message->update(['deleted_at' => now()]);
+            return $message;
+        });
+
+        return response()->json(['data' => $message->load('sender:id,name')->toThreadArray()]);
+    }
+
+    /** A message this vendor sent and has not deleted, locked for the change. DTI's messages are never the vendor's to alter. */
+    private function ownMessage(User $user, Store $store, int $messageId): StoreMessage
+    {
+        return StoreMessage::whereKey($messageId)->where('store_id', $store->id)->where('vendor_user_id', $user->id)
+            ->where('sender_side', 'vendor')->where('sender_id', $user->id)->whereNull('deleted_at')->lockForUpdate()->firstOrFail();
+    }
+
     private function linkedStore(User $user, int $storeId): Store
     {
         return Store::whereKey($storeId)->where('vendor_user_id', $user->id)->first() ?? $this->denied();

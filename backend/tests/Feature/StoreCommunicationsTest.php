@@ -146,6 +146,45 @@ class StoreCommunicationsTest extends TestCase
         $this->asAdmin()->getJson("/api/admin/conversations/{$this->store->id}")->assertJsonPath('data.messages.0.vendor_name', 'Vendor A');
     }
 
+    public function test_vendor_edits_and_deletes_only_their_own_messages(): void
+    {
+        $base = "/api/vendor/conversations/{$this->store->id}/messages";
+        $own = $this->asVendor($this->vendor)->postJson($base, ['body' => 'Rice is 52 per kilo.'])->assertCreated()->json('data.id');
+        $dti = $this->asAdmin()->postJson("/api/admin/conversations/{$this->store->id}/messages", ['body' => 'Noted.'])->assertCreated()->json('data.id');
+
+        $this->asVendor($this->vendor)->patchJson("$base/$own", ['body' => 'Rice is 50 per kilo.'])
+            ->assertOk()->assertJsonPath('data.body', 'Rice is 50 per kilo.')->assertJsonPath('data.edited_at', fn ($value) => $value !== null);
+        $this->assertSame('Rice is 52 per kilo.', \App\Models\AuditEvent::where('action', 'vendor.message_edited')->where('subject_id', $own)->firstOrFail()->metadata['previous_body']);
+        $this->asVendor($this->vendor)->patchJson("$base/$own", ['body' => ''])->assertUnprocessable();
+
+        $this->asVendor($this->vendor)->patchJson("$base/$dti", ['body' => 'Rewritten'])->assertNotFound();
+        $this->asVendor($this->vendor)->deleteJson("$base/$dti")->assertNotFound();
+        $other = User::create(['name' => 'Vendor B', 'email' => 'b@vendor.test', 'password' => 'password', 'role' => 'vendor']);
+        $this->asVendor($other)->deleteJson("$base/$own")->assertForbidden();
+
+        $this->asVendor($this->vendor)->deleteJson("$base/$own")
+            ->assertOk()->assertJsonPath('data.body', null)->assertJsonPath('data.deleted_at', fn ($value) => $value !== null);
+        $this->assertDatabaseHas('audit_events', ['action' => 'vendor.message_deleted', 'subject_id' => $own]);
+        // The row and its text stay on record; both sides only ever receive the placeholder.
+        $this->assertSame('Rice is 50 per kilo.', StoreMessage::findOrFail($own)->body);
+        $this->asAdmin()->getJson("/api/admin/conversations/{$this->store->id}")->assertJsonPath('data.messages.0.body', null)
+            ->assertJsonPath('data.messages.0.deleted_at', fn ($value) => $value !== null)->assertJsonPath('data.messages.1.body', 'Noted.');
+        $this->asVendor($this->vendor)->patchJson("$base/$own", ['body' => 'Back again'])->assertNotFound();
+        $this->asVendor($this->vendor)->deleteJson("$base/$own")->assertNotFound();
+    }
+
+    public function test_deleted_message_hides_its_attachment_and_list_preview(): void
+    {
+        $base = "/api/vendor/conversations/{$this->store->id}/messages";
+        $id = $this->asVendor($this->vendor)->post($base, ['attachment' => UploadedFile::fake()->image('shelf.png')], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $this->asVendor($this->vendor)->deleteJson("$base/$id")->assertOk()->assertJsonPath('data.attachment', null);
+
+        Storage::disk(LegalNotice::DOCUMENT_DISK)->assertExists(StoreMessage::findOrFail($id)->attachment_path);
+        $this->asVendor($this->vendor)->get("$base/$id/attachment")->assertNotFound();
+        $this->asAdmin()->get("/api/admin/conversations/{$this->store->id}/messages/$id/attachment")->assertNotFound();
+        $this->asAdmin()->getJson('/api/admin/conversations')->assertJsonPath('data.data.0.last_message.preview', 'Message deleted');
+    }
+
     private function asAdmin(): static
     {
         $this->app['auth']->forgetGuards();

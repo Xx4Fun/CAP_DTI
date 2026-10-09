@@ -41,7 +41,7 @@ class StoreConversationController extends Controller
             'unread_count' => (int) $store->unread_count, 'open_notice_count' => (int) $store->open_notice_count,
             'last_message' => ($message = $last->get($store->id)) ? [
                 'sender_side' => $message->sender_side, 'created_at' => $message->created_at?->toIso8601String(),
-                'preview' => $message->body !== null ? mb_substr($message->body, 0, 120) : $message->attachment_name,
+                'preview' => $message->deleted_at ? 'Message deleted' : ($message->body !== null ? mb_substr($message->body, 0, 120) : $message->attachment_name),
             ] : null,
         ]));
 
