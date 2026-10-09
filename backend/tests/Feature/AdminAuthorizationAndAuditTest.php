@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\AuditEvent;
+use App\Models\ConsumerReport;
+use App\Models\SrpBulletin;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -72,6 +74,25 @@ class AdminAuthorizationAndAuditTest extends TestCase
 
         $this->assertSame(['Alpha', 'Bravo', 'Charlie', 'Delta'], array_column($response->json('data.recent_stores'), 'store_name'));
         $this->assertSame(['id', 'store_name', 'dti_sec_number', 'address', 'is_active'], array_keys($response->json('data.recent_stores.0')));
+    }
+
+    public function test_admin_overview_counts_only_decidable_reports_and_current_bulletins(): void
+    {
+        Sanctum::actingAs($this->user('dti_evaluator'));
+        $store = Store::create(['store_name' => 'Alpha', 'address' => 'Alpha St', 'latitude' => 10.7, 'longitude' => 122.0, 'is_active' => true]);
+        foreach (['Submitted', 'Processing receipt', 'Needs recapture', 'Resolved'] as $n => $status) {
+            ConsumerReport::create([
+                'report_reference' => "OVERVIEW-$n", 'tracking_token_hash' => hash('sha256', "token-$n"), 'submission_uuid' => "overview-$n",
+                'store_id' => $store->id, 'status' => $status, 'raw_ocr_json' => [], 'submitted_at' => now(),
+            ]);
+        }
+        SrpBulletin::create(['commodity_name' => 'Rice', 'commodity_key' => 'rice-1kg', 'unit' => 'kg', 'baseline_price' => 42, 'effective_date' => '2026-01-01', 'is_active' => true]);
+        SrpBulletin::create(['commodity_name' => 'Sugar', 'commodity_key' => 'sugar-1kg', 'unit' => 'kg', 'baseline_price' => 80, 'effective_date' => '2099-01-01', 'is_active' => true]);
+
+        $this->getJson('/api/admin/overview')
+            ->assertOk()
+            ->assertJsonPath('data.pending_reports', 1)
+            ->assertJsonPath('data.active_srp_bulletins', 1);
     }
 
     public function test_admin_overview_keeps_available_counts_when_emergency_schema_is_missing(): void

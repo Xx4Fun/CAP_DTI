@@ -28,7 +28,7 @@ class ReportReviewController extends Controller
     }
 
     /** Reports still with the consumer or the OCR pipeline; they never enter the review queue. */
-    private const UNREVIEWABLE_STATUSES = ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'];
+    public const UNREVIEWABLE_STATUSES = ['Processing receipt', 'Ready for confirmation', 'Needs recapture', 'Processing failed'];
 
     public function index(Request $request, AdminAuthorizationService $auth, ReceiptPriceComparison $comparison)
     {
