@@ -356,4 +356,72 @@ describe('GuidedReceiptCapture', () => {
     expect(deleteSpy).toHaveBeenCalledWith('/public/capture-sessions/42', { headers: { 'X-Capture-Token': 'ct_sec_capture' } });
     expect(onCancel).toHaveBeenCalled();
   });
+
+  describe('flash', () => {
+    const torchCamera = () => {
+      const applyConstraints = vi.fn().mockResolvedValue(undefined);
+      const track = { stop: vi.fn(), getCapabilities: () => ({ torch: true }), applyConstraints };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track], getVideoTracks: () => [track] }) },
+      });
+      return applyConstraints;
+    };
+
+    it('offers no flash control when the camera reports no torch', async () => {
+      renderCapture();
+
+      await screen.findByRole('button', { name: 'Capture receipt' });
+      expect(screen.queryByRole('button', { name: /^Flash:/ })).not.toBeInTheDocument();
+    });
+
+    it('starts off, opens the other two modes, and keeps the light on when On is chosen', async () => {
+      const applyConstraints = torchCamera();
+      const user = userEvent.setup();
+      renderCapture();
+
+      await user.click(await screen.findByRole('button', { name: 'Flash: Off' }));
+      // By accessible name: the Auto icon carries a decorative "A" that textContent would include.
+      expect(screen.getAllByRole('menuitem')).toHaveLength(2);
+      expect(screen.getByRole('menuitem', { name: 'Auto' })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('menuitem', { name: 'On' }));
+
+      expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
+      expect(await screen.findByRole('button', { name: 'Flash: On' })).toBeInTheDocument();
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('lights a dim shot in Auto and turns the light back off', async () => {
+      const applyConstraints = torchCamera();
+      evaluateCanvasMock.mockReturnValue({ ...readable, brightness: 40 });
+      const user = userEvent.setup();
+      renderCapture();
+
+      await user.click(await screen.findByRole('button', { name: 'Flash: Off' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Auto' }));
+      applyConstraints.mockClear();
+      await user.click(screen.getByRole('button', { name: 'Capture receipt' }));
+
+      expect(await screen.findByRole('button', { name: 'Captured sections (1)' }, { timeout: 2000 })).toBeInTheDocument();
+      expect(applyConstraints.mock.calls).toEqual([
+        [{ advanced: [{ torch: true }] }],
+        [{ advanced: [{ torch: false }] }],
+      ]);
+    });
+
+    it('leaves the light off in Auto when the frame is already bright enough', async () => {
+      const applyConstraints = torchCamera();
+      const user = userEvent.setup();
+      renderCapture();
+
+      await user.click(await screen.findByRole('button', { name: 'Flash: Off' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Auto' }));
+      applyConstraints.mockClear();
+      await user.click(screen.getByRole('button', { name: 'Capture receipt' }));
+
+      expect(await screen.findByRole('button', { name: 'Captured sections (1)' })).toBeInTheDocument();
+      expect(applyConstraints).not.toHaveBeenCalled();
+    });
+  });
 });

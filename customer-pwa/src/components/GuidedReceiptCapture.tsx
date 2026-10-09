@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bell, Camera, CheckCircle2, LoaderCircle, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Bell, Camera, CheckCircle2, LoaderCircle, RotateCcw, Zap, ZapOff } from 'lucide-react';
 import { apiClient, type CaptureSessionResponse, type FormalReportResponse } from '../api/client';
 import {
   buildReceiptReportPayload,
@@ -51,6 +51,24 @@ const ISSUE_TEXT: Record<FrameIssue, { flag: string; one: string; many: string; 
 
 const MIXED_ADVICE = 'Retake them in even light.';
 
+// Browsers expose a continuous torch on the video track and no strobe, so "auto" is emulated: the
+// light comes on for one shot when the framed area measures dark.
+type FlashMode = 'off' | 'auto' | 'on';
+const FLASH_MODES: FlashMode[] = ['off', 'auto', 'on'];
+const FLASH_LABEL: Record<FlashMode, string> = { off: 'Off', auto: 'Auto', on: 'On' };
+
+// Device calibration knobs: cameras differ in how they meter and how fast exposure settles, so
+// tune these on real phones. Brightness is mean luma 0-255; the "too dark" advisory fires at 25,
+// and the light should come on well before a photo is that far gone.
+const AUTO_FLASH_BRIGHTNESS = 70;
+const AUTO_FLASH_SETTLE_MS = 600;
+
+const FlashIcon: React.FC<{ mode: FlashMode }> = ({ mode }) => {
+  if (mode === 'off') return <ZapOff size={20} aria-hidden="true" />;
+  if (mode === 'on') return <Zap size={20} color="#fbbf24" aria-hidden="true" />;
+  return <span className="receipt-flash-auto" aria-hidden="true"><Zap size={20} /><b>A</b></span>;
+};
+
 export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   session,
   storeName,
@@ -75,6 +93,11 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
   const galleryTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [flashMode, setFlashMode] = useState<FlashMode>('off');
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [flashMenuOpen, setFlashMenuOpen] = useState(false);
+  const flashRef = useRef<HTMLDivElement | null>(null);
+  const capturingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const guideRef = useRef<HTMLDivElement | null>(null);
@@ -105,6 +128,12 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
         return;
       }
       streamRef.current = stream;
+      const capabilities = stream.getVideoTracks?.()[0]?.getCapabilities?.() as
+        | (MediaTrackCapabilities & { torch?: boolean })
+        | undefined;
+      setTorchSupported(Boolean(capabilities?.torch));
+      // A reopened camera is a fresh track with its light off, so the control must say so.
+      setFlashMode('off');
       if (videoRef.current) videoRef.current.srcObject = stream;
       setCaptureState('ready');
     } catch {
@@ -132,7 +161,46 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
 
-  const captureFrame = useCallback(async (): Promise<{ blob: Blob; issue: FrameIssue | null } | null> => {
+  useEffect(() => {
+    if (!flashMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!flashRef.current?.contains(event.target as Node)) setFlashMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFlashMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [flashMenuOpen]);
+
+  const setTorch = async (on: boolean): Promise<boolean> => {
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    if (!track) return false;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const selectFlashMode = async (mode: FlashMode) => {
+    setFlashMenuOpen(false);
+    if (await setTorch(mode === 'on')) {
+      setFlashMode(mode);
+      setError('');
+    } else {
+      setError('The flashlight could not be changed on this device.');
+    }
+  };
+
+  const captureFrame = useCallback(async (): Promise<{ blob: Blob; issue: FrameIssue | null; brightness: number | null } | null> => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0 || video.videoHeight === 0) return null;
@@ -156,17 +224,42 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
     // warning about something that was never checked.
     const quality = evaluateCanvas(canvas);
     const issue = quality ? qualityIssue(quality) : null;
+    const brightness = quality?.brightness ?? null;
     const maximumBytes = session.limits?.max_frame_bytes ?? 2 * 1024 * 1024;
     let result: Blob | null = null;
     for (const encodeQuality of [0.86, 0.72, 0.58]) {
       result = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', encodeQuality));
-      if (!result || result.size <= maximumBytes) return result ? { blob: result, issue } : null;
+      if (!result || result.size <= maximumBytes) return result ? { blob: result, issue, brightness } : null;
     }
-    return result ? { blob: result, issue } : null;
+    return result ? { blob: result, issue, brightness } : null;
   }, [session.limits?.max_frame_bytes]);
 
+  const captureWithFlash = async () => {
+    let captured = await captureFrame();
+    // ponytail: the first pass encodes a JPEG that is thrown away when the light fires. Split the
+    // measurement from the encode if shutter lag is ever noticed.
+    if (
+      captured && flashMode === 'auto' && torchSupported
+      && captured.brightness !== null && captured.brightness < AUTO_FLASH_BRIGHTNESS
+      && await setTorch(true)
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, AUTO_FLASH_SETTLE_MS));
+      captured = await captureFrame();
+      await setTorch(false);
+    }
+    return captured;
+  };
+
   const capture = async () => {
-    const captured = await captureFrame();
+    // The auto-flash wait is long enough for a second tap, which would start an overlapping capture.
+    if (capturingRef.current) return;
+    capturingRef.current = true;
+    let captured: Awaited<ReturnType<typeof captureFrame>>;
+    try {
+      captured = await captureWithFlash();
+    } finally {
+      capturingRef.current = false;
+    }
     if (!captured) {
       setError('Hold the receipt in the guide and wait for the camera to focus.');
       return;
@@ -417,6 +510,30 @@ export const GuidedReceiptCapture: React.FC<GuidedReceiptCaptureProps> = ({
                 </button>
               ) : (
                 <span className="receipt-capture-roll receipt-capture-roll--empty" aria-hidden="true" />
+              )}
+              {/* Hidden where the browser reports no torch, rather than offering a dead control. */}
+              {torchSupported && (
+                <div className="receipt-flash" ref={flashRef}>
+                  {flashMenuOpen && (
+                    <div className="receipt-flash-menu" role="menu" aria-label="Flash">
+                      {FLASH_MODES.filter((mode) => mode !== flashMode).map((mode) => (
+                        <button key={mode} type="button" role="menuitem" onClick={() => void selectFlashMode(mode)}>
+                          <FlashIcon mode={mode} /> {FLASH_LABEL[mode]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="receipt-camera-icon-button"
+                    aria-haspopup="menu"
+                    aria-expanded={flashMenuOpen}
+                    aria-label={`Flash: ${FLASH_LABEL[flashMode]}`}
+                    onClick={() => setFlashMenuOpen((open) => !open)}
+                  >
+                    <FlashIcon mode={flashMode} />
+                  </button>
+                </div>
               )}
             </div>
 

@@ -4523,6 +4523,54 @@ body {
   text-align: center;
 }
 
+/* Sits between the camera roll and the shutter. */
+.receipt-flash {
+  position: relative;
+  margin-inline: auto;
+}
+
+/* Opens upward and out of the flow: the control row must stay exactly one row, because the frame
+   above it is the crop region. */
+.receipt-flash-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.receipt-flash-menu button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid rgb(255 255 255 / 26%);
+  border-radius: 999px;
+  background: rgb(2 6 23 / 84%);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.receipt-flash-auto {
+  position: relative;
+  display: inline-flex;
+}
+
+.receipt-flash-auto b {
+  position: absolute;
+  right: -7px;
+  bottom: -4px;
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
 .receipt-capture-upload {
   min-height: 44px;
   padding: 0 14px;
