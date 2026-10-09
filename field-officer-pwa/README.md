@@ -8,6 +8,8 @@ Installable React PWA for DTI field officers. Accounts are issued from Admin Use
 2. Run `npm install`.
 3. Run `npm run dev` (defaults to `http://localhost:5175`).
 
+Only one tab per browser may hold the workspace; a second one shows "Workspace already open". Set `VITE_DISABLE_TAB_LOCK=true` to skip that guard when previewing several viewports at once. Two live copies can overwrite each other's drafts and upload queue, so leave it unset wherever real field work is stored.
+
 The first sign-in must be online. The Admin-issued password is the officer's final credential, followed by creation of a four-digit device PIN. Officers can change that PIN from Profile, including offline, by entering the current PIN and confirming a new one. A random AES-GCM data key protects cached field data in IndexedDB and is wrapped by the PIN-derived key. Supported devices may also enable WebAuthn PRF biometric unlock while retaining the PIN fallback.
 
 ## Production configuration

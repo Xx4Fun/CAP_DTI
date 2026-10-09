@@ -58,6 +58,8 @@ export const fieldNoticeDuration = (kind: FieldNotice['kind']) => kind === 'succ
 const GUIDE_VERSION = 'v1'
 const guideKey = (userId: number) => `field-guide:${userId}:${GUIDE_VERSION}`
 const TAB_LOCK_NAME = 'price-watch-field-app'
+// VITE_DISABLE_TAB_LOCK=true skips the one-tab guard for multi-viewport previews. Two live copies can overwrite each other's drafts and queue.
+const tabLocks = () => import.meta.env.VITE_DISABLE_TAB_LOCK === 'true' || typeof navigator === 'undefined' ? undefined : navigator.locks
 const DRAFT_SAVE_DEBOUNCE_MS = 750
 const SYNC_RETRY_CHECK_MS = 30_000
 const GPS_REBIND_IMPROVEMENT_METRES = 5
@@ -71,7 +73,7 @@ const EMPTY_BOOTSTRAP: BootstrapData = {
 
 export default function App() {
   const [gate, setGate] = useState<Gate>('checking')
-  const [tabLock, setTabLock] = useState<'pending' | 'owned' | 'blocked'>(() => typeof navigator !== 'undefined' && navigator.locks ? 'pending' : 'owned')
+  const [tabLock, setTabLock] = useState<'pending' | 'owned' | 'blocked'>(() => tabLocks() ? 'pending' : 'owned')
   const [tabLockAttempt, setTabLockAttempt] = useState(0)
   const [archivedVisits, setArchivedVisits] = useState<ArchivedVisit[]>([])
   const [storagePersisted, setStoragePersisted] = useState<boolean | null>(null)
@@ -138,10 +140,11 @@ export default function App() {
   // One tab owns the workspace: two tabs would overwrite each other's encrypted queue and drafts.
   // StrictMode-safe: cleanup releases and cancels, and a remount requests only after the previous request settles.
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.locks) return
+    const locks = tabLocks()
+    if (!locks) return
     let cancelled = false
     let release: (() => void) | undefined
-    const request = previousLockRequest.current.catch(() => undefined).then(() => cancelled ? undefined : navigator.locks.request(TAB_LOCK_NAME, { ifAvailable: true }, (lock) => {
+    const request = previousLockRequest.current.catch(() => undefined).then(() => cancelled ? undefined : locks.request(TAB_LOCK_NAME, { ifAvailable: true }, (lock) => {
       if (cancelled) return undefined
       if (!lock) { setTabLock('blocked'); return undefined }
       setTabLock('owned')

@@ -102,10 +102,12 @@ describe('field workspace security flow', () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
     Object.defineProperty(window.navigator, 'geolocation', { configurable: true, value: undefined })
     Object.defineProperty(window.navigator, 'locks', { configurable: true, value: undefined })
+    // Vitest loads .env.local, so a developer's local opt-out must not switch the guard off under test.
+    vi.stubEnv('VITE_DISABLE_TAB_LOCK', '')
     fixtures.vault.requestPersistentStorage.mockResolvedValue(true)
   })
 
-  afterEach(() => { cleanup(); vi.useRealTimers() })
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllEnvs() })
 
   it.each(['directory', 'home', 'assigned'] as const)('prefills the configured Manager through the %s entry path', async (entry) => {
     const store = { id: 7, store_name: 'Market One', address: 'San Jose', latitude: 10.74, longitude: 121.98, is_active: true, owner_name: 'Registered Owner', current_representative: { name: 'Maria Manager', title: 'Manager', updated_at: '2026-10-04T01:00:00Z' } }
@@ -1632,6 +1634,19 @@ describe('field workspace security flow', () => {
 
       expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: 'Workspace already open' })).not.toBeInTheDocument()
+    })
+
+    it('skips the tab lock when VITE_DISABLE_TAB_LOCK is true, even while another tab owns the workspace', async () => {
+      const locks = lockManager()
+      void locks.request('price-watch-field-app', {}, () => new Promise<void>(() => undefined))
+      Object.defineProperty(window.navigator, 'locks', { configurable: true, value: locks })
+      fixtures.vault.hasVault.mockResolvedValue(true)
+      vi.stubEnv('VITE_DISABLE_TAB_LOCK', 'true')
+      render(<App />)
+
+      expect(await screen.findByLabelText('4-digit device PIN')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Workspace already open' })).not.toBeInTheDocument()
+      expect(locks.request).toHaveBeenCalledTimes(1)
     })
 
     it('saves rapid GPS draft changes once, ignores small improvements, and flushes when the page is hidden', async () => {
