@@ -724,6 +724,9 @@ export interface StoreMessageRecord {
   body: string | null
   read_at: string | null
   created_at: string
+  edited_at?: string | null
+  /** Set when the vendor deleted the message; the server then returns no body or attachment. */
+  deleted_at?: string | null
   attachment: { name: string; mime: string; size: number } | null
 }
 

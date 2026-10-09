@@ -249,8 +249,8 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
             {thread.has_more && <button type="button" className="admin-button secondary comms-more" onClick={loadEarlier}>Load earlier messages</button>}
             {timeline.length ? timeline.map((entry) => entry.message ? (
               <div key={`m${entry.message.id}`} className={`comms-message-row ${entry.message.sender_side}`}>
-                <div className={`comms-bubble ${entry.message.sender_side}`}>
-                  {entry.message.body && <p>{entry.message.body}</p>}
+                <div className={`comms-bubble ${entry.message.sender_side}${entry.message.deleted_at ? ' deleted' : ''}`}>
+                  {entry.message.deleted_at ? <p>Message deleted</p> : entry.message.body && <p>{entry.message.body}</p>}
                   {entry.message.attachment && (
                     isImageAttachment(entry.message.attachment) ? (
                       <MessageImageAttachment
@@ -273,6 +273,7 @@ export function StoreCommunications({ onNavigate }: { onNavigate?: NavigateTo })
                       : (entry.message.sender_name || 'Vendor')}
                   </span>
                   <span>{time(entry.message.created_at)}</span>
+                  {entry.message.edited_at && !entry.message.deleted_at && <span> · Edited</span>}
                   {entry.message.sender_side === 'dti' && <span>{entry.message.read_at ? ' · Seen' : ' · Sent'}</span>}
                 </div>
               </div>

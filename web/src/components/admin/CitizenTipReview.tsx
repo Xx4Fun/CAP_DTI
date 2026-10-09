@@ -1296,18 +1296,28 @@ export const CitizenTipReview: React.FC = () => {
                         <Send size={14} aria-hidden="true" /> Refer this report for field verification
                       </label>
                       {verificationChosen && (
-                        <label className="consumer-report-field">
-                          Field Officer
-                          <select
-                            aria-label="Field Officer"
-                            required
-                            value={fieldOfficerId}
-                            onChange={(event) => setFieldOfficerId(event.target.value)}
+                        <>
+                          <label className="consumer-report-field">
+                            Field Officer
+                            <select
+                              aria-label="Field Officer"
+                              required
+                              value={fieldOfficerId}
+                              onChange={(event) => setFieldOfficerId(event.target.value)}
+                            >
+                              <option value="">Select active officer</option>
+                              {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            className="admin-button secondary"
+                            disabled={decisionSaving || !reason.trim() || !fieldOfficerId}
+                            onClick={() => void requestVerification()}
                           >
-                            <option value="">Select active officer</option>
-                            {fieldOfficers.map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
-                          </select>
-                        </label>
+                            <Send size={15} aria-hidden="true" /> Assign field verification
+                          </button>
+                        </>
                       )}
                     </section>
                   )}
@@ -1354,16 +1364,6 @@ export const CitizenTipReview: React.FC = () => {
                       >
                         <ShieldCheck size={15} aria-hidden="true" />
                         {decisionSaving ? 'Saving decision...' : 'Record finding'}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="admin-button secondary action-referral"
-                        disabled={decisionSaving || !reason || !verificationChosen || !fieldOfficerId}
-                        title={verificationChosen ? undefined : 'Tick "Refer this report for field verification" above to enable'}
-                        onClick={() => void requestVerification()}
-                      >
-                        <Send size={15} aria-hidden="true" /> Refer for field verification
                       </button>
                     </div>
 

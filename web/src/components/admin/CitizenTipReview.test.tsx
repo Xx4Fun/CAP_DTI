@@ -272,9 +272,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getAllByText(/Super Extra Rice 1kg/i).length).toBeGreaterThan(0)
     expect(screen.getByText('OCR FLAG — REVIEW')).toBeInTheDocument()
 
-    // Four decision controls, each named for what it writes. Closure labels deliberately do not
+    // Three decision controls, each named for what it writes. Closure labels deliberately do not
     // claim a determination: dismiss and reject record no finding at all.
-    expect(screen.getByRole('button', { name: /Refer for field verification/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Refer for field verification/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Assign field verification/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Record finding/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Resolve without a finding/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Reject report/i })).toBeInTheDocument()
@@ -354,7 +355,7 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     await user.click(screen.getByRole('button', { name: /Require Field Verification/i }))
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Field Officer' }), '9')
     await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the shelf price in person.')
-    await user.click(screen.getByRole('button', { name: /Refer for field verification/i }))
+    await user.click(screen.getByRole('button', { name: /Assign field verification/i }))
 
     expect(requestFieldVerification).toHaveBeenCalledWith(101, { reason: 'Verify the shelf price in person.', field_officer_id: 9 })
     expect(adminApi.decideReport).not.toHaveBeenCalled()
@@ -767,6 +768,10 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
   })
 
   it('lets an item report be referred for field verification', async () => {
+    requestFieldVerification.mockResolvedValue({
+      id: 301, status: 'claimed', reason: 'Verify the receipt price at the store.',
+      store_id: 22, claimed_by: 9,
+    })
     mockReportPage([{
       ...mockReports[0],
       evidence_available: false,
@@ -782,6 +787,18 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     // normal case — the officer selector never rendered and referral was impossible.
     await user.click(screen.getByRole('checkbox', { name: /Refer this report for field verification/i }))
     expect(await screen.findByRole('combobox', { name: 'Field Officer' })).toBeInTheDocument()
+    const assignButton = screen.getByRole('button', { name: /Assign field verification/i })
+    expect(assignButton).toBeDisabled()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Field Officer' }), '9')
+    expect(assignButton).toBeDisabled()
+    await user.type(screen.getByRole('textbox', { name: /Decision reason/i }), 'Verify the receipt price at the store.')
+    expect(assignButton).toBeEnabled()
+    await user.click(assignButton)
+    expect(requestFieldVerification).toHaveBeenCalledWith(101, {
+      reason: 'Verify the receipt price at the store.', field_officer_id: 9,
+    })
+    expect(adminApi.decideReport).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Assign field verification/i })).not.toBeInTheDocument()
   })
 
   it('shows the price freeze protocol when the receipt falls inside a declared emergency', async () => {
