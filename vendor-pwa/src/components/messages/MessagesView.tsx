@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, FileText, Paperclip, Send, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, FileText, MoreVertical, Paperclip, Pencil, Send, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { Conversation, ConversationNotice, StoreMessage } from '../../app/types';
 import { CHAT_ATTACHMENT_TYPES, CHAT_MAX_BODY, CHAT_MAX_BYTES, OUTCOME_LABELS, formatDate } from '../../app/rules';
 import { apiError, isSessionInvalid, vendorApi } from '../../services/vendorApi';
 import { accountFor, enqueue, snapshot, synchronize } from '../../offline/workspace';
 import { useDraft } from '../../offline/useDraft';
-import { LocalWork } from '../../offline/LocalWork';
+import { useLocalWork } from '../../offline/LocalWork';
 import { storageFailure } from '../../offline/repository';
 
 const POLL_MS = 10_000;
@@ -40,9 +40,44 @@ const mergeMessages = (current: StoreMessage[], incoming: StoreMessage[]) => {
 /** Changes when a notice is added or changes state, so the portal's notice list can be refreshed to match. */
 const noticeSignature = (conversation: Conversation) => conversation.notices.map((notice) => `${notice.id}:${notice.status}:${notice.delivery_state}`).join('|');
 
+const PENDING_LABELS = { pending: 'Waiting to send', sending: 'Sending…', attention: 'Not sent', received: '' };
+
+/** The options button beside one of the vendor's own bubbles. Only one menu is open at a time. */
+const BubbleMenu: React.FC<{ open: boolean; onToggle: () => void; onClose: () => void; items: { label: string; icon: React.ReactNode; run: () => void }[] }> = ({ open, onToggle, onClose, items }) => (
+  <div className="vendor-bubble-actions">
+    <button type="button" className="vendor-bubble-kebab" aria-haspopup="menu" aria-expanded={open} aria-label="Message options" onClick={onToggle}>
+      <MoreVertical size={18} aria-hidden="true" />
+    </button>
+    {open && (
+      <div
+        className="vendor-bubble-menu"
+        role="menu"
+        ref={(node) => node?.scrollIntoView?.({ block: 'nearest' })}
+        onKeyDown={(event) => {
+          const item = document.activeElement as HTMLElement | null;
+          if (event.key === 'Escape') { (event.currentTarget.previousElementSibling as HTMLElement).focus(); onClose(); }
+          if (event.key === 'ArrowDown') { event.preventDefault(); ((item?.nextElementSibling ?? event.currentTarget.firstElementChild) as HTMLElement).focus(); }
+          if (event.key === 'ArrowUp') { event.preventDefault(); ((item?.previousElementSibling ?? event.currentTarget.lastElementChild) as HTMLElement).focus(); }
+        }}
+      >
+        {items.map((item, index) => (
+          <button key={item.label} type="button" role="menuitem" autoFocus={index === 0} onClick={() => { onClose(); item.run(); }}>{item.icon}{item.label}</button>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
 export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSessionInvalid, onViewNotice, onRead }) => {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [error, setError] = useState('');
+  const local = useLocalWork(token);
+  // Sent from this device but not yet accepted by DTI. Delivered ones arrive in the thread itself.
+  const queued = local.entries.filter((entry) => entry.operation === 'message' && entry.storeId === storeId && entry.state !== 'received')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const [menuFor, setMenuFor] = useState<number | string | null>(null);
+  const [editing, setEditing] = useState<{ id: number; text: string; original: string } | null>(null);
+  const [changing, setChanging] = useState(false);
   const composer = useDraft(accountFor(token), `message/${storeId}`, { storeId, draft: '', file: null as File | null }, (value) => !!value.draft || !!value.file);
   const { draft, file } = composer.value;
   const setDraft = (next: string) => composer.update((value) => ({ ...value, draft: next }));
@@ -98,7 +133,38 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     ...conversation.notices.flatMap(noticeEntries),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()) : [], [conversation]);
 
-  useEffect(() => { endRef.current?.scrollIntoView?.({ block: 'end' }); }, [entries.length]);
+  useEffect(() => { endRef.current?.scrollIntoView?.({ block: 'end' }); }, [entries.length, queued.length]);
+
+  useEffect(() => {
+    if (menuFor === null) return;
+    const close = (event: Event) => { if (!(event.target as Element).closest?.('.vendor-bubble-actions')) setMenuFor(null); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menuFor]);
+
+  /** Edits and deletes need a connection; the server's copy replaces ours, so the thread shows what DTI sees. */
+  const change = async (request: Promise<StoreMessage>) => {
+    if (changing) return;
+    setChanging(true); setError('');
+    try {
+      const result = await request;
+      setConversation((current) => current && { ...current, messages: mergeMessages(current.messages, [result]) });
+      setEditing(null);
+    } catch (reason) { fail(reason, 'Your message could not be changed. Check your connection and try again.'); }
+    finally { setChanging(false); }
+  };
+
+  const saveEdit = (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    const text = editing?.text.trim();
+    if (!editing || !text) return;
+    if (text === editing.original) return setEditing(null);
+    void change(vendorApi.editMessage(token, storeId, editing.id, text));
+  };
+
+  const deleteMessage = (message: StoreMessage) => {
+    if (window.confirm('Delete this message? DTI Antique will see that a message was deleted.')) void change(vendorApi.deleteMessage(token, storeId, message.id));
+  };
 
   const chooseFile = (candidate?: File) => {
     if (!candidate) return;
@@ -140,6 +206,62 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
     } catch (reason) { opened?.close(); fail(reason, 'The attachment could not be opened.'); }
   };
 
+  const messageBubble = (message: StoreMessage) => {
+    const mine = message.sender_side === 'vendor';
+    const bubble = (
+      <div className={`vendor-bubble ${mine ? 'mine' : 'theirs'}${message.deleted_at ? ' deleted' : ''}`}>
+        {message.deleted_at ? <p>{mine ? 'You deleted this message' : 'Message deleted'}</p> : editing?.id === message.id ? (
+          <form className="vendor-bubble-edit" onSubmit={saveEdit}>
+            <textarea
+              aria-label="Edit message"
+              autoFocus
+              rows={2}
+              maxLength={CHAT_MAX_BODY}
+              disabled={changing}
+              value={editing.text}
+              onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setEditing(null);
+                if (event.key === 'Enter' && !event.shiftKey) saveEdit(event);
+              }}
+            />
+            <div>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={changing} onClick={() => setEditing(null)}>Cancel</button>
+              <button type="submit" className="btn btn-secondary btn-sm" disabled={changing || !editing.text.trim() || editing.text.trim() === editing.original}>{changing ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        ) : message.body && <p>{message.body}</p>}
+        {message.attachment && (
+          <button type="button" className="vendor-bubble-file" onClick={() => void openAttachment(message)}>
+            <Paperclip size={14} aria-hidden="true" />{message.attachment.name}
+          </button>
+        )}
+        <span className="vendor-bubble-meta">
+          {mine ? 'You' : 'DTI Antique'} · {formatDate(message.created_at, true)}
+          {message.edited_at && !message.deleted_at && ' · Edited'}
+          {mine && !message.deleted_at && (message.read_at ? ' · Seen' : ' · Sent')}
+        </span>
+      </div>
+    );
+    if (!mine) return <React.Fragment key={`m${message.id}`}>{bubble}</React.Fragment>;
+    return (
+      <div key={`m${message.id}`} className="vendor-bubble-row">
+        {!message.deleted_at && editing?.id !== message.id && (
+          <BubbleMenu
+            open={menuFor === message.id}
+            onToggle={() => setMenuFor(menuFor === message.id ? null : message.id)}
+            onClose={() => setMenuFor(null)}
+            items={[
+              ...(message.body ? [{ label: 'Edit', icon: <Pencil size={15} aria-hidden="true" />, run: () => setEditing({ id: message.id, text: message.body!, original: message.body! }) }] : []),
+              { label: 'Delete', icon: <Trash2 size={15} aria-hidden="true" />, run: () => deleteMessage(message) },
+            ]}
+          />
+        )}
+        {bubble}
+      </div>
+    );
+  };
+
   return (
     <section className="v-card vendor-messages" aria-label="Messages with DTI Antique">
       <header className="vendor-messenger-header" aria-label="Conversation with DTI Antique">
@@ -168,20 +290,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
         {!conversation && !error && <p className="vendor-messages-empty">Loading messages…</p>}
         {conversation?.has_more && <button type="button" className="btn btn-secondary btn-sm vendor-messages-more" onClick={loadEarlier}>Load earlier messages</button>}
         {conversation && entries.length === 0 && <p className="vendor-messages-empty">No messages yet. DTI Antique will reply here.</p>}
-        {entries.map((entry) => entry.message ? (
-          <div key={`m${entry.message.id}`} className={`vendor-bubble ${entry.message.sender_side === 'vendor' ? 'mine' : 'theirs'}`}>
-            {entry.message.body && <p>{entry.message.body}</p>}
-            {entry.message.attachment && (
-              <button type="button" className="vendor-bubble-file" onClick={() => void openAttachment(entry.message!)}>
-                <Paperclip size={14} aria-hidden="true" />{entry.message.attachment.name}
-              </button>
-            )}
-            <span className="vendor-bubble-meta">
-              {entry.message.sender_side === 'vendor' ? 'You' : 'DTI Antique'} · {formatDate(entry.message.created_at, true)}
-              {entry.message.sender_side === 'vendor' && (entry.message.read_at ? ' · Seen' : ' · Sent')}
-            </span>
-          </div>
-        ) : entry.event ? (
+        {entries.map((entry) => entry.message ? messageBubble(entry.message) : entry.event ? (
           <button key={`e${entry.notice!.id}-${entry.event}`} type="button" className="vendor-notice-event" onClick={() => onViewNotice(entry.notice!.id)}>
             <FileText size={13} aria-hidden="true" />{entry.notice!.control_number ?? 'Notice'} · {entry.event} · {formatDate(entry.at, true)}
           </button>
@@ -198,12 +307,33 @@ export const MessagesView: React.FC<MessagesViewProps> = ({ token, storeId, onSe
             <span className="vendor-notice-card-cta">View notice</span>
           </button>
         ))}
+        {queued.map((entry) => {
+          const payload = entry.payload as { body?: string; attachment?: File };
+          return (
+            <div key={entry.uuid} className="vendor-bubble-row">
+              {entry.state !== 'sending' && (
+                <BubbleMenu
+                  open={menuFor === entry.uuid}
+                  onToggle={() => setMenuFor(menuFor === entry.uuid ? null : entry.uuid)}
+                  onClose={() => setMenuFor(null)}
+                  items={[{ label: 'Delete', icon: <Trash2 size={15} aria-hidden="true" />, run: () => void local.discard('outbox', entry.uuid) }]}
+                />
+              )}
+              <div className="vendor-bubble mine pending">
+                {payload.body && <p>{payload.body}</p>}
+                {payload.attachment && <span className="vendor-bubble-file"><Paperclip size={14} aria-hidden="true" />{payload.attachment.name}</span>}
+                <span className="vendor-bubble-meta" role={entry.state === 'attention' ? 'alert' : undefined}>
+                  You · {PENDING_LABELS[entry.state]}{entry.state === 'attention' && entry.reason ? ` · ${entry.reason}` : ''}
+                </span>
+              </div>
+            </div>
+          );
+        })}
         <div ref={endRef} />
       </div>
 
       {error && <div role="alert" className="portal-error"><AlertTriangle size={16} /><span>{error}</span></div>}
-      <LocalWork token={token} storeId={storeId} operation="message" hideDraftKey={`message/${storeId}`} />
-      <p role="status">{composer.status}</p>
+      <p role="status" className={composer.status.startsWith('Save failed') ? undefined : 'sr-only'}>{composer.status}</p>
       {composer.status.startsWith('Save failed') && <button className="btn btn-secondary btn-sm" onClick={composer.retry}>Retry saving draft</button>}
 
       <form className="vendor-messages-composer" onSubmit={(event) => void send(event)}>

@@ -4,9 +4,7 @@ import {
   AlertTriangle,
   FileWarning,
   FileText,
-  Send,
   BookOpen,
-  Calculator,
   ChevronRight,
   CalendarCheck2,
   MapPin,
@@ -181,18 +179,6 @@ export const ComplianceScorecard: React.FC<ComplianceScorecardProps> = ({
                   <div className="service-arrow"><ChevronRight size={18} /></div>
                 </button>
 
-                <button type="button" className="service-card service-rebuttal" onClick={() => onNavigateTab('rebuttals')}>
-                  <div className="service-top">
-                    <div className="service-icon-wrap icon-emerald"><Send size={22} /></div>
-                    <span className="service-tag tag-clean">Responses</span>
-                  </div>
-                  <div className="service-body">
-                    <strong>Submitted Responses</strong>
-                    <span>Explanations and evidence sent to DTI</span>
-                  </div>
-                  <div className="service-arrow"><ChevronRight size={18} /></div>
-                </button>
-
                 <button type="button" className="service-card service-srp" onClick={() => onNavigateTab('srp')}>
                   <div className="service-top">
                     <div className="service-icon-wrap icon-amber"><BookOpen size={22} /></div>
@@ -201,18 +187,6 @@ export const ComplianceScorecard: React.FC<ComplianceScorecardProps> = ({
                   <div className="service-body">
                     <strong>Official DTI SRP</strong>
                     <span>Current price references</span>
-                  </div>
-                  <div className="service-arrow"><ChevronRight size={18} /></div>
-                </button>
-
-                <button type="button" className="service-card service-calc" onClick={() => onNavigateTab('srp')}>
-                  <div className="service-top">
-                    <div className="service-icon-wrap icon-purple"><Calculator size={22} /></div>
-                    <span className="service-tag tag-clean">Tool</span>
-                  </div>
-                  <div className="service-body">
-                    <strong>Price Self-Check</strong>
-                    <span>Compare a shelf price with the reference</span>
                   </div>
                   <div className="service-arrow"><ChevronRight size={18} /></div>
                 </button>
@@ -238,10 +212,6 @@ export const ComplianceScorecard: React.FC<ComplianceScorecardProps> = ({
                   <h3>Price &amp; Notice Guidance</h3>
                 </div>
               </div>
-
-              <p className="guidance-text">
-                Price self-check results are provisional comparisons. They do not establish a legal finding.
-              </p>
 
               <div className="guidance-items-list">
                 <div className="guidance-item-row">

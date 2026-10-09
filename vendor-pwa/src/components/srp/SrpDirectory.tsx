@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Calculator, AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
+import { Search, AlertTriangle, RotateCw } from 'lucide-react';
 import type { SrpCatalog, SrpItem } from '../../app/types';
 import { analyzeReference, formatPeso } from '../../app/rules';
 
@@ -10,31 +10,19 @@ interface SrpDirectoryProps {
   onRetry: () => void;
 }
 
-// SRP revisions create new bulletin ids, so the self-check follows the commodity, not the row id.
+const PAGE_SIZE = 10;
+
+// SRP revisions create new bulletin ids, so rows are keyed by the commodity, not the row id.
 const keyOf = (item: SrpItem) => item.commodity_key ?? `id:${item.id}`;
 const hasReference = (item: SrpItem) => item.reference.status === 'available' && item.reference.value !== null;
-
-function formatCommodityOption(item: SrpItem) {
-  let name = item.commodity_name.trim();
-  const unit = item.unit ? item.unit.trim() : '';
-  // Deduplicate consecutive identical parenthesized tokens like "(#03) (#03)"
-  name = name.replace(/(\([^)]+\))\s+\1/g, '$1');
-  if (unit && !name.toLowerCase().endsWith(`(${unit.toLowerCase()})`)) {
-    name = `${name} (${unit})`;
-  }
-  return `${name} — ${formatPeso(item.reference.value)}`;
-}
 
 export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRetry, stale }) => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [classificationFilter, setClassificationFilter] = useState('ALL');
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  // null = not edited yet, so the field starts at the reference price; '' is a deliberately cleared field.
-  const [inputPrice, setInputPrice] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
-  const available = useMemo(() => items.filter(hasReference), [items]);
   const categories = useMemo(() => Array.from(new Set(items.map((item) => item.category).filter((value): value is string => !!value))), [items]);
   const classifications = useMemo(() => Array.from(new Set(items.map((item) => item.regulatory_classification).filter((value): value is string => !!value))), [items]);
 
@@ -56,109 +44,26 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
   }
   if (!catalog) return <div className="v-card portal-status" role="status">Loading price references…</div>;
 
-  const chosen = selectedKey === null ? available[0] ?? null : items.find((item) => keyOf(item) === selectedKey) ?? null;
-  const selected = chosen && hasReference(chosen) ? chosen : null;
-  // A chosen commodity that lost its reference (or left the catalog) is never swapped for another product.
-  const selectionLost = selectedKey !== null && !selected;
-  const shownPrice = inputPrice ?? String(selected?.reference.value ?? '');
-  const validPrice = /^\d+(?:\.\d{1,2})?$/.test(shownPrice) && Number.isFinite(Number(shownPrice));
-  const analysis = selected && validPrice ? analyzeReference(Number(shownPrice), selected.reference) : null;
-  const isEmergency = catalog.protocol.mode === 'emergency';
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  // Clamped, so a refresh that shortens the list never leaves the table on a page that no longer exists.
+  const current = Math.min(page, pageCount);
+  const start = (current - 1) * PAGE_SIZE;
+  const pageItems = filteredItems.slice(start, start + PAGE_SIZE);
 
   return (
     <div className="srp-directory-view">
       {(stale || error) && <p role="status">Saved price references — current regulatory data is unavailable. {error} <button type="button" onClick={onRetry}>Refresh</button></p>}
-      <div className="v-card-header" style={{ marginBottom: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>Official DTI Suggested Retail Price (SRP) Directory</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {isEmergency
-              ? `Price Freeze in effect${catalog.protocol.reference ? ` (${catalog.protocol.reference})` : ''}: covered goods use the official ceiling; other goods keep their SRP.`
-              : 'Current SRP references for basic necessities and prime commodities in San Jose de Buenavista'}
-          </p>
-        </div>
-      </div>
 
-      <div className="v-card" style={{ background: 'linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)', border: '1.5px solid #CBD5E1' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--dti-navy)', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Calculator size={18} />
-          </div>
-          <div>
-            <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--dti-navy)' }}>Shelf Price Self-Check</h3>
-            <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>A provisional comparison with the same reference DTI monitoring uses. It is not a legal finding.</p>
-          </div>
-        </div>
-
-        {available.length === 0 && !selectionLost ? (
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>No price reference is currently available.</p>
-        ) : (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginTop: '10px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" htmlFor="srp-commodity">Commodity</label>
-                <select
-                  id="srp-commodity"
-                  className="form-control"
-                  value={selected ? keyOf(selected) : ''}
-                  onChange={(event) => { setSelectedKey(event.target.value); setInputPrice(null); }}
-                >
-                  {selectionLost && <option value="" disabled>{chosen?.commodity_name ?? 'Previously selected commodity'} — reference unavailable</option>}
-                  {available.map((item) => (
-                    <option key={keyOf(item)} value={keyOf(item)}>{formatCommodityOption(item)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" htmlFor="intended-shelf-price">Your shelf price (₱)</label>
-                <input id="intended-shelf-price" type="number" step="0.01" min="0" className="form-control" value={shownPrice} disabled={!selected} onChange={(event) => {
-                  // Pin the commodity being checked the moment a price is typed, so a refresh cannot silently swap in another product.
-                  if (selectedKey === null && selected) setSelectedKey(keyOf(selected));
-                  setInputPrice(event.target.value);
-                }} />
-              </div>
-            </div>
-
-            {selectionLost ? (
-              <p role="status" style={{ fontSize: '0.8rem', color: 'var(--danger-color)', marginTop: '12px' }}>
-                The selected commodity no longer has an available price reference. Choose another commodity to compare.
-              </p>
-            ) : analysis && selected ? (
-              <div className="calc-result-box">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Result:</span>
-                  <span className={`badge ${analysis.forReview ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
-                    {analysis.forReview ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
-                    <span>{analysis.label}</span>
-                  </span>
-                </div>
-                <div className="calc-stat-row"><span style={{ color: 'var(--text-muted)' }}>Official Reference SRP:</span><strong>{formatPeso(selected.reference.value)}</strong></div>
-                <div className="calc-stat-row">
-                  <span style={{ color: 'var(--text-muted)' }}>For review from:</span>
-                  <strong>{formatPeso(analysis.reviewFrom)}</strong>
-                </div>
-                <div className="calc-stat-row">
-                  <span style={{ color: 'var(--text-muted)' }}>Difference from reference:</span>
-                  <strong>{analysis.variancePercent !== null ? `${analysis.variancePercent > 0 ? '+' : ''}${analysis.variancePercent.toFixed(1)}%` : '—'}</strong>
-                </div>
-              </div>
-            ) : (
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '12px' }}>{shownPrice === '' ? 'Enter a shelf price to compare it with the reference.' : 'Enter a nonnegative price with up to two decimal places.'}</p>
-            )}
-          </>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '14px' }}>
+        <div style={{ position: 'relative' }}>
           <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '11px' }} />
-          <input type="search" aria-label="Search commodities" className="form-control" placeholder="Search commodities..." value={search} onChange={(event) => setSearch(event.target.value)} style={{ paddingLeft: '32px' }} />
+          <input type="search" aria-label="Search commodities" className="form-control" placeholder="Search..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} style={{ paddingLeft: '32px' }} />
         </div>
-        <select aria-label="Filter by category" className="form-control" style={{ width: 'auto', minWidth: '150px' }} value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+        <select aria-label="Filter by category" className="form-control" style={{ textOverflow: 'ellipsis' }} value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}>
           <option value="ALL">All Categories</option>
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
-        <select aria-label="Filter by classification" className="form-control" style={{ width: 'auto', minWidth: '160px' }} value={classificationFilter} onChange={(event) => setClassificationFilter(event.target.value)}>
+        <select aria-label="Filter by classification" className="form-control" style={{ textOverflow: 'ellipsis' }} value={classificationFilter} onChange={(event) => { setClassificationFilter(event.target.value); setPage(1); }}>
           <option value="ALL">All Classifications</option>
           {classifications.map((classification) => <option key={classification} value={classification}>{classification}</option>)}
         </select>
@@ -179,7 +84,10 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => {
+              {pageItems.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No commodities match your search.</td></tr>
+              )}
+              {pageItems.map((item) => {
                 const reviewFrom = hasReference(item) && item.reference.value !== null
                   ? analyzeReference(item.reference.value, item.reference).reviewFrom
                   : null;
@@ -199,6 +107,16 @@ export const SrpDirectory: React.FC<SrpDirectoryProps> = ({ catalog, error, onRe
             </tbody>
           </table>
         </div>
+        {pageCount > 1 && (
+          <nav aria-label="SRP list pages" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', padding: '10px 14px', borderTop: '1px solid var(--border-color)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>Showing {start + 1}–{start + pageItems.length} of {filteredItems.length}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={current === 1} onClick={() => setPage(current - 1)}>Previous</button>
+              <span aria-live="polite">Page {current} of {pageCount}</span>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={current === pageCount} onClick={() => setPage(current + 1)}>Next</button>
+            </div>
+          </nav>
+        )}
       </div>
     </div>
   );

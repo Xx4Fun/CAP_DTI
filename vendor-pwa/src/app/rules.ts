@@ -110,7 +110,7 @@ export const formatDate = (value: string | null | undefined, withTime = false) =
 };
 
 /**
- * Provisional self-check, copied from the field app's analyzeWithReference:
+ * Provisional review threshold, copied from the field app's analyzeWithReference:
  * standard SRP is reviewed above +10%; an official emergency ceiling is reviewed above the ceiling itself.
  */
 export function analyzeReference(price: number, reference: SrpReference) {

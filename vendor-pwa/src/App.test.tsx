@@ -20,7 +20,7 @@ vi.mock('./services/vendorApi', async (importOriginal) => {
     vendorApi: {
       login: vi.fn(), logout: vi.fn(), changePassword: vi.fn(), overview: vi.fn(), notices: vi.fn(), document: vi.fn(),
       respond: vi.fn(), srp: vi.fn(), advisories: vi.fn(), preferences: vi.fn(), savePreferences: vi.fn(), acceptInvitation: vi.fn(),
-      conversation: vi.fn(), sendMessage: vi.fn(), messageAttachment: vi.fn(),
+      conversation: vi.fn(), sendMessage: vi.fn(), messageAttachment: vi.fn(), editMessage: vi.fn(), deleteMessage: vi.fn(),
     },
   };
 });
@@ -109,17 +109,19 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(title()).toBe('Communications');
   });
 
-  it('keeps submitted responses under the single Legal Notices menu entry', async () => {
+  it('shows the notices tab as a single list with no heading text or response history', async () => {
     signedIn();
     const user = userEvent.setup();
     const { container } = render(<App />);
 
     await screen.findByRole('heading', { name: 'Antique Grocery Mart' });
-    expect(screen.queryByRole('button', { name: /Rebuttal/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rebuttal|Submitted Responses/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Notices Tab' }));
-    await user.click(screen.getByRole('button', { name: /Response History/ }));
 
-    expect(screen.getByRole('heading', { name: 'Submitted Responses & Explanations' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Notice PM-2026-LOI-000011' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit Explanation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Response History|Issued Notices/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/DTI Legal Notices & Inquiries|Letters of Inquiry and Show Cause Orders issued to this establishment/)).not.toBeInTheDocument();
     expect(container.querySelector('.sidebar-nav-item.active')).toHaveTextContent('Legal Notices');
     expect(container.querySelector('.vendor-content-toolbar strong')).toHaveTextContent('Legal Notices');
   });
@@ -203,7 +205,10 @@ describe('PRICE-Watch Vendor Portal', () => {
       certified_under_oath: true,
       attachments: [{ file: expect.any(File), category: 'FREIGHT_BILL' }],
     }, expect.any(String)));
-    expect(await screen.findByRole('heading', { name: 'Submitted Responses & Explanations' })).toBeInTheDocument();
+    // Submitting returns to the notice list, where the notice now reads as under review.
+    const card = await screen.findByRole('article', { name: 'Notice PM-2026-LOI-000011' });
+    expect(await within(card).findByText('Under review')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Submit Explanation' })).not.toBeInTheDocument();
   });
 
   it('allows a sworn written explanation without attachments and opens the file chooser from a keyboard-reachable button', async () => {
@@ -343,73 +348,39 @@ describe('PRICE-Watch Vendor Portal', () => {
     expect(await within(screen.getByRole('dialog', { name: 'Letter of Inquiry' })).findByRole('button', { name: 'Start Response' })).toBeInTheDocument();
   });
 
-  it('applies the per-product reference rule in the SRP self-check', async () => {
+  it('shows the SRP guide as a paged list with no self-check', async () => {
     signedIn();
     const catalog: SrpCatalog = {
       protocol: { mode: 'emergency', reference: 'DECL-1' },
-      items: [srpItem(1, 'rice', 'Rice', 100, 'emergency_ceiling'), srpItem(2, 'soy-sauce', 'Soy Sauce', 100)],
+      items: Array.from({ length: 12 }, (_, index) => srpItem(index + 1, `item-${index + 1}`, `Commodity ${String(index + 1).padStart(2, '0')}`, 100)),
     };
     api.srp.mockResolvedValue(catalog);
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: 'SRP Guide Tab' }));
-    const price = await screen.findByLabelText('Your shelf price (₱)');
-    await user.clear(price);
-    await user.type(price, '105');
-    expect(screen.getByText('For review')).toBeInTheDocument();
+    expect(await screen.findByText('Commodity 10')).toBeInTheDocument();
+    expect(screen.queryByText('Commodity 11')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Shelf Price Self-Check|Suggested Retail Price \(SRP\) Directory|Price Freeze in effect/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Your shelf price (₱)')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
 
-    await user.selectOptions(screen.getByLabelText('Commodity'), 'soy-sauce');
-    await user.clear(screen.getByLabelText('Your shelf price (₱)'));
-    await user.type(screen.getByLabelText('Your shelf price (₱)'), '105');
-    expect(screen.getByText('Within reference')).toBeInTheDocument();
-    expect(screen.queryByText(/ILLEGAL|COMPLIANT/)).not.toBeInTheDocument();
-  });
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Commodity 11')).toBeInTheDocument();
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('Showing 11–12 of 12')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 
-  it('accepts centavo prices and withholds a result for negative or sub-centavo inputs', async () => {
-    signedIn();
-    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [srpItem(1, 'rice', 'Rice', 10.05)] });
-    const user = userEvent.setup();
-    render(<App />);
+    // Filtering returns to the first page instead of leaving the table on a page that no longer exists.
+    await user.type(screen.getByLabelText('Search commodities'), 'Commodity 0');
+    expect(screen.getByText('Commodity 01')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'SRP list pages' })).not.toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: 'SRP Guide Tab' }));
-    const price = await screen.findByLabelText('Your shelf price (₱)');
-    expect(price).toHaveAttribute('step', '0.01');
-    await user.clear(price);
-    await user.type(price, '11.06');
-    expect(screen.getByText('For review')).toBeInTheDocument();
-    expect(screen.getAllByText('₱11.06').length).toBeGreaterThan(0);
+    await user.clear(screen.getByLabelText('Search commodities'));
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
 
-    await user.clear(price);
-    await user.type(price, '-1');
-    expect(screen.queryByText('Within reference')).not.toBeInTheDocument();
-    expect(screen.queryByText('For review')).not.toBeInTheDocument();
-
-    await user.clear(price);
-    await user.type(price, '11.061');
-    expect(screen.queryByText('Within reference')).not.toBeInTheDocument();
-    expect(screen.queryByText('For review')).not.toBeInTheDocument();
-  });
-
-  it('keeps the chosen commodity in the self-check when its SRP is revised during a refresh', async () => {
-    signedIn();
-    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [srpItem(1, 'rice', 'Rice', 100), srpItem(2, 'soy-sauce', 'Soy Sauce', 100)] });
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(await screen.findByRole('button', { name: 'SRP Guide Tab' }));
-    await user.selectOptions(await screen.findByLabelText('Commodity'), 'soy-sauce');
-    await user.clear(screen.getByLabelText('Your shelf price (₱)'));
-    await user.type(screen.getByLabelText('Your shelf price (₱)'), '105');
-    expect(screen.getByText('Within reference')).toBeInTheDocument();
-
-    // The revision is a new bulletin id for the same commodity.
-    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [srpItem(1, 'rice', 'Rice', 100), srpItem(3, 'soy-sauce', 'Soy Sauce', 90)] });
-    document.dispatchEvent(new Event('visibilitychange'));
-
-    expect(await screen.findByText('For review')).toBeInTheDocument();
-    expect(screen.getByLabelText('Commodity')).toHaveValue('soy-sauce');
-    expect(screen.getByLabelText('Your shelf price (₱)')).toHaveValue(105);
+    await user.type(screen.getByLabelText('Search commodities'), 'nothing like this');
+    expect(screen.getByText('No commodities match your search.')).toBeInTheDocument();
   });
 
   it('accepts an invitation and returns to sign-in', async () => {
@@ -464,35 +435,14 @@ describe('PRICE-Watch Vendor Portal', () => {
     await user.click(screen.getByRole('button', { name: /Next: Certify/ }));
     await user.click(screen.getByRole('checkbox', { name: /certify under oath/i }));
     await user.click(screen.getByRole('button', { name: 'Submit Official Response' }));
-    const history = (await screen.findByRole('heading', { name: 'Submitted Responses & Explanations' })).closest('.rebuttals-view') as HTMLElement;
-    expect(await within(history).findByText(text, {}, { timeout: 5000 })).toBeInTheDocument();
+    const card = await screen.findByRole('article', { name: 'Notice PM-2026-LOI-000011' });
+    expect(await within(card).findByText('Under review', {}, { timeout: 5000 })).toBeInTheDocument();
 
     // The read that started before submitting now resolves with the old, unanswered notice.
     await act(async () => { resolveStale([notice()]); });
 
-    expect(within(history).getByText(text)).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText('No responses submitted yet.')).not.toBeInTheDocument());
-  });
-
-  it('keeps the default commodity after its price is edited, even if a refresh removes its reference', async () => {
-    signedIn();
-    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [srpItem(1, 'rice', 'Rice', 100), srpItem(2, 'soy-sauce', 'Soy Sauce', 100)] });
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(await screen.findByRole('button', { name: 'SRP Guide Tab' }));
-    const price = await screen.findByLabelText('Your shelf price (₱)');
-    await user.clear(price);
-    await user.type(price, '105');
-    expect(screen.getByText('Within reference')).toBeInTheDocument();
-
-    const riceWithoutReference: SrpItem = { ...srpItem(1, 'rice', 'Rice', 100), reference: { status: 'unavailable', type: 'standard_srp', value: null, label: 'SRP reference unavailable', source: null, effective_date: null } };
-    api.srp.mockResolvedValue({ protocol: { mode: 'standard', reference: null }, items: [riceWithoutReference, srpItem(2, 'soy-sauce', 'Soy Sauce', 100)] });
-    document.dispatchEvent(new Event('visibilitychange'));
-
-    expect(await screen.findByText(/selected commodity no longer has an available price reference/i)).toBeInTheDocument();
-    expect(screen.queryByText('Within reference')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Commodity')).not.toHaveValue('soy-sauce');
+    expect(within(card).getByText('Under review')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Submit Explanation' })).not.toBeInTheDocument();
   });
 
   it('accepts a PDF whose browser reported no MIME type and still rejects other files', async () => {
@@ -560,6 +510,63 @@ describe('PRICE-Watch Vendor Portal', () => {
 
     await user.click(screen.getByRole('button', { name: /Letter of Inquiry PM-2026-LOI-000011/ }));
     expect(screen.getByRole('dialog', { name: 'Letter of Inquiry' })).toBeInTheDocument();
+  });
+
+  it('edits and deletes own messages from the options menu', async () => {
+    signedIn();
+    const thread = { store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' }, has_more: false, notices: [] };
+    const dti = { id: 3, sender_side: 'dti' as const, sender_name: 'DTI', body: 'Please send your supplier invoice.', read_at: null, created_at: '2026-09-28T01:00:00Z', attachment: null };
+    const mine = { id: 4, sender_side: 'vendor' as const, sender_name: 'Maria Clara', body: 'Rice is 52 per kilo.', read_at: '2026-09-28T03:00:00Z', created_at: '2026-09-28T02:00:00Z', attachment: null };
+    api.conversation.mockResolvedValue({ ...thread, messages: [dti, mine] });
+    api.editMessage.mockResolvedValue({ ...mine, body: 'Rice is 50 per kilo.', edited_at: '2026-09-28T04:00:00Z' });
+    api.deleteMessage.mockResolvedValue({ ...mine, body: null, deleted_at: '2026-09-28T05:00:00Z' });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+    await screen.findByText('Rice is 52 per kilo.');
+    // Only the vendor's own bubble carries the menu, and the saved-work card is gone from the thread.
+    expect(screen.getAllByRole('button', { name: 'Message options' })).toHaveLength(1);
+    expect(screen.queryByText('Saved work on this device')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Message options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const editor = screen.getByLabelText('Edit message');
+    await user.clear(editor);
+    await user.type(editor, 'Rice is 50 per kilo.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(api.editMessage).toHaveBeenCalledWith('vendor-token', 1, 4, 'Rice is 50 per kilo.');
+    expect(await screen.findByText('Rice is 50 per kilo.')).toBeInTheDocument();
+    expect(screen.getByText(/· Edited · Seen/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Message options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    expect(api.deleteMessage).toHaveBeenCalledWith('vendor-token', 1, 4);
+    expect(await screen.findByText('You deleted this message')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Message options' })).not.toBeInTheDocument();
+  });
+
+  it('shows a message that has not reached DTI as a bubble that can be discarded', async () => {
+    signedIn();
+    api.conversation.mockResolvedValue({ store: { id: 1, store_name: 'Antique Grocery Mart', address: 'San Jose, Antique' }, messages: [], has_more: false, notices: [] });
+    api.sendMessage.mockRejectedValue({ response: { status: 422, data: { message: 'The message was rejected.' } } });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Messages Tab' }));
+    await waitFor(() => expect(screen.getByLabelText('Message')).toBeEnabled());
+    await user.type(screen.getByLabelText('Message'), 'Sent from the stall.');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText(/Not sent · The message was rejected\./)).toBeInTheDocument();
+    expect(screen.getByText('Sent from the stall.')).toBeInTheDocument();
+    expect(screen.queryByText('Saved work on this device')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Message options' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByText('Sent from the stall.')).not.toBeInTheDocument());
   });
 
   it('opens a notice card for a notice issued after the portal last loaded its notices', async () => {

@@ -73,6 +73,14 @@ export const vendorApi = {
     if (payload.attachment) body.append('attachment', payload.attachment);
     return (await client.post(`/vendor/conversations/${storeId}/messages`, body, { ...auth(token), timeout: 120_000 })).data.data;
   },
+  async editMessage(token: string, storeId: number, messageId: number, body: string): Promise<StoreMessage> {
+    assertOnline();
+    return (await client.patch(`/vendor/conversations/${storeId}/messages/${messageId}`, { body }, auth(token))).data.data;
+  },
+  async deleteMessage(token: string, storeId: number, messageId: number): Promise<StoreMessage> {
+    assertOnline();
+    return (await client.delete(`/vendor/conversations/${storeId}/messages/${messageId}`, auth(token))).data.data;
+  },
   async messageAttachment(token: string, storeId: number, messageId: number): Promise<Blob> {
     return resource(token, `message-attachment/${storeId}/${messageId}`, async () => (await client.get(`/vendor/conversations/${storeId}/messages/${messageId}/attachment`, { ...auth(token), responseType: 'blob' })).data);
   },

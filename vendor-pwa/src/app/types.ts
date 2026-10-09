@@ -172,6 +172,9 @@ export interface StoreMessage {
   body: string | null;
   read_at: string | null;
   created_at: string;
+  edited_at?: string | null;
+  /** Set when the sender deleted the message; the server then returns no body or attachment. */
+  deleted_at?: string | null;
   attachment: { name: string; mime: string; size: number } | null;
 }
 

@@ -11,7 +11,6 @@ import { ComplianceScorecard } from './components/dashboard/ComplianceScorecard'
 import { NoticeList } from './components/notices/NoticeList';
 import { NoticeDetailModal } from './components/notices/NoticeDetailModal';
 import { RebuttalWizard } from './components/rebuttal/RebuttalWizard';
-import { RebuttalHistory } from './components/rebuttal/RebuttalHistory';
 import { SrpDirectory } from './components/srp/SrpDirectory';
 import { AdvisoriesView } from './components/advisories/AdvisoriesView';
 import { VendorLogin } from './components/auth/VendorLogin';
@@ -546,39 +545,28 @@ const VendorWorkspace: React.FC<{ session: VendorSession; onSignOut: (notice: st
                 />
               )}
 
-              {activeTab === 'notices' && (
+              {/* 'rebuttals' with no response in progress (after submit or cancel) falls back to the notice list. */}
+              {(activeTab === 'notices' || (activeTab === 'rebuttals' && respondingToId === null)) && (
                 <NoticeList
                   notices={storeNotices}
                   onViewNotice={setSelectedNotice}
                   onRespondNotice={startResponse}
-                  onNavigateRebuttals={() => setActiveTab('rebuttals')}
                 />
               )}
 
-              {activeTab === 'rebuttals' && (respondingToId !== null && !respondingTo ? (
+              {activeTab === 'rebuttals' && respondingToId !== null && (!respondingTo ? (
                 <div className="v-card portal-status" role="alert">
                   <p><strong>This notice is no longer available to this account.</strong></p>
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>It may have been withdrawn or your establishment link changed. Contact DTI Antique if you still need to respond.</p>
                   <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: '12px' }} onClick={() => setRespondingTo(null)}>Return</button>
                 </div>
-              ) : respondingTo ? (
+              ) : (
                 <RebuttalWizard
                   key={respondingTo.id}
                   accountId={session.user.id}
                   notice={respondingTo}
                   onCancel={() => { void transition(() => setRespondingTo(null)); }}
                   onSubmit={(draft, revision) => submitResponse(respondingTo, draft, revision)}
-                />
-              ) : (
-                <RebuttalHistory
-                  notices={storeNotices}
-                  onViewNotice={setSelectedNotice}
-                  onStartNewRebuttal={() => {
-                    const next = storeNotices.find((notice) => canRespond(notice));
-                    if (next) startResponse(next);
-                    else showToast('No notice is currently open for a response.');
-                  }}
-                  onBackToNotices={() => setActiveTab('notices')}
                 />
               ))}
 

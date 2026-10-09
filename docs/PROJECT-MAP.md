@@ -47,7 +47,7 @@ tags:
 ## Vendor Portal PWA
 
 - Path: `vendor-pwa/`
-- Responsibility: invited vendor accounts — notices, formal responses with evidence, messages with DTI, SRP self-check, advisories, an alerts drawer (notices needing action and unread messages), and a Profile page (current establishment representative, notification preferences, password, sign out).
+- Responsibility: invited vendor accounts — notices, formal responses with evidence, messages with DTI, SRP guide, advisories, an alerts drawer (notices needing action and unread messages), and a Profile page (current establishment representative, notification preferences, password, sign out).
 - DTI side of messaging: Store Communications (`web/src/components/admin/StoreCommunications.tsx`); backend `Admin/StoreConversationController.php`, `Vendor/VendorMessageController.php`.
 - Start with: `vendor-pwa/src/App.tsx`, `vendor-pwa/src/services/vendorApi.ts`, `vendor-pwa/src/app/rules.ts`, `vendor-pwa/src/components/profile/`, `vendor-pwa/src/components/alerts/`; backend `backend/app/Http/Controllers/Vendor/` and `LegalNoticeController.php`.
 - Account management: DTI Admin User Management (`web/src/components/admin/UserManagementPanel.tsx`).

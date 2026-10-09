@@ -8,13 +8,11 @@ interface NoticeListProps {
   notices: LegalNotice[];
   onViewNotice: (notice: LegalNotice) => void;
   onRespondNotice: (notice: LegalNotice) => void;
-  onNavigateRebuttals?: () => void;
 }
 
-export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, onRespondNotice, onNavigateRebuttals }) => {
+export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, onRespondNotice }) => {
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL');
   const [search, setSearch] = useState('');
-  const responseCount = notices.filter((n) => n.response_received_at).length;
 
   const filtered = notices.filter((notice) => {
     if (filter === 'ACTIVE' && isFinished(notice)) return false;
@@ -27,33 +25,6 @@ export const NoticeList: React.FC<NoticeListProps> = ({ notices, onViewNotice, o
 
   return (
     <div className="notices-view">
-      <div className="v-card-header" style={{ marginBottom: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--dti-navy)' }}>DTI Legal Notices & Inquiries</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Letters of Inquiry and Show Cause Orders issued to this establishment</p>
-        </div>
-      </div>
-
-      <div className="notices-mode-switch" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          style={{ borderRadius: 'var(--radius-full)', padding: '6px 14px', fontWeight: 700 }}
-        >
-          Issued Notices ({notices.length})
-        </button>
-        {onNavigateRebuttals && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={onNavigateRebuttals}
-            style={{ borderRadius: 'var(--radius-full)', padding: '6px 14px', fontWeight: 600 }}
-          >
-            Response History {responseCount > 0 ? `(${responseCount})` : ''}
-          </button>
-        )}
-      </div>
-
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
           <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '11px' }} />

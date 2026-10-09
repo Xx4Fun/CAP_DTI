@@ -3,7 +3,8 @@ import { flushWrites, list, remove, storageFailure, withAccountLock } from './re
 import type { Submission } from './workspace';
 import { accountFor } from './workspace';
 
-export function LocalWork({ token, storeId, operation, onResume, hideDraftKey }: { token: string; storeId?: number; operation?: Submission['operation']; onResume?: (target: number, kind: Submission['operation']) => void; hideDraftKey?: string }) {
+/** Drafts and queued submissions saved on this device for the signed-in account, kept current as they change. */
+export function useLocalWork(token: string) {
   const account = accountFor(token);
   const [entries, setEntries] = useState<Submission[]>([]);
   const [drafts, setDrafts] = useState<{ key: string; value: { storeId?: number } }[]>([]);
@@ -13,8 +14,9 @@ export function LocalWork({ token, storeId, operation, onResume, hideDraftKey }:
   useEffect(() => {
     refresh();
     window.addEventListener('vendor-local-change', refresh);
+    window.addEventListener('vendor-delivered', refresh);
     const timer = window.setInterval(refresh, 5000);
-    return () => { window.removeEventListener('vendor-local-change', refresh); window.clearInterval(timer); };
+    return () => { window.removeEventListener('vendor-local-change', refresh); window.removeEventListener('vendor-delivered', refresh); window.clearInterval(timer); };
   }, [refresh]);
   async function discard(bucket: 'drafts' | 'outbox', key: string) {
     if (!window.confirm('Discard this saved work and its attachments from this device? This cannot be undone.')) return;
@@ -25,6 +27,11 @@ export function LocalWork({ token, storeId, operation, onResume, hideDraftKey }:
       refresh();
     } catch (error) { storageFailure(error); }
   }
+  return { entries, drafts, discard };
+}
+
+export function LocalWork({ token, storeId, operation, onResume, hideDraftKey }: { token: string; storeId?: number; operation?: Submission['operation']; onResume?: (target: number, kind: Submission['operation']) => void; hideDraftKey?: string }) {
+  const { entries, drafts, discard } = useLocalWork(token);
   const visible = entries.filter((item) => (!storeId || item.storeId === storeId) && (!operation || item.operation === operation));
   const visibleDrafts = drafts.filter((item) => item.key !== hideDraftKey && (!storeId || item.value.storeId === storeId) && (!operation || item.key.startsWith(`${operation}/`)));
   const openFile = (file: File) => { const url = URL.createObjectURL(file); window.open(url, '_blank'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000); };
