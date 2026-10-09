@@ -287,10 +287,10 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
     expect(await screen.findByText('State of Calamity Regulatory Command Bar')).toBeInTheDocument()
     expect(screen.getAllByText('PDRRMC-2026-07').length).toBeGreaterThan(0)
-    expect(screen.getByText('Official APC / Price Freeze References')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Price Freeze Prices' })).toBeInTheDocument()
     expect(screen.getByText('rice')).toBeInTheDocument()
     expect(await screen.findByText('Regular Milled Rice')).toBeInTheDocument()
-    expect(screen.getByText('₱45.00')).toBeInTheDocument()
+    expect(screen.getAllByText('₱45.00').length).toBeGreaterThan(0)
     expect(screen.queryByText(/Days Remaining/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /SCO.*Sweep/i })).not.toBeInTheDocument()
   })
@@ -414,11 +414,11 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
     render(<EmergencyToggle />)
 
-    expect(await screen.findByRole('heading', { name: 'APC Preparation' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Proposed price ceilings' })).toBeInTheDocument()
     expect(screen.getByText('₱40.00')).toBeInTheDocument()
     expect(screen.getByText('₱50.00')).toBeInTheDocument()
     expect(screen.getByText('₱44.00')).toBeInTheDocument()
-    expect(screen.getByText('₱45.00')).toBeInTheDocument()
+    expect(screen.getAllByText('₱45.00').length).toBeGreaterThan(0)
     await user.click(screen.getByText(/Source records for .*rice/i))
     expect(screen.getByText('Market A')).toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
@@ -437,8 +437,8 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
       preparation_hash: 'b'.repeat(64),
       source_week: { timezone: 'Asia/Manila' as const, starts_at: '2026-08-30T16:00:00Z', ends_at: '2026-09-06T16:00:00Z', starts_on: '2026-08-31', ends_on: '2026-09-06' },
       candidates: [
-        { id: 3, commodity_key: 'rice', minimum_price: 40, maximum_price: 50, observed_average_price: 44, computed_apc_price: 45, observation_count: 3, establishment_count: 2, source_week: { starts_on: '2026-08-31', ends_on: '2026-09-06' } },
-        { id: 4, commodity_key: 'sugar', minimum_price: 60, maximum_price: 60, observed_average_price: 60, computed_apc_price: 60, observation_count: 1, establishment_count: 1, source_week: { starts_on: '2026-08-17', ends_on: '2026-08-23' } },
+        { id: 3, commodity_key: 'rice', minimum_price: 40, maximum_price: 50, observed_average_price: 44, computed_apc_price: 45, observation_count: 3, establishment_count: 2, source_week: { starts_on: '2026-08-31', ends_on: '2026-09-06' }, source_observations: [{ item_id: 1, monitoring_record_id: 9, store_name: 'Market A', finalized_at: '2026-09-01T01:00:00Z', recorded_price: 40 }] },
+        { id: 4, commodity_key: 'sugar', minimum_price: 60, maximum_price: 60, observed_average_price: 60, computed_apc_price: 60, observation_count: 1, establishment_count: 1, source_week: { starts_on: '2026-08-17', ends_on: '2026-08-23' }, source_observations: [{ item_id: 2, monitoring_record_id: 10, store_name: 'Market B', finalized_at: '2026-08-18T01:00:00Z', recorded_price: 60 }] },
       ],
       srp_fallbacks: [{ commodity_key: 'milk', commodity_name: 'Milk', unit: 'can', srp_id: 12, srp_price: 38 }],
       // Still sent for tabs on the previous build; this build must not let it block activation.
@@ -451,10 +451,10 @@ describe('Legal Notice Engine & Emergency Protocol Enhancements', () => {
 
     render(<EmergencyToggle />)
 
-    expect(await screen.findByText('2026-08-17 to 2026-08-23')).toBeInTheDocument()
-    expect(screen.getByText('2026-08-31 to 2026-09-06')).toBeInTheDocument()
-    expect(screen.getAllByText('Earlier week')).toHaveLength(1)
-    expect(screen.getByText(/SRP will be held as the Price Freeze ceiling for 1 product$/)).toBeInTheDocument()
+    expect(await screen.findByText('Aug 17, 2026 – Aug 23, 2026')).toBeInTheDocument()
+    expect(screen.getByText('Aug 31, 2026 – Sep 6, 2026')).toBeInTheDocument()
+    expect(screen.getAllByText('Earlier source week')).toHaveLength(1)
+    expect(screen.getByText('SRP held as ceiling')).toBeInTheDocument()
     expect(screen.getByText('Milk')).toBeInTheDocument()
     expect(screen.getByText(/₱38\.00/)).toBeInTheDocument()
     expect(screen.queryByText(/Activation is blocked/i)).not.toBeInTheDocument()

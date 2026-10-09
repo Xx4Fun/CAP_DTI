@@ -8,6 +8,12 @@ tags:
 
 Only record choices that should constrain future work. Newest entries go first and should link to supporting evidence when available.
 
+## 2026-10-09 — Selected-declaration Price Freeze prices
+
+- Admin uses one pricing section: proposed APC/SRP-held ceilings for a draft and saved official ceilings for the selected confirmed or historical declaration. Historical prices remain accessible through the Declarations list.
+- The API still retains all declaration references for compatibility; Admin no longer aggregates them into the selected declaration's table. Saved prices are never replaced by live SRP fallbacks or candidate calculations.
+- Detailed APC statistics remain in expandable source evidence. Local implementation and verification: [[plans/emergency-pricing-cleanup/README]].
+
 ## 2026-10-09 — Emergency Protocol summary and detail refresh
 
 - Admin declaration summaries retain all official references; only the selected declaration loads APC preparation sources and current SRP fallbacks. The opt-in summary contract preserves legacy list/detail/write responses.

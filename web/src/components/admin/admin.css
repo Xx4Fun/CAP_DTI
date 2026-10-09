@@ -10060,6 +10060,44 @@ button.regulatory-chip { cursor: pointer; }
   flex-shrink: 0;
 }
 
+.emergency-pricing-section {
+  padding: 1.25rem;
+}
+
+.emergency-pricing-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  color: #475569;
+  font-size: 0.875rem;
+}
+
+.emergency-pricing-stage {
+  margin: 1.25rem 0 0.75rem;
+  color: #1e293b;
+  font-size: 1rem;
+}
+
+.emergency-pricing-section .apc-filter-group {
+  flex-wrap: wrap;
+}
+
+.apc-source-statistics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: #334155;
+  font-size: 0.8125rem;
+}
+
+.apc-source-statistics div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .apc-source-records-guidance {
   margin: 0;
   padding: 0.75rem 1rem;

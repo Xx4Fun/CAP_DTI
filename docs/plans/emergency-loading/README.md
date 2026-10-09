@@ -2,7 +2,9 @@
 
 Implemented locally on 2026-10-09. This record does not establish deployment or production latency.
 
-Declarations and combined official references now load through `GET /admin/emergencies?view=summary`. The response retains every declaration's official prices and obtains effective declaration IDs in one query. Candidates, observations, source-week calculations and live SRP fallbacks load only for the selected declaration. The legacy list, detail and write contracts remain available.
+Declaration summaries and their saved official references load through `GET /admin/emergencies?view=summary`. The response retains every declaration's official prices and obtains effective declaration IDs in one query. Candidates, observations, source-week calculations and live SRP fallbacks load only for the selected declaration. The legacy list, detail and write contracts remain available.
+
+The subsequent local [pricing-section cleanup](../emergency-pricing-cleanup/README.md) changes Admin presentation to show the selected declaration's prices only. It preserves this API contract and refresh behavior. The browser script now checks 123 APC products plus four SRP fallbacks and writes current artifacts into `scratch/emergency-pricing-cleanup/`; the source-row artifacts below document the original loading fix.
 
 Background refresh keeps loaded content, selection, pagination, scroll and expanded source rows visible. Separate request guards discard superseded summary/detail reads; overlapping triggers coalesce. Mutation responses appear immediately, but one record cannot verify an unavailable declaration list. Stale data retains a warning and Retry action; activation and ending require verified current data. Review confirmation resets when selection or preparation hash changes.
 

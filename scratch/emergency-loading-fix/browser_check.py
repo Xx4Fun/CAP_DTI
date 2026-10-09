@@ -5,7 +5,8 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-OUTPUT = Path(__file__).resolve().parent
+OUTPUT = Path(__file__).resolve().parents[1] / 'emergency-pricing-cleanup'
+OUTPUT.mkdir(parents=True, exist_ok=True)
 ORIGIN = 'http://127.0.0.1:5191'
 HTML = '''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <script type="module">
@@ -40,8 +41,9 @@ async def main():
                         store_name:`Market ${j+1}`,finalized_at:'2026-09-01T01:00:00Z',recorded_price:40+j*5}))}));
                 const detail = {id:7, location:'San Jose de Buenavista, Antique', declaration_reference:'LOCAL-CHECK-7',
                     starts_on:'2026-09-09', ends_on:null, status:'draft', effective_state:'draft',preparation_hash:'a'.repeat(64),
-                    source_week:{timezone:'Asia/Manila',starts_at:'2026-08-30T16:00:00Z',ends_at:'2026-09-06T16:00:00Z'},
-                    candidates, srp_fallbacks:[],official_prices:[]};
+                    source_week:{timezone:'Asia/Manila',starts_at:'2026-08-30T16:00:00Z',ends_at:'2026-09-06T16:00:00Z',starts_on:'2026-08-31',ends_on:'2026-09-06'},
+                    candidates, srp_fallbacks:Array.from({length:4}, (_, i) => ({commodity_key:`fallback-${i+1}`,
+                        commodity_name:`SRP product ${i+1}`,unit:'can',srp_id:i+1,srp_price:38})),official_prices:[]};
                 const {candidates:unused,source_week:week,srp_fallbacks:fallbacks,...summary} = detail;
                 window.checkFixture = {detail,summary,hold:false,summaryCalls:0,detailCalls:0};
                 adminApi.getEmergencySummaries = async () => {
@@ -58,12 +60,26 @@ async def main():
                 createRoot(document.getElementById('fixture')).render(React.createElement(EmergencyToggle));
             }''')
             await page.get_by_text('Monitoring sources for APC (123 products)', exact=True).wait_for()
+            panel = page.get_by_role('region', name='Price Freeze Prices')
+            assert await page.get_by_role('region', name='Price Freeze Prices').count() == 1
+            assert await panel.get_by_text('127 Products', exact=True).is_visible()
+            assert await panel.locator('table').count() == 1
+            assert await panel.locator('th').all_text_contents() == ['Product', 'Proposed ceiling', 'Price basis', 'Monitoring coverage']
+            if width == 390:
+                assert await panel.locator('tbody tr').first.evaluate('el => [...el.children].every(cell => getComputedStyle(cell,"::before").content.includes(cell.dataset.label))')
+            assert await panel.locator('.apc-filter-group').evaluate('el => [...el.children].every(button => button.getBoundingClientRect().right <= el.getBoundingClientRect().right + 1)')
+            await panel.get_by_role('button', name='SRP held (4)', exact=True).click()
+            assert await panel.locator('tbody tr').count() == 4
+            assert await panel.get_by_text('SRP product 1', exact=True).is_visible()
+            await panel.get_by_role('button', name='All (127)', exact=True).click()
+            assert await panel.get_by_text('Showing', exact=False).first.is_visible()
             source = page.locator('.apc-source-records-scroll')
             assert await source.locator('details').count() == 123
             dimensions = await source.evaluate('''el => [...el.children].map(d => ({row:d.getBoundingClientRect().height,summary:d.querySelector('summary').getBoundingClientRect().height}))''')
             assert all(d['row'] >= d['summary'] and d['summary'] > 20 for d in dimensions), dimensions[:3]
             await source.locator('summary').first.click()
             await source.locator('li').first.wait_for(state='visible')
+            assert await source.locator('.apc-source-statistics').first.get_by_text('Observed average', exact=True).is_visible()
             await source.evaluate('el => { el.scrollTop=80; el.dataset.savedScroll=el.scrollTop }')
             await page.get_by_role('checkbox').check()
             await page.evaluate('''() => { window.checkFixture.hold=true; window.dispatchEvent(new Event('regulatory-data-changed')) }''')
@@ -86,8 +102,16 @@ async def main():
             await source.locator('summary').first.press('Enter')
             await source.locator('li').first.wait_for(state='visible')
             await source.scroll_into_view_if_needed()
-            await page.screenshot(path=str(OUTPUT / f'sources-{width}.png'), full_page=True)
-            checks.append({'viewport_width': width, 'products':123, 'minimum_row_height':min(d['row'] for d in dimensions),
+            assert await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            # Fit the entire panel in its scrolling ancestor so the screenshot includes the heading.
+            height = int((await panel.bounding_box())['height']) + 100
+            await page.set_viewport_size({'width':width,'height':height})
+            await panel.evaluate('el => el.scrollIntoView({block:"start"})')
+            await panel.screenshot(path=str(OUTPUT / f'draft-prices-{width}.png'))
+            checks.append({'viewport_width': width, 'draft_products':127, 'source_products':123, 'srp_products':4,
+                           'one_pricing_section':True, 'one_mixed_table':True, 'calculation_details_visible':True,
+                           'mobile_cell_labels':True,'filter_controls_fit':True,
+                           'minimum_row_height':min(d['row'] for d in dimensions),
                            'expansion_visible':True,'keyboard_expansion':True,'refresh_keeps_records_and_scroll':True,
                            'request_counts':await page.evaluate('({summary:window.checkFixture.summaryCalls,detail:window.checkFixture.detailCalls})')})
             await page.close()

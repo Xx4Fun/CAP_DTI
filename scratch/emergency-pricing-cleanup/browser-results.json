@@ -1,0 +1,40 @@
+[
+  {
+    "viewport_width": 1440,
+    "draft_products": 127,
+    "source_products": 123,
+    "srp_products": 4,
+    "one_pricing_section": true,
+    "one_mixed_table": true,
+    "calculation_details_visible": true,
+    "mobile_cell_labels": true,
+    "filter_controls_fit": true,
+    "minimum_row_height": 43,
+    "expansion_visible": true,
+    "keyboard_expansion": true,
+    "refresh_keeps_records_and_scroll": true,
+    "request_counts": {
+      "summary": 2,
+      "detail": 2
+    }
+  },
+  {
+    "viewport_width": 390,
+    "draft_products": 127,
+    "source_products": 123,
+    "srp_products": 4,
+    "one_pricing_section": true,
+    "one_mixed_table": true,
+    "calculation_details_visible": true,
+    "mobile_cell_labels": true,
+    "filter_controls_fit": true,
+    "minimum_row_height": 43,
+    "expansion_visible": true,
+    "keyboard_expansion": true,
+    "refresh_keeps_records_and_scroll": true,
+    "request_counts": {
+      "summary": 2,
+      "detail": 2
+    }
+  }
+]

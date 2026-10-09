@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { adminApi } from '../../services/adminApi'
 import { adminToast } from '../../services/adminToast'
-import type { RegulatoryEmergencyRecord, RegulatoryEmergencySummary } from '../../types/admin'
+import type { RegulatoryEmergencyCandidate, RegulatoryEmergencySrpFallback, RegulatoryEmergencyRecord, RegulatoryEmergencySummary } from '../../types/admin'
 import {
   humanizeCommoditySlug,
   formatPstDateRange,
@@ -27,6 +27,14 @@ import {
 const SAN_JOSE = 'San Jose de Buenavista, Antique'
 const money = (value: number) => `₱${Number(value).toFixed(2)}`
 const day = (value: string | null) => value ? value.slice(0, 10) : '—'
+const PRICE_STAGES = new Map([
+  ['scheduled', 'Confirmed price ceilings — scheduled'],
+  ['in_effect', 'Confirmed price ceilings'],
+  ['ended', 'Historical price ceilings'],
+  ['expired', 'Historical price ceilings'],
+  ['cancelled', 'Cancelled declaration'],
+])
+type DraftPriceRow = RegulatoryEmergencyCandidate | RegulatoryEmergencySrpFallback
 const emergencySummary = (record: RegulatoryEmergencyRecord): RegulatoryEmergencySummary => ({
   id: record.id, location: record.location, declaration_reference: record.declaration_reference,
   starts_on: record.starts_on, ends_on: record.ends_on, ended_at: record.ended_at,
@@ -62,7 +70,7 @@ export const EmergencyToggle: React.FC = () => {
 
   // Candidate filtering & search state
   const [candidateSearch, setCandidateSearch] = useState('')
-  const [candidateFilter, setCandidateFilter] = useState<'all' | 'ready' | 'missing'>('all')
+  const [candidateFilter, setCandidateFilter] = useState<'all' | 'apc' | 'srp' | 'missing'>('all')
 
   // Pagination state
   const [candidatePage, setCandidatePage] = useState(1)
@@ -70,7 +78,7 @@ export const EmergencyToggle: React.FC = () => {
   const [refPage, setRefPage] = useState(1)
   const [refPerPage, setRefPerPage] = useState(10)
 
-  // Reset pagination on filter or selection change
+  // Reset draft pagination on filter or selection change
   useEffect(() => {
     setCandidatePage(1)
   }, [candidateSearch, candidateFilter, selectedId])
@@ -105,6 +113,11 @@ export const EmergencyToggle: React.FC = () => {
     }
   }, [])
 
+  const resetPricing = () => {
+    setCandidateSearch(''); setCandidateFilter('all')
+    setCandidatePage(1); setRefPage(1)
+  }
+
   const replaceEmergency = (record: RegulatoryEmergencyRecord) => {
     loadRequest.current++
     detailRequest.current++
@@ -114,6 +127,7 @@ export const EmergencyToggle: React.FC = () => {
     setEmergencies((current) => current.some((item) => item.id === record.id)
       ? current.map((item) => item.id === record.id ? emergencySummary(record) : item)
       : [emergencySummary(record), ...current])
+    if (selectedIdRef.current !== record.id) resetPricing()
     selectedIdRef.current = record.id
     setSelectedId(record.id); setSelectedDetail(record)
     // A single write response cannot verify declarations that were never loaded or are stale.
@@ -149,6 +163,7 @@ export const EmergencyToggle: React.FC = () => {
 
   const selectEmergency = (id: number | null) => {
     if (selectedIdRef.current !== id) {
+      resetPricing()
       detailRequest.current++; detailInFlight.current = null
       selectedIdRef.current = id
       setSelectedId(id); setReviewed(false); setDetailError(null)
@@ -202,39 +217,40 @@ export const EmergencyToggle: React.FC = () => {
   const detailVerified = !!selected && !detailLoading && !detailError
     && selectedDetail?.preparation_hash === selectedSummary?.preparation_hash
   const inEffect = emergencies.some((item) => item.effective_state === 'in_effect')
-  const officialPrices = useMemo(() => emergencies.flatMap((item) => item.official_prices || []), [emergencies])
+  const officialPrices = useMemo(() => selectedSummary?.official_prices ?? [], [selectedSummary])
   const srpFallbacks = selected?.srp_fallbacks ?? []
+  const isDraft = selectedSummary?.status === 'draft' && selectedSummary.effective_state === 'draft'
+  const pricingStage = isDraft ? 'Proposed price ceilings' : PRICE_STAGES.get(selectedSummary?.effective_state ?? '') ?? 'Status unavailable'
+  const draftPrices = useMemo<DraftPriceRow[]>(() => selected ? [...selected.candidates, ...(selected.srp_fallbacks ?? [])] : [], [selected])
+  const productName = (row: DraftPriceRow) => 'computed_apc_price' in row
+    ? srpMap[row.commodity_key]?.name || humanizeCommoditySlug(row.commodity_key)
+    : row.commodity_name
+  const priceCount = isDraft ? selected ? draftPrices.length : null : officialPrices.length
   const cutoffStartsOn = selected ? selected.source_week.starts_on || day(selected.source_week.starts_at) : null
   const completePreparation = !!selected
     && selected.candidates.length + srpFallbacks.length > 0
     && selected.candidates.every((candidate) => candidate.observation_count > 0)
 
-  // Filtered candidate list
-  const filteredCandidates = useMemo(() => {
-    if (!selected) return []
-    return selected.candidates.filter((candidate) => {
-      const name = srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)
+  const filteredDraftPrices = draftPrices.filter((row) => {
+      const name = productName(row)
       const matchesSearch = !candidateSearch.trim() ||
-        candidate.commodity_key.toLowerCase().includes(candidateSearch.toLowerCase()) ||
+        row.commodity_key.toLowerCase().includes(candidateSearch.toLowerCase()) ||
         name.toLowerCase().includes(candidateSearch.toLowerCase())
 
       if (!matchesSearch) return false
 
-      if (candidateFilter === 'ready') return candidate.observation_count > 0
-      if (candidateFilter === 'missing') return candidate.observation_count === 0
+      if (candidateFilter === 'apc') return 'computed_apc_price' in row && row.observation_count > 0
+      if (candidateFilter === 'srp') return !('computed_apc_price' in row)
+      if (candidateFilter === 'missing') return 'computed_apc_price' in row && row.observation_count === 0
       return true
     })
-  }, [selected, candidateSearch, candidateFilter, srpMap])
 
   // Paginated candidate slice & boundaries
-  const totalCandidatePages = Math.max(1, Math.ceil(filteredCandidates.length / candidatePerPage))
+  const totalCandidatePages = Math.max(1, Math.ceil(filteredDraftPrices.length / candidatePerPage))
   useEffect(() => { setCandidatePage((page) => Math.min(page, totalCandidatePages)) }, [totalCandidatePages])
-  const paginatedCandidates = useMemo(() => {
-    const start = (candidatePage - 1) * candidatePerPage
-    return filteredCandidates.slice(start, start + candidatePerPage)
-  }, [filteredCandidates, candidatePage, candidatePerPage])
-  const candidateFrom = filteredCandidates.length === 0 ? 0 : (candidatePage - 1) * candidatePerPage + 1
-  const candidateTo = Math.min(candidatePage * candidatePerPage, filteredCandidates.length)
+  const paginatedDraftPrices = filteredDraftPrices.slice((candidatePage - 1) * candidatePerPage, candidatePage * candidatePerPage)
+  const candidateFrom = filteredDraftPrices.length === 0 ? 0 : (candidatePage - 1) * candidatePerPage + 1
+  const candidateTo = Math.min(candidatePage * candidatePerPage, filteredDraftPrices.length)
 
   // Paginated official references slice & boundaries
   const totalRefPages = Math.max(1, Math.ceil(officialPrices.length / refPerPage))
@@ -587,12 +603,30 @@ export const EmergencyToggle: React.FC = () => {
             </section>
           )}
 
-          {/* APC Preparation Workspace (Draft View) */}
-          {selected?.status === 'draft' && (
-            <section className="admin-card" style={{ padding: '1.25rem' }}>
+          {selectedSummary && (
+            <section className="admin-card emergency-pricing-section" aria-labelledby="emergency-prices-title">
               <div className="emergency-card-head">
                 <div className="emergency-card-title-group">
-                  <h3>APC Preparation</h3>
+                  <h3 id="emergency-prices-title">Price Freeze Prices</h3>
+                  <p>Automatic Price Control (APC) uses monitoring observations; eligible products without observations are held at SRP.</p>
+                </div>
+                <span className="emergency-status-chip chip-draft">
+                  {priceCount ?? '—'} {priceCount === 1 ? 'Product' : 'Products'}
+                </span>
+              </div>
+              <div className="emergency-pricing-context">
+                <strong>{selectedSummary.declaration_reference}</strong>
+                <span>{formatPstDateRange(selectedSummary.starts_on, selectedSummary.ends_on)}</span>
+                <span className="emergency-status-chip">
+                  {pricingStage === 'Status unavailable' ? pricingStage : selectedSummary.effective_state.replaceAll('_', ' ')}
+                </span>
+              </div>
+              <h4 className="emergency-pricing-stage">{pricingStage}</h4>
+
+          {isDraft && selected && (
+            <>
+              <div className="emergency-card-head">
+                <div className="emergency-card-title-group">
                   <p>
                     Routine observations up to {selected.source_week.ends_on || day(selected.source_week.ends_at)} · Asia/Manila
                   </p>
@@ -652,6 +686,7 @@ export const EmergencyToggle: React.FC = () => {
                   <Search size={15} className="apc-search-icon" />
                   <input
                     type="text"
+                    aria-label="Search prices"
                     placeholder="Search commodities..."
                     value={candidateSearch}
                     onChange={(e) => setCandidateSearch(e.target.value)}
@@ -665,107 +700,75 @@ export const EmergencyToggle: React.FC = () => {
                     className={`apc-filter-pill ${candidateFilter === 'all' ? 'is-active' : ''}`}
                     onClick={() => setCandidateFilter('all')}
                   >
-                    All ({selected.candidates.length})
+                    All ({draftPrices.length})
                   </button>
                   <button
                     type="button"
-                    className={`apc-filter-pill ${candidateFilter === 'ready' ? 'is-active' : ''}`}
-                    onClick={() => setCandidateFilter('ready')}
+                    className={`apc-filter-pill ${candidateFilter === 'apc' ? 'is-active' : ''}`}
+                    onClick={() => setCandidateFilter('apc')}
                   >
-                    Ready ({selected.candidates.filter(c => c.observation_count > 0).length})
+                    Calculated APC ({selected.candidates.filter(c => c.observation_count > 0).length})
                   </button>
-                  {missingCandidates.length > 0 && (
+                  <button
+                    type="button"
+                    className={`apc-filter-pill ${candidateFilter === 'srp' ? 'is-active' : ''}`}
+                    onClick={() => setCandidateFilter('srp')}
+                  >
+                    SRP held ({srpFallbacks.length})
+                  </button>
                     <button
                       type="button"
                       className={`apc-filter-pill is-missing ${candidateFilter === 'missing' ? 'is-active' : ''}`}
                       onClick={() => setCandidateFilter('missing')}
                     >
-                      Missing ({missingCandidates.length})
+                      Needs observations ({missingCandidates.length})
                     </button>
-                  )}
                 </div>
               </div>
 
-              {/* Candidate Table */}
               <div className="admin-table-wrap">
                 <table className="admin-data-table apc-candidate-table">
                   <thead>
                     <tr>
                       <th>Product</th>
-                      <th>Source week</th>
-                      <th>Minimum</th>
-                      <th>Maximum</th>
-                      <th>Observed average</th>
-                      <th>Computed APC</th>
-                      <th>Observations</th>
-                      <th>Establishments</th>
+                      <th>Proposed ceiling</th>
+                      <th>Price basis</th>
+                      <th>Monitoring coverage</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCandidates.length ? (
-                      paginatedCandidates.map((candidate) => {
-                        const humanName = srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)
-                        const unit = srpMap[candidate.commodity_key]?.unit
-
-                        return (
-                          <tr key={candidate.id}>
-                            <td>
-                              <div className="apc-product-cell">
-                                <strong className="apc-product-title">{humanName}</strong>
-                                <div className="apc-product-meta">
-                                  <code className="apc-slug-code">{candidate.commodity_key}</code>
-                                  {unit && <span className="apc-unit-tag">{unit}</span>}
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              {candidate.source_week ? (
-                                <div className="apc-computed-cell">
-                                  <span>{candidate.source_week.starts_on} to {candidate.source_week.ends_on}</span>
-                                  {candidate.source_week.starts_on !== cutoffStartsOn && (
-                                    <small style={{ display: 'block' }}>Earlier week</small>
-                                  )}
-                                </div>
-                              ) : '—'}
-                            </td>
-                            <td className="tabular-num">{money(candidate.minimum_price)}</td>
-                            <td className="tabular-num">{money(candidate.maximum_price)}</td>
-                            <td className="tabular-num">{money(candidate.observed_average_price)}</td>
-                            <td>
-                              <div className="apc-computed-cell">
-                                <strong>{money(candidate.computed_apc_price)}</strong>
-                                <small style={{ display: 'block' }}>(min + max) ÷ 2</small>
-                              </div>
-                            </td>
-                            <td className="tabular-num">
-                              <span className={`emergency-count-badge ${candidate.observation_count === 0 ? 'is-zero' : ''}`}>
-                                {candidate.observation_count}
-                              </span>
-                            </td>
-                            <td className="tabular-num">
-                              <span className="emergency-count-badge">
-                                {candidate.establishment_count}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    ) : (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-                          {candidateSearch ? 'No covered products match your search query.' : 'No covered product has an accepted routine observation before this declaration.'}
-                        </td>
-                      </tr>
+                    {filteredDraftPrices.length ? paginatedDraftPrices.map((row) => {
+                      const candidate = 'computed_apc_price' in row ? row : null
+                      const fallback = 'srp_price' in row ? row : null
+                      const usable = !!candidate && candidate.observation_count > 0
+                      const unit = fallback?.unit ?? srpMap[row.commodity_key]?.unit
+                      return (
+                        <tr key={candidate ? `apc-${candidate.id}` : `srp-${row.commodity_key}`}>
+                          <td data-label="Product">
+                            <div className="apc-product-cell">
+                              <strong className="apc-product-title">{productName(row)}</strong>
+                              {unit && <span className="apc-unit-tag">{unit}</span>}
+                            </div>
+                          </td>
+                          <td data-label="Proposed ceiling" className="tabular-num">
+                            <strong>{fallback ? money(fallback.srp_price) : usable ? money(candidate!.computed_apc_price) : 'Unavailable'}</strong>
+                          </td>
+                          <td data-label="Price basis">{fallback ? 'SRP held as ceiling' : usable ? 'Calculated APC' : 'Needs observations'}</td>
+                          <td data-label="Monitoring coverage">{fallback ? 'No usable routine observations' : `${candidate!.observation_count} observations · ${candidate!.establishment_count} establishments`}</td>
+                        </tr>
+                      )
+                    }) : (
+                      <tr><td colSpan={4}>No products match your search or filter.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
 
               {/* Candidate Table Pagination Footer */}
-              {filteredCandidates.length > 0 && (
-                <nav className="admin-pagination apc-pagination" aria-label="APC candidates pagination">
+              {filteredDraftPrices.length > 0 && (
+                <nav className="admin-pagination apc-pagination" aria-label="Proposed price ceilings pagination">
                   <div className="apc-pagination-summary">
-                    Showing <strong>{candidateFrom}–{candidateTo}</strong> of <strong>{filteredCandidates.length}</strong> commodities
+                    Showing <strong>{candidateFrom}–{candidateTo}</strong> of <strong>{filteredDraftPrices.length}</strong> commodities
                   </div>
                   <div className="apc-pagination-controls">
                     <div className="apc-pagination-per-page">
@@ -808,26 +811,6 @@ export const EmergencyToggle: React.FC = () => {
                 </nav>
               )}
 
-              {/* SRP Fallbacks Accordion */}
-              {!!srpFallbacks.length && (
-                <details className="apc-source-details apc-fallback-details">
-                  <summary>
-                    {`No routine observation on record. SRP will be held as the Price Freeze ceiling for ${srpFallbacks.length} ${srpFallbacks.length === 1 ? 'product' : 'products'}`}
-                  </summary>
-                  <ul className="apc-fallback-list">
-                    {srpFallbacks.map((fallback) => (
-                      <li key={fallback.commodity_key} className="apc-fallback-item">
-                        <div>
-                          <strong>{fallback.commodity_name}</strong>
-                          {fallback.unit ? <span className="apc-unit-tag" style={{ marginLeft: '0.4rem' }}>{fallback.unit}</span> : ''}
-                        </div>
-                        <span className="apc-fallback-price">{money(fallback.srp_price)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-
               {/* Source Records Container */}
               {selected.candidates.some(c => c.source_observations?.length) && (
                 <div className="apc-source-records-container">
@@ -841,6 +824,17 @@ export const EmergencyToggle: React.FC = () => {
                       candidate.source_observations?.length ? (
                         <details key={`source-${candidate.id}`} className="apc-source-details">
                           <summary>Source records for {srpMap[candidate.commodity_key]?.name || humanizeCommoditySlug(candidate.commodity_key)}</summary>
+                          <div className="apc-source-statistics">
+                            <div><span>Source week</span><strong>{candidate.source_week
+                              ? formatPstDateRange(candidate.source_week.starts_on, candidate.source_week.ends_on)
+                              : formatPstDateRange(selected.source_week.starts_on || day(selected.source_week.starts_at), selected.source_week.ends_on || day(selected.source_week.ends_at))}</strong>
+                              {candidate.source_week && candidate.source_week.starts_on !== cutoffStartsOn && <small>Earlier source week</small>}
+                            </div>
+                            <div><span>Minimum</span><strong>{money(candidate.minimum_price)}</strong></div>
+                            <div><span>Maximum</span><strong>{money(candidate.maximum_price)}</strong></div>
+                            <div><span>Observed average</span><strong>{money(candidate.observed_average_price)}</strong></div>
+                            <div><span>Calculated APC</span><strong>{money(candidate.computed_apc_price)}</strong><small>(min + max) ÷ 2</small></div>
+                          </div>
                           <ul>
                             {candidate.source_observations.map((observation) => (
                               <li key={observation.item_id}>
@@ -899,28 +893,18 @@ export const EmergencyToggle: React.FC = () => {
                   {savingAction === 'activate' ? 'Activating…' : 'Confirm and activate'}
                 </button>
               </div>
-            </section>
+            </>
           )}
 
-          {/* Official References Card */}
-          <section className="admin-card" style={{ padding: '1.25rem' }}>
-            <div className="emergency-card-head">
-              <div className="emergency-card-title-group">
-                <h3><Database size={18} /> Official APC / Price Freeze References</h3>
-                <p>These references are separate from SRP and exist only after DTI Admin confirmation.</p>
-              </div>
-              <span className="emergency-status-chip chip-draft">
-                {officialPrices.length} {officialPrices.length === 1 ? 'Reference' : 'References'}
-              </span>
-            </div>
-
+          {!isDraft && (
+            <>
             <div className="admin-table-wrap">
               <table className="admin-data-table">
                 <thead>
                   <tr>
                     <th>Product</th>
-                    <th>Reference</th>
-                    <th>Official APC</th>
+                    <th>Confirmed ceiling</th>
+                    <th>Price basis</th>
                     <th>Effective period</th>
                     <th>Source</th>
                   </tr>
@@ -931,24 +915,22 @@ export const EmergencyToggle: React.FC = () => {
                       const humanName = srpMap[price.commodity_key]?.name || humanizeCommoditySlug(price.commodity_key)
                       return (
                         <tr key={price.id}>
-                          <td>
+                          <td data-label="Product">
                             <div className="apc-product-cell">
                               <strong className="apc-product-title">{humanName}</strong>
                               <code className="apc-slug-code">{price.commodity_key}</code>
                             </div>
                           </td>
-                          <td>
+                          <td data-label="Confirmed ceiling" className="tabular-num">
+                            <strong>{money(price.authoritative_price)}</strong>
+                          </td>
+                          <td data-label="Price basis">
                             <span className={`emergency-ref-badge ${price.price_type === 'APC' ? 'is-apc' : 'is-srp'}`}>
-                              {price.price_type}
+                              {price.price_type === 'APC' ? 'Calculated APC' : price.price_type === 'SRP' ? 'SRP held as ceiling' : price.price_type}
                             </span>
                           </td>
-                          <td className="tabular-num">
-                            <strong style={{ color: '#1e3a8a', fontSize: '0.96rem' }}>
-                              {money(price.authoritative_price)}
-                            </strong>
-                          </td>
-                          <td>{formatPstDateRange(price.effective_from, price.effective_until)}</td>
-                          <td>
+                          <td data-label="Effective period">{formatPstDateRange(price.effective_from, price.effective_until)}</td>
+                          <td data-label="Source">
                             <span className="emergency-source-tag">{price.source_reference}</span>
                           </td>
                         </tr>
@@ -957,7 +939,7 @@ export const EmergencyToggle: React.FC = () => {
                   ) : (
                     <tr>
                       <td colSpan={5} style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-                        No official APC references have been confirmed.
+                        No confirmed price ceilings recorded for this declaration
                       </td>
                     </tr>
                   )}
@@ -967,7 +949,7 @@ export const EmergencyToggle: React.FC = () => {
 
             {/* Official References Pagination Footer */}
             {officialPrices.length > 0 && (
-              <nav className="admin-pagination apc-pagination" aria-label="Official APC references pagination">
+              <nav className="admin-pagination apc-pagination" aria-label="Confirmed price ceilings pagination">
                 <div className="apc-pagination-summary">
                   Showing <strong>{refFrom}–{refTo}</strong> of <strong>{officialPrices.length}</strong> references
                 </div>
@@ -1011,7 +993,10 @@ export const EmergencyToggle: React.FC = () => {
                 </div>
               </nav>
             )}
-          </section>
+            </>
+          )}
+            </section>
+          )}
         </div>
       </div>
     </div>

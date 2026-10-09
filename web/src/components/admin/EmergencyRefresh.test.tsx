@@ -31,6 +31,10 @@ const summary = ({ candidates: _candidates, source_week: _week, srp_fallbacks: _
 const refresh = () => act(() => { window.dispatchEvent(new Event('regulatory-data-changed')) })
 const declaration = (id = 7) => screen.getByRole('button', { name: new RegExp(`DECL-${id}`) })
 const review = () => screen.getByRole('checkbox', { name: /reviewed the source week/ })
+const pricing = () => screen.getByRole('region', { name: 'Price Freeze Prices' })
+const official = (commodity_key = 'rice', price_type = 'APC', authoritative_price = 45) => ({
+  id: 11, commodity_key, price_type, authoritative_price, effective_from: '2026-09-09', source_reference: 'DECL-7',
+})
 
 describe('Emergency Protocol independent loading and refresh', () => {
   beforeEach(() => {
@@ -41,6 +45,131 @@ describe('Emergency Protocol independent loading and refresh', () => {
     vi.mocked(adminApi.getSrp).mockResolvedValue({ records: [], pagination: { current_page: 1, last_page: 1, per_page: 1000, total: 0, from: null, to: null }, capabilities: { can_publish: true, status: 'AVAILABLE' } })
   })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('shows APC and SRP-held draft prices together and keeps calculations in expandable evidence', async () => {
+    render(<EmergencyToggle />)
+    await screen.findByRole('checkbox')
+    const panel = within(pricing())
+    expect(panel.getByRole('heading', { name: 'Proposed price ceilings' })).toBeInTheDocument()
+    expect(panel.getByText('2 Products')).toBeInTheDocument()
+    const table = panel.getByRole('table')
+    const columns = ['Product', 'Proposed ceiling', 'Price basis', 'Monitoring coverage']
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(columns)
+    expect(within(table).getAllByRole('row')[1].querySelectorAll('td')).toHaveLength(4)
+    expect(Array.from(within(table).getAllByRole('row')[1].querySelectorAll('td')).map((cell) => cell.getAttribute('data-label'))).toEqual(columns)
+    expect(within(table).getByText('Rice')).toBeInTheDocument()
+    expect(within(table).getByText('Milk')).toBeInTheDocument()
+    expect(within(table).getByText('Calculated APC')).toBeInTheDocument()
+    expect(within(table).getByText('SRP held as ceiling')).toBeInTheDocument()
+    expect(within(table).queryByText('₱44.00')).not.toBeInTheDocument()
+    fireEvent.click(panel.getByText('Source records for Rice'))
+    expect(panel.getByText('Observed average').closest('div')).toHaveTextContent('₱44.00')
+    expect(panel.getByText('(min + max) ÷ 2')).toBeVisible()
+    expect(panel.getByText('Market A')).toBeVisible()
+    expect(screen.queryByText('Official APC / Price Freeze References')).not.toBeInTheDocument()
+  })
+
+  it.each(['apc', 'srp', 'missing'] as const)('filters the combined draft table correctly for %s rows', async (kind) => {
+    const record = { ...draft, candidates: [...draft.candidates, { ...draft.candidates[0], id: 4, commodity_key: 'salt', observation_count: 0, source_observations: [] }] }
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(record)
+    render(<EmergencyToggle />)
+    await screen.findByRole('checkbox')
+    const panel = within(pricing())
+    fireEvent.click(panel.getByRole('button', { name: { apc: 'Calculated APC (1)', srp: 'SRP held (1)', missing: 'Needs observations (1)' }[kind] }))
+    const table = within(panel.getByRole('table'))
+    expect(table.getAllByRole('row')).toHaveLength(2)
+    expect(table.getByText({ apc: 'Rice', srp: 'Milk', missing: 'Salt' }[kind])).toBeInTheDocument()
+    if (kind === 'missing') expect(table.getByText('Unavailable')).toBeInTheDocument()
+    fireEvent.change(panel.getByRole('textbox', { name: 'Search prices' }), { target: { value: 'none' } })
+    expect(panel.getByRole('button', { name: 'All (3)' })).toBeInTheDocument()
+    expect(table.getByText('No products match your search or filter.')).toBeInTheDocument()
+  })
+
+  it.each(['apc', 'srp'] as const)('supports an %s-only draft and preserves activation eligibility', async (kind) => {
+    const record = { ...draft, candidates: kind === 'apc' ? draft.candidates : [], srp_fallbacks: kind === 'srp' ? draft.srp_fallbacks : [] }
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(record)
+    render(<EmergencyToggle />)
+    await screen.findByRole('checkbox')
+    expect(within(pricing()).getByText('1 Product')).toBeInTheDocument()
+    await userEvent.setup().click(review())
+    expect(screen.getByRole('button', { name: 'Confirm and activate' })).toBeEnabled()
+  })
+
+  it.each([
+    ['scheduled', 'active', 'Confirmed price ceilings — scheduled'],
+    ['in_effect', 'active', 'Confirmed price ceilings'],
+    ['in_effect', 'ended', 'Confirmed price ceilings'],
+    ['ended', 'ended', 'Historical price ceilings'],
+    ['expired', 'active', 'Historical price ceilings'],
+    ['cancelled', 'cancelled', 'Cancelled declaration'],
+    ['unrecognized', 'active', 'Status unavailable'],
+  ] as const)('labels %s/%s using applicability and displays saved ceilings', async (effective_state, status, heading) => {
+    const record = { ...draft, effective_state, status, official_prices: [official('milk', 'SRP', 30), { ...official('salt', 'LEGACY_TYPE', 25), id: 12 }] }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(record)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(record)
+    render(<EmergencyToggle />)
+    await screen.findByRole('region', { name: 'Price Freeze Prices' })
+    const panel = within(pricing())
+    expect(panel.getByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(panel.getByText('₱30.00')).toBeInTheDocument()
+    expect(panel.queryByText('₱38.00')).not.toBeInTheDocument()
+    expect(panel.getByText('SRP held as ceiling')).toBeInTheDocument()
+    expect(panel.getByText('LEGACY_TYPE')).toBeInTheDocument()
+    expect(panel.queryByRole('checkbox')).not.toBeInTheDocument()
+    if (effective_state === 'in_effect') expect(await screen.findByRole('button', { name: 'End Price Freeze' })).toBeInTheDocument()
+    else expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
+  })
+
+  it('shows only the selected declaration saved prices while another detail is delayed', async () => {
+    const active = { ...draft, status: 'active' as const, effective_state: 'in_effect', official_prices: [official()] }
+    const historical = { ...draft, id: 8, declaration_reference: 'DECL-8', status: 'ended' as const, effective_state: 'ended', official_prices: [official('milk', 'SRP', 30)] }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(active), summary(historical)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValueOnce(active).mockReturnValueOnce(deferred<RegulatoryEmergencyRecord>().promise)
+    render(<EmergencyToggle />)
+    await screen.findByRole('button', { name: 'End Price Freeze' })
+    expect(within(pricing()).getByText('Rice')).toBeInTheDocument()
+    expect(within(pricing()).queryByText('Milk')).not.toBeInTheDocument()
+    fireEvent.click(declaration(8))
+    expect(within(pricing()).getByText('Milk')).toBeInTheDocument()
+    expect(within(pricing()).queryByText('Rice')).not.toBeInTheDocument()
+    expect(within(pricing()).getByText('1 Product')).toBeInTheDocument()
+    expect(screen.getByText('Loading declaration details…')).toBeInTheDocument()
+  })
+
+  it('shows an empty confirmed declaration without substituting its draft or SRP prices', async () => {
+    const record = { ...draft, status: 'active' as const, effective_state: 'scheduled' }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(record)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(record)
+    render(<EmergencyToggle />)
+    expect(await screen.findByText('No confirmed price ceilings recorded for this declaration')).toBeInTheDocument()
+    expect(within(pricing()).queryByText('₱45.00')).not.toBeInTheDocument()
+    expect(within(pricing()).queryByText('₱38.00')).not.toBeInTheDocument()
+  })
+
+  it('blocks draft actions when the effective state is unknown', async () => {
+    const record = { ...draft, effective_state: 'unrecognized' }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(record)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(record)
+    render(<EmergencyToggle />)
+    expect(await screen.findByRole('heading', { name: 'Status unavailable' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm and activate' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refresh preparation' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
+  })
+
+  it('replaces draft prices immediately after activation with the authoritative response', async () => {
+    vi.mocked(adminApi.activateEmergency).mockResolvedValue({ ...draft, status: 'active', effective_state: 'in_effect', official_prices: [official('rice', 'APC', 46)] })
+    render(<EmergencyToggle />)
+    await screen.findByRole('checkbox')
+    const user = userEvent.setup()
+    await user.click(review())
+    await user.click(screen.getByRole('button', { name: 'Confirm and activate' }))
+    expect(await screen.findByRole('heading', { name: 'Confirmed price ceilings' })).toBeInTheDocument()
+    expect(within(pricing()).getByText('₱46.00')).toBeInTheDocument()
+    expect(within(pricing()).queryByText('₱45.00')).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(adminApi.activateEmergency).toHaveBeenCalledWith(7, { confirmed: true, preparation_hash: draft.preparation_hash })
+  })
 
   it('shows summaries before delayed details and does not load other declarations', async () => {
     const detail = deferred<RegulatoryEmergencyRecord>()
@@ -184,7 +313,7 @@ describe('Emergency Protocol independent loading and refresh', () => {
     expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
     expect(screen.getByText(/Manually ended at/)).toBeInTheDocument()
     expect(screen.getByText('Normal SRP Protocol')).toBeInTheDocument()
-    expect(screen.getByText('Official APC / Price Freeze References')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Price Freeze Prices' })).toBeInTheDocument()
   })
 
   it('does not verify an incomplete list from a create response and reloads all declarations', async () => {
@@ -197,7 +326,7 @@ describe('Emergency Protocol independent loading and refresh', () => {
     fireEvent.change(screen.getByLabelText('Declaration reference'), { target: { value: 'DECL-7' } })
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-09-09' } })
     fireEvent.submit(screen.getByLabelText('Declaration reference').closest('form')!)
-    await screen.findByRole('heading', { name: 'APC Preparation' })
+    await screen.findByRole('heading', { name: 'Proposed price ceilings' })
     expect(screen.getByText('Emergency status unavailable')).toBeInTheDocument()
     expect(adminApi.getEmergencySummaries).toHaveBeenCalledTimes(2)
     await act(async () => fresh.resolve([summary(draft), summary(active)]))
@@ -232,7 +361,7 @@ describe('Emergency Protocol independent loading and refresh', () => {
     await screen.findByText(/Manually ended at/)
     expect(screen.queryByRole('button', { name: 'End Price Freeze' })).not.toBeInTheDocument()
     expect(screen.getByText('Normal SRP Protocol')).toBeInTheDocument()
-    expect(screen.getByText('1 Reference')).toBeInTheDocument()
+    expect(within(pricing()).getByText('1 Product')).toBeInTheDocument()
   })
 
   it.each(['resolve', 'reject'])('drops a detail %s superseded by a newer summary refresh', async (outcome) => {
@@ -266,28 +395,62 @@ describe('Emergency Protocol independent loading and refresh', () => {
     expect(screen.getByRole('button', { name: 'Confirm and activate' })).toBeDisabled()
   })
 
-  it('keeps references from all declarations and clamps both pages after results shrink', async () => {
-    const prices = Array.from({ length: 11 }, (_, i) => ({ id: i + 1, commodity_key: `product-${i}`, price_type: 'APC', authoritative_price: 45, effective_from: '2026-09-09', source_reference: 'DECL-7' }))
-    const many = { ...draft, candidates: Array.from({ length: 9 }, (_, i) => ({ ...draft.candidates[0], id: i + 1, commodity_key: `product-${i}` })), official_prices: prices }
-    const historical = { ...draft, id: 8, declaration_reference: 'DECL-8', status: 'ended' as const, effective_state: 'ended', official_prices: [{ ...prices[0], id: 100, commodity_key: 'historic-product' }] }
-    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(many), summary(historical)])
+  it('clamps mixed draft pagination after refreshed results shrink', async () => {
+    const many = { ...draft, candidates: Array.from({ length: 9 }, (_, i) => ({ ...draft.candidates[0], id: i + 1, commodity_key: `product-${i}` })) }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(many)])
     vi.mocked(adminApi.getEmergency).mockResolvedValue(many)
     render(<EmergencyToggle />)
     await screen.findByRole('checkbox')
-    expect(screen.getByText('12 References')).toBeInTheDocument()
-    const candidates = screen.getByRole('navigation', { name: 'APC candidates pagination' })
-    const references = screen.getByRole('navigation', { name: 'Official APC references pagination' })
-    fireEvent.click(within(candidates).getByRole('button', { name: 'Next page' }))
-    fireEvent.click(within(references).getByRole('button', { name: 'Next references page' }))
-    expect(candidates).toHaveTextContent('Page 2 of 2')
-    expect(references).toHaveTextContent('Page 2 of 2')
-    expect(screen.getByText('historic-product')).toBeInTheDocument()
-    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(draft), summary(historical)])
+    const nav = screen.getByRole('navigation', { name: 'Proposed price ceilings pagination' })
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next page' }))
+    expect(nav).toHaveTextContent('Page 2 of 2')
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(draft)])
     vi.mocked(adminApi.getEmergency).mockResolvedValue(draft)
     refresh()
-    await waitFor(() => expect(candidates).toHaveTextContent('Page 1 of 1'))
-    expect(references).toHaveTextContent('Page 1 of 1')
-    expect(screen.getByText('1 Reference')).toBeInTheDocument()
+    await waitFor(() => expect(nav).toHaveTextContent('Page 1 of 1'))
+    expect(within(pricing()).getByText('2 Products')).toBeInTheDocument()
+  })
+
+  it('clamps confirmed pagination after refreshed results shrink and resets it on selection', async () => {
+    const many = { ...draft, status: 'active' as const, effective_state: 'in_effect', official_prices: Array.from({ length: 11 }, (_, i) => ({ ...official(`product-${i}`), id: i + 1 })) }
+    const historical = { ...draft, id: 8, declaration_reference: 'DECL-8', status: 'ended' as const, effective_state: 'ended', official_prices: [official('historic-product')] }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(many), summary(historical)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(many)
+    render(<EmergencyToggle />)
+    await screen.findByRole('button', { name: 'End Price Freeze' })
+    const nav = screen.getByRole('navigation', { name: 'Confirmed price ceilings pagination' })
+    expect(within(pricing()).getByText('11 Products')).toBeInTheDocument()
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next references page' }))
+    expect(nav).toHaveTextContent('Page 2 of 2')
+    expect(within(pricing()).queryByText('historic-product')).not.toBeInTheDocument()
+    const small = { ...many, official_prices: [official()] }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(small), summary(historical)])
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(small)
+    refresh()
+    await waitFor(() => expect(nav).toHaveTextContent('Page 1 of 1'))
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(historical)
+    fireEvent.click(declaration(8))
+    expect(within(pricing()).getByText('historic-product')).toBeInTheDocument()
+    expect(within(pricing()).queryByText('Rice')).not.toBeInTheDocument()
+    expect(nav).toHaveTextContent('Page 1 of 1')
+  })
+
+  it('keeps draft filters during refresh and resets them when selecting another declaration', async () => {
+    const other = { ...draft, id: 8, declaration_reference: 'DECL-8' }
+    vi.mocked(adminApi.getEmergencySummaries).mockResolvedValue([summary(draft), summary(other)])
+    render(<EmergencyToggle />)
+    await screen.findByRole('checkbox')
+    const input = within(pricing()).getByRole('textbox', { name: 'Search prices' })
+    fireEvent.change(input, { target: { value: 'milk' } })
+    fireEvent.click(within(pricing()).getByRole('button', { name: 'SRP held (1)' }))
+    refresh()
+    await waitFor(() => expect(adminApi.getEmergency).toHaveBeenCalledTimes(2))
+    expect(input).toHaveValue('milk')
+    vi.mocked(adminApi.getEmergency).mockResolvedValue(other)
+    fireEvent.click(declaration(8))
+    await waitFor(() => expect(within(pricing()).getByRole('textbox', { name: 'Search prices' })).toHaveValue(''))
+    expect(within(pricing()).getByRole('button', { name: 'All (2)' })).toHaveClass('is-active')
+    expect(within(within(pricing()).getByRole('table')).getByText('Rice')).toBeInTheDocument()
   })
 
   it('selects the next draft when the selected declaration disappears, then handles an empty list', async () => {
