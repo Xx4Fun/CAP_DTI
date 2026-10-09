@@ -22,6 +22,7 @@ class ImportStorePhotosTest extends TestCase
         'HARO MART' => 'haromart.jpg',
         'Puregold Price Club Incorporated' => 'puregold.jpg',
         'Unitop General Merchandise' => 'unitop.jpg',
+        'Antique City Square' => 'citysquare.jpg',
     ];
 
     private string $fixtureRoot;
@@ -86,8 +87,8 @@ class ImportStorePhotosTest extends TestCase
         $after = Store::orderBy('id')->get()->map(fn ($store) => $store->getAttributes())->all();
         $this->artisan('stores:import-photos', ['--apply' => true])->assertSuccessful();
         $this->assertSame($after, Store::orderBy('id')->get()->map(fn ($store) => $store->getAttributes())->all());
-        $this->assertDatabaseCount('audit_events', 4);
-        $this->assertCount(4, Storage::disk('store-photos-test')->allFiles());
+        $this->assertDatabaseCount('audit_events', 5);
+        $this->assertCount(5, Storage::disk('store-photos-test')->allFiles());
     }
 
     #[DataProvider('invalidPreflightCases')]
@@ -126,7 +127,7 @@ class ImportStorePhotosTest extends TestCase
         $disk->shouldReceive('put')->andReturn(false);
         Storage::shouldReceive('disk')->with('store-photos-test')->andReturn($disk);
         $this->artisan('stores:import-photos', ['--apply' => true])->assertFailed();
-        $this->assertSame(4, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
+        $this->assertSame(5, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
         $this->assertDatabaseCount('audit_events', 0);
     }
 
@@ -142,7 +143,7 @@ class ImportStorePhotosTest extends TestCase
         Storage::shouldReceive('disk')->with('store-photos-test')->andReturn($disk);
         $this->artisan('stores:import-photos', ['--apply' => true])->assertFailed();
         $this->assertSame('new conflicting object', $realDisk->get('store_images/cptmart.jpg'));
-        $this->assertSame(4, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
+        $this->assertSame(5, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
         $this->assertDatabaseCount('audit_events', 0);
     }
 
@@ -152,7 +153,7 @@ class ImportStorePhotosTest extends TestCase
         $disk->shouldReceive('get')->andReturn('corrupted upload');
         Storage::shouldReceive('disk')->with('store-photos-test')->andReturn($disk);
         $this->artisan('stores:import-photos', ['--apply' => true])->assertFailed();
-        $this->assertSame(4, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
+        $this->assertSame(5, Store::whereIn('store_name', array_keys(self::PHOTOS))->whereNull('image_path')->count());
         $this->assertDatabaseCount('audit_events', 0);
     }
 
@@ -166,10 +167,26 @@ class ImportStorePhotosTest extends TestCase
         $this->artisan('stores:import-photos', ['--apply' => true])->assertFailed();
         $this->assertSame($this->before, Store::orderBy('id')->get()->map(fn ($store) => $store->getAttributes())->all());
         $this->assertDatabaseCount('audit_events', 0);
-        $this->assertCount(4, Storage::disk('store-photos-test')->allFiles());
+        $this->assertCount(5, Storage::disk('store-photos-test')->allFiles());
         Event::forget('eloquent.creating: '.AuditEvent::class);
         $this->artisan('stores:import-photos', ['--apply' => true])->assertSuccessful();
-        $this->assertDatabaseCount('audit_events', 4);
+        $this->assertDatabaseCount('audit_events', 5);
+    }
+
+    public function test_city_square_is_added_without_changing_the_previous_four_assignments(): void
+    {
+        foreach (self::PHOTOS as $name => $file) {
+            if ($file === 'citysquare.jpg') continue;
+            Store::where('store_name', $name)->update(['image_path' => 'store_images/'.$file]);
+            Storage::disk('store-photos-test')->put('store_images/'.$file, file_get_contents($this->source($file)));
+        }
+        $previous = Store::where('store_name', '!=', 'Antique City Square')->orderBy('id')->get()->map(fn ($store) => $store->getAttributes())->all();
+        $this->artisan('stores:import-photos', ['--apply' => true])->expectsOutputToContain('1 establishment photos attached')->assertSuccessful();
+        $this->assertSame($previous, Store::where('store_name', '!=', 'Antique City Square')->orderBy('id')->get()->map(fn ($store) => $store->getAttributes())->all());
+        $this->assertDatabaseHas('stores', ['store_name' => 'Antique City Square', 'image_path' => 'store_images/citysquare.jpg']);
+        $this->assertDatabaseCount('audit_events', 1);
+        $this->artisan('stores:import-photos', ['--apply' => true])->assertSuccessful();
+        $this->assertDatabaseCount('audit_events', 1);
     }
 
     public function test_imported_photos_reach_all_roles_without_exposing_unlinked_vendor_stores(): void

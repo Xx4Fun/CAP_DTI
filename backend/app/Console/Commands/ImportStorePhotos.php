@@ -18,14 +18,15 @@ use Throwable;
 
 class ImportStorePhotos extends Command
 {
-    protected $signature = 'stores:import-photos {--apply : Upload and attach the four supplied establishment photos}';
-    protected $description = 'Preview or import the four establishment photos without changing store metadata';
+    protected $signature = 'stores:import-photos {--apply : Upload and attach the supplied establishment photos}';
+    protected $description = 'Preview or import establishment photos without changing store metadata';
 
     private const PHOTOS = [
         'CPT Mart- Antique Branch' => 'cptmart.jpg',
         'HARO MART' => 'haromart.jpg',
         'Puregold Price Club Incorporated' => 'puregold.jpg',
         'Unitop General Merchandise' => 'unitop.jpg',
+        'Antique City Square' => 'citysquare.jpg',
     ];
 
     public function handle(CommodityImageStorage $images, AuditTrailService $audit): int
@@ -91,7 +92,7 @@ class ImportStorePhotos extends Command
                 }
                 return $changed;
             });
-            $this->info('Applied. '.$changed.' establishment photos attached; all four storage objects verified.');
+            $this->info('Applied. '.$changed.' establishment photos attached; all '.count($photos).' storage objects verified.');
             return self::SUCCESS;
         } catch (ValidationException $exception) {
             $this->error(implode(' ', $exception->validator->errors()->all()));

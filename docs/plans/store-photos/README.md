@@ -1,9 +1,9 @@
-# Four establishment photos
+# Establishment photos
 
 ## Local implementation
 
 The supplied JPGs are preserved byte-for-byte in `backend/database/seeders/store-source-images/`.
-The ignored `receipt-samples/` folder and older frontend bundles are unchanged.
+The supplied source folders and older frontend bundles are unchanged. `sample/citysquare.jpg` was added on 2026-10-10.
 
 | Establishment | Source file | Database object key |
 | --- | --- | --- |
@@ -11,14 +11,15 @@ The ignored `receipt-samples/` folder and older frontend bundles are unchanged.
 | HARO MART | haromart.jpg | store_images/haromart.jpg |
 | Puregold Price Club Incorporated | puregold.jpg | store_images/puregold.jpg |
 | Unitop General Merchandise | unitop.jpg | store_images/unitop.jpg |
+| Antique City Square | citysquare.jpg | store_images/citysquare.jpg |
 
 `stores:import-photos` uses the configured `filesystems.commodity_images_disk`, just like establishment creation.
 It previews by default, rejects missing/duplicate stores, invalid or oversized JPGs, existing different photos and conflicting storage objects.
-Apply verifies uploaded bytes before locking the four stores and committing image fields and `store.photo_imported` audits together.
+Apply verifies uploaded bytes before locking the five stores and committing image fields and `store.photo_imported` audits together.
 Repeating the command reuses matching objects without updating timestamps or adding audit events.
 Objects uploaded before a database failure remain available for a verified retry; no shared files are deleted.
 
-The full establishment seeder now has these four defaults. Do not run that seeder against an existing production database for this photo change: it also rewrites establishment metadata.
+The full establishment seeder now has these five defaults. Do not run that seeder against an existing production database for this photo change: it also rewrites establishment metadata.
 The importer alone changes only image paths and their normal update timestamps. Existing APIs and clients keep their current image URL contract.
 
 ## Authorized rollout procedure
@@ -26,11 +27,11 @@ The importer alone changes only image paths and their normal update timestamps. 
 Production storage writes, database writes, commits, pushes and deployment require explicit approval.
 No production import is part of local implementation.
 
-1. Deploy only the reviewed backend command, mappings and four assets. Preserve unrelated working-tree changes.
+1. Deploy only the reviewed backend command, mappings and assets. Preserve unrelated working-tree changes.
 2. Verify the target database and configured image disk. Production must use the existing public `commodity-images` bucket, not Render container storage.
-3. From `backend/`, preview with `php artisan stores:import-photos`; confirm exactly the four intended establishments and object keys.
-4. Apply with `php artisan stores:import-photos --apply` only after approval. Do not allow simultaneous external writes to these four fixed keys: the installed storage adapter does not support conditional object creation through this command.
-5. Verify all four public URLs return successful image responses with the source SHA256, and that the public establishment API and authorized Admin/Field/Vendor responses return those URLs.
+3. From `backend/`, preview with `php artisan stores:import-photos`; confirm the five intended establishments and object keys. Existing matching assignments are skipped; the City Square follow-up should change only that store.
+4. Apply with `php artisan stores:import-photos --apply` only after approval. Do not allow simultaneous external writes to these fixed keys: the installed storage adapter does not support conditional object creation through this command.
+5. Verify all five public URLs return successful image responses with the source SHA256, and that the public establishment API and authorized Admin/Field/Vendor responses return those URLs.
 6. Refresh each online client and inspect its store cards, map pins, detail views and Vendor establishment view. Vendor visibility remains limited to linked stores. No frontend deployment is expected.
 
 Rollback only the reviewed photo assignments to their recorded previous keys with an audit; do not restore a full database snapshot or delete shared storage objects.
