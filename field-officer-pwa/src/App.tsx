@@ -1551,7 +1551,7 @@ function VisitWizard({
                       <strong>{store.store_name}</strong>
                       <small>{store.address}</small>
                       <span className="store-status-row"><span>{routineStatusOf(store) === 'completed' ? (cadence === 'daily' ? 'Monitored Today' : 'Monitored This Week') : (cadence === 'daily' ? 'Due Today' : 'Not Yet Monitored')}</span></span>
-                      <small>{store.latest_routine_monitoring_at ? `Latest routine: ${new Date(store.latest_routine_monitoring_at).toLocaleDateString('en-PH')}` : store.has_prior_routine_monitoring === false ? 'No previous routine visits' : ''}</small>
+                      {!store.latest_routine_monitoring_at && store.has_prior_routine_monitoring === false && <small>No previous routine visits</small>}
                     </span>
                   </button>
                 ))}

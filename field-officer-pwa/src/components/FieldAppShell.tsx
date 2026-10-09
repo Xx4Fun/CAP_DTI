@@ -96,7 +96,6 @@ export function FieldAppShell({
 
           <nav>
             {navigationButton(destinations[0])}
-            {navigationButton(destinations[1])}
             <button
               type="button"
               className={`field-new-visit ${addActive ? 'active' : ''}`}
@@ -108,6 +107,7 @@ export function FieldAppShell({
               <Plus aria-hidden="true" />
               <span>Add</span>
             </button>
+            {navigationButton(destinations[1])}
             {navigationButton(destinations[2])}
           </nav>
 
