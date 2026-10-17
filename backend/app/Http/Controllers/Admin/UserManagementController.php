@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\LegalNotice;
 use App\Models\User;
 use App\Models\FieldOfflineLease;
+use App\Models\VendorRegistration;
 use App\Services\Admin\AdminAuthorizationService;
 use App\Services\Admin\AuditTrailService;
 use App\Services\Admin\SensitiveActionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -28,7 +30,11 @@ class UserManagementController extends Controller
             'per_page' => ['nullable', 'integer', Rule::in([10, 25, 50])],
         ]);
 
+        $hasRegistrationsTable = Schema::hasTable('vendor_registrations');
         $base = User::query()->whereIn('role', self::MANAGED_ROLES);
+        if ($hasRegistrationsTable) {
+            $base->whereDoesntHave('vendorRegistration', fn ($q) => $q->whereIn('status', ['pending', 'rejected']));
+        }
         $totals = (clone $base)->selectRaw(
             'COUNT(*) AS total,'
             ." SUM(CASE WHEN role = 'field_officer' THEN 1 ELSE 0 END) AS field_officer,"
@@ -37,6 +43,9 @@ class UserManagementController extends Controller
             [false],
         )->toBase()->first();
         $counts = array_map('intval', (array) $totals);
+        $counts['pending_registrations'] = $hasRegistrationsTable
+            ? VendorRegistration::where('status', 'pending')->count()
+            : 0;
 
         $query = $base->with(['stores:id,vendor_user_id,store_name']);
         if (($filters['role'] ?? 'all') !== 'all') {

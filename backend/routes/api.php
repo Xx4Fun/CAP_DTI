@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\LegalSignatoryController;
 use App\Http\Controllers\Admin\StoreConversationController;
 use App\Http\Controllers\Admin\VendorInvitationController;
+use App\Http\Controllers\Admin\VendorRegistrationAdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalamityController;
 use App\Http\Controllers\CitizenTipController;
@@ -38,6 +39,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/field/login', [FieldAuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/vendor/login', [VendorAuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/vendor/register', [VendorAuthController::class, 'register'])->middleware('throttle:login');
 Route::post('/vendor-invitations/{token}/accept', [VendorInvitationController::class, 'accept']);
 Route::get('/health/ready', [HealthController::class, 'ready'])->middleware('throttle:30,1');
 
@@ -92,6 +94,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::prefix('vendor')->group(function () {
         Route::get('/session', [VendorAuthController::class, 'session']);
+        Route::get('/registration', [VendorAuthController::class, 'registrationStatus']);
+        Route::post('/registration/resubmit', [VendorAuthController::class, 'resubmitRegistration'])->middleware('throttle:30,1');
         Route::post('/password', [VendorAuthController::class, 'password']);
         Route::post('/logout', [VendorAuthController::class, 'logout']);
         Route::get('/overview', [VendorPortalController::class, 'overview']);
@@ -137,6 +141,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/stores/{store}/invitations', [VendorInvitationController::class, 'store']);
         Route::get('/vendor-invitations', [VendorInvitationController::class, 'index']);
         Route::post('/invitations/{invitation}/cancel', [VendorInvitationController::class, 'cancel']);
+        Route::get('/vendor-registrations', [VendorRegistrationAdminController::class, 'index']);
+        Route::post('/vendor-registrations/{registration}/approve', [VendorRegistrationAdminController::class, 'approve']);
+        Route::post('/vendor-registrations/{registration}/reject', [VendorRegistrationAdminController::class, 'reject']);
         Route::get('/srp', [SrpManagementController::class, 'index']);
         Route::post('/srp', [SrpManagementController::class, 'store']);
         Route::put('/srp/{srp}', [SrpManagementController::class, 'updateMetadata']);

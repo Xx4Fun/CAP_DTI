@@ -22,6 +22,21 @@ trait ResolvesVendor
         return $user;
     }
 
+    /**
+     * Registration status and resubmission routes accept a vendor registration token (while pending or rejected)
+     * or an active vendor portal token.
+     */
+    protected function vendorRegistrationUser(Request $request): User
+    {
+        $user = $request->user();
+        $tokenName = $user?->currentAccessToken()?->name;
+        if (! $user || $user->role !== 'vendor' || ! in_array($tokenName, [VendorAuthController::REGISTRATION_TOKEN_NAME, VendorAuthController::TOKEN_NAME], true)) {
+            $this->vendorError(403, 'VENDOR_ACCESS_REVOKED', 'This session no longer has Vendor Portal access. Sign in again.');
+        }
+
+        return $user;
+    }
+
     protected function vendorError(int $httpStatus, string $status, string $message): never
     {
         throw new HttpResponseException(response()->json(['status' => $status, 'message' => $message], $httpStatus));
