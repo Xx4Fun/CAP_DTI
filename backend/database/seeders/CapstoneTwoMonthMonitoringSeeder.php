@@ -26,7 +26,7 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
 {
     public const CLIENT_VERSION = 'capstone-seed-2026-11-01-8w';
 
-    public const DATASET_VERSION = '2026-11-01-8w-v1';
+    public const DATASET_VERSION = '2026-11-01-8w-v2';
 
     public const TARGET_DATES = [
         '2026-09-08',
@@ -66,6 +66,7 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
             ->get();
 
         $this->preflight($stores);
+        $officers = $this->officers();
         $covered = $this->effectiveBulletins(true);
         $other = $this->effectiveBulletins(false);
         $expected = $this->expectedDataset($stores, $covered, $other, $references);
@@ -74,7 +75,12 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
         $representativeHash = hash('sha256', $representativePng);
 
         if ($this->existingDatasetIsComplete($stores, $expected, $officerHash, $representativeHash)) {
-            $this->command?->info('Capstone 2-month monitoring dataset already verified; no changes made.');
+            $reassigned = $this->reconcileExistingDatasetOfficers($stores, $officers);
+            $this->command?->info(
+                $reassigned > 0
+                    ? "Capstone 2-month monitoring dataset officers reassigned ({$reassigned} records updated across {$officers->count()} real officer(s))."
+                    : 'Capstone 2-month monitoring dataset already verified; no changes made.'
+            );
 
             return;
         }
@@ -99,6 +105,7 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
 
             DB::transaction(function () use (
                 $stores,
+                $officers,
                 $expected,
                 $disk,
                 $officerPath,
@@ -111,7 +118,6 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
                 $this->lockApcPreparation();
                 $this->supersedePriorUnissuedRecords();
 
-                $officers = $this->officers();
                 $now = now();
 
                 foreach (self::TARGET_DATES as $weekIndex => $date) {
@@ -233,6 +239,8 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
                         ]);
                     }
                 }
+
+                $this->cleanupSyntheticDemoOfficers($officers);
             });
 
             $this->command?->info('Capstone 2-month monitoring dataset created. '.json_encode([
@@ -664,19 +672,120 @@ class CapstoneTwoMonthMonitoringSeeder extends Seeder
 
     private function officers(): Collection
     {
-        return collect($this->demoOfficerAttributes())->map(fn ($attributes) => User::firstOrCreate(
-            ['email' => $attributes['email']],
-            $attributes + ['password' => Str::random(80), 'is_active' => false, 'must_change_password' => false]
-        ));
+        $active = User::query()
+            ->where('role', 'field_officer')
+            ->where('is_active', true)
+            ->where('email', 'not like', '%@price-watch.invalid')
+            ->orderBy('id')
+            ->get();
+
+        if ($active->isNotEmpty()) {
+            return $active->values();
+        }
+
+        $anyReal = User::query()
+            ->where('role', 'field_officer')
+            ->where('email', 'not like', '%@price-watch.invalid')
+            ->orderBy('id')
+            ->get();
+
+        if ($anyReal->isNotEmpty()) {
+            return $anyReal->values();
+        }
+
+        return collect([
+            User::firstOrCreate(
+                ['email' => 'officer@dti.gov.ph'],
+                [
+                    'name' => 'DTI Officer',
+                    'password' => Str::random(80),
+                    'role' => 'field_officer',
+                    'is_active' => true,
+                    'must_change_password' => false,
+                ]
+            ),
+        ]);
     }
 
-    private function demoOfficerAttributes(): array
+    private function reconcileExistingDatasetOfficers(Collection $stores, Collection $officers): int
     {
-        return collect(range(1, 3))->map(fn ($number) => [
-            'name' => "CAPSTONE Demo Field Officer {$number}",
-            'email' => "capstone-demo-field-officer-{$number}@price-watch.invalid",
-            'role' => 'field_officer',
-        ])->all();
+        return DB::transaction(function () use ($stores, $officers): int {
+            $records = MonitoringRecord::query()
+                ->where('client_version', self::CLIENT_VERSION)
+                ->where('status', 'accepted')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('client_uuid');
+
+            $updatedCount = 0;
+
+            foreach (self::TARGET_DATES as $weekIndex => $date) {
+                foreach ($stores as $storeIndex => $store) {
+                    $record = $records->get($this->clientUuid($weekIndex, $store->id));
+                    $targetOfficer = $officers[($storeIndex + $weekIndex) % $officers->count()];
+
+                    if (! $record || (int) $record->officer_user_id === (int) $targetOfficer->id) {
+                        continue;
+                    }
+
+                    $record->update(['officer_user_id' => $targetOfficer->id]);
+
+                    TemporalInspection::query()
+                        ->where('monitoring_record_id', $record->id)
+                        ->update(['officer_user_id' => $targetOfficer->id]);
+
+                    AuditEvent::query()
+                        ->where('subject_type', MonitoringRecord::class)
+                        ->where('subject_id', $record->id)
+                        ->where('action', 'monitoring.capstone_demo_seeded')
+                        ->update(['actor_id' => $targetOfficer->id]);
+
+                    $updatedCount++;
+                }
+            }
+
+            $updatedCount += $this->cleanupSyntheticDemoOfficers($officers);
+
+            return $updatedCount;
+        });
+    }
+
+    private function cleanupSyntheticDemoOfficers(Collection $officers): int
+    {
+        $syntheticIds = User::query()
+            ->where('role', 'field_officer')
+            ->where('email', 'like', '%@price-watch.invalid')
+            ->pluck('id')
+            ->all();
+
+        if ($syntheticIds === []) {
+            return 0;
+        }
+
+        $fallbackOfficerId = $officers->first()->id;
+
+        $otherRecords = MonitoringRecord::query()
+            ->whereIn('officer_user_id', $syntheticIds)
+            ->orderBy('id')
+            ->get();
+
+        foreach ($otherRecords as $index => $otherRecord) {
+            $assignedOfficerId = $officers[$index % $officers->count()]->id;
+            $otherRecord->update(['officer_user_id' => $assignedOfficerId]);
+            TemporalInspection::query()
+                ->where('monitoring_record_id', $otherRecord->id)
+                ->update(['officer_user_id' => $assignedOfficerId]);
+        }
+
+        TemporalInspection::query()
+            ->whereIn('officer_user_id', $syntheticIds)
+            ->update(['officer_user_id' => $fallbackOfficerId]);
+
+        AuditEvent::query()
+            ->whereIn('actor_id', $syntheticIds)
+            ->update(['actor_id' => $fallbackOfficerId]);
+
+        return User::query()->whereIn('id', $syntheticIds)->delete();
     }
 
     private function visitAt(string $date, int $storeIndex): CarbonImmutable

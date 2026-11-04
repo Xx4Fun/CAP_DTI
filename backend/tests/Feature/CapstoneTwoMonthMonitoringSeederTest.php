@@ -131,11 +131,28 @@ class CapstoneTwoMonthMonitoringSeederTest extends TestCase
     public function test_it_supersedes_old_single_week_demo_records_and_is_idempotent_on_rerun(): void
     {
         $this->prepareCatalog(123, 36);
+        $officerA = User::create([
+            'name' => 'Kris',
+            'email' => 'kris@dti.gov.ph',
+            'password' => 'password',
+            'role' => 'field_officer',
+            'is_active' => true,
+        ]);
+        $officerB = User::create([
+            'name' => 'DTI Officer',
+            'email' => 'officer@dti.gov.ph',
+            'password' => 'password',
+            'role' => 'field_officer',
+            'is_active' => true,
+        ]);
+
         $this->seed(CapstoneMonitoringSeeder::class);
         $this->assertSame(10, MonitoringRecord::query()->where('status', 'accepted')->count());
+        $this->assertSame(3, User::query()->where('email', 'like', '%@price-watch.invalid')->count());
 
         $this->seed(CapstoneTwoMonthMonitoringSeeder::class);
 
+        $this->assertSame(0, User::query()->where('email', 'like', '%@price-watch.invalid')->count());
         $this->assertSame(
             10,
             MonitoringRecord::query()->where('client_version', 'capstone-seed-2026-09-01')->where('status', 'superseded')->count()
@@ -143,6 +160,14 @@ class CapstoneTwoMonthMonitoringSeederTest extends TestCase
         $this->assertSame(
             80,
             MonitoringRecord::query()->where('client_version', CapstoneTwoMonthMonitoringSeeder::CLIENT_VERSION)->where('status', 'accepted')->count()
+        );
+        $this->assertSame(
+            40,
+            MonitoringRecord::query()->where('client_version', CapstoneTwoMonthMonitoringSeeder::CLIENT_VERSION)->where('officer_user_id', $officerA->id)->count()
+        );
+        $this->assertSame(
+            40,
+            MonitoringRecord::query()->where('client_version', CapstoneTwoMonthMonitoringSeeder::CLIENT_VERSION)->where('officer_user_id', $officerB->id)->count()
         );
 
         $countsBefore = [
@@ -158,6 +183,60 @@ class CapstoneTwoMonthMonitoringSeederTest extends TestCase
             MonitoringRecordItem::query()->count(),
             TemporalInspection::query()->count(),
         ]);
+    }
+
+    public function test_it_reassigns_already_seeded_records_from_synthetic_demo_officers_to_real_officers_without_changing_data(): void
+    {
+        $this->prepareCatalog(123, 36);
+        $this->seed(CapstoneTwoMonthMonitoringSeeder::class);
+
+        // Simulate the v1 state where the 80 records were owned by synthetic demo officers
+        $synthetic = User::create([
+            'name' => 'CAPSTONE Demo Field Officer 1',
+            'email' => 'capstone-demo-field-officer-1@price-watch.invalid',
+            'password' => 'password',
+            'role' => 'field_officer',
+            'is_active' => false,
+        ]);
+        MonitoringRecord::query()->update(['officer_user_id' => $synthetic->id]);
+        TemporalInspection::query()->update(['officer_user_id' => $synthetic->id]);
+
+        // Add a second real officer alongside the default officer@dti.gov.ph
+        $realOfficer2 = User::create([
+            'name' => 'Kris',
+            'email' => 'kris@dti.gov.ph',
+            'password' => 'password',
+            'role' => 'field_officer',
+            'is_active' => true,
+        ]);
+        $realOfficerIds = User::query()
+            ->where('role', 'field_officer')
+            ->where('email', 'not like', '%@price-watch.invalid')
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+        $this->assertCount(2, $realOfficerIds);
+
+        $snapshotBefore = MonitoringRecordItem::query()
+            ->orderBy('id')
+            ->get(['id', 'monitoring_record_id', 'srp_id', 'recorded_price', 'previous_price', 'is_anomaly', 'finding_basis'])
+            ->toArray();
+
+        $this->seed(CapstoneTwoMonthMonitoringSeeder::class);
+
+        $snapshotAfter = MonitoringRecordItem::query()
+            ->orderBy('id')
+            ->get(['id', 'monitoring_record_id', 'srp_id', 'recorded_price', 'previous_price', 'is_anomaly', 'finding_basis'])
+            ->toArray();
+
+        // All item data and IDs remain 100% identical
+        $this->assertSame($snapshotBefore, $snapshotAfter);
+
+        // Synthetic demo officer is removed and the 80 records are partitioned 40 / 40 across the 2 real officers
+        $this->assertSame(0, User::query()->where('email', 'like', '%@price-watch.invalid')->count());
+        $this->assertSame(40, MonitoringRecord::query()->where('officer_user_id', $realOfficerIds[0])->count());
+        $this->assertSame(40, MonitoringRecord::query()->where('officer_user_id', $realOfficer2->id)->count());
+        $this->assertSame(0, TemporalInspection::query()->whereNotIn('officer_user_id', $realOfficerIds)->count());
     }
 
     public function test_apc_preparation_uses_the_latest_seeded_week_and_covers_all_applicable_commodities(): void

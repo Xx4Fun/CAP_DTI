@@ -23,7 +23,7 @@ if [ "${RUN_CAPSTONE_MONITORING_SEED:-}" = "2026-09-01-v1" ]; then
     php artisan db:seed --class=CapstoneMonitoringSeeder --force
 fi
 
-if [ "${RUN_CAPSTONE_TWO_MONTH_MONITORING_SEED:-2026-11-01-8w-v1}" = "2026-11-01-8w-v1" ]; then
+if [ "${RUN_CAPSTONE_TWO_MONTH_MONITORING_SEED:-2026-11-01-8w-v2}" = "2026-11-01-8w-v2" ]; then
     php artisan db:seed --class=CapstoneTwoMonthMonitoringSeeder --force
 fi
 
