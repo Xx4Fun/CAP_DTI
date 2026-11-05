@@ -14,45 +14,49 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Seed DTI Officer
-        User::updateOrCreate(
-            ['email' => 'officer@dti.gov.ph'],
-            [
-                'name' => 'DTI Officer',
-                'password' => Hash::make('password123'),
-                'role' => 'field_officer',
-            ]
-        );
+        if (app()->environment('local', 'testing')) {
+            $demoPassword = (string) env('SEED_DEMO_PASSWORD', 'password123');
 
-        // 2. Seed DTI Evaluator
-        User::updateOrCreate(
-            ['email' => 'evaluator@dti.gov.ph'],
-            [
-                'name' => 'DTI Evaluator',
-                'password' => Hash::make('password123'),
-                'role' => 'dti_evaluator',
-            ]
-        );
+            // 1. Seed DTI Officer
+            User::updateOrCreate(
+                ['email' => 'officer@dti.gov.ph'],
+                [
+                    'name' => 'DTI Officer',
+                    'password' => Hash::make($demoPassword),
+                    'role' => 'field_officer',
+                ]
+            );
 
-        // 3. Seed Vendor
-        User::updateOrCreate(
-            ['email' => 'vendor@grocery.com'],
-            [
-                'name' => 'Maria Clara',
-                'password' => Hash::make('password123'),
-                'role' => 'vendor',
-            ]
-        );
+            // 2. Seed DTI Evaluator
+            User::updateOrCreate(
+                ['email' => 'evaluator@dti.gov.ph'],
+                [
+                    'name' => 'DTI Evaluator',
+                    'password' => Hash::make($demoPassword),
+                    'role' => 'dti_evaluator',
+                ]
+            );
 
-        // 4. Seed Consumer
-        User::updateOrCreate(
-            ['email' => 'consumer@price.gov.ph'],
-            [
-                'name' => 'Juan Dela Cruz',
-                'password' => Hash::make('password123'),
-                'role' => 'consumer',
-            ]
-        );
+            // 3. Seed Vendor
+            User::updateOrCreate(
+                ['email' => 'vendor@grocery.com'],
+                [
+                    'name' => 'Maria Clara',
+                    'password' => Hash::make($demoPassword),
+                    'role' => 'vendor',
+                ]
+            );
+
+            // 4. Seed Consumer
+            User::updateOrCreate(
+                ['email' => 'consumer@price.gov.ph'],
+                [
+                    'name' => 'Juan Dela Cruz',
+                    'password' => Hash::make($demoPassword),
+                    'role' => 'consumer',
+                ]
+            );
+        }
 
         // 5. Reconcile the official San Jose de Buenavista establishment list.
         $this->call(OfficialEstablishmentSeeder::class);

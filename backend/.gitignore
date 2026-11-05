@@ -26,4 +26,9 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /*.sqlite*
+/postgres
+/database/gen_fallback.php
+/database/seed_sql.php
+/database/seed_statement.sql
+
 

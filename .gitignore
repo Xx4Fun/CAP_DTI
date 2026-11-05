@@ -11,6 +11,8 @@ add.png
 receipt-samples/
 .vercel
 .env*
+!.env.example
+!.env.production
 
 # Local working files, screenshots, and agent state
 scratch/
@@ -20,6 +22,18 @@ sample/
 /*.png
 web/fm-preview.html
 web/src/fm-preview.tsx
+Capstone_SS/
+documents/
+
+# AI agent guides and internal audit/plan vaults
+GEMINI.md
+.GEMINI.md
+AGENTS.md
+CLAUDE.md
+docs/superpowers/
+docs/audits/
+docs/plans/
+backend/docs/superpowers/
 
 # Removed Flutter client (2026-09-28); only local build folders remain
 mobile/
