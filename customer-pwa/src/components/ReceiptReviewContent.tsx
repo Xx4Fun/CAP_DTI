@@ -1,6 +1,6 @@
-import React from 'react';
-import { isWrongStore, type ReceiptReviewData } from '../app/receiptReview';
-import { AlertTriangle, Camera, Plus, RefreshCw, ZoomIn } from 'lucide-react';
+import React, { useState } from 'react';
+import { isWrongStore, type ReceiptReviewData, type ReceiptReviewItem } from '../app/receiptReview';
+import { AlertTriangle, Camera, Check, Edit3, Plus, RefreshCw, RotateCcw, Shield, ZoomIn } from 'lucide-react';
 
 const peso = (value: number | string | null | undefined): string | null =>
   value == null || value === '' || !Number.isFinite(Number(value)) ? null : `₱${Number(value).toFixed(2)}`;
@@ -16,6 +16,8 @@ const RECONCILIATION_MESSAGES: Record<string, string> = {
 };
 
 const UncertainBadge: React.FC<{ label?: string }> = ({ label = 'Uncertain' }) => <span className="receipt-uncertain-badge">{label}</span>;
+
+const EditedBadge: React.FC = () => <span className="receipt-edited-badge">Edited</span>;
 
 const StoreCheck: React.FC<{ review: ReceiptReviewData }> = ({ review }) => {
   if (review.merchant?.status === 'matched' && review.merchant.uncertain !== true) return <span className="receipt-uncertain-badge receipt-store-check--ok">Matches selected store</span>;
@@ -33,12 +35,18 @@ interface ReceiptReviewContentProps {
   onViewPhoto: (url: string, sequence: number) => void;
   onRetryPhotos: () => void;
   onRecapture: (action: { replace_sequence?: number; append?: boolean; restart?: boolean }) => void;
+  editedItems?: ReceiptReviewItem[];
+  onItemChange?: (updatedItem: ReceiptReviewItem) => void;
+  onItemReset?: (sequence: number) => void;
 }
 
 export const ReceiptReviewContent: React.FC<ReceiptReviewContentProps> = ({
   review, evidenceUrls, busy, readOnly, onPhotoLoaded, onPhotoError, onViewPhoto, onRetryPhotos, onRecapture,
+  editedItems, onItemChange, onItemReset,
 }) => {
-  const items = review.items ?? [];
+  const [editingSequence, setEditingSequence] = useState<number | null>(null);
+  const items = editedItems ?? review.items ?? [];
+  const originalItems = review.items ?? [];
   const structured = review.extraction_provider === 'gemini';
   const totalAmount = peso(review.total ?? review.detected_total);
   const totalUncertain = Boolean(review.total_uncertain) || review.warnings?.some(warning => warning.code === 'TOTAL_MISMATCH');
@@ -46,6 +54,19 @@ export const ReceiptReviewContent: React.FC<ReceiptReviewContentProps> = ({
   const showUncertaintyNotice = review.merchant?.uncertain === true || review.merchant?.status !== 'matched' || (structured
     ? review.manual_review_required || items.some(item => (item.uncertain_fields?.length ?? 0) > 0)
     : review.manual_review_required || items.some(item => item.ocr_confidence == null || item.ocr_confidence <= 0.8));
+
+  const isItemModified = (item: ReceiptReviewItem): boolean => {
+    if (item.is_consumer_edited) return true;
+    const original = originalItems.find(o => o.sequence === item.sequence);
+    if (!original) return false;
+    return (
+      (original.item_name ?? '') !== (item.item_name ?? '') ||
+      Number(original.quantity ?? 0) !== Number(item.quantity ?? 0) ||
+      (original.unit ?? '') !== (item.unit ?? '') ||
+      Number(original.unit_price ?? 0) !== Number(item.unit_price ?? 0) ||
+      Number(original.line_total ?? 0) !== Number(item.line_total ?? 0)
+    );
+  };
 
   return <>
       <section className="receipt-review-section" aria-labelledby="original-receipt-heading">
@@ -83,14 +104,142 @@ export const ReceiptReviewContent: React.FC<ReceiptReviewContentProps> = ({
         {!readOnly && isWrongStore(review) && <p className="receipt-field-warning" role="alert">
           Receipt shows {review.merchant?.display_name}, but you selected {review.store?.store_name}. Change the selected store or retake the receipt before submitting.
         </p>}
+
+      {!readOnly && (
+        <div style={{ margin: '12px 0', padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.8125rem', color: '#475569', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+          <Shield size={16} style={{ color: '#2563eb', flexShrink: 0, marginTop: '2px' }} />
+          <span>You can review and correct any misread item names, quantities, or prices. All changes are audited and verified by DTI officers against your original receipt photos.</span>
+        </div>
+      )}
+
       <div className="receipt-review-items">
         {items.map((item, index) => {
           const lineTotal = peso(item.line_total ?? item.observed_price);
           const unitPrice = peso(item.unit_price);
           const uncertainFields = structured ? item.uncertain_fields ?? [] : [];
+          const isEditing = editingSequence === item.sequence;
+          const edited = isItemModified(item);
+
+          if (isEditing && !readOnly) {
+            return (
+              <div key={item.sequence} className="receipt-review-item" aria-label={`Edit Item ${index + 1}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <strong style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>Editing Item {index + 1}</strong>
+                  {edited && <EditedBadge />}
+                </div>
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  <label>
+                    Item description
+                    <input
+                      type="text"
+                      value={item.item_name ?? ''}
+                      placeholder="e.g. Regular Milled Rice 1kg"
+                      onChange={(e) => onItemChange?.({ ...item, item_name: e.target.value })}
+                    />
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label>
+                      Quantity
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={item.quantity ?? ''}
+                        placeholder="1"
+                        onChange={(e) => {
+                          const qty = e.target.value === '' ? null : Number(e.target.value);
+                          const newTotal = qty !== null && item.unit_price !== null && item.unit_price !== undefined ? qty * item.unit_price : item.line_total;
+                          onItemChange?.({ ...item, quantity: qty, line_total: newTotal });
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Unit
+                      <input
+                        type="text"
+                        value={item.unit ?? ''}
+                        placeholder="kg, pc, can"
+                        onChange={(e) => onItemChange?.({ ...item, unit: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label>
+                      Unit price (₱)
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={item.unit_price ?? ''}
+                        placeholder="0.00"
+                        onChange={(e) => {
+                          const up = e.target.value === '' ? null : Number(e.target.value);
+                          const qty = item.quantity ?? 1;
+                          const newTotal = up !== null ? qty * up : item.line_total;
+                          onItemChange?.({ ...item, unit_price: up, line_total: newTotal, observed_price: up });
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Line total (₱)
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={item.line_total ?? ''}
+                        placeholder="0.00"
+                        onChange={(e) => {
+                          const lt = e.target.value === '' ? null : Number(e.target.value);
+                          onItemChange?.({ ...item, line_total: lt });
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ flex: 1, minHeight: '38px', padding: '6px 12px', fontSize: '0.85rem' }}
+                      onClick={() => setEditingSequence(null)}
+                    >
+                      <Check size={14} style={{ marginRight: '4px' }} /> Done
+                    </button>
+                    {edited && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ minHeight: '38px', padding: '6px 12px', fontSize: '0.85rem' }}
+                        title="Reset to original OCR extraction"
+                        onClick={() => onItemReset?.(item.sequence)}
+                      >
+                        <RotateCcw size={14} style={{ marginRight: '4px' }} /> Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={item.sequence} className="receipt-review-item" aria-label={`Item ${index + 1}`}>
-              <strong>{item.item_name || 'Name not detected'}</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                <strong style={{ flex: 1 }}>{item.item_name || 'Name not detected'}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  {edited && <EditedBadge />}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '4px 8px', minHeight: '28px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => setEditingSequence(item.sequence)}
+                      aria-label={`Edit ${item.item_name || `Item ${index + 1}`}`}
+                    >
+                      <Edit3 size={12} /> Edit
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="receipt-review-row">
                 <span>Qty: {item.quantity ?? 'Not detected'} {item.unit ?? ''}</span>
                 {structured && <span>{unitPrice ? `${unitPrice} each` : 'Unit price not detected'}</span>}

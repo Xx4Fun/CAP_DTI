@@ -816,4 +816,75 @@ describe('CitizenTipReview - Formal Receipt OCR Review Queue Workspace', () => {
     expect(screen.getByText(/Price Freeze Protocol/)).toBeInTheDocument()
     expect(screen.getByText(/PDRRMC-2026-07/)).toBeInTheDocument()
   })
+
+  it('renders edited badge in queue and audit trail with diff box in detail when consumer edits exist', async () => {
+    mockReportPage([{
+      ...mockReports[0],
+      has_consumer_edits: true,
+      consumer_confirmed_json: {
+        edited_items_count: 1,
+        confirmed_at: '2026-08-01T10:15:00Z',
+      },
+      evidence_available: false,
+      items: [
+        {
+          id: 501,
+          sequence: 0,
+          item_name: 'Super Extra Rice 1kg',
+          observed_price: 65,
+          unit_price: 65,
+          line_total: 65,
+          quantity: '1',
+          ocr_confidence: 0.95,
+          is_consumer_edited: true,
+          consumer_correction: {
+            original: {
+              item_name: 'SPR EXTR RCE 1K',
+              quantity: '1',
+              unit_price: 60,
+              line_total: 60,
+            },
+            edited: {
+              item_name: 'Super Extra Rice 1kg',
+              quantity: '1',
+              unit_price: 65,
+              line_total: 65,
+            },
+            fields_changed: ['item_name', 'unit_price', 'line_total'],
+            edited_at: '2026-08-01T10:15:00Z',
+          },
+          reference: {
+            status: 'available',
+            label: 'Rice (Regular Milled)',
+            value: 50,
+            is_above_reference: true,
+          },
+        },
+      ],
+    }])
+
+    const user = userEvent.setup()
+    render(<CitizenTipReview />)
+
+    // Verify "Edited" badge in the queue table row
+    expect(await screen.findByText('Edited')).toBeInTheDocument()
+
+    // Open report
+    await user.click(screen.getByText('RPT-2026-001'))
+
+    // Verify detail header and item badge
+    expect(screen.getAllByText('Edited by Consumer').length).toBeGreaterThanOrEqual(1)
+
+    // Verify warning advisory banner
+    expect(screen.getByText(/Consumer Manual Corrections:/)).toBeInTheDocument()
+    expect(screen.getByText(/1 item\(s\) modified/)).toBeInTheDocument()
+
+    // Verify diff box on the item card
+    expect(screen.getByText('Consumer Edit Audit Trail')).toBeInTheDocument()
+    expect(screen.getByText(/Changed: item_name, unit_price, line_total/)).toBeInTheDocument()
+    expect(screen.getByText('Original OCR')).toBeInTheDocument()
+    expect(screen.getByText('SPR EXTR RCE 1K')).toBeInTheDocument()
+    expect(screen.getByText('Consumer Input')).toBeInTheDocument()
+    expect(screen.getAllByText('Super Extra Rice 1kg')).toHaveLength(2)
+  })
 })

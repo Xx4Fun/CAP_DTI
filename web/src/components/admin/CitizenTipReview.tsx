@@ -708,7 +708,14 @@ export const CitizenTipReview: React.FC = () => {
                           }
                         }}
                       >
-                        <td data-label="Reference"><strong>{report.report_reference}</strong></td>
+                        <td data-label="Reference">
+                          <strong>{report.report_reference}</strong>
+                          {report.has_consumer_edits && (
+                            <span className="receipt-badge tone-warn" style={{ marginLeft: '6px', fontSize: '0.72rem', verticalAlign: 'middle' }}>
+                              Edited
+                            </span>
+                          )}
+                        </td>
                         <td data-label="Store">{report.store_name || 'Store unmapped'}</td>
                         <td data-label="Receipt date">
                           {report.observed_at
@@ -778,6 +785,11 @@ export const CitizenTipReview: React.FC = () => {
               {selected.submitted_at && (
                 <span className="consumer-report-detail-meta-pill">
                   <strong>Submitted:</strong> {new Date(selected.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              )}
+              {selected.has_consumer_edits && (
+                <span className="receipt-badge tone-warn" style={{ padding: '4px 8px', fontSize: '0.78rem' }}>
+                  Edited by Consumer
                 </span>
               )}
               <span className={`consumer-report-status tone-${getStatusTone(selected.status)}`}>
@@ -924,6 +936,20 @@ export const CitizenTipReview: React.FC = () => {
                 RIGHT COLUMN: System Finding & DTI Review
                 ========================================================================= */}
             <section className="ocr-breakdown-column-container consumer-report-card consumer-report-findings">
+              {selected.has_consumer_edits && (
+                <div
+                  className="admin-feedback warning"
+                  style={{ margin: '0 0 16px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}
+                  role="status"
+                >
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong>Consumer Manual Corrections:</strong> The consumer edited receipt items before submitting this report
+                    {selected.consumer_confirmed_json?.edited_items_count ? ` (${selected.consumer_confirmed_json.edited_items_count} item(s) modified)` : ''}.
+                    Cross-check each line against the original receipt photo in the canvas viewport.
+                  </div>
+                </div>
+              )}
               <div className="consumer-report-findings-block">
                 <div className="consumer-report-findings-head">
                   <h3>System extraction status</h3>
@@ -1085,7 +1111,14 @@ export const CitizenTipReview: React.FC = () => {
                               as one unit now; previously the three inputs stacked under a legend as
                               four unrelated controls with nothing tying them together. */}
                           <div className="consumer-report-item-head">
-                            <strong>{item.item_name || `Item ${item.sequence + 1}`}</strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <strong>{item.item_name || `Item ${item.sequence + 1}`}</strong>
+                              {item.is_consumer_edited && (
+                                <span className="receipt-badge tone-warn" style={{ fontSize: '0.72rem', padding: '2px 6px' }}>
+                                  Edited by Consumer
+                                </span>
+                              )}
+                            </div>
                             <span className={`consumer-report-item-state${decided ? ' done' : ''}${decided && findingVal === 'confirmed_violation' ? ' violation' : decided && findingVal === 'no_violation' ? ' compliant' : decided ? ' insufficient' : ''}`}>
                               {decided ? (
                                 findingVal === 'confirmed_violation' ? (
@@ -1109,6 +1142,46 @@ export const CitizenTipReview: React.FC = () => {
                               ? ` · OCR ${Math.round(toPrice(item.ocr_confidence)! * 100)}%`
                               : ''}
                           </div>
+                          {item.is_consumer_edited && item.consumer_correction && (
+                            <div
+                              className="consumer-report-item-diff"
+                              style={{
+                                margin: '8px 0',
+                                padding: '8px 10px',
+                                background: '#fffbeb',
+                                border: '1px solid #fde68a',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                color: '#92400e',
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <AlertTriangle size={13} />
+                                <span>Consumer Edit Audit Trail</span>
+                                {item.consumer_correction.fields_changed && item.consumer_correction.fields_changed.length > 0 && (
+                                  <span style={{ fontWeight: 'normal', color: '#b45309', marginLeft: 'auto', fontSize: '0.72rem' }}>
+                                    Changed: {item.consumer_correction.fields_changed.join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                <div style={{ background: '#fef3c7', padding: '6px 8px', borderRadius: '4px' }}>
+                                  <div style={{ fontWeight: 600, fontSize: '0.7rem', color: '#78350f', textTransform: 'uppercase', marginBottom: '2px' }}>Original OCR</div>
+                                  <div><strong>Name:</strong> {String(item.consumer_correction.original?.item_name || '—')}</div>
+                                  <div><strong>Qty:</strong> {item.consumer_correction.original?.quantity !== undefined && item.consumer_correction.original?.quantity !== null ? String(item.consumer_correction.original.quantity) : '—'}</div>
+                                  <div><strong>Unit Price:</strong> {item.consumer_correction.original?.unit_price !== undefined && item.consumer_correction.original?.unit_price !== null ? `₱${Number(item.consumer_correction.original.unit_price).toFixed(2)}` : '—'}</div>
+                                  <div><strong>Line Total:</strong> {item.consumer_correction.original?.line_total !== undefined && item.consumer_correction.original?.line_total !== null ? `₱${Number(item.consumer_correction.original.line_total).toFixed(2)}` : '—'}</div>
+                                </div>
+                                <div style={{ background: '#ecfdf5', padding: '6px 8px', borderRadius: '4px', border: '1px solid #a7f3d0', color: '#065f46' }}>
+                                  <div style={{ fontWeight: 600, fontSize: '0.7rem', color: '#047857', textTransform: 'uppercase', marginBottom: '2px' }}>Consumer Input</div>
+                                  <div><strong>Name:</strong> {String(item.consumer_correction.edited?.item_name || '—')}</div>
+                                  <div><strong>Qty:</strong> {item.consumer_correction.edited?.quantity !== undefined && item.consumer_correction.edited?.quantity !== null ? String(item.consumer_correction.edited.quantity) : '—'}</div>
+                                  <div><strong>Unit Price:</strong> {item.consumer_correction.edited?.unit_price !== undefined && item.consumer_correction.edited?.unit_price !== null ? `₱${Number(item.consumer_correction.edited.unit_price).toFixed(2)}` : '—'}</div>
+                                  <div><strong>Line Total:</strong> {item.consumer_correction.edited?.line_total !== undefined && item.consumer_correction.edited?.line_total !== null ? `₱${Number(item.consumer_correction.edited.line_total).toFixed(2)}` : '—'}</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <ItemReferenceVerdict reference={item.reference} />
                           <div className="consumer-report-item-fields">
                             <label>

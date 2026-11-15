@@ -463,11 +463,32 @@ class ReceiptReportController extends Controller
                     'address' => $report->store->address,
                 ] : null,
                 'lines' => $report->raw_ocr_json['lines'] ?? [],
+                'has_consumer_edits' => (bool) data_get($report->consumer_confirmed_json, 'has_edits', false) || $report->items->contains(fn ($i) => ! empty($i->consumer_correction_json)),
+                'consumer_confirmed_json' => $report->consumer_confirmed_json,
                 'items' => $readOnly
-                    ? collect($processingResult['items'] ?? [])->map(fn ($item) => collect($item)->only([
-                        'sequence', 'raw_text', 'item_name', 'quantity', 'unit', 'observed_price', 'unit_price', 'line_total',
-                        'uncertain_fields', 'section', 'possible_duplicate_of', 'ocr_confidence',
-                    ])->all())->values()
+                    ? (
+                        $report->items->isNotEmpty()
+                            ? $report->items->map(fn ($item) => [
+                                'sequence' => $item->sequence,
+                                'raw_text' => $item->raw_text,
+                                'item_name' => $item->item_name,
+                                'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
+                                'unit' => $item->unit,
+                                'observed_price' => $item->observed_price !== null ? (float) $item->observed_price : null,
+                                'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : null,
+                                'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
+                                'uncertain_fields' => $item->uncertain_fields ?? [],
+                                'section' => $item->section,
+                                'possible_duplicate_of' => $item->possible_duplicate_of,
+                                'ocr_confidence' => $item->ocr_confidence,
+                                'consumer_correction' => $item->consumer_correction_json,
+                                'is_consumer_edited' => ! empty($item->consumer_correction_json),
+                            ])->values()
+                            : collect($processingResult['items'] ?? [])->map(fn ($item) => collect($item)->only([
+                                'sequence', 'raw_text', 'item_name', 'quantity', 'unit', 'observed_price', 'unit_price', 'line_total',
+                                'uncertain_fields', 'section', 'possible_duplicate_of', 'ocr_confidence',
+                            ])->all())->values()
+                    )
                     : $report->items->map(fn ($item) => [
                     'sequence' => $item->sequence,
                     'raw_text' => $item->raw_text,
@@ -481,6 +502,8 @@ class ReceiptReportController extends Controller
                     'section' => $item->section,
                     'possible_duplicate_of' => $item->possible_duplicate_of,
                     'ocr_confidence' => $item->ocr_confidence,
+                    'consumer_correction' => $item->consumer_correction_json,
+                    'is_consumer_edited' => ! empty($item->consumer_correction_json),
                 ])->values(),
                 'receipt_number' => $processingResult['receipt_number'] ?? ($report->raw_ocr_json['receipt_number'] ?? null),
                 'subtotal' => $processingResult['subtotal'] ?? ($report->raw_ocr_json['subtotal'] ?? null),
@@ -523,17 +546,24 @@ class ReceiptReportController extends Controller
         ]);
     }
 
-    public function confirm(Request $request, string $reference, ConsumerReportAssessment $assessment)
+    public function confirm(Request $request, string $reference, ConsumerReportAssessment $assessment, AuditTrailService $audit)
     {
         $report = $this->authorizedReport($request, $reference);
         $rules = [
             'consumer_confirmed' => 'required|accepted',
             'tracking_token' => 'sometimes|string',
+            'items' => 'sometimes|array',
+            'items.*.sequence' => 'required_with:items|integer',
+            'items.*.item_name' => 'nullable|string|max:255',
+            'items.*.quantity' => 'nullable|numeric|min:0|max:99999',
+            'items.*.unit' => 'nullable|string|max:50',
+            'items.*.unit_price' => 'nullable|numeric|min:0|max:999999',
+            'items.*.line_total' => 'nullable|numeric|min:0|max:999999',
         ];
-        foreach (array_keys($request->except(['consumer_confirmed', 'tracking_token'])) as $field) {
+        foreach (array_keys($request->except(['consumer_confirmed', 'tracking_token', 'items'])) as $field) {
             $rules[$field] = 'prohibited';
         }
-        $request->validate($rules);
+        $validated = $request->validate($rules);
 
         if ($report->consumer_confirmed_at !== null || $report->status === 'Submitted') {
             return response()->json([
@@ -548,7 +578,7 @@ class ReceiptReportController extends Controller
                 'message' => 'Only a receipt that is ready for confirmation can be submitted.',
             ], 409);
         }
-        DB::transaction(function () use ($report, $request, $assessment) {
+        DB::transaction(function () use ($report, $request, $assessment, $audit, $validated) {
             if ($report->store_id) Store::whereKey($report->store_id)->lockForUpdate()->first();
             $locked = ConsumerReport::whereKey($report->id)->lockForUpdate()->firstOrFail();
             abort_unless((int) $locked->store_id === (int) $report->store_id, 409, 'This report changed. Reload it and try again.');
@@ -566,7 +596,8 @@ class ReceiptReportController extends Controller
             $originals = $locked->evidenceBundle?->assets->where('kind', $locked->capture_mode === 'continuous_video_v1' ? 'original_video' : 'source_frame') ?? collect();
             abort_if($originals->isEmpty() || $originals->contains(fn ($asset) => ! $asset->hasValidContent()), 409, 'The original receipt evidence is unavailable. This report cannot be submitted.');
 
-            $systemItems = $locked->items()->orderBy('sequence')->get()->map(fn ($item) => [
+            $existingItems = $locked->items()->orderBy('sequence')->get();
+            $systemItems = $existingItems->map(fn ($item) => [
                 'sequence' => $item->sequence,
                 'item_name' => $item->item_name,
                 'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
@@ -576,19 +607,102 @@ class ReceiptReportController extends Controller
                 'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
                 'uncertain_fields' => $item->uncertain_fields ?? [],
             ])->values()->all();
+
             // Older completed bundles may not carry item snapshots. Save the system values once,
             // before any DTI evaluation can occur, without exposing evaluator decisions to consumers.
             if ($locked->evidenceBundle && ! array_key_exists('items', $locked->evidenceBundle->processing_result_json ?? [])) {
                 $locked->evidenceBundle->update(['processing_result_json' => [
                     ...($locked->evidenceBundle->processing_result_json ?? []),
-                    'items' => $locked->items()->get()->map(fn ($item) => $item->only([
+                    'items' => $existingItems->map(fn ($item) => $item->only([
                         'sequence', 'raw_text', 'item_name', 'quantity', 'unit', 'observed_price', 'unit_price', 'line_total',
                         'uncertain_fields', 'section', 'possible_duplicate_of', 'ocr_confidence',
                     ]))->all(),
                 ]]);
             }
+
+            // Process consumer submitted items and generate audit diffs
+            $submittedItems = collect($validated['items'] ?? [])->keyBy('sequence');
+            $editedItemsCount = 0;
+            $editedItemDiffs = [];
+
+            foreach ($existingItems as $item) {
+                if ($submittedItems->has($item->sequence)) {
+                    $submitted = $submittedItems->get($item->sequence);
+                    $originalSnapshot = [
+                        'item_name' => $item->item_name,
+                        'quantity' => $item->quantity !== null ? (float) $item->quantity : null,
+                        'unit' => $item->unit,
+                        'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : null,
+                        'line_total' => $item->line_total !== null ? (float) $item->line_total : null,
+                    ];
+                    $editedSnapshot = [
+                        'item_name' => array_key_exists('item_name', $submitted) && $submitted['item_name'] !== null ? trim((string) $submitted['item_name']) : $item->item_name,
+                        'quantity' => array_key_exists('quantity', $submitted) && $submitted['quantity'] !== null ? (float) $submitted['quantity'] : $originalSnapshot['quantity'],
+                        'unit' => array_key_exists('unit', $submitted) && $submitted['unit'] !== null ? trim((string) $submitted['unit']) : $item->unit,
+                        'unit_price' => array_key_exists('unit_price', $submitted) && $submitted['unit_price'] !== null ? (float) $submitted['unit_price'] : $originalSnapshot['unit_price'],
+                        'line_total' => array_key_exists('line_total', $submitted) && $submitted['line_total'] !== null ? (float) $submitted['line_total'] : $originalSnapshot['line_total'],
+                    ];
+
+                    $fieldsChanged = [];
+                    if (trim((string) $originalSnapshot['item_name']) !== trim((string) $editedSnapshot['item_name'])) {
+                        $fieldsChanged[] = 'item_name';
+                    }
+                    if ($originalSnapshot['quantity'] !== $editedSnapshot['quantity']) {
+                        $fieldsChanged[] = 'quantity';
+                    }
+                    if (trim((string) $originalSnapshot['unit']) !== trim((string) $editedSnapshot['unit'])) {
+                        $fieldsChanged[] = 'unit';
+                    }
+                    if ($originalSnapshot['unit_price'] !== $editedSnapshot['unit_price']) {
+                        $fieldsChanged[] = 'unit_price';
+                    }
+                    if ($originalSnapshot['line_total'] !== $editedSnapshot['line_total']) {
+                        $fieldsChanged[] = 'line_total';
+                    }
+
+                    if (! empty($fieldsChanged)) {
+                        $correction = [
+                            'original' => $originalSnapshot,
+                            'edited' => $editedSnapshot,
+                            'fields_changed' => $fieldsChanged,
+                            'edited_at' => now()->toIso8601String(),
+                        ];
+                        $item->update([
+                            'item_name' => $editedSnapshot['item_name'],
+                            'quantity' => $editedSnapshot['quantity'],
+                            'unit' => $editedSnapshot['unit'],
+                            'unit_price' => $editedSnapshot['unit_price'],
+                            'observed_price' => $editedSnapshot['unit_price'] ?? $editedSnapshot['line_total'],
+                            'line_total' => $editedSnapshot['line_total'],
+                            'consumer_correction_json' => $correction,
+                            'consumer_confirmed' => true,
+                        ]);
+                        $editedItemsCount++;
+                        $editedItemDiffs[] = [
+                            'item_id' => $item->id,
+                            'sequence' => $item->sequence,
+                            'fields_changed' => $fieldsChanged,
+                            'diff' => $correction,
+                        ];
+                    } else {
+                        $item->update(['consumer_confirmed' => true]);
+                    }
+                } else {
+                    $item->update(['consumer_confirmed' => true]);
+                }
+            }
+
+            $consumerConfirmedJson = [
+                'has_edits' => $editedItemsCount > 0,
+                'edited_items_count' => $editedItemsCount,
+                'confirmed_at' => now()->toIso8601String(),
+            ];
+            if ($editedItemsCount > 0) {
+                $consumerConfirmedJson['edited_summary'] = $editedItemDiffs;
+            }
+
             $locked->update([
-                'consumer_confirmed_json' => null,
+                'consumer_confirmed_json' => $consumerConfirmedJson,
                 'consumer_confirmed_at' => now(),
                 'submitted_at' => now(),
                 'resume_token_hash' => null,
@@ -596,11 +710,23 @@ class ReceiptReportController extends Controller
                 'status' => 'Submitted',
             ]);
 
+            if ($editedItemsCount > 0) {
+                $audit->recordAs($request, null, 'report.consumer_edited', $locked, [
+                    'report_reference' => $locked->report_reference,
+                    'edited_items_count' => $editedItemsCount,
+                    'edited_diffs' => $editedItemDiffs,
+                ]);
+            }
+
+            $statusMsg = $editedItemsCount > 0
+                ? "Consumer reviewed and edited captured receipt details ({$editedItemsCount} item(s) edited). Report submitted for DTI evaluation."
+                : 'Consumer reviewed the captured receipt and system extraction. Report submitted for DTI evaluation.';
+
             ReportStatusHistory::create([
                 'consumer_report_id' => $locked->id,
                 'previous_status' => 'Ready for confirmation',
                 'new_status' => 'Submitted',
-                'public_message' => 'Consumer reviewed the captured receipt and system extraction. Report submitted for DTI evaluation.',
+                'public_message' => $statusMsg,
                 'actor_type' => 'system',
             ]);
 
@@ -613,6 +739,7 @@ class ReceiptReportController extends Controller
                 'extracted_text_json' => [
                     'lines' => $locked->raw_ocr_json['lines'] ?? [],
                     'system_extracted_items' => $systemItems,
+                    'has_consumer_edits' => $editedItemsCount > 0,
                     'report_reference' => $locked->report_reference,
                 ],
                 'image_hash_path' => $evidencePath,

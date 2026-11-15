@@ -239,6 +239,77 @@ describe('ReceiptDraftView', () => {
     expect(onSubmitted).toHaveBeenCalled();
   });
 
+  it('allows consumer to edit an extracted item and submits edited items payload with audit tracking', async () => {
+    history.replaceState(null, '', '/reports/REP-20260816-EDITABLE/review');
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (String(url).includes('/evidence-assets/')) return { data: new Blob(['receipt'], { type: 'image/jpeg' }) };
+      return { data: {
+        success: true,
+        data: {
+          report_reference: 'REP-20260816-EDITABLE',
+          status: 'Ready for confirmation',
+          store: { id: 77, store_name: 'Receipt Test Mart', address: 'San Jose' },
+          lines: ['RICE 45.00'],
+          items: [{ sequence: 0, raw_text: 'RICE 45.00', item_name: 'RICE', quantity: 1, unit: 'kg', unit_price: 45, line_total: 45, ocr_confidence: 0.91 }],
+          continuity: { status: 'ready', continuity_score: 1, reasons: [] },
+          merchant: { status: 'matched' },
+          warnings: [],
+          manual_review_required: false,
+          evidence: [{ id: 5, sequence: 0, mime_type: 'image/jpeg', size_bytes: 7 }],
+        },
+      } };
+    });
+    const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValue({
+      data: { success: true, data: { report_reference: 'REP-20260816-EDITABLE', status: 'Submitted', submitted_at: '2026-08-16T02:00:00Z' } },
+    });
+    const user = userEvent.setup();
+
+    render(<ReceiptDraftView reference="REP-20260816-EDITABLE" mode="review" />);
+
+    expect(await screen.findByText('RICE')).toBeInTheDocument();
+    fireEvent.load(screen.getByRole('img', { name: 'Original receipt section 1' }));
+
+    // Click Edit button
+    const editBtn = screen.getByRole('button', { name: /edit rice/i });
+    await user.click(editBtn);
+
+    // Editing inputs appear
+    const descInput = screen.getByDisplayValue('RICE');
+    await user.clear(descInput);
+    await user.type(descInput, 'Premium Rice 1kg');
+
+    // Unit price input
+    const priceInput = screen.getByLabelText(/unit price/i);
+    await user.clear(priceInput);
+    await user.type(priceInput, '55');
+
+    // Click Done
+    await user.click(screen.getByRole('button', { name: /done/i }));
+
+    // Verify "Edited" badge appears
+    expect(await screen.findByText('Edited')).toBeInTheDocument();
+    expect(screen.getByText('Premium Rice 1kg')).toBeInTheDocument();
+
+    // Submit
+    await user.click(screen.getByRole('checkbox', { name: /want to submit/i }));
+    await user.click(screen.getByRole('button', { name: 'Submit report to DTI' }));
+
+    await waitFor(() => expect(postSpy).toHaveBeenCalledWith(
+      '/public/reports/REP-20260816-EDITABLE/confirm-ocr',
+      expect.objectContaining({
+        consumer_confirmed: true,
+        items: [
+          expect.objectContaining({
+            sequence: 0,
+            item_name: 'Premium Rice 1kg',
+            unit_price: 55,
+          }),
+        ],
+      }),
+      expect.anything(),
+    ));
+  });
+
   it('shows the original and allows one poor section to be retaken', async () => {
     history.replaceState(null, '', '/reports/REP-20260816-RETRY/processing');
     vi.spyOn(apiClient, 'get').mockImplementation(async (url) => {

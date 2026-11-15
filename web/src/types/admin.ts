@@ -107,6 +107,7 @@ export interface ManagedUserPage {
     field_officer: number
     vendor: number
     inactive: number
+    pending_registrations?: number
   }
 }
 
@@ -394,6 +395,8 @@ export interface ConsumerReportRecord {
   } | null
   store_name?: string
   submitted_at: string
+  has_consumer_edits?: boolean
+  consumer_confirmed_json?: Record<string, unknown> | null
   raw_ocr_json: Record<string, unknown> | null
   evaluator_confirmed_json: Record<string, unknown> | null
   evidence_available: boolean
@@ -442,6 +445,13 @@ export interface ConsumerReportItemRecord {
   commodity_key?: string | null
   commodity_name?: string | null
   evaluator_decision_json?: Record<string, unknown> | null
+  consumer_correction?: {
+    original: Record<string, unknown>
+    edited: Record<string, unknown>
+    fields_changed: string[]
+    edited_at: string
+  } | null
+  is_consumer_edited?: boolean
   reference?: ItemPriceReference
 }
 
@@ -756,6 +766,10 @@ export interface ConversationNotice {
   delivered_at: string | null
   due_date_timestamp: string | null
   response_received_at: string | null
+  response_text?: string | null
+  response_reason_category?: string | null
+  response_channel?: string | null
+  response_certified_at?: string | null
   closed_at: string | null
   cancelled_at: string | null
 }
@@ -778,6 +792,24 @@ export interface VendorInvitationRecord {
   is_expired: boolean
   store: { id: number; store_name: string } | null
   inviter: { id: number; name: string } | null
+}
+
+export interface VendorRegistrationRecord {
+  id: number
+  store_name: string
+  owner_name: string
+  dti_sec_number: string
+  address: string
+  latitude: number
+  longitude: number
+  image_path: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  review_reason: string | null
+  submitted_at: string | null
+  reviewed_at: string | null
+  user: { id: number; name: string; email: string; is_active: boolean } | null
+  reviewer: { id: number; name: string } | null
+  approved_store: { id: number; store_name: string; address: string; dti_sec_number?: string | null } | null
 }
 
 export interface LegalNoticePage {
@@ -824,3 +856,96 @@ export interface MonitoringMatrixData {
   generated_at: string
 }
 
+
+export interface MonitoringImportCatalogStore {
+  id: number
+  store_name: string
+  address: string | null
+  dti_sec_number?: string | null
+}
+
+export interface MonitoringImportCatalogCommodity {
+  id: number
+  commodity_name: string
+  unit: string | null
+  category: string
+  regulatory_classification: string
+  baseline_price: number
+  commodity_key?: string | null
+}
+
+export interface MonitoringImportCatalogAlias {
+  id: number
+  alias_name: string
+  srp_bulletin_id: number
+}
+
+export interface MonitoringImportCatalogOfficer {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
+export interface MonitoringImportCatalog {
+  stores: MonitoringImportCatalogStore[]
+  commodities: MonitoringImportCatalogCommodity[]
+  aliases: MonitoringImportCatalogAlias[]
+  officers: MonitoringImportCatalogOfficer[]
+}
+
+export interface MonitoringImportNewStore {
+  temp_key: string
+  store_name: string
+  address?: string
+}
+
+export interface MonitoringImportNewCommodity {
+  temp_key: string
+  commodity_name: string
+  unit: string | null
+  category: string
+  regulatory_classification: string
+  baseline_price: number
+}
+
+export interface MonitoringImportLearnedAlias {
+  alias_name: string
+  srp_id?: number
+  commodity_temp_key?: string
+}
+
+export interface MonitoringImportVisitItem {
+  srp_id?: number
+  commodity_temp_key?: string
+  recorded_price: number
+}
+
+export interface MonitoringImportVisitPayload {
+  store_id?: number
+  store_temp_key?: string
+  monitoring_date: string
+  officer_user_id?: number
+  representative_name?: string
+  items: MonitoringImportVisitItem[]
+}
+
+export interface MonitoringImportRequestPayload {
+  duplicate_mode: 'merge' | 'skip'
+  officer_user_id?: number
+  new_stores: MonitoringImportNewStore[]
+  new_commodities: MonitoringImportNewCommodity[]
+  learned_aliases: MonitoringImportLearnedAlias[]
+  visits: MonitoringImportVisitPayload[]
+}
+
+export interface MonitoringImportResultSummary {
+  created_visits: number
+  merged_visits: number
+  skipped_visits: number
+  total_items_recorded: number
+  flagged_anomalies: number
+  created_stores: number
+  created_commodities: number
+  learned_aliases: number
+}

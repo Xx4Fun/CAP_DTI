@@ -162,6 +162,8 @@ class ReportReviewController extends Controller
                 'commodity_key' => $item->srp?->commodity_key,
                 'commodity_name' => $item->srp?->commodity_name ?? $item->item_name,
                 'evaluator_decision_json' => $item->evaluator_decision_json,
+                'consumer_correction' => $item->consumer_correction_json,
+                'is_consumer_edited' => ! empty($item->consumer_correction_json),
                 // The applicable reference and the price comparison against it, per item.
                 'reference' => $item->evaluator_decision_json === null
                     ? ($assessmentItems->get($item->id)['reference'] ?? $comparison->forItem($item, $observedAt))
@@ -172,6 +174,8 @@ class ReportReviewController extends Controller
         return [
             'id' => $report->id, 'report_reference' => $report->report_reference, 'status' => $report->status,
             'category' => $report->category, 'automatic_assessment_json' => $report->automatic_assessment_json,
+            'has_consumer_edits' => (bool) data_get($report->consumer_confirmed_json, 'has_edits', false) || $items->contains(fn ($i) => ! empty($i['is_consumer_edited'])),
+            'consumer_confirmed_json' => $report->consumer_confirmed_json,
             'store_name' => $report->store?->store_name, 'submitted_at' => $report->submitted_at ?? $report->created_at,
             'raw_ocr_json' => $report->raw_ocr_json,
             'evaluator_confirmed_json' => $report->evaluator_confirmed_json,

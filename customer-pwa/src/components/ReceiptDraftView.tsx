@@ -6,7 +6,7 @@ import { navigate } from '../app/routing';
 import { GuidedReceiptCapture } from './GuidedReceiptCapture';
 import { ReceiptPhotoViewer } from './ReceiptPhotoViewer';
 import { ReceiptReviewContent } from './ReceiptReviewContent';
-import { isWrongStore, type ReceiptReviewData, type ReceiptEvidence } from '../app/receiptReview';
+import { isWrongStore, type ReceiptReviewData, type ReceiptEvidence, type ReceiptReviewItem } from '../app/receiptReview';
 import { ReceiptStoreSelector } from './ReceiptStoreSelector';
 import { getReportTrackingToken } from '../app/reportTrackingStore';
 import { addRecentStore } from '../app/recentStores';
@@ -53,6 +53,19 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState<ReceiptProcessingData | null>(null);
   const [review, setReview] = useState<ReceiptReviewData | null>(null);
+  const [editedItems, setEditedItems] = useState<ReceiptReviewItem[]>([]);
+
+  const handleItemChange = useCallback((updated: ReceiptReviewItem) => {
+    setEditedItems((current) => current.map((item) => (item.sequence === updated.sequence ? updated : item)));
+  }, []);
+
+  const handleItemReset = useCallback((sequence: number) => {
+    if (!review) return;
+    const original = (review.items ?? []).find((item) => item.sequence === sequence);
+    if (original) {
+      setEditedItems((current) => current.map((item) => (item.sequence === sequence ? { ...original } : item)));
+    }
+  }, [review]);
   const [confirmed, setConfirmed] = useState(false);
   const [submitted, setSubmitted] = useState<ReceiptConfirmationResult | null>(null);
   const [recaptureSession, setRecaptureSession] = useState<CaptureSessionResponse | null>(null);
@@ -135,6 +148,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
           setDecodedIds([]);
         }
         setReview(data);
+        setEditedItems(data.items ?? []);
         await loadEvidence(data.evidence ?? [], token, controller.signal);
         if (!controller.signal.aborted) onStatusRef.current?.(data.status);
       } else {
@@ -212,6 +226,7 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       if (controller.signal.aborted) return;
       const data = response.data.data as ReceiptReviewData;
       setReview(data);
+      setEditedItems(data.items ?? []);
       setConfirmed(false);
       setChoosingStore(false);
       addRecentStore(storeId);
@@ -229,11 +244,50 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
     setSubmitting(true);
     setError('');
     try {
+      const payload: {
+        consumer_confirmed: boolean;
+        items?: Array<{
+          sequence: number;
+          item_name: string | null;
+          quantity: number | null;
+          unit: string | null;
+          unit_price: number | null;
+          line_total: number | null;
+        }>;
+      } = {
+        consumer_confirmed: true,
+      };
+
+      const isItemModified = (item: ReceiptReviewItem, original: ReceiptReviewItem | undefined) => {
+        if (!original) return false;
+        return (
+          (original.item_name ?? '') !== (item.item_name ?? '') ||
+          Number(original.quantity ?? 0) !== Number(item.quantity ?? 0) ||
+          (original.unit ?? '') !== (item.unit ?? '') ||
+          Number(original.unit_price ?? 0) !== Number(item.unit_price ?? 0) ||
+          Number(original.line_total ?? 0) !== Number(item.line_total ?? 0)
+        );
+      };
+
+      const hasEdits = editedItems.some((item) => {
+        const original = (review?.items ?? []).find((o) => o.sequence === item.sequence);
+        return isItemModified(item, original);
+      });
+
+      if (hasEdits) {
+        payload.items = editedItems.map((item) => ({
+          sequence: item.sequence,
+          item_name: item.item_name,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price ?? null,
+          line_total: item.line_total ?? null,
+        }));
+      }
+
       const response = await apiClient.post(
         `/public/reports/${encodeURIComponent(reference)}/confirm-ocr`,
-        {
-          consumer_confirmed: true,
-        },
+        payload,
         { headers: { [credentialHeaderRef.current]: resumeToken } },
       );
       const result = response.data.data as ReceiptConfirmationResult;
@@ -443,6 +497,9 @@ export const ReceiptDraftView: React.FC<ReceiptDraftViewProps> = ({ reference, m
       <div className="receipt-review-store"><span>Selected store</span><strong>{review.store?.store_name || 'Unavailable'}</strong><span>{review.store?.address}</span></div>
       {!readOnly && review.can_change_store !== false && <button type="button" className="btn-secondary" disabled={busy} onClick={() => setChoosingStore(true)}>Change store</button>}
       <ReceiptReviewContent review={review} evidenceUrls={evidenceUrls} busy={busy} readOnly={readOnly}
+        editedItems={editedItems}
+        onItemChange={handleItemChange}
+        onItemReset={handleItemReset}
         onPhotoLoaded={(id) => setDecodedIds(ids => ids.includes(id) ? ids : [...ids, id])}
         onPhotoError={(id, url) => {
           URL.revokeObjectURL(url);

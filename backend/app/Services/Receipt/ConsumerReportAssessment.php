@@ -99,6 +99,13 @@ class ConsumerReportAssessment
             $reasons[] = is_array($warning) ? ($warning['message'] ?? $warning['code'] ?? 'Extraction needs review.') : (string) $warning;
         }
         if (($raw['manual_review_required'] ?? false) || ($result['manual_review_required'] ?? false)) $reasons[] = 'Extraction requires DTI review.';
+
+        $hasConsumerEdits = (bool) data_get($report->consumer_confirmed_json, 'has_edits', false)
+            || $report->items->contains(fn ($item) => ! empty($item->consumer_correction_json));
+        if ($hasConsumerEdits) {
+            $reasons[] = 'Consumer manually edited receipt items. Mandatory DTI officer review required.';
+        }
+
         $items = [];
         $hasViolation = false;
         $allCompared = $report->items->isNotEmpty();
@@ -116,7 +123,7 @@ class ConsumerReportAssessment
             $items[] = ['item_id' => $item->id, 'reliable' => $reliable, 'reasons' => $itemReasons, 'reference' => $reference];
         }
         if ($report->items->isEmpty()) $reasons[] = 'No receipt items were extracted.';
-        $category = $hasViolation ? 'violations' : ($allCompared && $reasons === [] ? 'no_violation' : 'to_review');
+        $category = $hasViolation ? 'violations' : ($allCompared && $reasons === [] && ! $hasConsumerEdits ? 'no_violation' : 'to_review');
 
         return ['category' => $category, 'assessed_at' => now()->toIso8601String(), 'reasons' => array_values(array_unique($reasons)), 'items' => $items];
     }
