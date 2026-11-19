@@ -46,7 +46,7 @@ class OfficialEstablishmentSeederTest extends TestCase
         ]);
         $this->assertDatabaseHas('stores', [
             'id' => $gaisano->id, 'store_name' => 'Gaisano Grand Mall', 'dti_sec_number' => null,
-            'owner_name' => null, 'address' => 'Bagumbayan Bridge',
+            'owner_name' => 'Gaisano Grand Malls Inc.', 'address' => 'Bagumbayan Bridge',
         ]);
         $this->assertDatabaseHas('stores', [
             'id' => $robinsons->id, 'store_name' => 'Robinsons Supermarket Corp.', 'dti_sec_number' => null,

@@ -27,5 +27,9 @@ if [ "${RUN_CAPSTONE_TWO_MONTH_MONITORING_SEED:-2026-11-01-8w-v2}" = "2026-11-01
     php artisan db:seed --class=CapstoneTwoMonthMonitoringSeeder --force
 fi
 
+if [ "${RUN_ESTABLISHMENT_VENDOR_SEED:-2026-11-20-v1}" = "2026-11-20-v1" ]; then
+    php artisan db:seed --class=EstablishmentVendorSeeder --force
+fi
+
 # Execute Supervisord
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
