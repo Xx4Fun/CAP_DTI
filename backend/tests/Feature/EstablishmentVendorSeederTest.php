@@ -271,29 +271,28 @@ class EstablishmentVendorSeederTest extends TestCase
         $this->assertSame('Owner', $stores[0]['current_representative']['title']);
     }
 
-    public function test_seeder_preserves_and_restores_original_vendor_for_gaisano_and_notices(): void
+    public function test_seeder_migrates_issued_notices_to_standardized_vendor_account(): void
     {
         $this->seed(OfficialEstablishmentSeeder::class);
         $gaisano = Store::where('store_name', 'like', 'Gaisano Grand%')->firstOrFail();
 
-        // 1. Create original Gaisano vendor account
-        $originalVendor = User::create([
-            'name' => 'Original Gaisano Manager',
-            'email' => 'gaisano.original@gmail.com',
+        // 1. A prior account had an issued LOI before the standardized seeder ran
+        $pastVendor = User::create([
+            'name' => 'Past Gaisano User',
+            'email' => 'gaisano.past@gmail.com',
             'password' => Hash::make('password123'),
             'role' => 'vendor',
             'is_active' => true,
         ]);
-        $gaisano->update(['vendor_user_id' => $originalVendor->id]);
+        $gaisano->update(['vendor_user_id' => $pastVendor->id]);
 
-        // 2. An issued LOI was recorded to this original vendor
         $evaluator = User::create(['name' => 'Eval', 'email' => 'eval2@dti.test', 'password' => 'pass', 'role' => 'dti_evaluator']);
         $loi = LegalNotice::create([
             'store_id' => $gaisano->id,
             'notice_type' => 'LOI',
             'prepared_by' => $evaluator->id,
             'issued_by' => $evaluator->id,
-            'vendor_user_id' => $originalVendor->id,
+            'vendor_user_id' => $pastVendor->id,
             'status' => 'issued',
             'control_number' => 'LOI-GAISANO-001',
             'issued_at' => now()->subDay(),
@@ -301,20 +300,21 @@ class EstablishmentVendorSeederTest extends TestCase
             'delivery_state' => 'not_recorded',
             'deadline_rules' => ['response_period' => ['unit' => 'hours', 'value' => 48], 'deadline_anchor' => 'received', 'timezone' => 'Asia/Manila', 'working_weekdays' => [1,2,3,4,5], 'non_working_dates' => []],
             'source_snapshot' => ['items' => [['id' => 1, 'commodity_name' => 'Test Item', 'observed_price' => 50]]],
-            'draft_payload' => ['recipient_name' => 'Gaisano Grand Malls Inc.', 'recipient_email' => $originalVendor->email],
+            'draft_payload' => ['recipient_name' => 'Gaisano Grand Malls Inc.', 'recipient_email' => $pastVendor->email],
         ]);
 
-        // 3. Run EstablishmentVendorSeeder
+        // 2. Run EstablishmentVendorSeeder
         $this->seed(EstablishmentVendorSeeder::class);
 
-        // 4. Assert Gaisano remains linked to the original vendor
-        $this->assertSame($originalVendor->id, $gaisano->fresh()->vendor_user_id);
+        // 3. Assert Gaisano is linked to vendor.gaisano@price-watch.ph
+        $newVendor = User::where('email', 'vendor.gaisano@price-watch.ph')->firstOrFail();
+        $this->assertSame($newVendor->id, $gaisano->fresh()->vendor_user_id);
 
-        // 5. Assert duplicate synthetic vendor was cleaned up
-        $this->assertNull(User::where('email', 'vendor.gaisano@price-watch.ph')->first());
+        // 4. Assert notice was migrated to new vendor
+        $this->assertSame($newVendor->id, $loi->fresh()->vendor_user_id);
 
-        // 6. Assert original vendor can log in and see Gaisano and the LOI
-        $token = $this->postJson('/api/vendor/login', ['email' => 'gaisano.original@gmail.com', 'password' => 'password123'])
+        // 5. Assert new vendor can log in and see Gaisano and the LOI
+        $token = $this->postJson('/api/vendor/login', ['email' => 'vendor.gaisano@price-watch.ph', 'password' => 'password123'])
             ->assertOk()->json('token');
 
         $overview = $this->withToken($token)->getJson('/api/vendor/overview')->assertOk();
