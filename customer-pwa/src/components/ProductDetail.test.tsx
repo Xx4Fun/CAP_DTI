@@ -26,8 +26,23 @@ const currentVersion: SrpHistoryEntry = {
 };
 
 function mockHistory(history: SrpHistoryEntry[]) {
-  vi.spyOn(apiClient, 'get').mockResolvedValue({
-    data: { success: true, data: { commodity_id: commodity.id, history } },
+  vi.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
+    if (url.includes('/store-prices')) {
+      return {
+        data: {
+          success: true,
+          data: {
+            commodity_id: commodity.id,
+            commodity_name: commodity.commodity_name,
+            baseline_price: commodity.baseline_price,
+            stores: [],
+          },
+        },
+      } as any;
+    }
+    return {
+      data: { success: true, data: { commodity_id: commodity.id, history } },
+    } as any;
   });
 }
 
@@ -42,10 +57,8 @@ describe('ProductDetail', () => {
     expect(screen.getByText('SRP context')).toBeInTheDocument();
     expect(screen.getByText('\u20B125.00')).toBeInTheDocument();
     expect(screen.getByText('SRP trend')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('tab', { name: 'Source' }));
     expect(screen.getByText('DECL-1')).toBeInTheDocument();
     expect(screen.getAllByText('Oct 7, 2026')).toHaveLength(2);
-    await userEvent.click(screen.getByRole('tab', { name: 'Details' }));
     expect(await screen.findByText('No past SRP')).toBeInTheDocument();
   });
   it.each([false, true])('does not borrow SRP metadata when an emergency reference is missing (record present: %s)', async (recordPresent) => {
@@ -53,7 +66,6 @@ describe('ProductDetail', () => {
     const summary = screen.getByRole('heading', { name: /Absolute/ }).closest('section')!;
     expect(within(summary).getByText('Unavailable')).toBeInTheDocument();
     expect(within(summary).getByText('Not provided')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('tab', { name: 'Source' }));
     expect(screen.getByText('Reference source').nextElementSibling).toHaveTextContent('Not provided');
     expect(screen.getByText('Ceiling effective date').nextElementSibling).toHaveTextContent('Not provided');
     expect(screen.getByText('Saved copy')).toBeInTheDocument();
@@ -74,7 +86,7 @@ describe('ProductDetail', () => {
     expect(screen.getByText('\u20B125.00')).toBeInTheDocument();
     expect(await screen.findByText('+\u20B12.00')).toBeInTheDocument();
     expect(screen.getByText('vs past SRP')).toBeInTheDocument();
-    expect(screen.getByText('Aug 1, 2026')).toBeInTheDocument();
+    expect(screen.getAllByText('Aug 1, 2026').length).toBeGreaterThanOrEqual(1);
   });
 
   it('distinguishes no prior SRP from unavailable history', async () => {
@@ -90,12 +102,59 @@ describe('ProductDetail', () => {
     expect(await screen.findByText('History unavailable')).toBeInTheDocument();
   });
 
-  it('provides accessible Details, History, and Source tabs with keyboard navigation', async () => {
+  it('provides accessible Details, History, and Store prices tabs with keyboard navigation', async () => {
     vi.restoreAllMocks();
-    mockHistory([
-      currentVersion,
-      { id: 420, baseline_price: 23, effective_date: '2026-06-01', source_reference: 'Older bulletin' },
-    ]);
+    vi.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
+      if (url.includes('/store-prices')) {
+        return {
+          data: {
+            success: true,
+            data: {
+              commodity_id: commodity.id,
+              commodity_name: commodity.commodity_name,
+              baseline_price: 25,
+              stores: [
+                {
+                  store_id: 1,
+                  store_name: 'Puregold San Jose',
+                  address: 'San Angel',
+                  recorded_price: 25.00,
+                  observed_at: '2026-11-18',
+                  previous_price: 25.00,
+                  price_change: 0,
+                  change_direction: 'unchanged',
+                  compliance_status: 'at_srp',
+                },
+                {
+                  store_id: 2,
+                  store_name: 'CPT Mart',
+                  address: 'Bancal',
+                  recorded_price: 27.00,
+                  observed_at: '2026-11-17',
+                  previous_price: 24.00,
+                  price_change: 3.00,
+                  change_direction: 'increase',
+                  compliance_status: 'above_srp',
+                },
+              ],
+            },
+          },
+        } as any;
+      }
+      return {
+        data: {
+          success: true,
+          data: {
+            commodity_id: commodity.id,
+            history: [
+              currentVersion,
+              { id: 420, baseline_price: 23, effective_date: '2026-06-01', source_reference: 'Older bulletin' },
+            ],
+          },
+        },
+      } as any;
+    });
+
     const user = userEvent.setup();
     render(
       <ProductDetail
@@ -112,6 +171,8 @@ describe('ProductDetail', () => {
     expect(detailsTab).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('Official unit')).toBeInTheDocument();
     expect(screen.getByText('Normal monitoring')).toBeInTheDocument();
+    expect(screen.getByText('DTI-SRP-2026-08')).toBeInTheDocument();
+    expect(screen.getByText('Live data')).toBeInTheDocument();
 
     await user.click(historyTab);
     expect(historyTab).toHaveAttribute('aria-selected', 'true');
@@ -119,26 +180,34 @@ describe('ProductDetail', () => {
     expect(screen.getByText('\u20B123.00')).toBeInTheDocument();
 
     fireEvent.keyDown(historyTab, { key: 'ArrowRight' });
-    const sourceTab = screen.getByRole('tab', { name: 'Source' });
-    expect(sourceTab).toHaveFocus();
-    expect(sourceTab).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('DTI-SRP-2026-08')).toBeInTheDocument();
-    expect(screen.getByText('Live data')).toBeInTheDocument();
-    expect(screen.queryByText('Nationwide')).not.toBeInTheDocument();
-    expect(screen.queryByText('Barcode')).not.toBeInTheDocument();
+    const storePricesTab = screen.getByRole('tab', { name: 'Store prices' });
+    expect(storePricesTab).toHaveFocus();
+    expect(storePricesTab).toHaveAttribute('aria-selected', 'true');
+
+    expect(await screen.findByText('Puregold San Jose')).toBeInTheDocument();
+    expect(screen.getByText('CPT Mart')).toBeInTheDocument();
+    expect(screen.getByText('+₱2.00 above SRP')).toBeInTheDocument();
+    expect(screen.getByText(/▲ \+₱3\.00 vs previous visit/i)).toBeInTheDocument();
+    expect(screen.getByText(/Unchanged vs previous visit/i)).toBeInTheDocument();
   });
 
   it('offers a retry when history cannot be loaded', async () => {
     vi.restoreAllMocks();
-    const get = vi.spyOn(apiClient, 'get')
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({ data: { success: true, data: { commodity_id: commodity.id, history: [currentVersion] } } });
+    let historyAttempts = 0;
+    const get = vi.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
+      if (url.includes('/store-prices')) {
+        return { data: { success: true, data: { commodity_id: commodity.id, stores: [] } } } as any;
+      }
+      historyAttempts += 1;
+      if (historyAttempts === 1) throw new Error('offline');
+      return { data: { success: true, data: { commodity_id: commodity.id, history: [currentVersion] } } } as any;
+    });
     const user = userEvent.setup();
     render(<ProductDetail commodity={commodity} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />);
 
     await user.click(screen.getByRole('tab', { name: 'SRP history' }));
     await user.click(await screen.findByRole('button', { name: 'Retry price history' }));
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledWith(`/public/commodities/${commodity.id}/history`);
     expect(await screen.findByText('No past SRP is available for comparison.')).toBeInTheDocument();
   });
 
@@ -204,12 +273,12 @@ describe('ProductDetail', () => {
     const { rerender } = render(
       <ProductDetail commodity={commodity} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />,
     );
-    await user.click(screen.getByRole('tab', { name: 'Source' }));
+    await user.click(screen.getByRole('tab', { name: 'Store prices' }));
     rerender(
       <ProductDetail commodity={{ ...commodity, id: 502, commodity_name: 'Sample Sardines (155g)' }} dataSource="live" dataFetchedAt={null} onBack={vi.fn()} />,
     );
 
-    await waitFor(() => expect(apiClient.get).toHaveBeenLastCalledWith('/public/commodities/502/history'));
+    await waitFor(() => expect(apiClient.get).toHaveBeenCalledWith('/public/commodities/502/history'));
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
   });
 });

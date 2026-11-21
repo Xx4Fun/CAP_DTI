@@ -3656,6 +3656,158 @@ body {
   font-weight: 800;
 }
 
+.product-detail-stores-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.product-detail-stores-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.store-price-card {
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.store-price-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.store-price-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.store-price-card-name {
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.store-price-card-address {
+  color: #64748b;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.store-compliance-pill {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 750;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.store-compliance-pill--at_srp {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.store-compliance-pill--below_srp {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.store-compliance-pill--above_srp {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.store-price-card-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #edf2f7;
+  padding-top: 8px;
+}
+
+.store-price-card-price-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.store-price-card-price-label {
+  font-size: 0.64rem;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.store-price-card-price {
+  font-size: 1.05rem;
+  font-weight: 850;
+  color: #1e3a8a;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.store-price-card-temporal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.store-price-card-date {
+  font-size: 0.68rem;
+  color: #64748b;
+}
+
+.store-temporal-delta {
+  font-size: 0.68rem;
+  font-weight: 750;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.store-temporal-delta--increase {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.store-temporal-delta--decrease {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.store-temporal-delta--unchanged {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.store-temporal-delta--first {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+}
+
 @media (max-width: 390px) {
   .product-detail-summary { padding: 14px; }
   .product-detail-metric { padding-inline: 8px; }

@@ -15,6 +15,8 @@ import {
   type CommodityHistoryResponse,
   resolveImageUrl,
   type SrpHistoryEntry,
+  type StorePriceObservation,
+  type CommodityStorePricesResponse,
 } from '../api/client';
 import { formatCommodityDisplay } from '../app/commodityFormatter';
 import { applicablePrice, type PriceDataSource } from '../app/priceDataPresentation';
@@ -29,7 +31,7 @@ export interface ProductDetailProps {
   stateOfCalamity?: boolean;
 }
 
-type DetailTab = 'details' | 'history' | 'source';
+type DetailTab = 'details' | 'history' | 'store-prices';
 type HistoryStatus = 'loading' | 'success' | 'error';
 type Trend =
   | { kind: 'loading' }
@@ -42,7 +44,7 @@ type Trend =
 const TABS: Array<{ id: DetailTab; label: string }> = [
   { id: 'details', label: 'Details' },
   { id: 'history', label: 'SRP history' },
-  { id: 'source', label: 'Source' },
+  { id: 'store-prices', label: 'Store prices' },
 ];
 const CATEGORY_ACRONYMS = new Set(['DTI', 'LPG', 'NFA', 'PET', 'SRP']);
 
@@ -145,29 +147,49 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const [activeTab, setActiveTab] = useState<DetailTab>('details');
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
   const [history, setHistory] = useState<SrpHistoryEntry[]>([]);
+  const [storePrices, setStorePrices] = useState<StorePriceObservation[]>([]);
+  const [storePricesStatus, setStorePricesStatus] = useState<HistoryStatus>('loading');
   const resolvedImageUrl = resolveImageUrl(commodity.image_path);
   const [imageStatus, setImageStatus] = useState<ProductImageSettlement | 'loading'>(
     resolvedImageUrl ? 'loading' : 'missing',
   );
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const imageTriggerRef = useRef<HTMLButtonElement>(null);
-  const requestSequence = useRef(0);
+  const historySequence = useRef(0);
+  const storePricesSequence = useRef(0);
   const tabRefs = useRef<Partial<Record<DetailTab, HTMLButtonElement | null>>>({});
 
   const loadHistory = useCallback(async () => {
-    const requestId = ++requestSequence.current;
+    const requestId = ++historySequence.current;
     setHistoryStatus('loading');
     try {
       const response = await apiClient.get<{ success: boolean; data: CommodityHistoryResponse }>(
         `/public/commodities/${commodity.id}/history`,
       );
-      if (requestId !== requestSequence.current) return;
+      if (requestId !== historySequence.current) return;
       setHistory(Array.isArray(response.data.data.history) ? response.data.data.history : []);
       setHistoryStatus('success');
     } catch {
-      if (requestId !== requestSequence.current) return;
+      if (requestId !== historySequence.current) return;
       setHistory([]);
       setHistoryStatus('error');
+    }
+  }, [commodity.id]);
+
+  const loadStorePrices = useCallback(async () => {
+    const requestId = ++storePricesSequence.current;
+    setStorePricesStatus('loading');
+    try {
+      const response = await apiClient.get<{ success: boolean; data: CommodityStorePricesResponse }>(
+        `/public/commodities/${commodity.id}/store-prices`,
+      );
+      if (requestId !== storePricesSequence.current) return;
+      setStorePrices(Array.isArray(response.data.data.stores) ? response.data.data.stores : []);
+      setStorePricesStatus('success');
+    } catch {
+      if (requestId !== storePricesSequence.current) return;
+      setStorePrices([]);
+      setStorePricesStatus('error');
     }
   }, [commodity.id]);
 
@@ -177,11 +199,14 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
     setIsFreezeOpen(false);
     setActiveTab('details');
     setHistory([]);
+    setStorePrices([]);
     void loadHistory();
+    void loadStorePrices();
     return () => {
-      requestSequence.current += 1;
+      historySequence.current += 1;
+      storePricesSequence.current += 1;
     };
-  }, [commodity.id, loadHistory, resolvedImageUrl]);
+  }, [commodity.id, loadHistory, loadStorePrices, resolvedImageUrl]);
 
   const parsed = formatCommodityDisplay(
     commodity.commodity_name,
@@ -351,6 +376,18 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
               <MetadataRow label="Classification">{classification}</MetadataRow>
               {monitoringLabel && <MetadataRow label="Monitoring status">{monitoringLabel}</MetadataRow>}
               {price.isEmergency && <MetadataRow label="SRP context">{'\u20B1'}{Number(commodity.baseline_price).toFixed(2)}</MetadataRow>}
+              <MetadataRow label={price.isEmergency ? 'Reference source' : 'Bulletin source'}>{referenceSource || 'Not provided'}</MetadataRow>
+              <MetadataRow label={price.isEmergency ? 'Ceiling effective date' : 'Effective date'}>{effectiveDate || 'Not provided'}</MetadataRow>
+              {price.isEmergency && (
+                <>
+                  <MetadataRow label="SRP bulletin source">{commodity.source_reference || 'Not provided'}</MetadataRow>
+                  <MetadataRow label="SRP effective date">{formatDate(commodity.effective_date) || 'Not provided'}</MetadataRow>
+                </>
+              )}
+              <MetadataRow label="Data status">{dataSource === 'live' ? 'Live data' : 'Saved copy'}</MetadataRow>
+              <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
+                {fetchedDate || 'Not provided'}
+              </MetadataRow>
             </dl>
           )}
 
@@ -381,19 +418,74 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
             </ol>
           )}
 
-          {activeTab === 'source' && (
-            <dl className="product-detail-facts">
-              <MetadataRow label={price.isEmergency ? 'Reference source' : 'Bulletin source'}>{referenceSource || 'Not provided'}</MetadataRow>
-              <MetadataRow label={price.isEmergency ? 'Ceiling effective date' : 'Effective date'}>{effectiveDate || 'Not provided'}</MetadataRow>
-              {price.isEmergency && <>
-                <MetadataRow label="SRP bulletin source">{commodity.source_reference || 'Not provided'}</MetadataRow>
-                <MetadataRow label="SRP effective date">{formatDate(commodity.effective_date) || 'Not provided'}</MetadataRow>
-              </>}
-              <MetadataRow label="Data status">{dataSource === 'live' ? 'Live data' : 'Saved copy'}</MetadataRow>
-              <MetadataRow label={dataSource === 'live' ? 'Live data checked' : 'Saved data date'}>
-                {fetchedDate || 'Not provided'}
-              </MetadataRow>
-            </dl>
+          {activeTab === 'store-prices' && (
+            <div className="product-detail-stores-panel">
+              {storePricesStatus === 'loading' && (
+                <div className="product-detail-panel-state" role="status">Loading verified store prices…</div>
+              )}
+              {storePricesStatus === 'error' && (
+                <div className="product-detail-panel-state">
+                  <strong>Store prices are unavailable.</strong>
+                  <span>Check your connection and try again.</span>
+                  <button type="button" onClick={() => void loadStorePrices()} aria-label="Retry store prices">Retry</button>
+                </div>
+              )}
+              {storePricesStatus === 'success' && storePrices.length === 0 && (
+                <div className="product-detail-panel-state">No store monitoring records available in San Jose de Buenavista.</div>
+              )}
+              {storePricesStatus === 'success' && storePrices.length > 0 && (
+                <ul className="product-detail-stores-list" aria-label="Stores monitored in San Jose de Buenavista">
+                  {storePrices.map((s) => {
+                    const priceDiff = s.price_change !== null ? Math.abs(s.price_change).toFixed(2) : '0.00';
+                    const baselineDiff = price.value !== null ? (s.recorded_price - price.value) : 0;
+                    return (
+                      <li key={s.store_id} className="store-price-card">
+                        <div className="store-price-card-header">
+                          <div className="store-price-card-info">
+                            <strong className="store-price-card-name">{s.store_name}</strong>
+                            {s.address && <span className="store-price-card-address">{s.address}</span>}
+                          </div>
+                          <span className={`store-compliance-pill store-compliance-pill--${s.compliance_status}`}>
+                            {s.compliance_status === 'below_srp' && `Below SRP (-\u20B1${Math.abs(baselineDiff).toFixed(2)})`}
+                            {s.compliance_status === 'at_srp' && 'Within SRP'}
+                            {s.compliance_status === 'above_srp' && `+\u20B1${baselineDiff.toFixed(2)} above SRP`}
+                          </span>
+                        </div>
+                        <div className="store-price-card-footer">
+                          <div className="store-price-card-price-group">
+                            <span className="store-price-card-price-label">Shelf price</span>
+                            <strong className="store-price-card-price">{'\u20B1'}{s.recorded_price.toFixed(2)}</strong>
+                          </div>
+                          <div className="store-price-card-temporal">
+                            <span className="store-price-card-date">Observed {formatDate(s.observed_at) || 'Recent'}</span>
+                            {s.change_direction === 'increase' && (
+                              <span className="store-temporal-delta store-temporal-delta--increase">
+                                ▲ +{'\u20B1'}{priceDiff} vs previous visit
+                              </span>
+                            )}
+                            {s.change_direction === 'decrease' && (
+                              <span className="store-temporal-delta store-temporal-delta--decrease">
+                                ▼ −{'\u20B1'}{priceDiff} vs previous visit
+                              </span>
+                            )}
+                            {s.change_direction === 'unchanged' && (
+                              <span className="store-temporal-delta store-temporal-delta--unchanged">
+                                Unchanged vs previous visit
+                              </span>
+                            )}
+                            {s.change_direction === 'first_observation' && (
+                              <span className="store-temporal-delta store-temporal-delta--first">
+                                First recorded visit
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </section>

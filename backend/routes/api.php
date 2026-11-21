@@ -47,6 +47,7 @@ Route::prefix('public')->group(function () {
     Route::get('/config', [PublicPwaController::class, 'config']);
     Route::get('/commodities', [PublicCommodityController::class, 'index']);
     Route::get('/commodities/{commodity}/history', [PublicCommodityController::class, 'history']);
+    Route::get('/commodities/{commodity}/store-prices', [PublicCommodityController::class, 'storePrices']);
     Route::get('/establishments', [PublicPwaController::class, 'establishments']);
     Route::middleware('ocr.rate_limit')->group(function () {
         Route::post('/scan-tag', [PublicPwaController::class, 'scanTag']);

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SrpBulletin;
+use App\Models\TemporalInspection;
 use App\Services\Admin\SrpCatalogService;
 use App\Services\CommodityImageStorage;
 use App\Services\FieldReferenceResolver;
@@ -88,6 +89,79 @@ class PublicCommodityController extends Controller
             'data' => [
                 'commodity_id' => (int) $commodity->id,
                 'history' => $history,
+            ],
+        ]);
+    }
+
+    public function storePrices(SrpBulletin $commodity)
+    {
+        $comparableIds = SrpBulletin::comparableIds($commodity);
+
+        $inspections = TemporalInspection::query()
+            ->with(['store:id,store_name,address,image_path,is_active'])
+            ->whereIn('srp_id', $comparableIds)
+            ->where('validation_status', 'verified')
+            ->whereNotNull('officer_signature')
+            ->where('officer_signature', '!=', '')
+            ->whereHas('store', fn ($q) => $q->where('is_active', true))
+            ->orderByDesc('inspection_timestamp')
+            ->orderByDesc('id')
+            ->get();
+
+        $baselinePrice = (float) $commodity->baseline_price;
+
+        $stores = $inspections->groupBy('store_id')->map(function ($storeInspections) use ($baselinePrice) {
+            $latest = $storeInspections->first();
+            $previous = $storeInspections->skip(1)->first();
+
+            $recordedPrice = (float) $latest->recorded_price;
+            $previousPrice = $previous ? (float) $previous->recorded_price : null;
+
+            $priceChange = null;
+            $changeDirection = 'first_observation';
+
+            if ($previousPrice !== null) {
+                $diff = round($recordedPrice - $previousPrice, 2);
+                $priceChange = $diff;
+                if ($diff > 0.005) {
+                    $changeDirection = 'increase';
+                } elseif ($diff < -0.005) {
+                    $changeDirection = 'decrease';
+                } else {
+                    $changeDirection = 'unchanged';
+                }
+            }
+
+            $complianceStatus = 'at_srp';
+            if ($baselinePrice > 0) {
+                if ($recordedPrice < $baselinePrice - 0.005) {
+                    $complianceStatus = 'below_srp';
+                } elseif ($recordedPrice > $baselinePrice + 0.005) {
+                    $complianceStatus = 'above_srp';
+                }
+            }
+
+            return [
+                'store_id' => (int) $latest->store_id,
+                'store_name' => (string) ($latest->store?->store_name ?? 'Unknown Store'),
+                'address' => $latest->store?->address,
+                'recorded_price' => $recordedPrice,
+                'observed_at' => $latest->inspection_timestamp?->toDateString(),
+                'previous_price' => $previousPrice,
+                'price_change' => $priceChange,
+                'change_direction' => $changeDirection,
+                'compliance_status' => $complianceStatus,
+            ];
+        })->sortBy('recorded_price')->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Commodity store prices retrieved successfully.',
+            'data' => [
+                'commodity_id' => (int) $commodity->id,
+                'commodity_name' => (string) $commodity->commodity_name,
+                'baseline_price' => $baselinePrice,
+                'stores' => $stores,
             ],
         ]);
     }

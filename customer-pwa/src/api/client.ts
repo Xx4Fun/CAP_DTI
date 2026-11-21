@@ -131,6 +131,25 @@ export interface CommodityHistoryResponse {
   history: SrpHistoryEntry[];
 }
 
+export interface StorePriceObservation {
+  store_id: number;
+  store_name: string;
+  address?: string;
+  recorded_price: number;
+  observed_at: string;
+  previous_price: number | null;
+  price_change: number | null;
+  change_direction: 'increase' | 'decrease' | 'unchanged' | 'first_observation';
+  compliance_status: 'below_srp' | 'at_srp' | 'above_srp';
+}
+
+export interface CommodityStorePricesResponse {
+  commodity_id: number;
+  commodity_name: string;
+  baseline_price: number;
+  stores: StorePriceObservation[];
+}
+
 export interface ScanCandidate {
   id: number;
   commodity_name: string;
