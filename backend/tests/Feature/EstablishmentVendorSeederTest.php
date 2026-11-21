@@ -270,4 +270,60 @@ class EstablishmentVendorSeederTest extends TestCase
         $this->assertSame('Maria Clara Santos', $stores[0]['current_representative']['name']);
         $this->assertSame('Owner', $stores[0]['current_representative']['title']);
     }
+
+    public function test_seeder_preserves_and_restores_original_vendor_for_gaisano_and_notices(): void
+    {
+        $this->seed(OfficialEstablishmentSeeder::class);
+        $gaisano = Store::where('store_name', 'like', 'Gaisano Grand%')->firstOrFail();
+
+        // 1. Create original Gaisano vendor account
+        $originalVendor = User::create([
+            'name' => 'Original Gaisano Manager',
+            'email' => 'gaisano.original@gmail.com',
+            'password' => Hash::make('password123'),
+            'role' => 'vendor',
+            'is_active' => true,
+        ]);
+        $gaisano->update(['vendor_user_id' => $originalVendor->id]);
+
+        // 2. An issued LOI was recorded to this original vendor
+        $evaluator = User::create(['name' => 'Eval', 'email' => 'eval2@dti.test', 'password' => 'pass', 'role' => 'dti_evaluator']);
+        $loi = LegalNotice::create([
+            'store_id' => $gaisano->id,
+            'notice_type' => 'LOI',
+            'prepared_by' => $evaluator->id,
+            'issued_by' => $evaluator->id,
+            'vendor_user_id' => $originalVendor->id,
+            'status' => 'issued',
+            'control_number' => 'LOI-GAISANO-001',
+            'issued_at' => now()->subDay(),
+            'intended_delivery_method' => 'portal',
+            'delivery_state' => 'not_recorded',
+            'deadline_rules' => ['response_period' => ['unit' => 'hours', 'value' => 48], 'deadline_anchor' => 'received', 'timezone' => 'Asia/Manila', 'working_weekdays' => [1,2,3,4,5], 'non_working_dates' => []],
+            'source_snapshot' => ['items' => [['id' => 1, 'commodity_name' => 'Test Item', 'observed_price' => 50]]],
+            'draft_payload' => ['recipient_name' => 'Gaisano Grand Malls Inc.', 'recipient_email' => $originalVendor->email],
+        ]);
+
+        // 3. Run EstablishmentVendorSeeder
+        $this->seed(EstablishmentVendorSeeder::class);
+
+        // 4. Assert Gaisano remains linked to the original vendor
+        $this->assertSame($originalVendor->id, $gaisano->fresh()->vendor_user_id);
+
+        // 5. Assert duplicate synthetic vendor was cleaned up
+        $this->assertNull(User::where('email', 'vendor.gaisano@price-watch.ph')->first());
+
+        // 6. Assert original vendor can log in and see Gaisano and the LOI
+        $token = $this->postJson('/api/vendor/login', ['email' => 'gaisano.original@gmail.com', 'password' => 'password123'])
+            ->assertOk()->json('token');
+
+        $overview = $this->withToken($token)->getJson('/api/vendor/overview')->assertOk();
+        $this->assertCount(1, $overview->json('data.stores'));
+        $this->assertSame('Gaisano Grand Mall', $overview->json('data.stores.0.store_name'));
+        $this->assertSame(1, $overview->json('data.stores.0.open_notice_count'));
+
+        $notices = $this->withToken($token)->getJson('/api/vendor/notices')->assertOk()->json();
+        $this->assertCount(1, $notices);
+        $this->assertSame('LOI-GAISANO-001', $notices[0]['control_number']);
+    }
 }

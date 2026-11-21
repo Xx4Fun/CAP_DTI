@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\AuditEvent;
 use App\Models\LegalNotice;
 use App\Models\Store;
+use App\Models\StoreMessage;
 use App\Models\User;
 use App\Models\VendorInvitation;
 use App\Services\Admin\LegalSignatoryService;
@@ -15,8 +16,9 @@ class EstablishmentVendorSeeder extends Seeder
 {
     /**
      * Seeds active vendor accounts and links for all official San Jose de Buenavista establishments,
-     * populates registered owner names and representative profiles, seeds official legal notice signatories,
-     * and reconciles any unissued draft notices.
+     * preserves pre-existing vendor accounts and issued legal notice recipients, populates registered
+     * owner names and representative profiles, seeds official legal notice signatories, and reconciles
+     * draft notices and store communications.
      */
     public function run(): void
     {
@@ -36,24 +38,61 @@ class EstablishmentVendorSeeder extends Seeder
                 continue;
             }
 
-            // 1. Create or update the vendor user
-            $user = User::updateOrCreate(
-                ['email' => $item['vendor_email']],
-                [
-                    'name' => $item['vendor_name'],
-                    'password' => Hash::make($demoPassword),
-                    'role' => 'vendor',
-                    'is_active' => true,
-                ]
-            );
+            // 1. Identify the rightful vendor account:
+            // Check if a legal notice was already issued for this store (e.g. Gaisano Grand Mall's original account)
+            $targetVendor = null;
+            $noticeVendorId = LegalNotice::query()
+                ->where('store_id', $store->id)
+                ->whereNotNull('vendor_user_id')
+                ->where('vendor_user_id', '>', 0)
+                ->latest('issued_at')
+                ->value('vendor_user_id');
 
-            // 2. Link store to vendor and ensure owner / representative names are populated
+            if ($noticeVendorId) {
+                $noticeVendor = User::whereKey($noticeVendorId)->where('role', 'vendor')->first();
+                if ($noticeVendor) {
+                    $targetVendor = $noticeVendor;
+                }
+            }
+
+            // If no notice vendor, check if the store currently has an active vendor linked that isn't the placeholder
+            if (! $targetVendor && $store->vendor_user_id) {
+                $existingVendor = User::whereKey($store->vendor_user_id)->where('role', 'vendor')->first();
+                if ($existingVendor && $existingVendor->is_active) {
+                    $targetVendor = $existingVendor;
+                }
+            }
+
+            // If an established vendor already exists, preserve it; otherwise create/update the standardized vendor
+            if ($targetVendor) {
+                $targetVendor->is_active = true;
+                $targetVendor->save();
+
+                // If a redundant synthetic user was created previously under the item's email, clean it up
+                if ($targetVendor->email !== $item['vendor_email']) {
+                    User::query()->where('email', $item['vendor_email'])->delete();
+                }
+
+                $user = $targetVendor;
+            } else {
+                $user = User::updateOrCreate(
+                    ['email' => $item['vendor_email']],
+                    [
+                        'name' => $item['vendor_name'],
+                        'password' => Hash::make($demoPassword),
+                        'role' => 'vendor',
+                        'is_active' => true,
+                    ]
+                );
+            }
+
+            // 2. Link store to the vendor and ensure owner / representative names are populated
             $store->vendor_user_id = $user->id;
             if (empty($store->owner_name)) {
                 $store->owner_name = $item['owner_name'];
             }
             if (empty($store->current_representative_name)) {
-                $store->current_representative_name = $item['vendor_name'];
+                $store->current_representative_name = $user->name ?: $item['vendor_name'];
                 $store->current_representative_title = $item['rep_title'];
                 $store->current_representative_updated_at = now();
             }
@@ -72,7 +111,12 @@ class EstablishmentVendorSeeder extends Seeder
                 ]
             );
 
-            // 4. Reconcile any existing unissued draft notices to prevent 409 RECIPIENT_REVIEW_REQUIRED
+            // 4. Synchronize all notices (drafts and issued) to the active vendor user ID
+            LegalNotice::query()
+                ->where('store_id', $store->id)
+                ->whereIn('status', ['issued', 'response_received', 'closed', 'cancelled'])
+                ->update(['vendor_user_id' => $user->id]);
+
             $existingDrafts = LegalNotice::query()->where('status', 'draft')->where('store_id', $store->id)->get();
             foreach ($existingDrafts as $draft) {
                 $payload = $draft->draft_payload ?? [];
@@ -85,10 +129,17 @@ class EstablishmentVendorSeeder extends Seeder
                     $payload['recipient_email'] = $user->email;
                 }
                 $draft->draft_payload = $payload;
+                $draft->vendor_user_id = $user->id;
                 $draft->save();
             }
 
-            // 5. Audit event
+            // 5. Reconcile store messages so the active vendor can access communication history
+            StoreMessage::query()
+                ->where('store_id', $store->id)
+                ->where('vendor_user_id', '!=', $user->id)
+                ->update(['vendor_user_id' => $user->id]);
+
+            // 6. Audit event
             AuditEvent::create([
                 'action' => 'store.vendor_seeded',
                 'subject_type' => Store::class,
@@ -101,7 +152,7 @@ class EstablishmentVendorSeeder extends Seeder
             ]);
         }
 
-        // 6. Seed official DTI signatories in system_settings if not already configured
+        // 7. Seed official DTI signatories in system_settings if not already configured
         $signatoryUser = User::where('role', 'dti_evaluator')->first()
             ?? User::where('role', 'field_officer')->first()
             ?? User::first();
